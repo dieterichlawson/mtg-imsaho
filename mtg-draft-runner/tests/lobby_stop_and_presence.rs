@@ -58,8 +58,8 @@ fn a_closed_game_page_is_said_on_both_sides_and_quit_closes_every_page() {
         .and_then(|m| m["url"].as_str()).map(str::to_string);
     let v0 = c0.view_until("seat 0's match is on", Duration::from_secs(240), |v| url(v).is_some());
     let v1 = c1.view_until("seat 1's match is on", Duration::from_secs(30), |v| url(v).is_some());
-    let mut g0 = game_page(&url(&v0).unwrap());
-    let mut g1 = game_page(&url(&v1).unwrap());
+    let mut g0 = game_page(&server.link(&url(&v0).unwrap()));
+    let mut g1 = game_page(&server.link(&url(&v1).unwrap()));
     // Each page is told which game it is on (#855).
     let table = message_until(&mut g1, "table", Duration::from_secs(10), |m| m["match_line"].is_string());
     assert_eq!(table["match_line"], "Game 1 of a best-of-1", "{table}");
@@ -73,7 +73,7 @@ fn a_closed_game_page_is_said_on_both_sides_and_quit_closes_every_page() {
     server.wait_for_stderr("seat 0's game page is closed; the game waits for them to open it again", Duration::from_secs(5));
 
     // Back: said on both sides again.
-    g0 = game_page(&url(&v0).unwrap());
+    g0 = game_page(&server.link(&url(&v0).unwrap()));
     c1.view_until("seat 0 in game again", Duration::from_secs(10), |v| presence_of(v, 0) == "in game");
     message_until(&mut g1, "table", Duration::from_secs(10), |m| m["opponent"].is_null());
 

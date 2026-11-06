@@ -138,6 +138,9 @@ pub struct BetweenGames<'a> {
     pub last: Option<String>,
     /// This seat chooses whether to play or draw the next game.
     pub chooses: bool,
+    /// The last game had no winner (a draw, or abandoned), so the seat that
+    /// chose it chooses again (MTR 2.2); it did not lose it (#913).
+    pub last_no_winner: bool,
     /// The cards the opponent has shown in the match so far.
     pub opponent_showed: &'a [String],
 }
@@ -207,11 +210,14 @@ pub fn deck_change(before: &DraftDeck, after: &DraftDeck) -> String {
             lands.push(format!("{land} {d:+}"));
         }
     }
+    // Names are joined by "; " and the parts by " | ": a card name may hold
+    // a comma ("Grimgrin, Corpse-Born"), and joined by ", " it read as two
+    // cards to a person and to a script splitting the line (#925).
     let mut parts = Vec::new();
-    if !ins.is_empty() { parts.push(format!("in: {}", ins.join(", "))); }
-    if !outs.is_empty() { parts.push(format!("out: {}", outs.join(", "))); }
+    if !ins.is_empty() { parts.push(format!("in: {}", ins.join("; "))); }
+    if !outs.is_empty() { parts.push(format!("out: {}", outs.join("; "))); }
     if !lands.is_empty() { parts.push(lands.join(", ")); }
-    if parts.is_empty() { "no change".to_string() } else { parts.join("; ") }
+    if parts.is_empty() { "no change".to_string() } else { parts.join(" | ") }
 }
 
 /// The log's record of a seat's between-games answer: its prompt, its
@@ -227,8 +233,8 @@ pub fn log_sideboard(seat: usize, game: usize, before: &DraftDeck, decision: &Si
     };
     let choice = match (chooses, decision.play_first) {
         (false, _) => String::new(),
-        (true, Some(false)) => "; draws first".to_string(),
-        (true, _) => "; plays first".to_string(),
+        (true, Some(false)) => " | draws first".to_string(),
+        (true, _) => " | plays first".to_string(),
     };
     w(&format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
 }
@@ -249,9 +255,9 @@ pub fn log_between(seat: usize, game: usize, before: &DraftDeck, after: Option<&
     };
     let choice = match (chooses, play_first) {
         (false, _) => "",
-        (true, Some(true)) => "; plays first",
-        (true, Some(false)) => "; draws first",
-        (true, None) => "; plays first (no choice was made)",
+        (true, Some(true)) => " | plays first",
+        (true, Some(false)) => " | draws first",
+        (true, None) => " | plays first (no choice was made)",
     };
     mtg_player::game_log::write(file!(), line!(),
         &format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
@@ -277,14 +283,26 @@ pub fn same_deck(a: &DraftDeck, b: &DraftDeck) -> bool {
 #[must_use]
 pub fn build_sideboard_prompt(pool: &[String], current: &DraftDeck, cards: &CardLines, situation: &BetweenGames<'_>) -> String {
     let BetweenGames { game, best_of, your_wins, their_wins, .. } = *situation;
+    // A game neither seat won is counted too: "won 1, your opponent 0" before
+    // game 3 left an earlier draw out of the score (#976, as #971 for the
+    // page, the client and the game page's match line).
+    let no_winner = match game.saturating_sub(1 + your_wins + their_wins) {
+        0 => String::new(),
+        1 => ", and 1 game had no winner".to_string(),
+        n => format!(", and {n} games had no winner"),
+    };
     let mut prompt = format!("Between games: game {game} of a best-of-{best_of} is next. You have won {your_wins}, \
-your opponent {their_wins}.");
+your opponent {their_wins}{no_winner}.");
     if let Some(last) = &situation.last {
         let _ = write!(prompt, " Last game: {last}.");
     }
     prompt.push('\n');
     if situation.chooses {
-        let why = if game == 1 { "you won the coin flip" } else { "you lost the last game" };
+        let why = match game {
+            1 => "you won the coin flip".to_string(),
+            _ if situation.last_no_winner => format!("game {} had no winner, and the choice is still yours", game - 1),
+            _ => "you lost the last game".to_string(),
+        };
         let _ = writeln!(prompt, "You choose whether to play first or draw first in game {game} ({why}). \
 Playing first is the usual choice in Limited; drawing first suits a slow deck that wins the long game.");
     }
@@ -335,7 +353,62 @@ pub fn write_deck_file(path: &std::path::Path, deck: &DraftDeck) -> std::io::Res
 
 #[cfg(test)]
 mod deck_prompt_tests {
-    use super::{build_deck_prompt, CardLines, CardRegistry};
+    use super::{build_deck_prompt, build_sideboard_prompt, BetweenGames, CardLines, CardRegistry};
+
+    /// #913: after a game with no winner the chooser chose last game and
+    /// chooses again (MTR 2.2); the prompt told it "you lost the last game"
+    /// beside "Last game: you drew game 1".
+    #[test]
+    fn the_sideboard_prompt_says_why_the_seat_chooses() {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/sets/isd.json"
+        )))
+        .expect("ISD set data");
+        let registry = CardRegistry::with_all_cards();
+        let cards = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        let pool = vec!["Chapel Geist".to_string()];
+        let deck = mtg_draft::deckbuilding::DraftDeck {
+            maindeck: pool.clone(), lands: std::collections::HashMap::new(), sideboard: Vec::new(),
+        };
+        let ask = |last: &str, last_no_winner: bool| build_sideboard_prompt(&pool, &deck, &cards, &BetweenGames {
+            game: 2, best_of: 3, your_wins: 0, their_wins: if last_no_winner { 0 } else { 1 },
+            last: Some(last.to_string()), chooses: true, last_no_winner, opponent_showed: &[],
+        });
+        for last in ["you drew game 1 on turn 14", "no winner in game 1 on turn 14"] {
+            let prompt = ask(last, true);
+            assert!(prompt.contains("in game 2 (game 1 had no winner, and the choice is still yours)") && !prompt.contains("you lost"), "{prompt}");
+        }
+        assert!(ask("you lost game 1 on turn 9", false).contains("in game 2 (you lost the last game)"));
+    }
+
+    /// #976: a game with no winner before the last one is in the score, not
+    /// only when it was the last game.
+    #[test]
+    fn the_between_games_score_counts_a_game_with_no_winner() {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/sets/isd.json"
+        )))
+        .expect("ISD set data");
+        let registry = CardRegistry::with_all_cards();
+        let cards = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        let pool = vec!["Chapel Geist".to_string()];
+        let deck = mtg_draft::deckbuilding::DraftDeck {
+            maindeck: pool.clone(), lands: std::collections::HashMap::new(), sideboard: Vec::new(),
+        };
+        let ask = |game: usize, your_wins: usize, their_wins: usize| build_sideboard_prompt(&pool, &deck, &cards, &BetweenGames {
+            game, best_of: 5, your_wins, their_wins,
+            last: Some("you won game 2 on turn 8".to_string()), chooses: false, last_no_winner: false, opponent_showed: &[],
+        });
+        let p = ask(3, 1, 0);
+        assert!(p.contains("You have won 1, your opponent 0, and 1 game had no winner."), "{p}");
+        let p = ask(5, 1, 1);
+        assert!(p.contains("You have won 1, your opponent 1, and 2 games had no winner."), "{p}");
+        let p = ask(3, 1, 1);
+        assert!(p.contains("You have won 1, your opponent 1.\n") || p.contains("your opponent 1. Last"), "{p}");
+        assert!(!p.contains("no winner"), "{p}");
+    }
 
     /// #487: the whole prompt used to be one sentence and a `Nx Name` list —
     /// no colour or cost to build on, no land target, no statement of the
@@ -377,5 +450,31 @@ mod deck_prompt_tests {
         assert!(prompt.contains("even if you drafted one"), "{prompt}");
         // The sideboard it is silently creating.
         assert!(prompt.contains("sideboard"), "{prompt}");
+    }
+}
+
+#[cfg(test)]
+mod deck_change_tests {
+    use super::deck_change;
+    use mtg_draft::deckbuilding::DraftDeck;
+
+    fn deck(main: &[&str], plains: u32) -> DraftDeck {
+        DraftDeck {
+            maindeck: main.iter().map(|s| (*s).to_string()).collect(),
+            lands: [("Plains".to_string(), plains)].into_iter().collect(),
+            sideboard: Vec::new(),
+        }
+    }
+
+    /// #925: a card name may hold a comma, so the names in a list are
+    /// joined by "; " and the parts by " | ": joined by ", " the log's
+    /// "in: Grimgrin, Corpse-Born, Moan of the Unhallowed" read as three.
+    #[test]
+    fn a_name_with_a_comma_is_one_card_in_the_change() {
+        let before = deck(&["Moan of the Unhallowed", "Typhoid Rats", "Chapel Geist"], 8);
+        let after = deck(&["Grimgrin, Corpse-Born", "Abattoir Ghoul", "Chapel Geist"], 9);
+        assert_eq!(deck_change(&before, &after),
+            "in: Abattoir Ghoul; Grimgrin, Corpse-Born | out: Moan of the Unhallowed; Typhoid Rats | Plains +1");
+        assert_eq!(deck_change(&before, &before), "no change");
     }
 }

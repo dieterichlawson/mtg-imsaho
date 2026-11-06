@@ -18,6 +18,31 @@ the contract it is supposed to satisfy, and find where the two disagree.
 When you find a way to look that the list doesn't have, take it — and
 then add it, per "Adding an idea" in `docs/playtest/README.md`.
 
+**Reach the board you came for by editing a save, not by shuffling.** On
+2026-10-31 all three Competitor probes found on their own that natural
+shuffles spend a C night on mana screw and on Enter presses. A bare `C-m`
+in a hotseat game auto-passes a seat that has only mana abilities, which
+skips the other seat's main phase, so read `Your turn (you are pN)` before
+every pass. Two edits keep the position legal and the invariants checked:
+
+- **Re-deal at the mulligan:** `--stop-after 1 --save`, then swap card
+  identities between hand and library objects. Zones, ids and events are
+  untouched, so `--resume` accepts it.
+- **Place a board on turn 1, main phase 1:** move objects out of
+  `players[*].library_order` into the battlefield, the hand, the graveyard
+  or the library top. The validator then wants `state.events` cleared and
+  `trigger_event_index` set to 0. A planeswalker placed this way needs
+  `is_legendary` and its loyalty counters set by hand. Permanents cannot be
+  placed during the mulligan.
+
+A repro built this way lists the board it built, or ships the edit script,
+so a fresh reader gets the same position.
+
+To *watch* a step, give the seat that is not acting a castable instant
+(Geistflame and a Mountain). A seat with only mana abilities is passed for,
+and a whole combat can go by between two captures. `--log` appends, so
+delete the log before re-running a board whose log you grep (2026-11-01).
+
 ## Where to look
 
 - `mtg-engine/src/` is the engine: `engine.rs` (priority, casting, action
@@ -52,7 +77,7 @@ contradict the CR.
 - C2 control mirror: counterspells, instant-speed battles, priority holds
 - C3 attrition: removal-heavy, graveyard value, flashback
 - C4 tribal synergy: humans/vampires/zombies/spirits deck vs another tribe
-- C5 planeswalker-centric: protect and ultimate a walker; attack one down
+- C5 [tried 2026-10-31, with C24] planeswalker-centric: protect and ultimate a walker; attack one down
 - C6 equipment voltron vs token swarm
 - C7 curses: stack multiple curses on one player and play through them
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
@@ -78,7 +103,7 @@ contradict the CR.
   every step/phase boundary (CR 500.4), verify no mana burn, verify the
   one-land-per-turn rule and that lands are refused off-turn or with a
   non-empty stack (CR 305.1)
-- C16 combat trick war across every combat priority window: cast instants
+- C16 [tried 2026-10-31; every window exists] combat trick war across every combat priority window: cast instants
   at beginning of combat, after attackers, after blockers, between
   first-strike and regular damage, and at end of combat; verify priority
   exists at each and that removing a blocker doesn't unblock the
@@ -91,7 +116,8 @@ contradict the CR.
   with Divine Reckoning; verify each player chooses their own keeper in
   APNAP order (CR 101.4) before any simultaneous sacrifice (CR 701.17),
   and that tokens cease to exist rather than resting in a graveyard
-- C19 multi-block combat math: force double and triple blocks every
+- C19 [tried 2026-10-31 → #982, #983; every damage-split claim held under the
+  old order rule] multi-block combat math: force double and triple blocks every
   combat; verify P/T after anthems, damage marked, who dies, life lost,
   and that the attacking player gets the ordering and assignment choices
   the CR gives them (CR 509.2, 510.1a-d)
@@ -113,7 +139,8 @@ contradict the CR.
   first draw (CR 103.7a), the London mulligan counts, summoning sickness
   on turn 1 (CR 302.6), APNAP consistency (CR 101.4), and whether the
   CLI ever says which seat is on the play
-- C24 planeswalkers as a combat target: attack a walker, defend it, and
+- C24 [tried 2026-10-31 → #980, #981; every CR claim held, trample onto the
+  walker (702.19c) included] planeswalkers as a combat target: attack a walker, defend it, and
   kill it. Verify the attack target is chosen per attacker at declare
   attackers and the CLI offers it per attacker (CR 508.1a), that combat
   damage removes that many loyalty counters (CR 306.7, 120.3c) and stays
@@ -134,7 +161,7 @@ contradict the CR.
   cards and check the creature dies at the next SBA check when toughness hits
   0 (CR 704.5f), and stack an anthem and a counter on top to check 7a→7c→7d
   order. No coverage pairing has both halves; write one-off decks
-- C26 alternative costs and cost reduction: Rooftop Storm ("cast Zombie
+- C26 [tried 2026-10-31 → #978, #979; every CR claim held] alternative costs and cost reduction: Rooftop Storm ("cast Zombie
   creature spells without paying their mana costs", CR 118.9) and Heartless
   Summoning ({2} less, and -1/-1 that kills your own X/1s). Verify the free
   cast is offered for Zombie CREATURE spells only, that both the paid and the
@@ -142,7 +169,7 @@ contradict the CR.
   never eats a coloured symbol (CR 601.2f), that an additional cost survives
   an alternative cost, and that killing the cost source with the spell on the
   stack does not rebill it (CR 601.2h)
-- C27 the nonbasic mana base: the five check lands (Isolated Chapel, Clifftop
+- C27 [tried 2026-10-31; held] the nonbasic mana base: the five check lands (Isolated Chapel, Clifftop
   Retreat, Woodland Cemetery, Hinterland Harbor, Sulfur Falls) enter tapped or
   untapped as a replacement checked AS they enter (CR 614.1c) and are never
   re-evaluated later; Ghost Quarter's search belongs to the DESTROYED land's
@@ -163,7 +190,7 @@ contradict the CR.
   answering to both creature and artifact removal. Demonmail Hauberk's
   "Equip—Sacrifice a creature", Runechanter's Pike, Inquisitor's Flail and all
   four Ancient Grudge modes went undrawn in two games — stack them higher
-- C29 X spells and variable damage: Devil's Play ({X}{R}, flashback {X}{R}{R}{R}
+- C29 [tried 2026-10-31 → #977] X spells and variable damage: Devil's Play ({X}{R}, flashback {X}{R}{R}{R}
   — a SECOND independently chosen X), Harvest Pyre (X paid by exiling from your
   own graveyard), Heretic's Punishment, Blasphemous Act (a cost that varies with
   the board). Verify X is chosen at announcement and locked (CR 601.2b), X=0 is
@@ -376,6 +403,33 @@ contradict the CR.
   open: granting intimidate AFTER blockers are declared (509.1h) — Gruesome
   Deformity is a sorcery-speed Aura and ISD has no flash grant — and any mid-combat
   colour change, which ISD cannot produce
+
+- C41 [proposed 2026-10-31, from #983 and #725] remove one side of a combat
+  pairing and look at the other side. Destroying an attacker took its blockers
+  out of combat (#983), the mirror of #725. Set up a first-strike or
+  double-strike creature that blocks, or is blocked by, a creature destroyed
+  after blocks, and do the same with a creature bounced, flickered or
+  sacrificed. On every surface (CLI pane, LLM board text, page), verify that
+  the survivor is still marked attacking, blocking or blocked, that a
+  first-strike step is still created for it (CR 510.4, 506.4), and that it
+  deals and receives no combat damage. Then read `combat.rs` for every map
+  keyed by one side of a pairing and ask what deleting a key does to the
+  values. First run 2026-11-01: held for
+  sacrifice, burn and regeneration on the CLI and in the LLM board. Bounce and
+  flicker are still unplayed, because the pool has no instant-speed bounce
+
+- C42 [proposed 2026-10-31, from #977] demands with an X, against the
+  autotap's hand protection. `Demand::payable` calls `greedy_autotap`, which
+  returns `None` for any cost with an X, so no X demand is protected by
+  `keep_the_hand_castable` or `order_around_demands`. Kessig Wolf Run was
+  tapped for a Brimstone Volley with three Mountains idle. For each X demand
+  (the Wolf Run's ability, Devil's Play and its flashback {X}{R}{R}{R} in the
+  graveyard, Mikaeus, Blasphemous Act's reduction), cast an unrelated spell
+  that the spare lands can pay. Verify the X row is still on the menu
+  afterwards, with the X it had before. Then grep for every other `payable`
+  filter built on the same call. First run 2026-11-01: held on
+  seven boards. The open question left is that protection keeps only X = 0
+  castable (a Devil's Play for 0 is protected the same as one for 3)
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
@@ -1310,3 +1364,84 @@ illegal or dubious resolutions do.
   the payment, then check the menu still offers that cast; swap the two lands'
   battlefield order and check the answer does not change. Then check each
   such prompt names its tap plan on all four surfaces (#621, #841)
+- L62 [proposed 2026-10-26, from e29fb17; tried 2026-10-26 → held: a 4/5
+  triple-blocked by 2/2s asked the attacker "At least 2 (lethal), at most 4"
+  for the first blocker, 3 was taken, the second was not asked (1 left, below
+  its lethal) and got 1, the third 0; the log's `assigned 3 … (CR 510.1c)`
+  matched. Not yet tried: trample through Kessig Wolf Run, a blocker already
+  damaged (lethal below toughness), a blocker removed by Prey Upon after
+  blocks] every legal division of a blocked attacker's damage can be chosen.
+  Since e29fb17 the attacker is asked about each blocker whenever what is left
+  exceeds its lethal and it is not a non-trampler's last blocker, not only when
+  power exceeds the blockers' total lethal. Hotseat a big non-trampler into a
+  double or triple block of small creatures and pick a non-lethal split (3-1,
+  4-0); then with trample, an already-damaged blocker, and a blocker that left
+  combat. Check the prompt's range, that no blocker past the first short of
+  lethal is asked, the log line, and the page's and LLM prompt's range for the
+  same board. The engine keeps the damage-assignment order (CR 509.2) of the
+  rules it was written to; that is deliberate, not a finding
+- L63 [proposed 2026-10-26, from 1e8cd5a, 029c3c0 and 34f2e0d; tried
+  2026-10-26 → held: with Plains, Plains, Island tapped (White:2 Blue:1
+  floating) and Unruly Mob {1}{W} plus Doomed Traveler {W} in hand, the Mob
+  took the Blue for its {1} and left White:1, and the Traveler stayed on the
+  menu; with one White floating the Mob's row read `(tap Island (your))`,
+  keeping the Plains. Not yet tried: a three-colour cost in a cycle of duals,
+  which no card in the pool has] paying from floating mana around what the
+  hand needs. Tap every land by hand before a cast, holding a second spell
+  whose colour the first could also spend; cast the first and check the pool
+  left still pays the second, and that the row's `(tap …)` names lands that
+  leave it castable
+- L64 [proposed 2026-10-26, from 06928fc; tried 2026-10-26 → held: Mikaeus,
+  the Lunarch at X = 1 from White:2 Blue:1 floating with Doomed Traveler in
+  hand showed "Pool: 1 White, 1 Blue", spent the Blue on X and left White:1.
+  `node mtg-gui/tests/xfunding.js` exits 0. Not yet tried: the page in
+  Chromium on the same board, and X that must spend the hand's colour] X
+  funding from a floating pool spends what the hand does not need first. Set
+  up an X spell with mana of two colours floating and a spell in hand needing
+  one of them; fund X below and at the pool's spare, on the CLI and on the
+  page, and check what is left
+- L65 [proposed 2026-10-26, from 416fc10; tried 2026-10-26 → 200 random v
+  random games over the coverage pairs, seeds 6500-6699, `--check-invariants`
+  on a release build: 0 non-zero exits] release builds now panic on integer
+  overflow where they used to wrap. Look for counts a game can push far:
+  Parallel Lives doubling tokens, life gained in a loop, +1/+1 counters from
+  Mikaeus or Travel Preparations every turn, X as large as the lands allow,
+  a long game's turn number; play them out under a release build and check
+  nothing panics and no number shown wraps
+- L66 [proposed 2026-10-31, from #980] a transformed source that leaves while
+  its ability is on the stack. The Veil-Cursed's −1 or −3 taking Garruk to 0
+  named the ability "Garruk Relentless ability", the front face read from the
+  graveyard, against CR 113.7a's last-known information. Do the same for every
+  double-faced card whose back face has an activated or triggered ability
+  (the werewolves' back faces, Garruk, Delver's Insectile Aberration): kill or
+  bounce the source in response. Read the name on the stack, in the RESPOND
+  TO header, in each prompt the ability asks, in the log, in the LLM prompt
+  and on the page. Also check that the ability uses the back face's
+  characteristics where it reads its source's power, colour or name.
+  First run 2026-11-01: Daybreak Ranger resolved whichever face was up at
+  resolution, in both directions (#986), and the name is #980. The face
+  that matters is not only the one that left: a source that *flips* in
+  response (Moonmist on a Human werewolf) is the other half, and it found
+  the same bug
+
+- L67 [proposed 2026-11-01, from #986 and #987] every "transform this"
+  ability against CR 701.28f, and every card that keys its two faces'
+  abilities alike. (a) For each ability that transforms its own source
+  (werewolf upkeep triggers both ways, Civilized Scholar's untap-then-
+  transform, Homicidal Brute's end step, Thraben Sentry, Delver of Secrets,
+  Garruk's state trigger, Bloodline Keeper's {B}), flip the source in
+  response with Moonmist or another transform, then let the ability
+  resolve. It must do nothing (#987 is the werewolves). (b) grep
+  `mtg-engine/src/cards/` for `activated_abilities` that return the same
+  `ability_index` from both faces, or resolve hooks that read
+  `is_transformed`. For each one, activate on one face and change the face
+  before resolution (leave the battlefield, Moonmist, a werewolf upkeep).
+  Verify that the ability that resolves is the one that was activated.
+  First run 2026-11-02: the transform itself is refused everywhere, across
+  a choice too (Scholar's discard, Sentry's yes). What breaks is the *rest*
+  of an ability whose hook returns early when it sees the face it did not
+  trigger from: Homicidal Brute skips "tap this creature" (#988). So for
+  each hook, ask what else it does besides transforming, and whether that
+  part still happens after the flip. Then hover the item on the page: the
+  stack item's text is always the front face's (#989). To place a flipped
+  face, set `is_transformed`, `name` and `transforms` on the object

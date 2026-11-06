@@ -103,6 +103,10 @@ function onMessage(msg) {
                 && actions.length > 0 && actions.every(a => a === "PassPriority" || a === "Concede") && actions.includes("PassPriority");
             const v = msg.view;
             const what = `seq ${msg.seq} T${v.turn_number} ${v.step} active=${v.active_player} you=${v.you} ctx=${msg.legal.context}`;
+            // Auto-pass's stops are not asked here: a pass-only priority is
+            // shown only when something observes every submit, and the engine
+            // passes it otherwise. A Main Phase 1 that goes by this way ends it
+            // at the next priority shown (`autoPassStop`, #972).
             if (onlyPass && !state.stopAtPass) {
                 window.mtgDebug.trace.push(`${what}: only pass`);
                 passUnseen();
@@ -187,8 +191,8 @@ function onMessage(msg) {
  * a prompt that is not a pass, a spell on the stack, a land to play, an
  * attack on you, your attacker blocked, your postcombat main phase, a spell
  * or ability on offer on
- * your own turn once it is here, or your next precombat main phase
- * (`autoPassStop`).
+ * your own turn once it is here, or your next precombat main phase — or
+ * the first priority after it, when it went by unseen (`autoPassStop`).
  * Returns true when it answered the decision.
  */
 function autoPassDecides() {

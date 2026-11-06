@@ -24,6 +24,16 @@ const STEPS: Step[] = ["Untap", "Upkeep", "Draw", "PrecombatMain", "BeginCombat"
 const STEP_SHORT: Record<Step, string> = { Untap: "UN", Upkeep: "UP", Draw: "DR", PrecombatMain: "M1", BeginCombat: "BC",
   DeclareAttackers: "DA", DeclareBlockers: "DB", CombatDamage: "CD", EndCombat: "EC", PostcombatMain: "M2",
   EndStep: "ES", Cleanup: "CL" };
+/** Keywords as the card prints them, "First strike, flying": the
+ *  engine's `Keyword::label`, which is the variant's words in lowercase
+ *  (FirstStrike and DoubleStrike are the two with more than one). The
+ *  inspector printed the serde names, "FirstStrike" over the card's own
+ *  "First strike" (#955, the page's #363). */
+export function keywordLine(keywords: string[]): string {
+  const line = keywords.map(k => k.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()).join(", ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
 const KEYWORD_SHORT: Record<string, string> = { Flying: "Fly", FirstStrike: "FS", DoubleStrike: "DS", Trample: "Tr", Deathtouch: "DT",
   Lifelink: "LL", Vigilance: "Vig", Flash: "Fl", Reach: "Rch", Haste: "Hst", Defender: "Def", Hexproof: "Hex",
   Intimidate: "Int", Menace: "Men", Indestructible: "Ind" };
@@ -139,8 +149,30 @@ export function clipKeepingTail(ctx: Ctx, s: string, maxW: number, font = "8px S
   if (at < 0) return clip(ctx, s, maxW, font);
   const tail = s.slice(at);
   const room = maxW - ctx.measureText(tail).width;
-  if (room <= ctx.measureText("x…").width) return clip(ctx, s, maxW, font);
-  return clip(ctx, s.slice(0, at), room, font) + tail;
+  if (room > ctx.measureText("x…").width) return clip(ctx, s.slice(0, at), room, font) + tail;
+  // The tail alone is wider than the row. Clipped from the end it lost the
+  // end of the tap plan, which is where the creatures it taps are: auto-tap
+  // spends them last (#938's review). Keep the head's start and the tail's
+  // end: "Cast Devil's Play (tap …2x Avacyn's Pilgrim)".
+  // The end gets most of the row, whole items of it where it can.
+  const lead = tapAt >= 0 ? " (tap " : " → ";
+  let end = suffixFitting(ctx, tail.slice(lead.length), maxW * 0.8 - ctx.measureText(lead + "…").width);
+  const item = end.indexOf(", ");
+  if (item >= 0 && !tail.slice(lead.length).startsWith(end)) end = end.slice(item + 2);
+  if (!end) return clip(ctx, s, maxW, font);
+  const head = clip(ctx, s.slice(0, at), maxW - ctx.measureText(lead + "…" + end).width, font);
+  return head + lead + "…" + end;
+}
+
+/** The longest end of `s` within `maxW`, found by bisection; "" if none. */
+function suffixFitting(ctx: Ctx, s: string, maxW: number): string {
+  if (maxW <= 0) return "";
+  let lo = 0, hi = s.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ctx.measureText(s.slice(mid)).width <= maxW) hi = mid; else lo = mid + 1;
+  }
+  return s.slice(lo);
 }
 
 /**
@@ -306,12 +338,18 @@ export function permBadges(p: PermanentView, state: State): { t: string; c: stri
   // An attacker whose blockers all left combat is still blocked (CR
   // 509.1h) and deals no combat damage; a bare ATK read as unblocked (#725).
   if (p.attacking) b.push(p.blocked && !(p.blocked_by && p.blocked_by.length) ? { t: "BLKD", c: "#a08060" } : { t: "ATK", c: "#e07040" });
-  if (p.blocking && p.blocking.length) b.push({ t: "BLK", c: "#60a0e0" });
+  // A blocker whose attacker left combat is still blocking (CR 510.1d), so
+  // it keeps its mark to the end of combat (#983).
+  if ((p.blocking && p.blocking.length) || p.is_blocking) b.push({ t: "BLK", c: "#60a0e0" });
   if (p.affected_by_summoning_sickness) b.push({ t: "z", c: "#8080a0" });
   const c = p.counters || {};
   if (c.PlusOnePlusOne) b.push({ t: `+${c.PlusOnePlusOne}`, c: "#80e080" });
   if (c.MinusOneMinusOne) b.push({ t: `-${c.MinusOneMinusOne}`, c: "#e08080" });
   if (c.Loyalty) b.push({ t: `L${c.Loyalty}`, c: "#e0d080" });
+  // A planeswalker whose loyalty ability is spent this turn (CR 606.3): with
+  // two of one name at the legend rule, loyalty and this are what the choice
+  // turns on, and it was only in the hover detail (#981).
+  if (p.once_per_turn_used && (p.card_types || []).includes("Planeswalker")) b.push({ t: "USED", c: "#a0a0a0" });
   if (p.damage_marked) b.push({ t: `${p.damage_marked}d`, c: "#e05050" });
   if (p.regeneration_shields) b.push({ t: "R", c: "#a0e0a0" });
   if (p.attached_to !== null && p.attached_to !== undefined) b.push({ t: "→" + nameOf(state, p.attached_to).slice(0, 4), c: "#c0a0e0" });
@@ -490,7 +528,7 @@ export function stackKey(p: PermanentView, attachedTo: Set<ObjectId>): string | 
   if (attachedTo.has(p.object_id)) return null;
   if (p.counters && Object.values(p.counters).some(n => n)) return null;
   if (p.damage_marked || p.regeneration_shields) return null;
-  if (p.attacking || (p.blocking && p.blocking.length) || (p.blocked_by && p.blocked_by.length)) return null;
+  if (p.attacking || (p.blocking && p.blocking.length) || p.is_blocking || (p.blocked_by && p.blocked_by.length)) return null;
   if (p.named_card) return null;
   return [
     p.name, p.tapped, p.is_token,
@@ -682,7 +720,18 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // What morbid reads, which nothing on the board shows once the log has
   // moved past the death (#832). After "first strike" — after first-strike
   // damage is exactly when both are on — and clipped short of the stack.
-  if (view.creature_died_this_turn) text(ctx, clip(ctx, "creature died", 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
+  if (view.creature_died_this_turn) {
+    const t = clip(ctx, "creature died", 176 - flagX, "7px Silkscreen");
+    text(ctx, t, flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
+    ctx.font = "7px Silkscreen"; flagX += ctx.measureText(t).width + 6;
+  }
+  // An effect in force for the rest of the turn on no one permanent, by its
+  // source: Moonmist's prevention was in the log only (#953). Its card is
+  // in a graveyard to read; clipped short of the stack like the rest.
+  const inForce = bandTurnEffects(view).join(" ");
+  // Only where a name can be read: `clip` keeps a letter and its ellipsis
+  // however narrow the room, and those ran into "STACK →" (#953's review).
+  if (inForce && 176 - flagX >= 24) text(ctx, clip(ctx, inForce, 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#a0c0e0", font: "7px Silkscreen" });
   // The stack: the top (next to resolve) on the left, as the view lists it.
   const sx0 = 180;
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
@@ -731,6 +780,11 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
  * `l` drawer is worth opening; there is no room on this line to say so in
  * words.
  */
+/** The band's name for each effect in force this turn: its source, the part of the sentence before the colon (#953). */
+export function bandTurnEffects(view: { turn_effects?: string[] }): string[] {
+  return (view.turn_effects || []).map(e => e.split(":")[0]);
+}
+
 export function bandLogLines(state: LiveState): string[] {
   const log = state.view.display_log;
   const fresh = log.slice(state.logSince ?? 0);
@@ -924,7 +978,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   // Galvanic Juggernaut (CR 105.2c), so it is said out loud (issue #525,
   // #357 on the fourth surface).
   if (o.colors) out.push(`Color: ${o.colors.length ? o.colors.join(", ") : "Colorless"}`);
-  if (o.keywords && o.keywords.length) out.push(o.keywords.join(", "));
+  if (o.keywords && o.keywords.length) out.push(keywordLine(o.keywords));
   if (o.counters) for (const [k, n] of Object.entries(o.counters)) if (n) out.push(counterFact(k, n));
   // The count, not just a badge. A shield is spent one per destruction
   // (CR 701.15a), so six of them and one of them are different boards —
@@ -939,6 +993,11 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   const dealtBy = ((o.card_types || []).includes("Creature") ? o.damaged_by || [] : [])
     .filter(id => state.view.battlefield.some(p => p.object_id === id)).map(id => nameOf(state, id));
   if (dealtBy.length) out.push(`Damaged this turn by ${dealtBy.join(" and ")}`);
+  // Homicidal Brute's end step reads the attack; a spent once-each-turn
+  // ability is a row the menu stopped offering (#954). An attacker still in
+  // combat says "Attacking" below.
+  if (e.zone === "battlefield" && o.attacked_this_turn && !o.attacking) out.push("Attacked this turn");
+  if (e.zone === "battlefield" && o.once_per_turn_used) out.push("Once-per-turn ability used this turn");
   if (o.attached_to !== undefined && o.attached_to !== null) out.push(`Attached to ${nameOf(state, o.attached_to)}`);
   // And the other direction, which is the one #83 is about: hovering the
   // Equipment said "Attached to Sturmgeist" while hovering the Sturmgeist
@@ -948,6 +1007,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   if (o.attached_to_player !== undefined && o.attached_to_player !== null) out.push(`Enchants ${playerLabel(state, o.attached_to_player)}`);
   if (o.attacking) out.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
   if (o.blocking && o.blocking.length) out.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
+  else if (o.is_blocking) out.push("Blocking nothing: its attacker left combat, so it deals no combat damage");
   if (o.blocked_by && o.blocked_by.length) out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
   else if (o.attacking && o.blocked) out.push("Blocked: its blockers left combat, so it deals no combat damage unless it has trample");
   for (const p of o.protections || []) out.push(p);
@@ -1004,12 +1064,26 @@ export function otherFace(state: LiveState, o: ViewObject): FaceText | null {
   // is read off the permanent it fired from, which is what transforms.
   let card = o;
   if (!o.card_id && o.source_id !== undefined && o.source_id !== null) {
-    const src = state.view.battlefield.find(p => p.object_id === o.source_id);
+    // Wherever the source is now: a trigger stays on the stack after its
+    // source dies or is exiled in response (CR 113.7a), and still has a
+    // face it is not (#989).
+    const src: ViewObject | undefined = state.view.battlefield.find(p => p.object_id === o.source_id)
+      || (state.view.graveyards || []).flatMap(([, cs]) => cs).find(c => c.object_id === o.source_id)
+      || (state.view.exile || []).find(c => c.object_id === o.source_id);
     if (src) card = src;
   }
   if (card.card_id === undefined || card.card_id === null) return null;
   const faces = (state.view.double_faces || {})[String(card.card_id)];
   if (!faces) return null;
+  // An ability on the stack belongs to the face it came from, and the view
+  // sends that face's text (#989): the other face is the one whose text it
+  // is not, whichever face its source shows now. Read off the source, a
+  // Homicidal Brute's end-step trigger showed Civilized Scholar twice.
+  const onStack = o.source_id !== undefined && o.source_id !== null;
+  if (onStack && o.oracle_text) {
+    if (o.oracle_text === faces[0].oracle_text) return faces[1];
+    if (o.oracle_text === faces[1].oracle_text) return faces[0];
+  }
   if (card.name === faces[0].name) return faces[1];
   if (card.name === faces[1].name) return faces[0];
   return null;
@@ -1102,13 +1176,35 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   }
   if (state.autoPass) { text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" }); ty += 9; }
   const title = ui ? ui.title : "";
-  for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", 4)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
-  if (ui && ui.hint) for (const l of wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" }); ty += 8; }
+  // What is drawn here grows downwards and the buttons are anchored at the
+  // foot, so the lines that can be long — the question beside a modal, the
+  // X plan, the summary — get only the room left above the buttons, after
+  // the hint and the notice have theirs: a tall inspector or the open log
+  // shrinks the panel, and a six-line plan ran under Confirm (#938's
+  // review). `floor` is the top of the highest button.
+  const buttonCount = ((ui && ui.buttons) || []).length;
+  const floor = y + h - 18 - 15 * Math.max(0, buttonCount - 1) - 2;
+  const hintLines = ui && ui.hint ? wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3) : [];
+  const noticeLines = state.notice ? wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3) : [];
+  const reserved = 8 * (hintLines.length + noticeLines.length) + (ui && ui.mode === "mark" ? 9 : 0);
+  const room = (lineH: number, want: number, least = 0) => Math.max(least, Math.min(want, Math.floor((floor - ty - reserved) / lineH)));
+  // Beside a modal the panel holds no rows, so the question can have the
+  // room: at half the modal's width the payment plan at its end was cut at
+  // four lines (#939's review).
+  const besideModal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
+  for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", room(9, besideModal ? 8 : 4, 1))) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
+  for (const l of hintLines) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" }); ty += 8; }
   if (ui && ui.mode === "mark") { text(ctx, `Marked ${ui.marked.length} of ${ui.max}`, x + 4, ty, { color: "#c0e0a0" }); ty += 9; }
   if (ui && ui.mode === "number") {
-    for (const l of fitSummary(ui.summary || [], 4)) { text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" }); ty += 8; }
+    // The typed X's plan here too, whole: the panel beside the modal showed
+    // the sources and not what they would tap (#938). Half the modal's
+    // width, so twice its lines, as the room allows (#938's review).
+    const p = ui.preview ? ui.preview(ui.value ?? "") : null;
+    if (p) for (const l of wrapCapped(ctx, p, w - 8, "7px Silkscreen", room(8, 2 * PREVIEW_LINES))) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#80e0ff" }); ty += 8; }
+    const summaryRoom = room(8, 4);
+    if (summaryRoom > 0) for (const l of fitSummary(ui.summary || [], summaryRoom)) { text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" }); ty += 8; }
   }
-  if (state.notice) for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
+  for (const l of noticeLines) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
   // Rows the board cannot show, then buttons. A modal has its own rows.
   const modal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
   const rows: Row[] = modal ? [] : ((ui && ui.rows) || (ui && ui.looseRows) || []);
@@ -1210,6 +1306,11 @@ export function clampScroll(ui: Ui, scroll: number): number {
 
 /** How many summary lines the number modal shows before "+N more". */
 const NUMBER_SUMMARY_LINES = 10;
+/** The most lines the X preview wraps to; three, at the modal's width,
+ *  hold every source list a board has reached (#938). */
+const PREVIEW_LINES = 3;
+/** The most lines a modal's question wraps to (#939). */
+const TITLE_LINES = 5;
 
 function modal(ctx: Ctx, hits: Hit[], state: LiveState): void {
   const ui = state.ui;
@@ -1227,16 +1328,27 @@ function modal(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // The number widget's field and its summary lines, budgeted line by line:
   // a flat 30px let a fourth line sit on the modal's border (#693).
   const summary = ui.mode === "number" ? fitSummary(ui.summary || [], NUMBER_SUMMARY_LINES) : [];
-  // The preview's line is reserved whether or not the box holds a value
-  // yet, so the modal does not jump on the first keystroke.
-  const previewRows = ui.mode === "number" && ui.preview ? 1 : 0;
-  const h = 30 + shown.length * rowH + (ui.mode === "number" ? 22 + (summary.length + previewRows) * 8 : 0) + (ui.filter ? 14 : 0) + 18;
+  // The preview's lines are reserved whether or not the box holds a value
+  // yet, so the modal does not jump on the first keystroke: as many as the
+  // largest X's plan needs, the longest, up to PREVIEW_LINES. It was one
+  // line, clipped, and the tail it cut was always the creatures X taps,
+  // which `order_around_demands` puts last (#938).
+  const previewOf = (v: string) => (ui.preview ? ui.preview(v) : null);
+  const previewRows = ui.mode === "number" && ui.preview
+    ? Math.max(1, Math.min(PREVIEW_LINES, wrap(ctx, previewOf(String(ui.max)) || "", w - 12, "7px Silkscreen").length))
+    : 0;
+  // The question whole, up to TITLE_LINES: the engine puts the payment
+  // plan at its end ("… countered? (Pay: tap Forest)"), and a two-line cap
+  // cut it off in nearly every PayOrNot (#939). The height has room for two
+  // lines; each line past them adds its own.
+  const titleLines = wrapCapped(ctx, ui.title, w - 12, "8px PressStart", TITLE_LINES);
+  const h = 30 + Math.max(0, titleLines.length - 2) * 10 + shown.length * rowH + (ui.mode === "number" ? 22 + (summary.length + previewRows) * 8 : 0) + (ui.filter ? 14 : 0) + 18;
   const y = Math.max(8, (H - h) / 2);
   // The background hit goes in first, so the rows drawn on it are on top.
   hits.push({ x, y, w, h, kind: "modal" });
   texturedPanel(ctx, x, y, w, h, "#1a1620", "#c9a84a");
   let ty = y + 6;
-  for (const l of wrapCapped(ctx, ui.title, w - 12, "8px PressStart", 2)) { text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" }); ty += 10; }
+  for (const l of titleLines) { text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" }); ty += 10; }
   if (ui.filter) {
     // Where the real <input> goes. The modal used to paint a field here and
     // `syncField` parked the DOM control at a fixed spot near the top of the
@@ -1256,9 +1368,10 @@ function modal(ctx: Ctx, hits: Hit[], state: LiveState): void {
     // (a combat damage division starts at lethal, #637).
     text(ctx, `${ui.min ?? 0} – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" }); ty += 18;
     if (previewRows) {
-      const p = ui.preview!(ui.value ?? "");
-      if (p) text(ctx, clip(ctx, p, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#80e0ff" });
-      ty += 8;
+      const p = previewOf(ui.value ?? "");
+      const lines = p ? wrapCapped(ctx, p, w - 12, "7px Silkscreen", PREVIEW_LINES) : [];
+      lines.forEach((l, i) => text(ctx, l, x + 6, ty + i * 8, { font: "7px Silkscreen", color: "#80e0ff" }));
+      ty += 8 * Math.max(previewRows, lines.length);
     }
     for (const l of summary) { text(ctx, clip(ctx, l, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#c0c8d0" }); ty += 8; }
     ty += 4;

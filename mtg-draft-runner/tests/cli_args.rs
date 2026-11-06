@@ -976,3 +976,23 @@ fn an_unwritable_save_or_positions_file_is_refused_before_drafting() {
     assert!(stderr(&out).contains(&format!("MTG_DRAFT_POSITIONS: the pick positions cannot be kept in {missing}")),
         "{}", stderr(&out));
 }
+
+/// #952: a repeated flag is read at its last value, as `mtg-draft-server`
+/// reads one — `$BASE_FLAGS --seed 2` is how a script overrides a flag, and
+/// the first was taken in silence.
+#[test]
+#[cfg(unix)]
+fn a_repeated_flag_takes_its_last_value() {
+    let log = draft_log_through_packs(&["--seed", "1", "--seed", "2"], "repeated-seed");
+    assert_eq!(logged_seed(&log), 2, "the last --seed is the draft's");
+
+    // The pick replay reads its flags the same way: the metered seat named
+    // first is overridden, and the replay goes on to its positions file.
+    let out = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
+        .args(["--positions", "/nonexistent/positions.jsonl", "--model", "claude", "--model", "cc"])
+        .output()
+        .expect("the replay runs");
+    let err = stderr(&out);
+    assert!(!err.contains("metered seat"), "the last --model is the replay's: {err}");
+    assert!(err.contains("cannot open /nonexistent/positions.jsonl"), "{err}");
+}

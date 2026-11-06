@@ -35,7 +35,9 @@ pub const PAGE: &str = "draft.html";
 pub struct ServerConfig {
     pub bind: String,
     pub port: u16,
-    /// The host name the join lines and the game links carry.
+    /// The host name the join lines, the host's terminal and
+    /// `--direct-game-ports` links carry; a seat's link through the lobby
+    /// is a path on the host it joined by (#969).
     pub advertise: String,
     pub game_ports: (u16, u16),
     pub web_dir: PathBuf,
@@ -117,6 +119,8 @@ impl Shared {
         lobby: Lobby, config: ServerConfig, registry: Arc<CardRegistry>, card_lines: CardLines,
         card_reference: String, set_name: String,
     ) -> Arc<Self> {
+        let mut lobby = lobby;
+        lobby.set_link_origin(format!("http://{}:{}", config.advertise, config.port));
         Arc::new(Self {
             lobby: Mutex::new(lobby),
             changed: Condvar::new(),
@@ -219,7 +223,14 @@ impl Shared {
             let clients = self.clients();
             let mut views: Vec<(usize, String)> = Vec::new();
             let mut seen: Vec<usize> = Vec::new();
-            for c in clients.iter() {
+            // Once `closed` has gone out, no view follows it: the sockets
+            // close one by one, and a view sent between two of them told the
+            // page still open that a seat whose page had closed was "away",
+            // while that seat's own page froze on "here" (#895). Read under
+            // the clients lock, which `quit_because` takes after setting the
+            // reason, so a view is either before `closed` or not sent.
+            let closed = self.stop_reason().is_some();
+            for c in clients.iter().filter(|_| !closed) {
                 if !seen.contains(&c.seat) {
                     seen.push(c.seat);
                     if let Ok(json) = serde_json::to_string(&lobby.view(c.seat)) {
@@ -306,7 +317,14 @@ impl Shared {
 
     fn add_client(&self, seat: usize, tx: mpsc::Sender<String>) -> u64 {
         let id = self.next_client.fetch_add(1, Ordering::Relaxed);
-        self.clients().push(Client { id, seat, tx });
+        let mut clients = self.clients();
+        // A socket that joins a closed table is told so: `quit_because` told
+        // only the clients it had, and a later one was closed bare, which a
+        // page reads as a dropped network and retries (#895's review).
+        if let Some(reason) = self.stop_reason() {
+            let _ = tx.send(serde_json::json!({"type": "closed", "reason": reason}).to_string());
+        }
+        clients.push(Client { id, seat, tx });
         id
     }
 
@@ -315,7 +333,13 @@ impl Shared {
     }
 
     fn send_to(&self, id: u64, msg: &str) {
-        if let Some(c) = self.clients().iter().find(|c| c.id == id) {
+        let clients = self.clients();
+        // Nothing after `closed`, as in `notify` (#895's review): a review
+        // or a refusal asked for in the moment of the close followed it.
+        if self.stop_reason().is_some() {
+            return;
+        }
+        if let Some(c) = clients.iter().find(|c| c.id == id) {
             let _ = c.tx.send(msg.to_string());
         }
     }
@@ -374,6 +398,12 @@ impl Shared {
     /// tell each person in a match whether their opponent's page is open:
     /// "Opponent is thinking" over a closed tab was all they got (#822).
     fn poll_game_pages(&self) {
+        // While the table closes, the game pages close one by one, and a
+        // last poll told the page still open that its opponent's page had
+        // closed and the game waits for it (#895's review).
+        if self.stop_reason().is_some() {
+            return;
+        }
         let pages: Vec<(usize, usize, usize, PageHandle)> = self.in_game.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner).iter()
             .map(|p| (p.seat, p.opponent, p.page.connected(), p.page.clone())).collect();
@@ -381,9 +411,15 @@ impl Shared {
         for &(seat, opponent, open, _) in &pages {
             changed |= self.lobby().set_game_pages(seat, Some(open));
             let Some((_, _, _, their_page)) = pages.iter().find(|(s, ..)| *s == opponent) else { continue };
-            let line = (open == 0).then(|| format!(
-                "{}'s game page is closed: the game waits for them to open it again",
-                self.lobby().who(seat)));
+            // A page never opened was not closed (#926).
+            let line = (open == 0).then(|| {
+                let lobby = self.lobby();
+                if lobby.game_page_opened(seat) {
+                    format!("{}'s game page is closed: the game waits for them to open it again", lobby.who(seat))
+                } else {
+                    format!("{}'s game page is not open yet: the game waits for them to open it", lobby.who(seat))
+                }
+            });
             their_page.set_opponent(line);
         }
         if changed {
@@ -465,6 +501,7 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
             other => other.to_string(),
         };
         let url = format!("ws://{host}:{}/ws?seat={seat}&key={key}", shared.config.port);
+        let origin = format!("http://{host}:{}", shared.config.port);
         // Joined before the keyboard is read: a `start` or a name typed at
         // once went to a table the seat was not at yet, which picked for it.
         let join = move || -> Result<_, String> {
@@ -484,7 +521,7 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
         *shared.cli_lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tx);
         let seat_shared = Arc::clone(shared);
         thread::Builder::new().name("cli-seat".into()).spawn(move || loop {
-            let ended = crate::client::run(&mut ws, &rx);
+            let ended = crate::client::run(&mut ws, &rx, &origin);
             if seat_shared.quitting() || matches!(ended, crate::client::Ended::Refused) {
                 return;
             }
@@ -557,16 +594,8 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     Ok(())
 }
 
-/// A stop signal as a host knows it.
-#[must_use]
-pub fn signal_name(sig: i32) -> String {
-    match sig {
-        2 => "Ctrl-C (SIGINT)".to_string(),
-        15 => "SIGTERM".to_string(),
-        1 => "SIGHUP".to_string(),
-        n => format!("signal {n}"),
-    }
-}
+/// A stop signal as a host knows it; the runners say it the same way.
+pub use mtg_player::llm::signal_name;
 
 /// The host's keyboard: Enter or `start` starts the draft, `kick N` hands
 /// a seat to the table, `status` prints where everybody is, `quit` ends
@@ -645,8 +674,8 @@ hands it to the table for good, and its games are forfeit"));
                         Some(SeatKind::Ai(spec)) => crate::llm_client::ai_seat_label(spec),
                         _ => s.kind.to_string(),
                     };
-                    shared.reply(&format!("  seat {seat} {kind} {} — {}, {} ({} picks)",
-                        s.name, s.presence, s.status, s.picks));
+                    shared.reply(&format!("  seat {seat} {kind} {} — {}, {} ({} pick{})",
+                        s.name, s.presence, s.status, s.picks, if s.picks == 1 { "" } else { "s" }));
                 }
             }
             Some("quit" | "q" | "exit") => {
@@ -844,7 +873,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                 make_game_player(&model, &name, shared.config.guide.as_deref()))),
             SeatKind::Human | SeatKind::Cli => match game_page(shared, &name, &label_of(seat)) {
                 Ok(gui) => {
-                    urls[i] = Some(gui.url.clone());
+                    urls[i] = Some(seat_link(&shared.config, &gui.url));
                     shared.set_in_game(seat, Some(InGame {
                         seat, opponent: if seat == a { b } else { a },
                         withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
@@ -945,6 +974,7 @@ fn between_games(
             game: bg.game, best_of, your_wins: you, their_wins: them,
             last: bg.games.last().map(|g| last_game_line(g, seat, bg.games.len())),
             chooses: bg.chooser == seat, opponent_showed: &bg.shown[1 - i],
+            last_no_winner: bg.games.last().is_some_and(|g| g.winner.is_none()),
         };
         let decision = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
             || sideboard_with_llm(client, &pool, &current, &shared.card_lines, &situation)));
@@ -970,8 +1000,8 @@ fn between_games(
         .filter(|p| p.seat == a || p.seat == b)
     {
         let kind = if page.seat == a { &kinds[0] } else { &kinds[1] };
-        let last_winner = bg.games.last().and_then(|g| g.winner);
-        if let Some(line) = between_line(bg.game, bg.chooser == page.seat, last_winner, page.seat, kind) {
+        let last = bg.games.last().map(|g| (g.winner, g.abandoned));
+        if let Some(line) = between_line(bg.game, bg.chooser == page.seat, last, page.seat, kind) {
             page.page.set_match_line(Some(line));
         }
     }
@@ -1008,11 +1038,11 @@ fn between_games(
 /// seat has no draft page: it answers at the server's terminal; a person
 /// may be on the page or the terminal client, both where they drafted
 /// (#879's review).
-fn between_line(game: usize, chooses: bool, last_winner: Option<usize>, seat: usize, kind: &SeatKind) -> Option<String> {
+fn between_line(game: usize, chooses: bool, last: Option<(Option<usize>, bool)>, seat: usize, kind: &SeatKind) -> Option<String> {
     let what = match (game, chooses) {
         (1, false) => return None,
         (1, true) => "you won the coin flip: choose play or draw".to_string(),
-        (_, true) => format!("{}: sideboard and choose play or draw", last_game_why(last_winner, seat, game - 1)),
+        (_, true) => format!("{}: sideboard and choose play or draw", last_game_why(last, seat, game - 1)),
         (_, false) => "sideboard".to_string(),
     };
     let place = if *kind == SeatKind::Cli { "at the server's terminal" } else { "where you drafted" };
@@ -1020,10 +1050,14 @@ fn between_line(game: usize, chooses: bool, last_winner: Option<usize>, seat: us
 }
 
 /// Why a seat chooses to play or draw: it lost the last game, or that game
-/// was a draw and the choice stays with whoever had it (MTR 2.2).
-fn last_game_why(winner: Option<usize>, seat: usize, game: usize) -> String {
-    match winner {
-        Some(w) if w != seat => format!("you lost game {game}"),
+/// had no winner and the choice stays with whoever had it (MTR 2.2). A
+/// game stopped at the action budget was abandoned, not drawn (#743): the
+/// match list beside this line says "abandoned", and this said "a draw"
+/// (#918). `last` is the last game's winner and whether it was abandoned.
+fn last_game_why(last: Option<(Option<usize>, bool)>, seat: usize, game: usize) -> String {
+    match last {
+        Some((Some(w), _)) if w != seat => format!("you lost game {game}"),
+        Some((None, true)) => format!("game {game} was abandoned"),
         _ => format!("game {game} was a draw"),
     }
 }
@@ -1060,7 +1094,7 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
                 gui.url = if shared.config.direct_game_ports {
                     format!("http://{}:{port}/{key}/", shared.config.advertise)
                 } else {
-                    format!("http://{}:{}/game/{port}/{key}/", shared.config.advertise, shared.config.port)
+                    format!("http://{}:{}{}", shared.config.advertise, shared.config.port, lobby_game_path(port, &key))
                 };
                 gui.notice_name = label.to_string();
                 *next = port.checked_add(1);
@@ -1070,6 +1104,24 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
         }
     }
     Err(format!("no free port in {lo}-{hi} ({last})"))
+}
+
+/// A game page's path on the lobby's own port.
+fn lobby_game_path(port: u16, key: &str) -> String {
+    format!("/game/{port}/{key}/")
+}
+
+/// The link a seat is sent for its game page. Through the lobby it is the
+/// path alone, on whatever host the seat reached the lobby by: the
+/// advertised LAN address is not reachable from the far end of a tunnel
+/// or by a tailnet name (#969), and the page and the client resolve it
+/// against their own. The host's terminal keeps the absolute `gui.url`.
+fn seat_link(config: &ServerConfig, gui_url: &str) -> String {
+    if config.direct_game_ports {
+        return gui_url.to_string();
+    }
+    let lobby = format!("http://{}:{}", config.advertise, config.port);
+    gui_url.strip_prefix(&lobby).unwrap_or(gui_url).to_string()
 }
 
 /// Every port in `lo..=hi` once, from `from` (when it is in the range)
@@ -1351,13 +1403,60 @@ fn pump(
 mod tests {
     use super::*;
 
+    /// #895: after `closed` no view goes out. A view sent while the sockets
+    /// closed told the page still open that a seat whose page had closed was
+    /// "away", and that seat's own page froze on "here".
+    #[test]
+    fn no_view_follows_the_closed_message() {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let mut set_data = mtg_draft::set_data::SetData::load(&root.join("data/sets/isd.json")).unwrap();
+        let registry = Arc::new(CardRegistry::with_all_cards());
+        set_data.filter_implemented(&registry);
+        let mut names = set_data.all_card_names();
+        names.sort();
+        let mut it = names.into_iter().cycle();
+        let packs: Vec<Vec<mtg_draft::pack::BoosterPack>> = (0..2).map(|_| (0..3).map(|_| {
+            let cards: Vec<String> = it.by_ref().take(14).collect();
+            mtg_draft::pack::BoosterPack { commons: cards[..12].to_vec(), uncommons: vec![], rare: cards[12].clone(), dfc: cards[13].clone(), foil: None }
+        }).collect()).collect();
+        let lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        let config = crate::lobby::LobbyConfig {
+            set_code: "isd".into(), set_name: set_data.set_name.clone(),
+            seats: vec![SeatKind::Human, SeatKind::Human], best_of: 3, seed: 1, guide_path: None, guide_hash: None,
+            pick_seconds: None, build_seconds: None, sideboard_seconds: None, out_dir: None,
+        };
+        let lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &lines, crate::draft_log::DraftLogger::silent()).unwrap();
+        let server = ServerConfig {
+            bind: "127.0.0.1".into(), port: 0, advertise: "127.0.0.1".into(), game_ports: (0, 0),
+            web_dir: root.join("mtg-gui"), quiet: true, out_dir: None, guide: None, save: None, direct_game_ports: false,
+        };
+        let shared = Shared::new(lobby, server, registry, lines, String::new(), set_data.set_name.clone());
+        let (tx, rx) = mpsc::channel();
+        let first = shared.add_client(0, tx);
+        shared.notify();
+        let kind = |m: String| serde_json::from_str::<serde_json::Value>(&m).unwrap()["type"].as_str().unwrap_or("").to_string();
+        assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["view"], "a view goes out while the table is open");
+        shared.quit_because("the server was stopped by Ctrl-C (SIGINT)");
+        shared.lobby().set_name(1, "Bo");
+        shared.notify();
+        assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["closed"], "nothing after closed");
+        // Nor a reply to something asked in the moment of the close; and a
+        // socket that joins the closed table is told it is closed.
+        shared.send_to(first, &serde_json::json!({"type": "refused", "reason": "late"}).to_string());
+        let (tx2, rx2) = mpsc::channel();
+        let late = shared.add_client(1, tx2);
+        shared.send_to(late, &serde_json::json!({"type": "review", "picks": []}).to_string());
+        assert_eq!(rx.try_iter().count(), 0);
+        assert_eq!(rx2.try_iter().map(kind).collect::<Vec<_>>(), ["closed"]);
+    }
+
     /// A game log that cannot be written is said, not dropped.
     #[test]
     fn a_game_log_that_cannot_be_written_says_where() {
         let dir = std::env::temp_dir().join(format!("mtg-game-log-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let outcome = GameOutcome { winner: Some(0), turns: 3, game_log: vec!["a line".into()], stalled_seat: None, abandoned: false };
+        let outcome = GameOutcome { winner: Some(0), turns: 3, game_log: vec!["a line".into()], stalled_seat: None, abandoned: false, decks: None };
         write_game_log(Some(&dir), 1, 0, 1, 1, &outcome).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("games/r1-0v1-g1.log")).unwrap(), "a line\n");
         // `games` is a file: neither the directory nor the log can be made.
@@ -1376,11 +1475,14 @@ mod tests {
         assert_eq!(between_line(1, false, None, 0, &h), None);
         assert_eq!(between_line(1, true, None, 0, &SeatKind::Cli).as_deref(),
             Some("Before game 1: you won the coin flip: choose play or draw at the server's terminal"));
-        assert_eq!(between_line(3, true, None, 0, &h).as_deref(),
+        assert_eq!(between_line(3, true, Some((None, false)), 0, &h).as_deref(),
             Some("Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted"));
-        assert_eq!(between_line(2, true, Some(1), 0, &h).as_deref(),
+        // Stopped at the action budget: abandoned, not drawn (#918).
+        assert_eq!(between_line(3, true, Some((None, true)), 0, &h).as_deref(),
+            Some("Before game 3: game 2 was abandoned: sideboard and choose play or draw where you drafted"));
+        assert_eq!(between_line(2, true, Some((Some(1), false)), 0, &h).as_deref(),
             Some("Before game 2: you lost game 1: sideboard and choose play or draw where you drafted"));
-        assert_eq!(between_line(2, false, Some(1), 1, &h).as_deref(), Some("Before game 2: sideboard where you drafted"));
+        assert_eq!(between_line(2, false, Some((Some(1), false)), 1, &h).as_deref(), Some("Before game 2: sideboard where you drafted"));
     }
 
     #[test]

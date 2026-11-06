@@ -1,0 +1,366 @@
+{
+ "night": "2026-10-27",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight contradicted the guide: WB went 2-1 (seat 4), not 0-6, and seat 6 BG went 3-0, so the 'only 3-0 was WR' claim was wrong; check colour claims against the table.",
+    "Prey Upon (71% in the guide) was my pick two, and I abandoned green for WU, which went 1-2; commit to a removal spell's colour only once that colour is really open.",
+    "My 17-land WU deck with split WW and UU costs went 1-2; play 16 with a low curve as the guide says, and 17 only with several 5-drops."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5175,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2960,
+    "output_tokens_details": {
+     "thinking_tokens": 2758
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5175
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2960,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5175,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5175,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Pack 1 picks 9 to 14 were all off-colour (Mindshrieker, Bramblecrush, Spare from Evil, Hysterical Blindness, Selhoff Occultist, Nightbird's Clutches), so settle into two colours by mid pack 1.",
+    "Red-white aggro carried a 16-creature deck with Blazing Torch x2, Furor of the Bitten x2 and Moment of Heroism to a 2-1 match record, so prioritise cheap removal and tricks in those colours.",
+    "The one match I lost, 1-2 to the BG deck with Villagers of Estwald and Boneyard Wurm, came against bigger green bodies, so value early two-drops that can race rather than trade late."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3272,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2149,
+    "output_tokens_details": {
+     "thinking_tokens": 1897
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3272
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2149,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3272,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3272,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Seat 6's BG deck went 3-0 and beat me 2-0 with Spider Spawning, two Orchard Spirits and Victim of Night, contradicting the guide's claim that the only 3-0 was WR; draft a second colour early to avoid this overlap.",
+    "My 17-land BG deck with five 5-drops, built to the guide, went 2-1 and lost round 3 0-2, so the 16-versus-17 land rule is still unproven; test 16 lands with more two-drops.",
+    "Spider Spawning and Victim of Night were in both BG decks that met, so take them early, and expect opposing Victim of Night to kill your best early threat."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5203,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3172,
+    "output_tokens_details": {
+     "thinking_tokens": 2945
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5203
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3172,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5203,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5203,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "UR",
+   "record": "0-3-0",
+   "lessons": [
+    "Don't splash Geistflame and Harvest Pyre off five Mountains with twelve Islands; the red cards were hard to cast, so either run a clean two-colour build or add real red sources.",
+    "Delver of Secrets and Stitched Drake tempo never closed out games: we lost matches that ran 19 to 32 turns, and the Round 3 blue deck beat us 2-1 with Invisible Stalker and Brimstone Volley.",
+    "Take cheap removal over Forbidden Alchemy-style filler early: our only burn was Geistflame and Harvest Pyre, and long games left our tempo plan with no answer to their fliers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3197,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2121,
+    "output_tokens_details": {
+     "thinking_tokens": 1898
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3197
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2121,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3197,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3197,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide: WB went 2-1 in matches (5-4 in games) with Bonds of Faith, Dead Weight, Rebuke and Galvanic Juggernaut, not the listed 0-6, so that sample is too thin to avoid it.",
+    "I lost 1-2 to the BG deck in 20 to 25-turn stalls with only Doomed Traveler and Vampire Interloper as fliers, so take on-colour evasion over another ground body.",
+    "My WB deck ran 17 lands with only one five-drop, Galvanic Juggernaut, against the guide's 16-land rule for low curves, and won 5 of 9 games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5232,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2623,
+    "output_tokens_details": {
+     "thinking_tokens": 2393
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5232
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2623,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5232,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5232,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "My first pick, Trepanation Blade, never made the final WR deck, and blue, green and black were all cut, so take early picks that fit the two colours you will likely end in.",
+    "Round 1's WB deck (two Avacynian Priests, Bonds of Faith) stalled my 17-creature aggro deck for 18, 17 and 33-turn games, so value evasion and removal over marginal bodies.",
+    "Round 3's WR opponent ran Scourge of Geier Reach, Crossway Vampire, Rage Thrower and two Tormented Pariah from my own colours, so check whether neighbours share your colours before committing."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3222,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2078,
+    "output_tokens_details": {
+     "thinking_tokens": 1862
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3222
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2078,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3222,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3222,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "BG",
+   "record": "3-0-0",
+   "lessons": [
+    "My 17-land BG deck went 3-0 with Prey Upon, Spidery Grasp, Victim of Night and Spider Spawning closing games, contradicting the guide's BG 1-2 and 2-1 results, so take fight removal early.",
+    "Round 1 games ran to 40 turns, and I broke the stall with fight removal and Spider Spawning rather than more ground bodies, so keep removal ahead of filler creatures.",
+    "My 9 Forest and 6 Swamp split, with double-black Victim of Night, went 6-1 in games against the guide's near-even rule, so judge pip counts alongside card quality."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5175,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2904,
+    "output_tokens_details": {
+     "thinking_tokens": 2686
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5175
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2904,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5175,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5175,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't spend picks on Runic Repetition: I took it twice and cut both, so Geistflame-style cheap removal would have done more for my 3-5 game record.",
+    "Against the BG deck (Ghoulraiser, Lumberknot, Spider Spawning), my slow Moon Herons lost 24- and 40-turn games, so value early pressure over late fliers.",
+    "Round 3's UR mirror was my only win, 2-1, and it turned on Brimstone Volley and Frightful Delusion, so keep both high in UR."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3208,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2652,
+    "output_tokens_details": {
+     "thinking_tokens": 2465
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3208
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2652,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3208,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3208,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

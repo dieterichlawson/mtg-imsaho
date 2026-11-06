@@ -481,6 +481,18 @@ pub fn stop_signal() -> Option<i32> {
     }
 }
 
+/// A stop signal as an operator knows it, for the line a run that stopped
+/// on one ends with.
+#[must_use]
+pub fn signal_name(sig: i32) -> String {
+    match sig {
+        2 => "Ctrl-C (SIGINT)".to_string(),
+        15 => "SIGTERM".to_string(),
+        1 => "SIGHUP".to_string(),
+        n => format!("signal {n}"),
+    }
+}
+
 /// Kill every in-flight `claude -p` group, from inside a signal handler:
 /// only atomics and `killpg`, which are async-signal-safe.
 pub fn kill_live_calls_from_signal() {
@@ -763,6 +775,15 @@ impl ClaudeCodeBackend {
             self.last_call_failure = Some(why.clone());
             return None;
         }
+        // No attempt can succeed, so none is made (#965).
+        if let Some(why) = system_prompt_too_long(&self.system_prompt) {
+            let msg = format!("claude -p cannot be asked: {why}");
+            crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
+            crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
+            self.last_call_failure = Some(msg.clone());
+            self.gave_up = Some(msg);
+            return None;
+        }
         // A session that has carried its window of decisions is not
         // resumed: every call to it would re-read all of them.
         if self.turns > self.window {
@@ -889,7 +910,11 @@ impl ClaudeCodeBackend {
         if let Some(s) = schema {
             if self.text_answers {
                 let full = self.answer_schema.as_deref().and_then(|t| serde_json::from_str(t).ok());
-                asked = Some(format!("{message}\n\n{}", super::answer_text::answer_format(full.as_ref().unwrap_or(s))));
+                let format = super::answer_text::answer_format(full.as_ref().unwrap_or(s));
+                // The `PROMPT` record is the message before this is put
+                // under it, and this is the line a re-ask answers to (#910).
+                crate::game_log::write(file!(), line!(), &api_label("FORMAT", &self.seat), &format);
+                asked = Some(format!("{message}\n\n{format}"));
             } else {
                 cmd.args(["--json-schema", &s.to_string()]);
             }
@@ -900,6 +925,24 @@ impl ClaudeCodeBackend {
         cmd.current_dir(&self.workdir);
         run_print_mode(&mut cmd, &self.binary, asked.as_deref().unwrap_or(message))
     }
+}
+
+/// The longest one command-line argument can be on Linux: `MAX_ARG_STRLEN`,
+/// 32 pages of 4 KiB, less the terminating NUL.
+pub const MAX_ARG_BYTES: usize = 32 * 4096 - 1;
+
+/// Why `system_prompt` cannot be sent, if it cannot: both seats hand it to
+/// the CLI as the one `--system-prompt` argument, and the kernel refuses a
+/// longer one with E2BIG on every spawn. That failure is not transient, and
+/// a draft seat retried it fourteen times over nine minutes before the run
+/// died at its first pick (#965); a draft guide is in both seats' system
+/// prompts, and nothing else in them grows without bound. Checked before
+/// the first attempt, so the seat stops at once and says why.
+pub fn system_prompt_too_long(system_prompt: &str) -> Option<String> {
+    (system_prompt.len() > MAX_ARG_BYTES).then(|| format!(
+        "the system prompt is {} bytes, and `claude -p` takes it as one argument, which Linux caps at {MAX_ARG_BYTES} bytes; \
+         a draft guide is part of it, so a shorter guide is the fix",
+        system_prompt.len()))
 }
 
 /// Everything the workspace's two `claude -p` seats do to a prepared

@@ -111,7 +111,11 @@ Options:
                          re-dealt from the seed, so the position is exact; a build
                          that deals other packs from it is refused.
                          Its decks are used as built, and its finished matches
-                         are counted, not replayed: the standings mark them
+                         are counted, not replayed: the standings mark them.
+                         The guides, the MTG_LLM_HISTORY, answer-format and
+                         pass-until settings and the set data are this run's;
+                         the snapshot records the ones it was made under, and
+                         a difference is said on stderr and in the log
   --log <path>           Write the run log here  (default draft.log)
   --quiet, -q            Suppress progress output
   --help, -h             Print this help and exit
@@ -296,7 +300,7 @@ impl Args {
             .map(|seat| SeatPolicy {
                 model: self.models[seat].clone(),
                 guide_path: self.guide_paths[seat].clone(),
-                guide_hash: self.guides[seat].as_deref().map(guide_digest),
+                guide_hash: self.guides[seat].as_deref().map(llm_client::guide_digest),
             })
             .collect()
     }
@@ -483,21 +487,13 @@ impl SeatPolicy {
             (None, _) => format!("model {}, no guide", self.model),
         }
     }
-}
 
-/// A 64-bit FNV-1a of a guide's contents, rendered hex.
-///
-/// Only has to notice an edit, so it is arithmetic rather than a
-/// dependency — and, like `match_seed`, it must not depend on a hasher
-/// whose output may change between compiler versions and silently
-/// invalidate every snapshot written before the upgrade.
-fn guide_digest(text: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in text.as_bytes() {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    /// `was` and `now` as a mismatch reads: a guide edited in place keeps
+    /// its path, and naming it twice said nothing of what changed (#950).
+    fn describe_pair(was: &Self, now: &Self) -> (String, String) {
+        let (a, b) = (was.describe(), now.describe());
+        if a == b { (format!("{a} as it was"), format!("{b} as it is now")) } else { (a, b) }
     }
-    format!("{h:016x}")
 }
 
 /// Each seat's notes, in seat order, for the snapshot.
@@ -550,6 +546,11 @@ struct DraftSave {
     /// snapshot written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deal: Option<String>,
+    /// The settings the seats' system prompts were made under besides their
+    /// guides (#949). `None` in a snapshot written before they were
+    /// recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prompt: Option<llm_client::DraftPromptSettings>,
 }
 
 /// A seat's deck as the snapshot keeps it.
@@ -573,14 +574,17 @@ struct SavedMatch {
 
 /// Refuse an argument vector `parse_args` wouldn't fully consume, and hand
 /// back the `--model-N` / `--guide-N` flags it saw so their seat numbers can
-/// be range-checked once `--players` is known. Every lookup below is an
-/// exact-match position scan, so an unrecognized or misspelled flag was
+/// be range-checked once `--players` is known. Every lookup below is by
+/// exact name, so an unrecognized or misspelled flag was
 /// silently dropped and its default silently used — a typo'd `--model` drafted
 /// with a model nobody asked for, on a seat that bills per token.
-fn validate_args(args: &[String]) -> Vec<(String, usize)> {
+///
+/// Also hands back every flag with its value, in order, for [`flag_value`].
+fn validate_args(args: &[String]) -> (Vec<(String, String)>, Vec<(String, usize)>) {
     const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log", "--seed", "--save", "--resume"];
     const BOOL_FLAGS: &[&str] = &["--quiet", "-q"];
     let mut indexed = Vec::new();
+    let mut values = Vec::new();
     let mut i = 1;
     while i < args.len() {
         let a = args[i].as_str();
@@ -590,9 +594,10 @@ fn validate_args(args: &[String]) -> Vec<(String, usize)> {
                 mtg_player::stderr_line!("Error: {a} requires a value\n\n{USAGE}");
                 std::process::exit(2);
             }
-            if let Some(index) = per_seat {
+            if let Some(index) = per_seat.filter(|_| !indexed.iter().any(|(f, _)| f == a)) {
                 indexed.push((a.to_string(), index));
             }
+            values.push((a.to_string(), args[i + 1].clone()));
             i += 2;
         } else if BOOL_FLAGS.contains(&a) {
             i += 1;
@@ -601,7 +606,16 @@ fn validate_args(args: &[String]) -> Vec<(String, usize)> {
             std::process::exit(2);
         }
     }
-    indexed
+    (values, indexed)
+}
+
+/// The value of `flag`: its last, as `mtg-draft-server` reads one. The
+/// first was taken in silence, so `$BASE_FLAGS --seed 2` drafted
+/// `$BASE_FLAGS`'s seed and the two programs read one command line two
+/// ways (#952). Looked up among the flags `validate_args` walked, so a
+/// value spelled like a flag is never read as one.
+fn flag_value(values: &[(String, String)], flag: &str) -> Option<String> {
+    values.iter().rev().find(|(f, _)| f == flag).map(|(_, v)| v.clone())
 }
 
 /// The seat number of a `--model-N` / `--guide-N` flag, if it is one.
@@ -623,13 +637,9 @@ fn parse_args() -> Args {
         mtg_player::stdout_line!("mtg-draft-runner {}", env!("CARGO_PKG_VERSION"));
         std::process::exit(0);
     }
-    let per_seat_flags = validate_args(&args);
+    let (values, per_seat_flags) = validate_args(&args);
 
-    let get = |flag: &str| -> Option<String> {
-        args.iter()
-            .position(|a| a == flag)
-            .and_then(|i| args.get(i + 1)).cloned()
-    };
+    let get = |flag: &str| -> Option<String> { flag_value(&values, flag) };
     let count = |flag: &str, default: usize| -> usize {
         get(flag).map_or(default, |s| {
             let n = s.parse().unwrap_or_else(|_| die(&format!("{flag} takes a number, got '{s}'")));
@@ -689,11 +699,9 @@ fn parse_args() -> Args {
         model_overrides,
         guide_overrides,
         per_seat_flags,
-        supplied: args
-            .iter()
-            .filter(|a| a.starts_with("--"))
-            .cloned()
-            .collect(),
+        // The flags `validate_args` walked, not every word spelled like one:
+        // `--log --seed` gave no seed.
+        supplied: values.iter().map(|(flag, _)| flag.clone()).collect(),
     };
     parsed.resolve_seats(players);
     parsed
@@ -795,6 +803,8 @@ fn validate_model_specs(models: &[String]) {
 
 fn main() {
     install_panic_hook();
+    // A Ctrl-C ends the run with its usage summary, as a fatal does (#912).
+    mtg_draft_runner::stop_on_signals();
     let mut args = parse_args();
     validate_model_specs(&args.models);
 
@@ -888,14 +898,21 @@ length its matches were played at", args.best_of);
         })
         .unwrap_or_default();
     for (seat, was, now) in &replayed_under {
-        mtg_player::stderr_line!("WARN: seat {seat}'s replayed picks were made under {}, and the rest of \
-this draft will be made under {} — this draft is a mixture of the two",
-            was.describe(), now.describe());
+        let (was, now) = SeatPolicy::describe_pair(was, now);
+        // The phrase `mtg-draft-replay` and the hosted table use (#948's
+        // review), and in the log beside the header's line, where the
+        // readers of that phrase look.
+        let warning = format!("seat {seat}: its system prompt is not the live one: its replayed picks were made \
+under {was}, and the rest of this draft will be made under {now} — this draft is a mixture of the two");
+        mtg_player::stderr_line!("WARN: {warning}");
+        resume_notes.push(warning);
     }
     if let Some(save) = &resumed {
         if save.seats.is_empty() && !save.picks.is_empty() {
-            mtg_player::stderr_line!("note: this snapshot predates the guide/model record, so what its \
-{} replayed picks were made under is unknown", save.picks.len());
+            let note = format!("this snapshot predates the guide/model record, so what its {} replayed \
+picks were made under is unknown", save.picks.len());
+            mtg_player::stderr_line!("note: {note}");
+            resume_notes.push(note);
         }
     }
 
@@ -913,9 +930,35 @@ this draft will be made under {} — this draft is a mixture of the two",
     let removed = set_data.filter_implemented(&registry);
     if !removed.is_empty() && !args.quiet {
         mtg_player::stderr_line!(
-            "Warning: {} cards not implemented, removed from draft pool",
-            removed.len()
+            "Warning: {} not implemented, removed from draft pool",
+            mtg_draft_runner::count(removed.len(), "card", "cards")
         );
+    }
+
+    // What the seats are asked under now, set included: the settings
+    // besides the guide that change a seat's system prompt, said in the
+    // words `mtg-draft-replay` uses for kept positions (#949, #951).
+    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
+    let reference_digest = llm_client::reference_digest(&set_data, &card_reference);
+    let live_prompt = llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str))
+        .about(&reference_digest);
+    if let Some(save) = resumed.as_ref().filter(|s| !s.picks.is_empty()) {
+        let path = args.resume.as_deref().unwrap_or_default();
+        let notes = match &save.prompt {
+            Some(was) => was.unlike(&live_prompt, !save.matches.is_empty())
+                .into_iter()
+                .map(|why| format!("--resume {path}: its system prompt is not the live one: {why}"))
+                .collect(),
+            // Its guides are checked above; the rest is unknown.
+            None if !save.seats.is_empty() => vec![format!("--resume {path}: this snapshot predates the \
+MTG_LLM_HISTORY / answer-format / pass-until / set record, so whether its replayed picks and matches were \
+made under these is unknown")],
+            None => Vec::new(),
+        };
+        for note in notes {
+            mtg_player::stderr_line!("note: {note}");
+            resume_notes.push(note);
+        }
     }
 
     let sheets = SheetData::from_set_data(&set_data).unwrap_or_else(|e| {
@@ -934,8 +977,8 @@ this draft will be made under {} — this draft is a mixture of the two",
     }
     if !args.quiet {
         mtg_player::stderr_line!(
-            "=== {} Draft: {} players, best-of-{} ===",
-            set_data.set_name, args.players, args.best_of
+            "=== {} Draft: {}, best-of-{} ===",
+            set_data.set_name, mtg_draft_runner::count(args.players, "player", "players"), args.best_of
         );
         mtg_player::stderr_line!("Log file: {}", args.log);
         // Which model each seat is, and which bill per call: the default
@@ -1020,7 +1063,7 @@ resume with the --best-of its run was played at)", args.best_of) };
     let resumed_from = args.resume.as_deref().map(|path| (path, replaying.len()));
     let replayed_note: Vec<(usize, String, String)> = replayed_under
         .iter()
-        .map(|(seat, was, now)| (*seat, was.describe(), now.describe()))
+        .map(|(seat, was, now)| { let (was, now) = SeatPolicy::describe_pair(was, now); (*seat, was, now) })
         .collect();
     log_header!(log, &set_data.set_name, args.players, args.best_of,
         args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from,
@@ -1044,7 +1087,6 @@ resume with the --best-of its run was played at)", args.best_of) };
     }
 
     // Build card reference with oracle text for all cards in the set
-    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
 
     // Create LLM clients for each drafter (each may use a different model)
     // What a seat has to know about the table it is at, which used to be an
@@ -1121,6 +1163,7 @@ resume with the --best-of its run was played at)", args.best_of) };
             best_of: Some(args.best_of),
             notes,
             deal: Some(deal.clone()),
+            prompt: Some(live_prompt.clone()),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
@@ -1307,8 +1350,11 @@ substituting {} (the first card). Response: {}",
                         // prompt: a guided seat's picks replayed without
                         // its guide were another question (#920).
                         "guide": args.guides[seat], "history": mtg_player::llm::history_exchanges(),
+                        // And the set it describes, which a replay rebuilds
+                        // from the set file it finds (#951).
+                        "reference": reference_digest,
                         // Only a `claude -p` seat's prompt says how it answers.
-                        "text_answers": matches!(args.models[seat].split(':').next(), Some("cc" | "claude-code"))
+                        "text_answers": llm_client::asks_in_text(&args.models[seat])
                             .then(llm_client::draft_text_answers),
                     }));
                 }
@@ -1384,6 +1430,7 @@ an interruption from here costs the build or the match in progress, not the run"
         if !args.quiet {
             mtg_player::stderr_line!("Taking the {} decks from the snapshot...", args.players);
         }
+        llm_client::note_replayed_decks(args.players);
         resumed_decks.iter().enumerate().map(|(seat, saved)| {
             log_deck_building!(log, seat, &saved.deck.maindeck, &saved.deck.lands,
                 &saved.deck.sideboard, &[], saved.retries, saved.fallback);
@@ -1610,6 +1657,7 @@ and the FINAL STANDINGS below record none",
                                     game: bg.game, best_of, your_wins: you, their_wins: them,
                                     last: bg.games.last().map(|g| last_game_line(g, seat, bg.games.len())),
                                     chooses: bg.chooser == seat,
+                                    last_no_winner: bg.games.last().is_some_and(|g| g.winner.is_none()),
                                     opponent_showed: &bg.shown[1 - i],
                                 };
                                 let decision = sideboard_with_llm(client, pools[i], &current[i], card_lines, &situation);
@@ -1666,6 +1714,7 @@ and the FINAL STANDINGS below record none",
 
         let mut played = played.into_iter();
         let from_save: Vec<bool> = carried.iter().map(Option::is_some).collect();
+        llm_client::note_replayed_matches(from_save.iter().filter(|&&c| c).count());
         let results: Vec<MatchResult> = carried.into_iter()
             .map(|c| c.unwrap_or_else(|| played.next().expect("a played result for every match not carried")))
             .collect();
@@ -1689,8 +1738,7 @@ the snapshot, not by this one; its games are in that run's log",
                 round_num,
                 result.player_a,
                 result.player_b,
-                result.wins_a,
-                result.wins_b,
+                &mtg_draft_runner::standings::match_score(result.wins_a, result.wins_b, &result.games),
                 result.winner(),
             );
             for (game_num, game) in result.games.iter().enumerate() {
@@ -1913,7 +1961,7 @@ mod snapshot_match_tests {
     use mtg_draft::tournament::{GameOutcome, MatchResult, Tournament, TournamentConfig, BYE};
 
     fn game(winner: usize) -> GameOutcome {
-        GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false }
+        GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None }
     }
 
     /// Round 1 of a fresh 4-seat pod as the runner would record it, the

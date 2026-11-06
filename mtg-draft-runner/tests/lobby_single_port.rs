@@ -54,8 +54,10 @@ fn the_game_page_and_its_socket_come_through_the_lobbys_port() {
     }
     let server = Server::start("single-port", "human,ai", &["--pick-seconds", "1", "--build-seconds", "2"]);
     let url = match_url(&server);
-    let prefix = format!("http://127.0.0.1:{}/game/", server.port);
-    assert!(url.starts_with(&prefix) && url.ends_with('/'), "the link is through the lobby: {url}");
+    // A path, on whatever host the seat reached the lobby by: the
+    // advertised address is not the tunnel's or the tailnet's (#969).
+    let prefix = "/game/";
+    assert!(url.starts_with(prefix) && url.ends_with('/'), "the link is a path through the lobby: {url}");
     let (game_port, key) = url[prefix.len()..].trim_end_matches('/').split_once('/').expect("/game/<port>/<key>/");
     let game_port: u16 = game_port.parse().expect("a port in the link");
     assert!(key.len() >= 16, "the link carries the page's key: {url}");

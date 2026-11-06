@@ -10,6 +10,17 @@
 import { colorKey, manaValue, parseLine, type ColorKey } from "./cards.js";
 import type { CardInfo, ClientMessage, Deck } from "./protocol.js";
 
+/** "1 card", "40 cards": a count with its noun, singular at one, as the
+ *  runner's `mtg_draft_runner::count` says it (#914, #946's review). */
+export function count(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "22 spells + 17 lands = 39", the deck's count line. */
+export function deckSum(c: { spells: number; lands: number; total: number }): string {
+  return `${count(c.spells, "spell", "spells")} + ${count(c.lands, "land", "lands")} = ${c.total}`;
+}
+
 export const BASICS: readonly string[] = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
 export const MIN_DECK = 40;
 /** The server's own hallucination guard on one basic's count. */
@@ -75,7 +86,7 @@ export function problem(edit: DeckEdit, pool: CardInfo[]): string | null {
   }
   const c = counts(edit);
   const short = MIN_DECK - c.total;
-  if (short > 0) return `Deck has ${c.total} cards (need at least ${MIN_DECK}). Add ${short} more ${short === 1 ? "card or basic land" : "cards or basic lands"}.`;
+  if (short > 0) return `Deck has ${count(c.total, "card", "cards")} (need at least ${MIN_DECK}). Add ${short} more ${short === 1 ? "card or basic land" : "cards or basic lands"}.`;
   return null;
 }
 

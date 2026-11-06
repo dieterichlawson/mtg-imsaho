@@ -187,7 +187,9 @@ The stops are where a decision may be owed, and not where none is:
 - a blocker declared against its attacker;
 - its own first main phase, and a later main phase of its own when a land
   drop or a sorcery-speed cast or activation is on offer — not the main
-  phase it said it was done with;
+  phase it said it was done with. A first main phase with nothing on offer
+  is passed by the engine without asking; the first offer after it is the
+  stop instead, that turn or the opponent's next (#972);
 - a target or set or resolution prompt, once the opponent has put
   something on the stack since the pass began. The prompt is always
   asked; one the seat's own cast or trigger raises (its X, its target, a
@@ -363,6 +365,16 @@ header rows are the ones starting with a timestamp digit.
   while Gemini and the `claude -p` seat — whose result object carries no
   thinking block — ask for it in the JSON as a `thoughts` field and take it
   out of the payload once captured.
+- `FORMAT` — the lines a text-answering `claude -p` seat puts under the
+  prompt ("Answer with only this JSON object: ..." and its fields), which
+  the `PROMPT` record does not hold; one per call, so a retried call
+  writes it again. A game seat's follows its `PROMPT` (a re-ask's too). A
+  draft seat's (`[Seat N] FORMAT`) is written as the call is made, so it
+  comes before the records the draft log writes afterwards: the pick's
+  `PROMPT`, every `DECK_PROMPT attempt`, the `SIDEBOARD_PROMPT`. A pick
+  asked again writes `[Seat N] REASK_PROMPT`, the sentence it added under
+  the pick's prompt. Read them beside a `REASK` to see what the seat was
+  told to send.
 - `MALFORMED`, `VALIDATION`, `BLOCKER_VALIDATION` — the model answered with
   something unusable and the harness fell back (usually to option 0 / pass).
   Grep these first when a seat plays nonsense.
@@ -500,7 +512,10 @@ the deck build, and the games all through `claude -p`.
 `draft.log` in the working directory — always pass a path under `logs/`
 instead. The log holds the packs, every pick with its prompt and response, the
 deck builds, the match results, and the final standings; the run also prints
-standings and a token-usage summary to stderr.
+standings and a token-usage summary to stderr. A run that stops early (a
+fatal, or Ctrl-C, SIGTERM or SIGHUP, which exit 128 + the signal) prints the
+summary of what it spent so far, headed "run stopped early", and a resumed
+run's summary says which picks, decks and matches came from the snapshot.
 
 `--help` and `--version` answer and exit without drafting, an unknown flag or
 a missing value is refused, and an unknown provider is refused by name — a
@@ -511,17 +526,19 @@ before game 3: the score, how the last game went, the cards the opponent
 has shown (public zones, tokens left out), and its pool with the counts it
 is playing now. It answers in the deck build's shape plus `play_first`,
 which is read only when the choice is its own — the last game's loser
-chooses, and after a drawn game whoever chose before. Repeating the counts
+chooses, and after a game with no winner (drawn or abandoned) whoever
+chose before. Repeating the counts
 keeps the deck; an answer that does not make a legal deck keeps it too,
 with no retry. The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
-`_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: ...; out: ...`
-line (or `no change`) with `; plays first` or `; draws first` for the
-chooser. Game 1's player on the play is a coin flip's winner, who plays —
+`_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: A; B | out: C | Plains +1`
+line (or `no change`) with ` | plays first` or ` | draws first` for the
+chooser: card names are joined by `; `, since a name may hold a comma
+("Grimgrin, Corpse-Born"), and the parts by ` | `. Game 1's player on the play is a coin flip's winner, who plays —
 no seat is asked before game 1. The hosted table (`mtg-draft-server`) writes
 the same line for a seat no model answered, with no prompt or response
 before it: a person's sideboarding and choice, `kept the deck (<why>)` for a
 seat the table plays for (AI or person) or an AI seat whose model gave no
-answer, `; plays first
+answer, ` | plays first
 (no choice was made)` when the clock chose, and a game-1 line for the coin
 flip's winner. The question is one cached schema for every
 pool, like the deck build's, and costs at most two calls a seat a match;
@@ -533,6 +550,10 @@ round, the deck builds and every match, and `--resume <path>` carries on
 from one: the recorded picks are replayed without a model call, the decks
 are used as built and the finished matches are counted. A build that deals
 other packs from the snapshot's seed (its card pool changed) is refused.
+The guides, the `MTG_LLM_HISTORY`, answer-format and pass-until settings
+and the set data are the resuming run's; the snapshot records what its
+picks and matches were made under, and a difference is said on stderr and in the log (a
+guide as a `WARN`, a setting as "its system prompt is not the live one").
 
 `scripts/draft-loop/night.sh` is this run as a nightly routine plays it:
 eight `cc:claude-haiku-5-5` seats, best-of-3, the date as the seed, the
@@ -577,11 +598,12 @@ one outright. A pick replays as the prompt it was live on any build that
 renders pick prompts as the drafting build did
 (`mtg-draft-runner/tests/kept_picks_replay.rs`). A position records its
 seat's guide, the `MTG_LLM_HISTORY` and the `MTG_CLAUDE_CODE_DRAFT_ANSWERS`
-it was asked under, and is asked again under that guide;
+it was asked under and a digest of the set it described (its name, card
+reference and rarities), and is asked again under that guide;
 `mtg-draft-replay --guide FILE` asks every position under one file instead.
 A position whose system prompt the replay cannot make as it was live (kept
-before guides were recorded, or replayed under another history or answer
-format) is said on stderr, and `draft-replay.py` keeps it in the row as
+before guides were recorded, or replayed under another history, answer
+format or set file) is said on stderr, and `draft-replay.py` keeps it in the row as
 `unlike_live` and counts it in a WARN at the end of the run (#920). The positions and reference
 behind phase 4 are kept in `reports/decision-eval/2026-10-20-draft/`.
 

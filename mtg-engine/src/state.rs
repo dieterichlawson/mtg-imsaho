@@ -59,45 +59,26 @@ pub enum StackEntry {
         /// longer existed by the time anyone could answer it.
         #[serde(default)]
         loyalty: bool,
-        /// Its source's transform count as it went on the stack, stamped by
-        /// `put_on_stack` (CR 701.27f).
+        /// The source's transform count as this went on the stack (CR
+        /// 701.28f); stamped by [`GameState::put_on_stack`]. `None` on an
+        /// entry made before it was recorded, which is not checked.
         #[serde(default)]
-        source_transforms: u32,
-        /// Whether its source had its back face up as it went on the stack:
-        /// the face whose ability this is (CR 712.8d-e), which it stays if
-        /// the permanent transforms in response (CR 113.7a). Stamped by
-        /// `put_on_stack`, after the costs are paid; no double-faced card's
-        /// ability has a cost that moves its source, which would have turned
-        /// it front face up by then (CR 712.8a).
+        source_transforms: Option<u32>,
+        /// The source's name as this went on the stack; stamped by
+        /// [`GameState::put_on_stack`]. CR 113.7a: the ability exists
+        /// independently of its source, so it is named after the object that
+        /// activated it, not after whatever that card is now. Garruk, the
+        /// Veil-Cursed killed by his own loyalty cost is a card in the
+        /// graveyard showing its front face, and the ability was named
+        /// "Garruk Relentless ability" on the stack, in the RESPOND TO
+        /// heading, in its search prompt and in the log (#980). `None` on an
+        /// entry from before it was recorded, which falls back to the source.
         #[serde(default)]
-        source_back_face: bool,
+        source_name: Option<String>,
     },
 }
 
 impl StackEntry {
-    /// The permanent whose ability this is, if it is an ability.
-    #[must_use]
-    pub fn ability_source(&self) -> Option<ObjectId> {
-        match self {
-            StackEntry::Trigger(t) => Some(t.source.id),
-            StackEntry::Ability { source_id, .. } => Some(*source_id),
-            StackEntry::Spell(_) => None,
-        }
-    }
-
-    /// Whether this is an ability of `object` put on the stack before
-    /// `object` last transformed, so that it may not transform it now
-    /// (CR 701.27f).
-    #[must_use]
-    pub fn predates_a_transform_of(&self, object: &GameObject) -> bool {
-        let put = match self {
-            StackEntry::Trigger(t) if t.source.id == object.id => t.source.transforms,
-            StackEntry::Ability { source_id, source_transforms, .. } if *source_id == object.id => *source_transforms,
-            _ => return false,
-        };
-        put != object.transforms
-    }
-
     /// Get the `ObjectId` if this is a spell.
     #[must_use]
     pub fn as_spell(&self) -> Option<ObjectId> {
@@ -113,20 +94,6 @@ impl StackEntry {
         match self {
             StackEntry::Trigger(t) => Some(t),
             StackEntry::Spell(_) | StackEntry::Ability { .. } => None,
-        }
-    }
-
-    /// Description for display purposes.
-    #[must_use]
-    pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
-        match self {
-            StackEntry::Spell(id) => format!("Spell({})", id.0),
-            StackEntry::Trigger(t) => t.display_name(registry),
-            StackEntry::Ability { behavior_card_id, .. } => {
-                let name = registry.card_data(*behavior_card_id)
-                    .map_or_else(|| "Unknown".into(), |d| d.name.clone());
-                format!("{name} ability")
-            }
         }
     }
 }
@@ -642,18 +609,17 @@ pub(crate) fn in_zone_of(obj: &GameObject, zone: Zone, player: PlayerId) -> bool
 impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
     pub fn put_on_stack(&mut self, mut entry: StackEntry) {
-        // CR 701.27f: an ability that transforms its own source asks, as it
-        // resolves, whether the source has transformed since now.
-        let (count, back) = entry.ability_source()
-            .and_then(|id| self.get_object(id))
-            .map_or((0, false), |o| (o.transforms, o.is_transformed));
+        // CR 701.28f: "since the ability was put onto the stack" is measured
+        // from here, so the source's transform count is recorded here.
         match &mut entry {
-            StackEntry::Trigger(t) => t.source.transforms = count,
-            StackEntry::Ability { source_transforms, source_back_face, .. } => {
-                *source_transforms = count;
-                *source_back_face = back;
-            }
             StackEntry::Spell(_) => {}
+            StackEntry::Trigger(t) => {
+                t.source.source_transforms = self.get_object(t.source.id).map(|o| o.transforms);
+            }
+            StackEntry::Ability { source_id, source_transforms, source_name, .. } => {
+                *source_transforms = self.get_object(*source_id).map(|o| o.transforms);
+                *source_name = self.get_object(*source_id).map(|o| o.name.clone());
+            }
         }
         let controller = match &entry {
             StackEntry::Spell(id) => self.get_object(*id).map(|o| o.controller),
@@ -2133,8 +2099,7 @@ impl GameState {
                 self.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature_id))
             }
             CreatureFilter::Blocking => {
-                self.combat.as_ref().is_some_and(|c|
-                    c.blocker_assignments.values().any(|bs| bs.contains(&creature_id)))
+                self.combat.as_ref().is_some_and(|c| c.is_blocking(creature_id))
             }
             CreatureFilter::ControlledByAttachedPlayer => {
                 self.get_object(source_id)
@@ -3229,11 +3194,15 @@ impl GameState {
     /// combat state says was blocked but never says attacked. (CR 509.2's
     /// "blocked forever" is about an attacker whose *blockers* leave; a
     /// creature removed from combat is not an attacker at all, CR 506.4c.)
+    /// The same holds the other way: removing an attacker takes its list of
+    /// blockers with it, but those blockers stay blocking creatures (CR
+    /// 510.1d) — only their own removal ends that (#983).
     pub fn remove_from_combat(&mut self, id: ObjectId) {
         if let Some(ref mut combat) = self.combat {
             combat.attackers.remove(&id);
             combat.blocker_assignments.remove(&id);
             combat.blocked_attackers.remove(&id);
+            combat.blocking_creatures.remove(&id);
             combat.planeswalker_defenders.remove(&id);
             combat.dealt_first_strike.remove(&id);
             for blockers in combat.blocker_assignments.values_mut() {
@@ -3843,6 +3812,33 @@ impl GameState {
             return name.to_string();
         }
         self.get_object(id).map(|o| o.name.clone()).unwrap_or_default()
+    }
+
+    /// The name an activated ability's source goes by: as it was when the
+    /// ability went on the stack (CR 113.7a), else the source's own name now.
+    /// The face up now is not the one that had the ability once the source
+    /// has left the battlefield or flipped (#980).
+    #[must_use]
+    pub fn ability_source_name(&self, entry: &StackEntry, registry: &crate::cards::CardRegistry) -> Option<String> {
+        match entry {
+            StackEntry::Ability { source_name: Some(name), .. } => Some(name.clone()),
+            StackEntry::Ability { source_id, .. } => Some(self.name_of(*source_id, registry)),
+            StackEntry::Spell(_) | StackEntry::Trigger(_) => None,
+        }
+    }
+
+    /// `obj_name` for the source of whatever is resolving: "Name (#id)",
+    /// with the name an activated ability went on the stack under when
+    /// `id` is that ability's source (CR 113.7a). What a resolving ability
+    /// asks or logs is headed by it, and Garruk, the Veil-Cursed's search,
+    /// after his own cost killed him, was "Garruk Relentless (#3)" (#980).
+    #[must_use]
+    pub fn resolving_source_name(&self, id: ObjectId) -> String {
+        match &self.resolving_ability {
+            Some(StackEntry::Ability { source_id, source_name: Some(name), .. }) if *source_id == id =>
+                format!("{name} (#{})", id.0),
+            _ => self.obj_name(id),
+        }
     }
 
     /// Card types of the object: the union of the active face's types and any
@@ -4468,9 +4464,12 @@ pub struct GameObject {
     #[serde(default)]
     pub is_transformed: bool,
 
-    /// How many times it has transformed. An ability of its own that
-    /// transforms it compares this with the count as the ability went on the
-    /// stack, and does nothing if they differ (CR 701.27f).
+    /// How many times this object has transformed. It only ever counts up.
+    ///
+    /// CR 701.28f: an ability of a permanent that tries to transform it does
+    /// so only if the permanent hasn't transformed since the ability was put
+    /// onto the stack. The stack entry records this count as it goes on
+    /// ([`GameState::put_on_stack`]), and `transform_quietly` compares (#987).
     #[serde(default)]
     pub transforms: u32,
 
@@ -4737,6 +4736,17 @@ pub struct CombatState {
     /// which `blocker_assignments` alone can't express once its list empties.
     #[serde(default)]
     pub blocked_attackers: IdSet,
+    /// Creatures that blocked when blockers were declared and have not
+    /// themselves been removed from combat: the blocking creatures (CR
+    /// 509.1g). The mirror of `blocked_attackers`. A blocker whose attacker
+    /// leaves combat is still a blocking creature, blocking nothing — it
+    /// assigns no combat damage (CR 510.1d), but it still counts for
+    /// whether the phase gets a first-strike step (CR 510.4) and for
+    /// "blocking creature" (CR 506.4). `blocker_assignments` alone can't say
+    /// this once the attacker's entry is gone (#983, the blocker side of
+    /// #725). Read through `CombatState::blocking`.
+    #[serde(default)]
+    pub blocking_creatures: IdSet,
     /// Creatures that had first/double strike when first-strike combat damage
     /// was dealt (CR 510.5): they don't deal damage again in the regular
     /// combat damage step unless they have double strike.
@@ -4764,6 +4774,25 @@ impl CombatState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether `id` is a blocking creature (CR 509.1g) — including one
+    /// blocking nothing because its attacker left combat (CR 510.1d).
+    ///
+    /// Also reads `blocker_assignments`, so a save from before
+    /// `blocking_creatures` existed answers the same way it used to.
+    #[must_use]
+    pub fn is_blocking(&self, id: ObjectId) -> bool {
+        self.blocking_creatures.contains(&id)
+            || self.blocker_assignments.values().any(|bs| bs.contains(&id))
+    }
+
+    /// Every blocking creature (see `is_blocking`), in id order.
+    #[must_use]
+    pub fn blocking(&self) -> std::collections::BTreeSet<ObjectId> {
+        self.blocking_creatures.iter().copied()
+            .chain(self.blocker_assignments.values().flatten().copied())
+            .collect()
     }
 }
 
@@ -4907,7 +4936,7 @@ pub const OPENING_HAND_SIZE: usize = 7;
 pub struct TriggerOrderOption {
     /// The object whose ability this is.
     pub source: ObjectId,
-    /// Its name, from the face that is up.
+    /// Its name, from the face the ability triggered from (#996).
     pub source_name: String,
     /// Its power and toughness, when it is a creature on the battlefield.
     pub power_toughness: Option<(i32, i32)>,

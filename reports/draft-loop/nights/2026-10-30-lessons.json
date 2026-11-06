@@ -1,0 +1,366 @@
+{
+ "night": "2026-10-30",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight contradicted the guide: my BG deck with Spider Spawning, Vampire Interloper and Orchard Spirit still went 1-2, its flier answers thin (two Spidery Grasp, no Somberwald Spider); take one early.",
+    "Land count did not decide tonight: my 17-land BG deck lost R2 1-2 and R3 1-2, so evasion, not an 18th land, was the gap.",
+    "I ran exactly three evasive finishers, meeting the guide's minimum, yet lost; with ground bodies like Villagers and Lumberknot filling the deck, take a fourth flier or reach creature."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6381,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2911,
+    "output_tokens_details": {
+     "thinking_tokens": 2692
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6381
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2911,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6381,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6381,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Fiend Hunter, my first-pick P1p1, never made the BR deck, so white was never a real option; commit to a first-pick colour pair early or take a flexible pick that fits the open colours.",
+    "Both of my losses came from fliers (two Stitched Drakes, Battleground Geist) that my BR pool couldn't block or remove beyond Harvest Pyre, so prioritize cheap flier answers in Innistrad.",
+    "Games 18 and 22 turns long against BG show my deck couldn't close, so favor evasive finishers like Crossway Vampire over grindy filler like Walking Corpse."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3190,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1134,
+    "output_tokens_details": {
+     "thinking_tokens": 921
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3190
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1134,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3190,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3190,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Against BR, my WG lost 0-2 despite two Slayer of the Wicked and Smite the Monstrous, so the guide's advice to block early and value two-drops over top-end is the thing to follow.",
+    "The guide says slow Moon Heron loses to BG, yet my two Moon Herons and Somberwald Spiders won 2-1 against BG, though my games were only 4-4 overall.",
+    "Guide says 17 lands with a low curve went 1-2, but my 17-land WG went 2-1 with 9 Forest and 8 Plains, so test 16 lands with this low curve before settling it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6401,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4154,
+    "output_tokens_details": {
+     "thinking_tokens": 3944
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6401
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4154,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6401,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6401,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "Prioritise the Stitched Drake and Armored Skaab pairs: flyers and cheap blockers won the BR match 2-0 in 19 and 16 turns, while the 33- and 34-turn WG games showed grindy boards need a finisher.",
+    "Build the mana for your pips: this UB deck ran 11 Island and 6 Swamp despite Typhoid Rats, Walking Corpse, Diregraf Ghoul and Sensory Deprivation wanting black early; I'd go 9/8.",
+    "Cut-level fillers like Delver, Dissipate, Think Twice, Ghoulcaller's Bell and Lost in the Mist went unplayed; take a real two-drop or finisher over them in packs 2 and 3."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3190,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2288,
+    "output_tokens_details": {
+     "thinking_tokens": 2030
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3190
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2288,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3190,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3190,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Ground filler sank my BR deck: two Manor Skeletons, Feral Ridgewolf and Gruesome Deformity lost long stalls, so the guide's Manor Skeleton skip was right; cap ground bodies at a few.",
+    "My BR had one flier (Bloodgift Demon) and went 0-2 in round 1 and round 3 stalls of 16 to 26 turns; take Falkenrath Noble or Morkrut Banshee evasion over a second Skeleton.",
+    "The guide's BR 55% did not hold: my Geistflame-heavy BR went 1-2 while seat 5's BR with Falkenrath Noble went 3-0, so BR needs fliers, not filler."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6409,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2927,
+    "output_tokens_details": {
+     "thinking_tokens": 2682
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6409
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2927,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6409,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6409,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Prioritise cheap black removal (Dead Weight, Victim of Night, Tribute to Hunger) and early creatures; this BR deck went 6-0 in games with 15 creatures and Into the Maw of Hell on top.",
+    "Stop taking Burning Vengeance: I took two copies at picks 11 and 12 of pack 2 and cut both, so a second on-colour creature or removal spell was the better pick.",
+    "Four white picks (Rebuke, Moment of Heroism, Urgent Exorcism, Caravan Vigil) never made the deck, so once black-red was clear, take on-colour creatures over them."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3231,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2460,
+    "output_tokens_details": {
+     "thinking_tokens": 2242
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3231
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2460,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3231,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3231,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "WU",
+   "record": "0-3-0",
+   "lessons": [
+    "Tonight contradicted the guide: my WU deck with 9 Plains and 8 Island went 0-3 against BR, BR and WR, so the 'WU 55%' figure and the 10-Plains anecdote did not carry over.",
+    "Four Delver of Secrets were weak early plays in my 0-3 deck, and games ran 16 to 21 turns, so Delver should not count as a removal-backed finisher or a cheap threat.",
+    "Against BR and WR aggro, prioritise on-colour two-drops and removal for fliers over the Delver copies and ground filler like Unruly Mob and Thraben Purebloods that filled my curve."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6428,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1837,
+    "output_tokens_details": {
+     "thinking_tokens": 1613
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6428
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1837,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6428,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6428,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Don't assume a 17-creature red-white aggro curve closes out: my deck went 4-2 in games, but lost 0-2 to BR in 16 and 18 turn games, so draft more removal and finishers.",
+    "I left Charmbreaker Devils and Rage Thrower in the sideboard for curve, yet my round 3 wins came in 21 and 26 turns, so take the bigger late-game threat over another two-drop.",
+    "My two late Cobbled Wings picks never made the deck, while Riot Devils and Mausoleum Guard did; take playables in your colours over speculative pickups."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3273,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2591,
+    "output_tokens_details": {
+     "thinking_tokens": 2384
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3273
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2591,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3273,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3273,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

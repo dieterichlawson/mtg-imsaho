@@ -266,7 +266,13 @@ impl Demand {
                 && !tapped.iter().any(|(id, _)| *id == s.object_id))
             .cloned()
             .collect();
-        greedy_autotap(&self.cost, pool, &rest, &[]).is_some()
+        // X = 0 is always a legal announcement (CR 107.3, 601.2b), so a
+        // cost with X is payable exactly when the rest of it is. The planner
+        // refuses any cost containing X, which made Kessig Wolf Run's
+        // `{X}{R}{G}, {T}` — and every X spell in hand or graveyard — look
+        // unpayable, and so never protected from a plan that strands it
+        // (#977).
+        greedy_autotap(&self.cost.without_x(), pool, &rest, &[]).is_some()
     }
 }
 

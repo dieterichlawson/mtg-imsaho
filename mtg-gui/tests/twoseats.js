@@ -15,7 +15,7 @@ const { startRunner, finish } = require("./children.js");
 function fail(msg) { console.error("FAIL: " + msg); process.exitCode = 1; }
 
 async function main() {
-  const { runner, urls, output } = await startRunner(
+  const { runner, urls, output, gone, exited } = await startRunner(
     ["--p1", "gui:0", "--p2", "gui:0", "--seed", "21", "--deck1", "red-green", "--deck2", "blue-white", "-q"]);
   const browser = await chromium.launch();
   try {
@@ -23,7 +23,7 @@ async function main() {
     for (const p of [urls["--p1"], urls["--p2"]]) {
       const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
       page.on("pageerror", e => fail(`page ${p}: ${e.message}`));
-      await page.goto(p);
+      await page.goto(p, { timeout: 15000 });
       pages.push(page);
     }
     const asked = async (page) => page.evaluate(() => !!(window.mtg && window.mtg.decision));
@@ -32,7 +32,13 @@ async function main() {
     const answeredBy = [0, 0];
     for (let round = 0; round < 60 && answered < 40; round++) {
       // Whichever page is asked answers; both at once is the failure.
-      await Promise.race(pages.map(p => p.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 30000 }).catch(() => null)));
+      await Promise.race([...pages.map(p => p.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 30000 }).catch(() => null)), gone]);
+      // A runner gone before its game ended is the failure, said as itself:
+      // the loop sat out its rounds and could still end "ok" (#943's review).
+      if (exited() && !(await pages[0].evaluate(() => !!window.mtg.gameOver))) {
+        fail(`the runner exited (${exited().sig || exited().code}) mid-game:\n${output().slice(-1500)}`);
+        break;
+      }
       const flags = await Promise.all(pages.map(asked));
       if (flags[0] && flags[1]) { fail("both pages asked at once"); break; }
       const i = flags[0] ? 0 : flags[1] ? 1 : -1;

@@ -19,7 +19,7 @@ async function main() {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-    await page.goto(urls["--p1"]);
+    await page.goto(urls["--p1"], { timeout: 15000 });
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     await page.evaluate(() => { const m = window.mtg; m.ws.onclose = () => {}; m.ws.close(); });
     const ids = await page.evaluate(() => [window.mtg.view.your_hand[0].object_id, window.mtg.view.your_hand[1].object_id]);

@@ -438,3 +438,28 @@ fn the_page_labels_every_counter_kind_as_the_engine_does() {
         assert!(src.contains(&entry), "render.ts's COUNTER_LABEL lacks `{entry}`");
     }
 }
+
+/// The page says a keyword by `keywordLine`'s rule — the serde name's
+/// words, lowercased — and badges it from `KEYWORD_SHORT`. Held here to the
+/// engine's `Keyword::label` and to every variant, so a keyword whose label
+/// is not its words, or one the badge table lacks, fails here and not on a
+/// person's screen as "FirstStrike" (#955) or a cut-off serde name.
+#[test]
+fn the_page_names_every_keyword_as_the_engine_does() {
+    use mtg_engine::types::Keyword;
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/src/render.ts"))
+        .expect("the page's renderer");
+    for k in Keyword::ALL {
+        let key = serde_json::to_value(k).unwrap();
+        let key = key.as_str().expect("a keyword is a bare string");
+        let mut words = String::new();
+        for (i, c) in key.chars().enumerate() {
+            if c.is_uppercase() && i > 0 {
+                words.push(' ');
+            }
+            words.extend(c.to_lowercase());
+        }
+        assert_eq!(words, k.label(), "keywordLine would say {key} as {words:?}");
+        assert!(src.contains(&format!("{key}: \"")), "render.ts's KEYWORD_SHORT lacks {key}");
+    }
+}

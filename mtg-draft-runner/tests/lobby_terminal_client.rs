@@ -67,7 +67,8 @@ fn the_terminal_client_drafts_builds_and_names_the_game_link() {
     }
     let text = out.lock().unwrap().clone();
     assert!(text.contains("no pack in front of you") || text.contains("Pack 1 pick 2 of 14"), "{text}");
-    assert!(text.contains("your pool (") , "the pool is listed while drafting:\n{text}");
+    // The pool is one line above the pack, listed by `pool` (#894).
+    assert!(text.contains("your pool: "), "the pool is counted while drafting:\n{text}");
     assert!(server.log_text().contains("[Seat 0] PICK Pack 3 Pick 14 |"), "every pick was the person's");
 
     // Build: 23 spells, 17 lands, ready.
@@ -215,7 +216,7 @@ fn the_coin_flips_winner_chooses_from_the_client() {
     assert!(terminal.contains("round 1: game 1: seat 0 chose to draw first"), "{terminal}");
     // The log records a person's choice as it does an AI seat's (#878): it
     // was a line on the host's terminal and nowhere else.
-    server.wait_for_log("[Seat 0] SIDEBOARD before game 1: no change; draws first", Duration::from_secs(10));
+    server.wait_for_log("[Seat 0] SIDEBOARD before game 1: no change | draws first", Duration::from_secs(10));
 
     // Game 1 conceded on the game page; before game 2 the person swaps a
     // card from the client, and the log says which.
@@ -246,7 +247,7 @@ fn the_coin_flips_winner_chooses_from_the_client() {
     let log = server.wait_for_log("[Seat 0] SIDEBOARD before game 2:", Duration::from_secs(30));
     let line = log.lines().find(|l| l.contains("[Seat 0] SIDEBOARD before game 2:")).unwrap();
     assert!(line.contains(&format!("in: {in_name}")) && line.contains(&format!("out: {out_name}")), "{line}");
-    assert!(line.ends_with("; plays first (no choice was made)"), "seat 0 lost and chose nothing: {line}");
+    assert!(line.ends_with(" | plays first (no choice was made)"), "seat 0 lost and chose nothing: {line}");
     writeln!(stdin, "quit").unwrap();
     assert!(child.wait().unwrap().success());
 }

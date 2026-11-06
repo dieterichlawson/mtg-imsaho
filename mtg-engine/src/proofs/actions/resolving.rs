@@ -302,7 +302,7 @@ fn an_ability_resolving((n, required, loyalty): (usize, bool, bool)) {
     state.stack.push(StackEntry::Ability {
         source_id: source, ability_index: 0, behavior_card_id: card, targets, activator,
         x_value: None, target_requirement: required.then_some(TargetRequirement::Creature), sacrificed: None,
-        sacrificed_toughness: None, loyalty, source_transforms: 0, source_back_face: false,
+        sacrificed_toughness: None, loyalty, source_transforms: None, source_name: None,
     });
 
     crate::stack::resolve_top_of_stack(&mut state, &registry);
@@ -388,7 +388,7 @@ fn an_ability_resolving_with_its_costs(_: ()) {
     state.stack.push(StackEntry::Ability {
         source_id: source, ability_index: 0, behavior_card_id: card, targets: Vec::new(), activator,
         x_value: x, target_requirement: None, sacrificed, sacrificed_toughness: toughness,
-        loyalty: false, source_transforms: 0, source_back_face: false,
+        loyalty: false, source_transforms: None, source_name: None,
     });
 
     crate::stack::resolve_top_of_stack(&mut state, &registry);

@@ -1,0 +1,366 @@
+{
+ "night": "2026-10-28",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Round 3's BG opponent (2x Typhoid Rats, 2x Somberwald Spider, 2x Mulch) beat my BG deck 2-1 in games of 17-22 turns, faster than the guide's 15-40 turn stall range.",
+    "The guide calls BG the best pair, but my 17-land BG deck went 1-2, so crowded BG needs evasive finishers over extra ground bodies.",
+    "Round 1's UR games ran 36-37 turns, but I had few evasive finishers and took Ranger's Guile and Ambush Viper twice each; take finishers over tricks and duplicate filler."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5152,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2033,
+    "output_tokens_details": {
+     "thinking_tokens": 1817
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5152
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2033,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5152,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5152,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "UR",
+   "record": "2-1-0",
+   "lessons": [
+    "Take and play removal over bodies: my UR deck ran only Harvest Pyre, Sensory Deprivation and Blazing Torch, dropping Infernal Plunge, and lost 0-2 to WU's fliers, Abbey Griffin and Voiceless Spirit.",
+    "My UR deck's 36-37 turn wins over BG came from a walls-and-grind game, so value evasive finishers like Stitched Drake over extra Armored Skaab.",
+    "Red was the deepest colour, but the early black picks Moan of the Unhallowed and Diregraf Ghoul were wasted, so settle red plus a second colour by pick five."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3216,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2843,
+    "output_tokens_details": {
+     "thinking_tokens": 2619
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3216
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2843,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3216,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3216,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight contradicted the guide: seat 6's BG went 0-3, not 3-0, and WU went 3-0 at seat 3 and 2-1 at seat 7, against the guide's weak-WU rating.",
+    "My BR deck went 1-2 in matches, losing in 15-20 and 48-turn stalls, so prefer a green or black evasive finisher over a fourth removal spell.",
+    "My 2-0 win over seat 6 came in 27 and 14 turns, where cheap early pressure ended games; hold removal for big blockers and fliers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5202,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2279,
+    "output_tokens_details": {
+     "thinking_tokens": 2084
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5202
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2279,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5202,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5202,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "WU",
+   "record": "3-0-0",
+   "lessons": [
+    "Take Voiceless Spirit and Slayer of the Wicked early and often; two of each anchored a WU deck that went 3-0 in matches and lost only one game.",
+    "Prioritize cheap removal like Rebuke, Smite the Monstrous, Claustrophobia, and Silent Departure, which kept the board stable in every round, including the 32-turn grind against WU.",
+    "Settle into WU once white flows, since its depth let me cut red's Brimstone Volley and the duplicate Rally the Peasants and Spare from Evil; expect long games and value 2-for-1s."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3206,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1632,
+    "output_tokens_details": {
+     "thinking_tokens": 1429
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3206
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1632,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3206,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3206,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight's BG did not match the guide: seat 6 went 0-3 (not 3-0), seat 2 was BR 1-2 (not BG 2-1), and the three BG decks went 3-6 in matches.",
+    "Round 2's 31-turn loss to WU fliers shows the stall problem: main Somberwald Spider and Spider Spawning to break ground-locked boards, not more ground bodies.",
+    "Falkenrath Noble and Morkrut Banshee carried my 2-1 BG deck, so take these strong uncommons over filler like Moonmist, Gnaw to the Bone and Altar's Reap, which I left out."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5122,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3378,
+    "output_tokens_details": {
+     "thinking_tokens": 3155
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5122
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3378,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5122,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5122,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't assume your colours are open: seat 1 also drafted red and blue (Pitchburn Devils, Riot Devils, Scourge of Geier Reach, Harvest Pyre) and beat me 2-0, so take contested red playables earlier or pivot.",
+    "My UR fliers were too slow: both 0-2 losses went 21 and 22 turns, so prioritize cheap evasive threats and burn that can close games over slow defensive cards like the second Frightful Delusion.",
+    "Keep Delver of Secrets out of a two-colour deck when a playable clock is available; I cut it, and the stronger closers that stayed in (Invisible Stalker, Moon Heron) were the cards to protect."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3189,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1335,
+    "output_tokens_details": {
+     "thinking_tokens": 1091
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3189
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1335,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3189,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3189,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "BG",
+   "record": "0-3-0",
+   "lessons": [
+    "Contradicting the guide: seat 6's BG deck went 0-3, not the 3-0 the guide claims, and lost 0-6 in games to WU and UR fliers and burn, so BG's 67% record is not a lock.",
+    "Games stalled 14-27 turns while my deck relied on ground bodies like Markov Patrician and Walking Corpse; take Spider Spawning or evasive finishers like Falkenrath Noble over filler.",
+    "My low-curve BG deck ran 17 lands despite the guide's 16-land advice for low curves, and went 0-6; try 16 lands next."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5144,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3169,
+    "output_tokens_details": {
+     "thinking_tokens": 2961
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5144
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3169,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5144,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5144,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Take Claustrophobia and Smite the Monstrous early as I did, but expect contested lanes: seat 3's WU deck ran both, plus Spectral Flight and two Voiceless Spirit, and beat me 2-0.",
+    "Plan for stalls: my 32-turn game 2 loss to seat 3 shows removal-heavy WU boards grind, so prioritize fliers with a fast clock over slow evasion like Spectral Flight.",
+    "Keep creature answers in the main: seat 3 ran two Slayer of the Wicked and Elite Inquisitor, so my four removal spells plus Fiend Hunter need backup from Smite and Ghostly Possession."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3221,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2215,
+    "output_tokens_details": {
+     "thinking_tokens": 1979
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3221
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2215,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3221,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3221,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

@@ -88,6 +88,12 @@ impl Pod {
 
     /// `--players 2 --best-of 1 --seed 7`, each unless `extra` names it.
     fn run(&self, extra: &[&str], counter: &str, log: &str) -> std::process::Output {
+        self.run_env(extra, counter, log, &[])
+    }
+
+    /// As [`Pod::run`], with the settings that change a seat's system
+    /// prompt at their defaults unless `env` sets them.
+    fn run_env(&self, extra: &[&str], counter: &str, log: &str, env: &[(&str, &str)]) -> std::process::Output {
         let defaults = [("--players", "2"), ("--best-of", "1"), ("--seed", "7")];
         std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
             .args(["--model", "cc"])
@@ -97,6 +103,11 @@ impl Pod {
             .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
             .env("CLAUDE_CODE_BIN", &self.bin)
             .env("CALLS", self.path(counter))
+            .env_remove("MTG_LLM_HISTORY")
+            .env_remove("MTG_CLAUDE_CODE_DRAFT_ANSWERS")
+            .env_remove("MTG_CLAUDE_CODE_ANSWERS")
+            .env_remove("MTG_LLM_PASS_UNTIL")
+            .envs(env.iter().copied())
             .output()
             .expect("the runner runs")
     }
@@ -128,6 +139,22 @@ fn a_resume_after_the_tournament_replays_nothing_and_says_so() {
     assert!(calls(&pod.path("first.calls")) > 0);
     assert_eq!(saved["decks"].as_array().map(Vec::len), Some(2), "both built decks are in the snapshot");
     assert_eq!(saved["matches"].as_array().map(Vec::len), Some(1), "the one match is in the snapshot");
+    // Each game says what each seat played (#901): the ledger credits a
+    // card with the games it was in the deck for, not with every game of a
+    // deck it was sideboarded out of. A best-of-1 game is the registered deck.
+    let result = &saved["matches"][0]["result"];
+    let sorted = |v: &serde_json::Value| {
+        let mut names: Vec<String> = v.as_array().unwrap().iter().map(|n| n.as_str().unwrap().to_string()).collect();
+        names.sort();
+        names
+    };
+    for game in result["games"].as_array().unwrap() {
+        for (i, side) in ["player_a", "player_b"].iter().enumerate() {
+            let seat = result[side].as_u64().unwrap() as usize;
+            assert_eq!(sorted(&game["decks"][i]), sorted(&saved["decks"][seat]["deck"]["maindeck"]),
+                "game {game} records seat {seat}'s deck");
+        }
+    }
 
     let second = pod.run(&["--resume", snap.to_str().unwrap()], "second.calls", "second.log");
     let stderr = String::from_utf8_lossy(&second.stderr);
@@ -431,4 +458,98 @@ fn a_snapshot_of_another_deal_is_refused() {
     let path = pod.write("old.json", &save);
     let out = pod.run(&["--resume", &path], "old.calls", "old.log");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+/// #949: the snapshot records the settings besides the guide that change a
+/// seat's system prompt, and a resume under others says so on stderr and
+/// in the log, as `mtg-draft-replay` does for kept positions. It said
+/// nothing, and every later pick was asked another question.
+#[test]
+fn a_resume_under_other_prompt_settings_says_so() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("settings");
+    let saved = pod.finished_snapshot("snap.json");
+    for key in ["history", "text_answers", "game_text_answers", "pass_until", "reference"] {
+        assert!(!saved["prompt"][key].is_null(), "the snapshot records {key}: {}", saved["prompt"]);
+    }
+    let game_text = saved["prompt"]["game_text_answers"].as_bool().unwrap();
+    let pass_until = saved["prompt"]["pass_until"].as_bool().unwrap();
+    let snap = pod.path("snap.json");
+    let snap = snap.to_str().unwrap();
+
+    for (var, value, said) in [
+        ("MTG_LLM_HISTORY", "2", "made under MTG_LLM_HISTORY=0, and the rest of this draft is made under 2"),
+        ("MTG_CLAUDE_CODE_DRAFT_ANSWERS", "text",
+            "made under MTG_CLAUDE_CODE_DRAFT_ANSWERS=schema, and the rest of this draft is asked in text"),
+        // The tournament's games are asked under the game seat's settings.
+        ("MTG_CLAUDE_CODE_ANSWERS", if game_text { "schema" } else { "text" },
+            if game_text { "played under MTG_CLAUDE_CODE_ANSWERS=text, and the rest of this tournament is asked in the schema" }
+            else { "played under MTG_CLAUDE_CODE_ANSWERS=schema, and the rest of this tournament is asked in text" }),
+        ("MTG_LLM_PASS_UNTIL", if pass_until { "0" } else { "1" },
+            if pass_until { "played under MTG_LLM_PASS_UNTIL=on, and the rest of this tournament is played with the pass-until row off" }
+            else { "played under MTG_LLM_PASS_UNTIL=off, and the rest of this tournament is played with the pass-until row on" }),
+    ] {
+        let log = format!("{var}.log");
+        let out = pod.run_env(&["--resume", snap], &format!("{var}.calls"), &log, &[(var, value)]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        assert!(stderr.contains("its system prompt is not the live one") && stderr.contains(said),
+            "{var}={value} is said on stderr:\n{stderr}");
+        let logged = std::fs::read_to_string(pod.path(&log)).unwrap();
+        assert!(logged.contains(said), "and in the log:\n{logged}");
+    }
+
+    let same = pod.run(&["--resume", snap], "same.calls", "same.log");
+    let stderr = String::from_utf8_lossy(&same.stderr);
+    assert!(same.status.success(), "{stderr}");
+    assert!(!stderr.contains("not the live one"), "the same settings say nothing:\n{stderr}");
+
+    // #951: drafted about another set — a card's text, rarity or the set's
+    // name edited, a build with another card pool.
+    let mut other = saved.clone();
+    other["prompt"]["reference"] = "0000000000000000".into();
+    let other = pod.write("other-set.json", &other);
+    let out = pod.run(&["--resume", &other], "other.calls", "other.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(stderr.contains("its system prompt is not the live one: the set this build reads (its data/sets file"), "{stderr}");
+    assert!(!stderr.contains('<'), "no placeholder is left in it: {stderr}");
+
+    // A snapshot from before the record, with its guides recorded: the
+    // rest is said to be unknown, not taken as agreement.
+    let mut old = saved.clone();
+    old.as_object_mut().unwrap().remove("prompt");
+    let old = pod.write("old.json", &old);
+    let out = pod.run(&["--resume", &old], "old.calls", "old.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(stderr.contains("predates the MTG_LLM_HISTORY / answer-format / pass-until / set record"), "{stderr}");
+}
+
+/// #950: a guide edited in place keeps its path, and the warning named the
+/// same guide on both sides of "and the rest of this draft".
+#[test]
+fn a_guide_edited_in_place_is_named_as_it_was_and_as_it_is() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("edited-guide");
+    let guide = pod.path("guide.md");
+    std::fs::write(&guide, "Take red cards.\n").unwrap();
+    let guide = guide.to_str().unwrap();
+    let snap = pod.path("snap.json");
+    let first = pod.run(&["--guide", guide, "--save", snap.to_str().unwrap()], "first.calls", "first.log");
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+
+    std::fs::write(guide, "Take green cards.\n").unwrap();
+    let out = pod.run(&["--guide", guide, "--resume", snap.to_str().unwrap()], "second.calls", "second.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let warn = stderr.lines().find(|l| l.starts_with("WARN: seat 0")).unwrap_or_else(|| panic!("no warning:\n{stderr}"));
+    assert!(warn.contains(&format!("guide {guide} as it was")) && warn.contains(&format!("guide {guide} as it is now")),
+        "the warning says what changed: {warn}");
 }

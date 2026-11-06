@@ -48,10 +48,46 @@ static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
 /// that died published no number to add to it (issue #578).
 static REPLAYED_PICKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The note under a resumed run's totals: what came out of the snapshot,
+/// whose cost is the earlier run's and in no number here (#578, #912).
+fn replayed_note(picks: u64, decks: u64, matches: u64) -> Option<String> {
+    let parts: Vec<String> = [(picks, "pick", "picks"), (decks, "deck", "decks"), (matches, "match", "matches")].into_iter()
+        .filter(|(n, ..)| *n > 0).map(|(n, one, many)| crate::count(n, one, many)).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let listed = match parts.as_slice() {
+        [.., last] if parts.len() > 1 => format!("{} and {last}", parts[..parts.len() - 1].join(", ")),
+        _ => parts.join(""),
+    };
+    Some(format!("(this run only: {listed} came from a snapshot, and what the earlier run(s) spent \
+making {} is counted in no number above)", if picks + decks + matches == 1 { "it" } else { "them" }))
+}
+
 /// Tell the summary how many picks came out of a snapshot rather than a
 /// model call. Called once, by `main`, when a resume replays one.
 pub fn note_replayed_picks(picks: usize) {
     REPLAYED_PICKS.store(picks as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Matches this run took from a `--resume` snapshot instead of playing:
+/// their games' calls are the earlier run's too, and the note under the
+/// totals named only the picks (#912).
+static REPLAYED_MATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Decks this run took from a `--resume` snapshot instead of building
+/// (#581): their build calls are the earlier run's too (#912's review).
+static REPLAYED_DECKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Tell the summary how many decks came out of the snapshot. Called once,
+/// by `main`.
+pub fn note_replayed_decks(decks: usize) {
+    REPLAYED_DECKS.store(decks as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Add a round's matches carried from the snapshot. Called by `main`.
+pub fn note_replayed_matches(matches: usize) {
+    REPLAYED_MATCHES.fetch_add(matches as u64, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn record_model_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
@@ -149,8 +185,8 @@ fn phase_line(usage: &HashMap<String, ModelUsage>) -> String {
         .map(|(m, u)| mtg_player::llm::api_equivalent(m, &as_llm_usage(u)))
         .try_fold(0.0, |acc, v| v.map(|v| acc + v));
     let api = api.filter(|_| usage.keys().all(|m| mtg_player::llm::is_plan_quota(m)));
-    format!("{} calls, {} in / {} out / {} cache_read / {} cache_write, {}",
-        sum(|u| u.calls), sum(|u| u.input), sum(|u| u.output), sum(|u| u.cache_read),
+    format!("{}, {} in / {} out / {} cache_read / {} cache_write, {}",
+        crate::count(sum(|u| u.calls), "call", "calls"), sum(|u| u.input), sum(|u| u.output), sum(|u| u.cache_read),
         sum(|u| u.cache_create), cost_text(phase_cost(usage), api))
 }
 
@@ -233,7 +269,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     // A per-game average only means anything for a metered phase; a
     // plan-quota or unpriced one has no dollars to divide.
     let per_game = match (game_cost, total_games) {
-        (Cost::Usd(v), n) if n > 0 => format!(" ({n} games, ${:.4}/game avg)",
+        (Cost::Usd(v), n) if n > 0 => format!(" ({}, ${:.4}/game avg)", crate::count(n, "game", "games"),
             v / f64::from(u32::try_from(n).unwrap_or(u32::MAX))),
         _ => String::new(),
     };
@@ -253,21 +289,22 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         // A dead backend and a bad answer are different events with
         // different remedies, so they are different numbers (#587).
         let unanswered = mtg_player::llm::unanswered_note(u.unanswered);
-        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached/{}written = {cost}{rejected}{unanswered}",
-            model, u.calls, u.input, u.output, u.cache_read, u.cache_create
+        writeln!(summary, "  {}: {}, {}in/{}out/{}cached/{}written = {cost}{rejected}{unanswered}",
+            model, crate::count(u.calls, "call", "calls"), u.input, u.output, u.cache_read, u.cache_create
         ).unwrap();
     }
-    writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
+    writeln!(summary, "  ---\n  Total: {}, {total_cost}", crate::count(draft_calls + game_calls, "call", "calls")).unwrap();
 
     // These counters are process-local, so a resumed run's totals are a
     // fragment of the draft's real cost. Say so next to them: the number
     // the operator is reading covers this process, and the calls the run
     // that died spent on the replayed picks are in no total here (#578).
-    let replayed = REPLAYED_PICKS.load(std::sync::atomic::Ordering::Relaxed);
-    if replayed > 0 {
-        writeln!(summary, "  (this run only: {replayed} pick{} came from a snapshot, and what \
-the earlier run(s) spent making them is counted in no number above)",
-            if replayed == 1 { "" } else { "s" }).unwrap();
+    if let Some(note) = replayed_note(
+        REPLAYED_PICKS.load(std::sync::atomic::Ordering::Relaxed),
+        REPLAYED_DECKS.load(std::sync::atomic::Ordering::Relaxed),
+        REPLAYED_MATCHES.load(std::sync::atomic::Ordering::Relaxed),
+    ) {
+        writeln!(summary, "  {note}").unwrap();
     }
 
     // Whose answers those were. Every `cc` seat shares one model label, so
@@ -865,6 +902,8 @@ struct ClaudeCodeDraftBackend {
     /// written whole on every one; at the hour the seat's first writes it
     /// and the rest read it (`reports/llm-cost.md`, phase 5).
     hour_cache: bool,
+    /// The seat's number, for the records it writes itself.
+    seat: usize,
 }
 
 /// `MTG_CLAUDE_CODE_DRAFT_ANSWERS`: `schema` (the default) or `text`, how a
@@ -891,6 +930,141 @@ pub fn draft_text_answers() -> bool {
         }
     }
 }
+
+/// Whether a seat spec is a `claude -p` one, the only seat whose prompt
+/// says how it answers.
+#[must_use]
+pub fn asks_in_text(spec: &str) -> bool {
+    matches!(spec.split(':').next(), Some("cc" | "claude-code"))
+}
+
+/// The settings outside a seat's own flags that change what an AI seat's
+/// system prompt says: `MTG_LLM_HISTORY` for any AI seat and
+/// `MTG_CLAUDE_CODE_DRAFT_ANSWERS` for a `claude -p` one at the picks and
+/// the deck build, and at the tournament's games `MTG_LLM_PASS_UNTIL` and
+/// `MTG_CLAUDE_CODE_ANSWERS`, which the game save records (#931). Kept
+/// positions recorded the draft's (#920) and neither draft snapshot
+/// recorded any, so a `--resume` under another value asked every later
+/// pick, and played every later match, under another system prompt with
+/// no note (#949). `None` where no seat's prompt carries it, or in a
+/// snapshot written before it was recorded. `MTG_LLM_THINKING` is not one,
+/// as on the game save: it changes the request, not what the seat is told.
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug, Default)]
+pub struct DraftPromptSettings {
+    #[serde(default)]
+    pub history: Option<usize>,
+    #[serde(default)]
+    pub text_answers: Option<bool>,
+    #[serde(default)]
+    pub game_text_answers: Option<bool>,
+    #[serde(default)]
+    pub pass_until: Option<bool>,
+    /// [`reference_digest`] of the set the seats were asked about (#951).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+}
+
+impl DraftPromptSettings {
+    /// The settings this process asks the AI seats among `models` under.
+    #[must_use]
+    pub fn live<'a>(models: impl IntoIterator<Item = &'a str>) -> Self {
+        let models: Vec<&str> = models.into_iter().collect();
+        let (ai, cc) = (!models.is_empty(), models.iter().any(|m| asks_in_text(m)));
+        Self {
+            history: ai.then(mtg_player::llm::history_exchanges),
+            text_answers: cc.then(draft_text_answers),
+            game_text_answers: cc.then(mtg_player::llm::answer_text::text_answers),
+            pass_until: ai.then(mtg_player::llm::pass_until_enabled),
+            reference: None,
+        }
+    }
+
+    /// These settings, asked about the set `digest` names.
+    #[must_use]
+    pub fn about(mut self, digest: &str) -> Self {
+        self.reference = Some(digest.to_string());
+        self
+    }
+
+    /// How `live` differs from what the snapshot was made under, in
+    /// `mtg-draft-replay`'s words; nothing where either side does not say.
+    /// The game settings only once a game was played (`games_played`): a
+    /// match in progress is played again from its first game.
+    #[must_use]
+    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
+        let mut out = Vec::new();
+        let how = |text: bool| if text { "in text" } else { "in the schema" };
+        let format = |text: bool| if text { "text" } else { "schema" };
+        let on_off = |on: bool| if on { "on" } else { "off" };
+        if let (Some(was), Some(now)) = (self.history, live.history) {
+            if was != now {
+                out.push(format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft \
+is made under {now}"));
+            }
+        }
+        if let (Some(was), Some(now)) = (self.text_answers, live.text_answers) {
+            if was != now {
+                out.push(format!("its picks were made under {DRAFT_ANSWERS_ENV}={}, and the rest of this draft \
+is asked {}", format(was), how(now)));
+            }
+        }
+        if let (Some(was), Some(now)) = (&self.reference, &live.reference) {
+            if was != now {
+                out.push(OTHER_SET.to_string());
+            }
+        }
+        if !games_played {
+            return out;
+        }
+        if let (Some(was), Some(now)) = (self.game_text_answers, live.game_text_answers) {
+            if was != now {
+                out.push(format!("its games were played under {}={}, and the rest of this tournament is \
+asked {}", mtg_player::llm::answer_text::ANSWERS_ENV, format(was), how(now)));
+            }
+        }
+        if let (Some(was), Some(now)) = (self.pass_until, live.pass_until) {
+            if was != now {
+                out.push(format!("its games were played under {}={}, and the rest of this tournament is \
+played with the pass-until row {}", mtg_player::llm::PASS_UNTIL_ENV, on_off(was), on_off(now)));
+            }
+        }
+        out
+    }
+}
+
+/// A 64-bit FNV-1a of a guide's contents, rendered hex.
+///
+/// Only has to notice an edit, so it is arithmetic rather than a
+/// dependency — and, like `match_seed`, it must not depend on a hasher
+/// whose output may change between compiler versions and silently
+/// invalidate every snapshot written before the upgrade.
+#[must_use]
+pub fn guide_digest(text: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// A digest of the set a draft seat is asked about: the set's name and
+/// card reference (the system prompt) and its rarities (the pack lines).
+/// Kept pick positions and both draft snapshots record it, so a replay or
+/// a resume against another set file or card pool — a card removed, its
+/// text or rarity changed, the name edited — says its system prompt is not
+/// the live one (#951).
+#[must_use]
+pub fn reference_digest(set: &mtg_draft::set_data::SetData, card_reference: &str) -> String {
+    let mut rarities: Vec<String> = set.rarities().into_iter().map(|(name, r)| format!("{name}={r:?}")).collect();
+    rarities.sort();
+    guide_digest(&format!("{}\0{card_reference}\0{}", set.set_name, rarities.join("\0")))
+}
+
+/// Why a set digest that moved is another question, as the replay and
+/// both resumes say it.
+pub const OTHER_SET: &str = "the set this build reads (its data/sets file and the cards it implements) is not \
+the one it was asked about: another card list, card text, rarity or set name";
 
 /// The draft rules' answer note for a seat asked in text: the CLI has no
 /// schema to hold the answer to, so it is told the shape is the whole reply.
@@ -932,6 +1106,7 @@ impl ClaudeCodeDraftBackend {
             answer_schema: None,
             text_answers,
             hour_cache: false,
+            seat: table.seat,
         }
     }
 
@@ -963,6 +1138,11 @@ impl ClaudeCodeDraftBackend {
         // log where the tournament recorded 202 (issue #607). This is the
         // seat the project actually drafts with.
         let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, true);
+        // A system prompt too long to be one argument fails every spawn the
+        // same way; it was retried for nine minutes (#965).
+        if let Some(why) = mtg_player::llm::claude_code_system_prompt_too_long(&self.system_prompt) {
+            fatal(&format!("claude -p draft seat cannot be asked: {why}"));
+        }
         // A session that has carried its window of decisions is not
         // resumed: every call to it would re-read all of them.
         if self.turns > self.window {
@@ -1115,7 +1295,11 @@ impl ClaudeCodeDraftBackend {
         // `--json-schema` is a tool call and a second request after it.
         let asked = if self.text_answers {
             let full = self.answer_schema.as_deref().and_then(|t| serde_json::from_str(t).ok());
-            Some(format!("{message}\n\n{}", mtg_player::llm::answer_text::answer_format(full.as_ref().unwrap_or(schema))))
+            let format = mtg_player::llm::answer_text::answer_format(full.as_ref().unwrap_or(schema));
+            // The pick's `PROMPT` record is the message without this, and
+            // this is the line a re-ask answers to (#910).
+            mtg_player::game_log::write(file!(), line!(), &format!("[Seat {}] FORMAT", self.seat), &format);
+            Some(format!("{message}\n\n{format}"))
         } else {
             cmd.args(["--json-schema", &schema.to_string()]);
             None
@@ -1453,6 +1637,8 @@ pub struct DraftLlmClient {
     /// green-white, taking removal over creatures now" survives from one
     /// pick to the next.
     notes: Option<String>,
+    /// The seat's number, for the records the client writes itself.
+    seat: usize,
 }
 
 impl DraftLlmClient {
@@ -1497,7 +1683,7 @@ impl DraftLlmClient {
                 std::process::exit(1);
             }
         };
-        Self { backend, notes: None }
+        Self { backend, notes: None, seat: table.seat }
     }
 
     /// The most characters of reasoning carried into the next prompt: the
@@ -1577,8 +1763,8 @@ back to you on your next pick"
         };
         let mut prompt = format!(
             "Pack {pack_number} of 3, Pick {pick_index} of {}. You are seat {} of {}; \
-{handoff}.\n\nAvailable ({} cards):\n",
-            table.pack_size, table.seat, table.pod_size, available.len(),
+{handoff}.\n\nAvailable ({}):\n",
+            table.pack_size, table.seat, table.pod_size, crate::count(available.len(), "card", "cards"),
         );
         for (i, card) in available.iter().enumerate() {
             writeln!(prompt, "{i}: {}", cards.pack_line(card)).unwrap();
@@ -1586,7 +1772,8 @@ back to you on your next pick"
         if pool.is_empty() {
             prompt.push_str("\nYour pool is empty — this is your first pick.\n");
         } else {
-            writeln!(prompt, "\nYour pool ({} cards):", pool.len()).unwrap();
+            // "Your pool (1 card)" at a seat's second pick (#946, #914).
+            writeln!(prompt, "\nYour pool ({}):", crate::count(pool.len(), "card", "cards")).unwrap();
             prompt.push_str(&cards.pool_listing(pool));
         }
         prompt
@@ -1605,9 +1792,11 @@ back to you on your next pick"
         if let Some(why) = why {
             mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(),
                 "REASK", &format!("{why}: {}", response.trim()));
-            let again = format!(
-                "{user_message}\n\nYour answer {} is not one this pick allows: {why}. Answer again.",
-                response.trim());
+            let reason = format!("Your answer {} is not one this pick allows: {why}. Answer again.", response.trim());
+            // The pick's `PROMPT` record is the first asking; this is what
+            // the second one added under it (#910's review).
+            mtg_player::game_log::write(file!(), line!(), &format!("[Seat {}] REASK_PROMPT", self.seat), &reason);
+            let again = format!("{user_message}\n\n{reason}");
             response = self.backend.send_pick(&again, num_cards);
         }
         self.keep_notes(&response);
@@ -1642,6 +1831,20 @@ back to you on your next pick"
 #[cfg(test)]
 mod usage_summary_tests {
     use super::{as_llm_usage, ModelUsage};
+
+    /// #912: a resumed run's note named the picks from the snapshot and not
+    /// the decks or the matches, which the earlier run also paid for.
+    #[test]
+    fn the_resume_note_names_the_matches_from_the_snapshot_too() {
+        assert_eq!(super::replayed_note(0, 0, 0), None);
+        assert_eq!(super::replayed_note(336, 8, 4).as_deref(), Some("(this run only: 336 picks, 8 decks and 4 matches \
+came from a snapshot, and what the earlier run(s) spent making them is counted in no number above)"));
+        assert_eq!(super::replayed_note(336, 0, 4).as_deref(), Some("(this run only: 336 picks and 4 matches came \
+from a snapshot, and what the earlier run(s) spent making them is counted in no number above)"));
+        assert_eq!(super::replayed_note(0, 0, 1).as_deref(), Some("(this run only: 1 match came from a snapshot, \
+and what the earlier run(s) spent making it is counted in no number above)"));
+        assert!(super::replayed_note(1, 0, 0).unwrap().starts_with("(this run only: 1 pick came"));
+    }
 
     /// #489: the tournament's usage was copied into this crate's struct
     /// field by field, `rejected` was not in the list, and a run with 14
@@ -1743,6 +1946,14 @@ mod draft_prompt_tests {
             table(1, 4), 1, 1, &available, &[], &cards,
         );
         assert!(first.contains("Your pool is empty"), "{first}");
+
+        // The second pick: one card, said in the singular (#946), and a
+        // pack's last card, were it ever asked, the same way.
+        let second = DraftLlmClient::build_pick_prompt(
+            table(1, 4), 1, 2, &available[..1], &pool[..1], &cards,
+        );
+        assert!(second.contains("Your pool (1 card):"), "{second}");
+        assert!(second.contains("Available (1 card):"), "{second}");
     }
 
     /// #483: the pack was a list of bare names, with the cost, colour, type,
@@ -2200,6 +2411,43 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert!(fake.calls().len() >= 2, "it kept trying while the budget lasted");
         assert!(started.elapsed() >= std::time::Duration::from_secs(2),
             "it really waited between attempts rather than burning three in 6ms");
+    }
+
+    /// #965: a guide that made the system prompt longer than one argument
+    /// can be failed every spawn with E2BIG, and the seat retried it for
+    /// nine minutes before dying at pack 1 pick 1. It is fatal at once, says
+    /// why, and the CLI is never run.
+    #[test]
+    fn a_system_prompt_too_long_for_one_argument_is_fatal_at_once() {
+        use super::DraftBackend;
+        let fake = Fake::new("e2big", OK_BODY);
+        let guide = "Take removal. ".repeat(10_000);
+        let mut b = super::ClaudeCodeDraftBackend::with_binary(
+            &fake.bin(), None, "Innistrad", Some(&guide),
+            "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+            super::Table { seat: 0, pod_size: 2, pack_size: 14 },
+        );
+        assert!(b.system_prompt.len() > mtg_player::llm::CLAUDE_CODE_MAX_ARG_BYTES);
+        let started = std::time::Instant::now();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            b.send_pick("Pack 1, Pick 1", 2);
+        }));
+        let payload = result.expect_err("no pick can be asked");
+        let msg = payload.downcast_ref::<String>().expect("a message");
+        assert!(msg.starts_with(super::FATAL_MARKER), "{msg}");
+        assert!(msg.contains("one argument") && msg.contains("guide"), "it says why: {msg}");
+        assert!(fake.calls().is_empty(), "the CLI was never run:\n{}", fake.log());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "no backoff was slept");
+
+        // Today's guide is well inside it, and is sent as before.
+        let fake = Fake::new("e2big-ok", OK_BODY);
+        let mut b = super::ClaudeCodeDraftBackend::with_binary(
+            &fake.bin(), None, "Innistrad", Some(&"Take removal. ".repeat(500)),
+            "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+            super::Table { seat: 0, pod_size: 2, pack_size: 14 },
+        );
+        b.send_pick("Pack 1, Pick 1", 2);
+        assert_eq!(fake.calls().len(), 1);
     }
 
     /// The default budget is sized for an outage, not for a hiccup.

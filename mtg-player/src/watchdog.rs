@@ -140,6 +140,9 @@ pub fn progress_fingerprint(state: &GameState) -> u64 {
         for attacker in &combat.blocked_attackers {
             attacker.hash(&mut h);
         }
+        for blocker in &combat.blocking_creatures {
+            blocker.hash(&mut h);
+        }
         for creature in &combat.dealt_first_strike {
             creature.hash(&mut h);
         }

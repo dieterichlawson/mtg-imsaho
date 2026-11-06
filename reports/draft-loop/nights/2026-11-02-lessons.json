@@ -1,0 +1,365 @@
+{
+ "night": "2026-11-02",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Cut Think Twice and the second Night Terrors for a flier or removal spell; my UB deck ran both and went 1-2, though the guide's UB line says removal and evasion.",
+    "The guide's 'UB works with removal and evasion' was contradicted: my deck had Dead Weight, Claustrophobia, Sensory Deprivation, Tribute to Hunger and five fliers, yet lost 0-2 to BR at 21 and 20 turns.",
+    "Hold removal for fliers and big blockers as the guide says, and expect 23-to-29-turn stalls: my WG round went 1-2 with games of 29, 29 and 23 turns."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6856,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2752,
+    "output_tokens_details": {
+     "thinking_tokens": 2526
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6856
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2752,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6856,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6856,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Pack 1's late picks went to Curiosity and Curse of the Bloody Tome, yet my only real answers were Fiend Hunter and Feeling of Dread; take removal over those.",
+    "Cutting Lost in the Mist, Mask of Avacyn and the 5-drops for a low curve won Round 2 in 16 turns but lost the 24-35 turn grinds to UB and UR; keep one late threat.",
+    "Round 3's UR evasive threats (Delver of Secrets, Stitched Drake, Invisible Stalker) beat me 0-2; spend late picks on cheap flying blockers, since Cellar Door and Mulch never made my deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3236,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3601,
+    "output_tokens_details": {
+     "thinking_tokens": 3369
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3236
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3601,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3236,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3236,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Black-red worked as the guide predicted: Dead Weight, Victim of Night, Devil's Play and Morkrut Banshee answered threats while two Vampire Interlopers and Screeching Bat won, going 3-0 with 17 lands.",
+    "Tonight refines the guide's ground-body warning: my 3-0 BR deck was mostly ground creatures like Ashmouth Hound and Kessig Wolf, and it won because removal answered the fliers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6921,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2076,
+    "output_tokens_details": {
+     "thinking_tokens": 1911
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6921
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2076,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6921,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6921,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Burn removal flowed (Brimstone Volley, Geistflame, Harvest Pyre), but the 55-turn Round 1 loss showed my UR deck lacked late power, so take Stromkirk Noble over a fourth cheap spell.",
+    "Round 2's 0-2 loss to WU, which also ran Snapcaster Mage and Moon Heron, showed my blue fliers weren't winning races, so prioritize evasive threats over a third Riot Devils.",
+    "Cheap interaction like Blazing Torch and Grasp of Phantoms was in the deck that won 2-0 in Round 3, so keep taking it over marginal late creatures."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3230,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2906,
+    "output_tokens_details": {
+     "thinking_tokens": 2677
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3230
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2906,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3230,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3230,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Pick one lane by mid pack 1: my pack 2 first pick, Brimstone Volley, went unused in a WG deck, exactly the off-colour removal trap the guide warns about.",
+    "The guide's ground cap is soft: WG with about ten ground creatures went 2-1, but the 35-turn round-2 loss was a stall that needed evasion, not more Thraben Sentry.",
+    "Tonight contradicted the guide: WG ran Spider Spawning and went 2-1, so 'Spider Spawning does not carry a ground deck' is not settled."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6888,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3673,
+    "output_tokens_details": {
+     "thinking_tokens": 3476
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6888
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3673,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6888,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6888,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "UR",
+   "record": "2-1-0",
+   "lessons": [
+    "Take playable blue-red creatures early; Kruin Outlaw, Scourge of Geier Reach, Stitched Drake and Pitchburn Devils carried the 5-2 game record, while pick-4 Smite the Monstrous went unused.",
+    "Round 1's 1-2 loss to WG came in 16-24 turn grinds against Moment of Heroism and Slayer of the Wicked; prioritize evasive threats and cheap removal like Harvest Pyre over Dream Twist.",
+    "Cut the Curses, Furor and Vampiric Fury for 17 basics split 9 Island and 8 Mountain; the focused UR deck won 2-0 in two rounds."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3314,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2458,
+    "output_tokens_details": {
+     "thinking_tokens": 2220
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3314
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2458,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3314,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3314,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "G",
+   "record": "2-1-0",
+   "lessons": [
+    "My 2-1 BG deck had one true evasive finisher, Orchard Spirit, and won its long stalls anyway; aim for four evasive or removal-backed finishers before locking the build.",
+    "Seat 2's BR beat my BG deck 0-2 in 11-turn games, so the guide's 'block early against BR' held; keep cheap blockers like Ambush Viper in the 23.",
+    "Tonight contradicted the guide's skip of Darkthicket Wolf: my BG deck ran it and went 2-1 in matches, but only 4-4 in games, so it is marginal, not proven bad."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6787,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3940,
+    "output_tokens_details": {
+     "thinking_tokens": 3730
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6787
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3940,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6787,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6787,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "WB",
+   "record": "0-3-0",
+   "lessons": [
+    "Prioritise a clock over a fourth 2/2 Walking Corpse: my WB games stalled at 22-28 turns, and the UR decks with Stitched Drake and Moon Heron were the ones that beat me.",
+    "Draft evasive finishers like Falkenrath Noble before filler: my 23rd card, Abbey Griffin, was the only added flyer, and my 1-6 game record came from a deck that could not close.",
+    "Take removal that also deals with fliers and big green threats, since Tribute to Hunger and Corpse Lunge did not stop the 25-turn Round 1 grind against Boneyard Wurm and Kindercatch."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3227,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2177,
+    "output_tokens_details": {
+     "thinking_tokens": 1951
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3227
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2177,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3227,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3227,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

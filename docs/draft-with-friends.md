@@ -35,7 +35,9 @@ the lobby's one port, so that is the only port to open: on a LAN,
 put the machine on a tailnet (Tailscale and the like: `--bind 0.0.0.0` and
 give friends the tailnet address), or tunnel it (`ssh -R`, a Cloudflare
 tunnel) and hand out the tunnel's address in place of the join line's
-host. The game pages themselves listen on this machine's loopback only.
+host. A friend's game link is on whatever host they joined by, so the
+tunnel's or tailnet's address carries their games too (#969). The game
+pages themselves listen on this machine's loopback only.
 
 The key is the whole access control: a seat
 is whoever holds its key, a second tab with the same key is the same seat
@@ -134,6 +136,8 @@ While a match is on, closing a game page is said: the opponent's game
 page shows "<name>'s game page is closed: the game waits for them to open
 it again" where it would say "Opponent is thinking", both draft pages
 show the seat as "game page closed", and the host's terminal says so.
+A page not opened yet is said as that ("<name>'s game page is not open
+yet", "game page not opened yet"), and its first open is not "open again".
 Reopening the link carries on from the decision that was waiting. Each
 game page also says which game of the match it is and the score.
 
@@ -159,17 +163,24 @@ mtg-draft-client ws://192.168.1.20:8800/ws?seat=0&key=7c5b0a8e... --name Lawson
 ```
 
 A plain line-oriented client. It prints your view when something of
-yours changes — the pack as a numbered list, your pool with counts — and
-one line for the table when only other seats moved. Type a card's number
+yours changes — the pack as a numbered list under one line counting your
+pool (`pool` lists it), so the pack and the question are the last thing on
+screen — and one line for the table when only other seats moved (while a pack is in
+front of you, only when your queue of packs changes), which also says how
+many more packs are waiting for you. Type a card's number
 to pick it; a number typed before a new pack has been up for 300 ms (a
 pick typed twice) is not taken from it, and the client says so. While building: `add <n>` and `drop <n>` by the pool numbers
 shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
 final; `text <n>` prints a card's rules text (the pack's card while
 drafting, the pool's while building); the server's refusal (`Deck has 39 cards (need at least 40)`) is
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
-playing — open http://192.168.1.20:8803/`; a round you sit out is
+playing (game 1)`, with the game's link on a line of its own under it, `open
+http://192.168.1.20:8800/game/8803/<key>/`: through the table's own port and
+carrying the page's key, which a bare game port without one refuses; a round you sit out is
 `Round 2: a bye — counted as a match won`, and the seats show you as
-`bye` (on the page too). Between games it prints `Before game 2 vs seat 3
+`bye` (on the page too). With no match left to play that round, a bye or
+yours finished, it says `Waiting for the others to finish their matches.`,
+as the page does. Between games it prints `Before game 2 vs seat 3
 (they lead 1-0):` with who chooses, what the opponent has shown and your
 pool: `play` or `draw` when the choice is yours, the same `add`, `drop` and
 `lands` to sideboard (a deck is sent once it has 40 cards), and `ready`.
@@ -216,8 +227,8 @@ come; the next round is paired when the round is over.
 
 Matches are played as a tournament plays them (MTR 2.2 and 2.4). Before
 game 1 a coin flip's winner chooses to play or draw; before each later
-game the last game's loser chooses (after a drawn game, whoever chose
-before), and both players may sideboard: any deck of their pool with 40 or
+game the last game's loser chooses (after a game with no winner, drawn
+or abandoned at the action budget, whoever chose before), and both players may sideboard: any deck of their pool with 40 or
 more cards, starting from the deck they played last game. The draft page
 shows a panel for it under "Your match is on" — the choice, the pool as
 rows to move between deck and sideboard, the land steppers, the cards the
@@ -232,8 +243,9 @@ deck and plays. The host's terminal says who sideboarded and who chose
 what. The log has each AI seat's prompt and answer, and for every seat one
 `[Seat N] SIDEBOARD before game G:` line once both are ready: the cards in
 and out (or `no change`, or `kept the deck (<why>)` for a seat that could
-not choose), and the chooser's `; plays first`, `; draws first` or `; plays
-first (no choice was made)`; before game 1 only the chooser's.
+not choose), and the chooser's ` | plays first`, ` | draws first` or ` | plays
+first (no choice was made)`; before game 1 only the chooser's. Card names
+are joined by `; ` and the parts by ` | `, since a name may hold a comma.
 
 ## The log and the files
 
@@ -261,7 +273,14 @@ finished match is replayed onto packs dealt again from the same seed, the
 AI seats keep their notes, and the draft or the tournament carries on. A
 match that was in progress is played again from its first game. The
 snapshot's seed, set, seats and match length win over the flags, and are
-checked as the flags would be. The snapshot records a digest of the whole
+checked as the flags would be. `--guide` and the `MTG_LLM_HISTORY`,
+`MTG_CLAUDE_CODE_DRAFT_ANSWERS`, `MTG_CLAUDE_CODE_ANSWERS` and
+`MTG_LLM_PASS_UNTIL` settings are not: pass `--guide` again on the resume.
+The snapshot records the guide (its path and a digest of its contents),
+the settings the AI seats were asked under and a digest of the set data
+(its name, card text and rarities), and a resume under any other
+prints `WARN --resume …: its system prompt is not the live one: …` on the
+terminal and in the log. The snapshot records a digest of the whole
 deal and each pick the card it took, so a build whose card pool has
 changed since (a `git pull` and a rebuild deal other packs from the same
 seed) refuses the snapshot, even when every card taken so far is where it

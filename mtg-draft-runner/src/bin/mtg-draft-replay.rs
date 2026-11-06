@@ -17,8 +17,9 @@
 //! Each position is asked under the guide its seat drafted with, which the
 //! position records (#920); `--guide` asks every position under that one
 //! file instead. A position kept before guides were recorded, or under
-//! another `MTG_LLM_HISTORY` or `MTG_CLAUDE_CODE_DRAFT_ANSWERS`, is said
-//! once on stderr: its system prompt is not the one it was live.
+//! another `MTG_LLM_HISTORY`, `MTG_CLAUDE_CODE_DRAFT_ANSWERS` or set file
+//! (#951), is said once on stderr: its system prompt is not the one it was
+//! live.
 //!
 //! Every position is a real model call. A `claude` or `gemini` seat is a
 //! metered one, refused unless `--metered` says it is meant.
@@ -42,6 +43,8 @@ fn die(msg: &str) -> ! {
 struct LoadedSet {
     name: String,
     reference: String,
+    /// [`llm_client::reference_digest`] of the two above.
+    digest: String,
     lines: CardLines,
 }
 
@@ -49,20 +52,33 @@ fn load_set(key: &str, registry: &CardRegistry) -> LoadedSet {
     let path = std::path::PathBuf::from(format!("data/sets/{key}.json"));
     let mut set = SetData::load(&path).unwrap_or_else(|e| die(&format!("cannot load {}: {e}", path.display())));
     set.filter_implemented(registry);
+    let reference = llm_client::build_card_reference(&set.all_card_names(), registry);
     LoadedSet {
+        digest: llm_client::reference_digest(&set, &reference),
         name: set.set_name.clone(),
-        reference: llm_client::build_card_reference(&set.all_card_names(), registry),
+        reference,
         lines: CardLines::new(&set.all_card_names(), &set.rarities(), registry),
     }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let get = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    // A repeated flag's last occurrence, as the runners and the server take
+    // one (#952).
+    let get = |flag: &str| args.iter().rposition(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let positions = get("--positions").unwrap_or_else(|| die("--positions <file> is required"));
     let model = get("--model").unwrap_or_else(|| die("--model <spec> is required"));
-    if !args.iter().any(|a| a == "--metered") && !matches!(model.split(':').next(), Some("cc" | "claude-code")) {
-        die(&format!("{model} is a metered seat; pass --metered to spend on it"));
+    // A provider the runner does not know is named as one, before the
+    // metered check: "CC is a metered seat; pass --metered" sent a typo to
+    // the wrong fix, which then failed only after the positions were read
+    // (#922).
+    match model.split(':').next().unwrap_or("") {
+        "cc" | "claude-code" => {}
+        "claude" | "gemini" => if !args.iter().any(|a| a == "--metered") {
+            die(&format!("{model} is a metered seat; pass --metered to spend on it"));
+        },
+        other => die(&format!("model '{model}': unknown provider '{other}' (expected {})",
+            mtg_draft_runner::llm_client::ACCEPTED_PROVIDERS)),
     }
     // The backend expects its key: a run with none panicked at the first
     // position (#903's review).
@@ -73,9 +89,9 @@ fn main() {
         .unwrap_or_else(|e| die(&format!("cannot read --guide {p}: {e}"))));
     // What a line's system prompt was that this replay's is not: said once
     // a kind, by the line it was first seen on.
-    let mut said: Vec<&str> = Vec::new();
+    let mut said: Vec<String> = Vec::new();
     let (history, text_answers) = (mtg_player::llm::history_exchanges(), llm_client::draft_text_answers());
-    let asks_in_text = matches!(model.split(':').next(), Some("cc" | "claude-code"));
+    let asks_in_text = llm_client::asks_in_text(&model);
 
     let registry = CardRegistry::with_all_cards();
     let mut sets: HashMap<String, LoadedSet> = HashMap::new();
@@ -99,7 +115,7 @@ fn main() {
             continue;
         }
 
-        let unlike: [(&str, bool, String); 3] = [
+        let unlike: [(&str, bool, String); 4] = [
             ("guide", override_guide.is_none() && p.get("guide").is_none(),
                 "it records no guide (kept before #920) and is asked with none: if its seat drafted with one, \
                  this is another question".into()),
@@ -108,10 +124,14 @@ fn main() {
             ("answers", asks_in_text && p["text_answers"].as_bool().is_some_and(|t| t != text_answers),
                 format!("it was kept under {}={}, and this replay asks {}", llm_client::DRAFT_ANSWERS_ENV,
                     if text_answers { "schema" } else { "text" }, if text_answers { "in text" } else { "in the schema" })),
+            ("reference", p["reference"].as_str().is_some_and(|d| d != set.digest),
+                format!("{} (set {set_key})", llm_client::OTHER_SET)),
         ];
         for (kind, differs, why) in unlike {
-            if differs && !said.contains(&kind) {
-                said.push(kind);
+            // Once a kind; a set, once a set: a file can mix them.
+            let key = if kind == "reference" { format!("{kind} {set_key}") } else { kind.to_string() };
+            if differs && !said.contains(&key) {
+                said.push(key);
                 eprintln!("mtg-draft-replay: {positions} line {}: its system prompt is not the live one: {why}", id + 1);
             }
         }

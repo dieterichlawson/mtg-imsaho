@@ -259,6 +259,15 @@ export function autoPassStop(view, actions, sinceTurn, asked) {
     // your Main Phase 1 passed it and the whole of the opponent's turn (#758).
     if (ourTurn && view.step === "PostcombatMain")
         return "your postcombat main phase.";
+    // A Main Phase 1 with nothing to do is passed without the page seeing it
+    // (the engine's own pass, or the page's pass-only short-circuit), and
+    // auto-pass then ran on into the next turn, passing what it would have
+    // shown (#972). The first priority after it is the stop instead: later in
+    // that turn, or on the opponent's turn after it (two players alternate,
+    // so the turn before theirs was yours).
+    const beforeMain = view.step === "Untap" || view.step === "Upkeep" || view.step === "Draw";
+    if ((ourTurn && reached && !beforeMain) || (!ourTurn && view.turn_number - 1 > sinceTurn))
+        return "your main phase went by.";
     return null;
 }
 /** The notice for engaging (`stillOn`) or ending auto-pass, as the CLI words it. */
@@ -1167,8 +1176,9 @@ export function allocateForX(opts, x) {
     }
     return { response, shortfall: remaining };
 }
-/** What announcing `x` spends, the engine's `funding::describe_x_plan`:
- *  "X = 3: tap Nephalia Drownyard, 2x Island", or null when `x` is not
+/** What announcing `x` spends on X, the engine's `funding::describe_x_plan`:
+ *  "X = 3: for X, tap Nephalia Drownyard, 2x Island" — X's share, which the
+ *  same confirm pays with the rest of the cost (#937) — or null when `x` is not
  *  payable. The X box took a number and tapped lands it never named, so a
  *  person learned which from the log after the cast (#845); the modal shows
  *  this for the value being typed. `x-funding-cases.jsonl` holds it to the
@@ -1196,7 +1206,7 @@ export function describeXPlan(opts, x) {
     }
     if (taps.length > 0)
         parts.push(`tap ${taps.join(", ")}`);
-    return parts.length === 0 ? `X = ${x}: nothing is spent` : `X = ${x}: ${parts.join(", ")}`;
+    return parts.length === 0 ? `X = ${x}: nothing for X` : `X = ${x}: for X, ${parts.join(", ")}`;
 }
 /** The payable set as one line, runs collapsed, capped, both ends kept —
  *  the terminal's `describe_fundable_x` (#595). */

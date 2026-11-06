@@ -1023,6 +1023,16 @@ say what your stub says.
   in `GameView`); 16 stub games with Ghouls against Bears/Spiders never
   reached it. Stage it by save edit next time rather than hoping combat
   logs it
+  — **played 2026-10-27: `This turn:` held over 7,452 prompts; three
+  facts are on no surface (#953, #954).** #932 reached all three
+  surfaces. Two kinds of fact are still in no `GameView` field:
+  until-end-of-turn global effects (Moonmist's prevention), and per-object
+  turn history (`attacked_on_turn`, `abilities_activated_this_turn`). The
+  gap is wider than conditions in rules text: any continuous effect that
+  lasts the turn is a fact of the same kind. A save edit of
+  `attacked_on_turn`, giving two byte-identical prompts with different
+  outcomes, is the quickest proof. Compare games with and without
+  `--check-invariants`: the flag changes a `cc` game (#956)
 - H31 [proposed 2026-10-18, from reports/llm-cost.md phase 3] the turn
   that is one answer. A main-phase answer now carries `then` (cards to
   play after `action`), `ask_again` and `attack` (creatures to attack with,
@@ -1191,3 +1201,13 @@ say what your stub says.
   the parser takes is the same bug in another prompt. The stand-in's
   array lengths cannot be read off the line ("as many as the prompt
   says"), so ignore `card_indices`/`order` count REASKs from it
+  — **re-run 2026-11-03: the line and the check agree, but a cancel does
+  not.** A stand-in that answers only from the format line, numbers where
+  it prints numbers (40 games, ~2,600 calls, 13 line shapes, 0 parse
+  failures, 0 UNREADABLE), was re-asked only for list counts the prompt
+  states. Every `cancel: true` with an empty list on a question with a
+  minimum is re-asked "`indices` has 0 entries" and the identical second
+  reply then taken (#990): a field that makes another unread must lift its
+  requirements. Next time, look for every such pair (`cancel` beside
+  `indices`/`sources`, `confirm`, a "none" row) and answer each the way a
+  seat declining would, under both `MTG_CLAUDE_CODE_ANSWERS` settings

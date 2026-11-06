@@ -143,6 +143,16 @@ black-aggro (ba), innistrad-white (iw), innistrad-blue (iu), innistrad-green (ig
 /// London mulligan's bottoming as the same `set_prompt` as a cleanup
 /// discard, so the report would have read the same had the random seat
 /// stopped mulliganing again, the blind spot #456 found (#869).
+/// A pass or an empty attack shown only because something watches every
+/// submit (`--check-invariants`, a gui seat) is no decision: unwatched, the
+/// loop makes it and no seat is asked. `--stop-after` does not count it
+/// (#956's review), and nor does `--decision-stats` (#957).
+fn observed_only(legal: &engine::LegalActions) -> bool {
+    legal.is_observed_pass() || matches!(&legal.combat_prompt,
+        Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { eligible, must_attack, .. })
+            if eligible.is_empty() && must_attack.is_empty())
+}
+
 fn decision_kind_name(legal: &engine::LegalActions) -> String {
     fn variant<T: serde::Serialize>(value: &T) -> String {
         match serde_json::to_value(value) {
@@ -193,14 +203,30 @@ fn leave_game() {
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
+    end_run(&format!("Error: {msg}"), &format!("FATAL {msg}"), 1)
+}
+
+/// The end of a run that did not finish: `said` on stderr, the usage so
+/// far, `logged` as the log's last record, then `status`. Once: a fatal
+/// and a signal from two threads would each print it.
+fn end_run(said: &str, logged: &str, status: i32) -> ! {
+    static ENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if ENDING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        loop {
+            std::thread::park();
+        }
+    }
+    mtg_player::llm::claude_code_kill_live_calls();
     leave_game();
-    mtg_player::stderr_line!("Error: {msg}");
+    mtg_player::stderr_line!("{said}");
+    print_token_usage();
     // The log is the run's record: a refused `--resume` or any later fatal
     // left it ending with no word of why the run stopped, as the draft
     // runner's did (#735). Nothing is written when no log is open.
     mtg_player::game_log::write_at(
-        mtg_player::game_log::LogLevel::Error, file!(), line!(), &format!("FATAL {msg}"), "");
-    std::process::exit(1);
+        mtg_player::game_log::LogLevel::Error, file!(), line!(), logged, "");
+    mtg_player::game_log::flush_all();
+    std::process::exit(status);
 }
 
 /// Stream engine game-log entries `[from..]` to the `--log` file (a no-op
@@ -325,14 +351,17 @@ fn sweep_stale_hot_reload_saves() {
 }
 
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
-/// lookup in `main` is an exact-match position scan, so an unrecognized or
+/// lookup in `main` is by exact name, so an unrecognized or
 /// misspelled flag used to be silently dropped and its default silently used —
 /// a typo'd --deck1 quietly played the wrong deck (issue #55).
-fn validate_args(args: &[String]) {
+///
+/// Hands back every flag with its value, in order, for [`flag_value`].
+fn validate_args(args: &[String]) -> Vec<(String, String)> {
     const VALUE_FLAGS: &[&str] = &["--p1", "--p2", "--deck1", "--deck2",
         "--seed", "--log", "--save", "--resume", "--on-the-play", "--decision-stats",
         "--stop-after"];
     const BOOL_FLAGS: &[&str] = &["--check-invariants", "--quiet", "-q"];
+    let mut values = Vec::new();
     let mut i = 1;
     while i < args.len() {
         let a = args[i].as_str();
@@ -341,6 +370,7 @@ fn validate_args(args: &[String]) {
                 mtg_player::stderr_line!("Error: {a} requires a value\n\n{USAGE}");
                 std::process::exit(2);
             }
+            values.push((a.to_string(), args[i + 1].clone()));
             i += 2;
         } else if BOOL_FLAGS.contains(&a) {
             i += 1;
@@ -349,6 +379,15 @@ fn validate_args(args: &[String]) {
             std::process::exit(2);
         }
     }
+    values
+}
+
+/// The value of `flag`: its last, as `mtg-draft-server` reads one. The
+/// first was taken in silence, so `$BASE_FLAGS --p1 cc` played
+/// `$BASE_FLAGS`'s seat (#952). Looked up among the flags `validate_args`
+/// walked, so a value spelled like a flag is never read as one.
+fn flag_value<'a>(values: &'a [(String, String)], flag: &str) -> Option<&'a String> {
+    values.iter().rev().find(|(f, _)| f == flag).map(|(_, v)| v)
 }
 
 fn main() {
@@ -362,7 +401,7 @@ fn main() {
         mtg_player::stdout_line!("mtg-runner {}", env!("CARGO_PKG_VERSION"));
         return;
     }
-    validate_args(&args);
+    let values = validate_args(&args);
 
     // Parse player specs: --p1 <spec> --p2 <spec>
     // Spec formats:
@@ -372,21 +411,16 @@ fn main() {
     //   claude:claude-haiku-4-5-20251001  — Claude with specific model
     //   gemini                       — Gemini with default model (2.0-flash)
     //   gemini:gemini-2.5-flash      — Gemini with specific model
-    let p1_flag = args.iter().position(|a| a == "--p1")
-        .and_then(|i| args.get(i + 1)).cloned();
-    let p2_flag = args.iter().position(|a| a == "--p2")
-        .and_then(|i| args.get(i + 1)).cloned();
+    let p1_flag = flag_value(&values, "--p1").cloned();
+    let p2_flag = flag_value(&values, "--p2").cloned();
     let mut p1_spec = p1_flag.clone().unwrap_or_else(|| "cli".to_string());
     let mut p2_spec = p2_flag.clone().unwrap_or_else(|| "random".to_string());
 
-    let log_file = args.iter().position(|a| a == "--log")
-        .and_then(|i| args.get(i + 1))
+    let log_file = flag_value(&values, "--log")
         .map(std::string::String::as_str);
-    let decision_stats_file = args.iter().position(|a| a == "--decision-stats")
-        .and_then(|i| args.get(i + 1))
+    let decision_stats_file = flag_value(&values, "--decision-stats")
         .cloned();
-    let stop_after: Option<u64> = args.iter().position(|a| a == "--stop-after")
-        .and_then(|i| args.get(i + 1))
+    let stop_after: Option<u64> = flag_value(&values, "--stop-after")
         .map(|v| match v.parse::<u64>() {
             Ok(n) if n > 0 => n,
             _ => die(&format!("--stop-after takes a positive number of decisions, not '{v}'")),
@@ -396,33 +430,27 @@ fn main() {
     // Built-in deck names: red-green, white-black, blue-white,
     //   black-aggro, innistrad-white, innistrad-blue
     // Or a path to a deck file (one "COUNT CARD NAME" per line).
-    let deck1_spec = args.iter().position(|a| a == "--deck1")
-        .and_then(|i| args.get(i + 1))
+    let deck1_spec = flag_value(&values, "--deck1")
         .map_or("red-green", std::string::String::as_str);
 
-    let deck2_spec = args.iter().position(|a| a == "--deck2")
-        .and_then(|i| args.get(i + 1))
+    let deck2_spec = flag_value(&values, "--deck2")
         .map_or("white-black", std::string::String::as_str);
 
-    let save_file = args.iter().position(|a| a == "--save")
-        .and_then(|i| args.get(i + 1))
+    let save_file = flag_value(&values, "--save")
         .cloned();
 
-    let resume_file = args.iter().position(|a| a == "--resume")
-        .and_then(|i| args.get(i + 1))
+    let resume_file = flag_value(&values, "--resume")
         .cloned();
 
     // --seed N makes the whole game deterministic: the engine's shuffles and
     // the random players' picks all derive from it, so a failure replays.
-    let seed: Option<u64> = args.iter().position(|a| a == "--seed")
-        .and_then(|i| args.get(i + 1))
+    let seed: Option<u64> = flag_value(&values, "--seed")
         .map(|s| s.parse().unwrap_or_else(|_| die(&format!("--seed takes a number, got '{s}'"))));
 
     // --on-the-play 1|2 pins which seat takes the first turn; without it the
     // opening player is randomized per CR 103.1 (seeded, so reproducible) —
     // p0-always-on-the-play biased every recorded match (issue #112).
-    let starting_player: Option<PlayerId> = args.iter().position(|a| a == "--on-the-play")
-        .and_then(|i| args.get(i + 1))
+    let starting_player: Option<PlayerId> = flag_value(&values, "--on-the-play")
         .map(|v| match v.as_str() {
             "1" => PlayerId(0),
             "2" => PlayerId(1),
@@ -646,7 +674,11 @@ stops here — pass --save {path} to keep writing it");
                     mtg_player::llm::PASS_UNTIL_ENV, on_off(!pass_until), on_off(pass_until))),
         ];
         for (_, why) in unlike.iter().filter(|(differs, _)| *differs) {
-            mtg_player::stderr_line!("note: --resume {path}: its system prompt is not the live one: {why}");
+            let note = format!("--resume {path}: its system prompt is not the live one: {why}");
+            mtg_player::stderr_line!("note: {note}");
+            // And in the log, which outlives the terminal, as the draft
+            // runners' resumes write theirs (#949's review).
+            mtg_player::game_log::write(file!(), line!(), "NOTE", &note);
         }
         banner = format!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
             path, save.state.turn_number, save.player_names[0], save.player_names[1],
@@ -815,6 +847,11 @@ stops here — pass --save {path} to keep writing it");
     // A signal (closed window, kill, timeout) landing while a CLI prompt
     // holds the terminal in raw mode must not leave the pty raw for the
     // shell (issue #78).
+    // Only where a seat spends calls: a random-vs-random game (the fuzzer's,
+    // under `timeout`) has nothing to account for and dies as it did.
+    if !has_human && (matches!(p1, PlayerKind::Llm(_)) || matches!(p2, PlayerKind::Llm(_))) {
+        stop_on_signals();
+    }
     if has_human {
         mtg_player::cli::install_terminal_restore_signal_handlers();
         // Everything before the first frame — a `--resume` of a large save
@@ -896,6 +933,11 @@ stops here — pass --save {path} to keep writing it");
     // mode in 1.8% of casts (#664-#667), and nothing was red. Counting the
     // kinds asked lets the campaign say which ones it never was.
     let decision_kinds: std::cell::RefCell<std::collections::BTreeMap<String, u64>> = Default::default();
+    // What was shown only to an observer ([`observed_only`]), apart: in
+    // `kinds` it made one game 248 decisions without `--check-invariants`
+    // and 1,152 with it, and an attack prompt with nothing eligible read as
+    // `ChooseAttackers` reached (#957).
+    let observed_kinds: std::cell::RefCell<std::collections::BTreeMap<String, u64>> = Default::default();
     // The widest board the game reached, for the same report: the walls at
     // 500-2,000 permanents (#565, #640-#642) were found on boards no fuzz
     // game ever built, and nothing said so.
@@ -911,6 +953,7 @@ stops here — pass --save {path} to keep writing it");
                 "decisions": kinds.values().sum::<u64>(),
                 "max_permanents": max_permanents.get(),
                 "kinds": *kinds,
+                "observed": *observed_kinds.borrow(),
             });
             let text = serde_json::to_string_pretty(&stats).unwrap_or_default();
             if let Err(e) = fs::write(path, text) {
@@ -971,8 +1014,13 @@ stops here — pass --save {path} to keep writing it");
         } else {
             choose_action(player, &view, legal)
         };
-        decisions_made.set(decisions_made.get() + 1);
-        if stop_after == Some(decisions_made.get()) {
+        // `--stop-after N` stopped at another decision under
+        // `--check-invariants` when these counted (#956's review).
+        let observed = observed_only(legal);
+        if !observed {
+            decisions_made.set(decisions_made.get() + 1);
+        }
+        if !observed && stop_after == Some(decisions_made.get()) {
             let json = serde_json::to_string(&answer).unwrap_or_else(|e| format!("\"unserializable: {e}\""));
             leave_game();
             write_decision_stats();
@@ -1010,7 +1058,8 @@ stops here — pass --save {path} to keep writing it");
 
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
-        *decision_kinds.borrow_mut().entry(decision_kind_name(legal)).or_insert(0) += 1;
+        let kinds = if observed_only(legal) { &observed_kinds } else { &decision_kinds };
+        *kinds.borrow_mut().entry(decision_kind_name(legal)).or_insert(0) += 1;
         max_permanents.set(max_permanents.get().max(
             game_state.all_objects_in_zone(mtg_engine::types::Zone::Battlefield).len()));
 
@@ -1095,8 +1144,11 @@ stops here — pass --save {path} to keep writing it");
             if !all.is_empty() {
                 leave_game();
                 write_decision_stats();
-                mtg_player::stderr_line!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
-                    game_state.turn_number, game_state.step);
+                // The action count includes what the checker alone was
+                // shown; the decision count is the N `--stop-after` takes
+                // to stop just before it (#957's review).
+                mtg_player::stderr_line!("INVARIANT VIOLATION at action {action_count}, after decision {} (turn {}, step {:?}):",
+                    decisions_made.get(), game_state.turn_number, game_state.step);
                 for msg in &all {
                     mtg_player::stderr_line!("  - {msg}");
                     mtg_player::game_log::write(file!(), line!(), "INVARIANT", msg);
@@ -1106,6 +1158,8 @@ stops here — pass --save {path} to keep writing it");
                 for entry in &game_state.game_log[tail..] {
                     mtg_player::stderr_line!("  | {}", entry.message);
                 }
+                // What the seats spent before the break (#912's review).
+                print_token_usage();
                 std::process::exit(2);
             }
         }
@@ -1312,7 +1366,20 @@ use --save if you need a resumable file.");
     mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
-    // Log token usage per model.
+    print_token_usage();
+}
+
+/// What the seats spent, one line per model, on stdout and as the log's
+/// `TOKEN_USAGE` record. Once per process: the end of a game, a fatal and
+/// a stop signal each print it, and only the first does. A run that
+/// stopped before it ended still spent what it spent, and printed nothing
+/// of it on a fatal or a Ctrl-C, as the draft runner did before #578 and
+/// #912.
+fn print_token_usage() {
+    static PRINTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if PRINTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let usage = mtg_player::llm::get_llm_model_usage();
     if !usage.is_empty() {
         let mut usage_lines = String::new();
@@ -1348,6 +1415,23 @@ use --save if you need a resumable file.");
         mtg_player::stdout_line!("{}", usage_lines.trim());
         mtg_player::game_log::write(file!(), line!(), "TOKEN_USAGE", usage_lines.trim());
     }
+}
+
+/// Stop on Ctrl-C, SIGTERM or SIGHUP with the account a finished game
+/// gives: the handler takes the calls down at once, as it did, and then
+/// this thread prints the usage so far, says why in the log and exits with
+/// the status the signal gives (#912's review). Not with a cli seat: its
+/// terminal-restoring handler is installed after this and is the one that
+/// runs (#78, #686).
+fn stop_on_signals() {
+    mtg_player::llm::stop_gracefully_on_signal();
+    let _ = std::thread::Builder::new().name("signals".into()).spawn(|| loop {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if let Some(sig) = mtg_player::llm::stop_signal() {
+            let why = format!("stopped by {}", mtg_player::llm::signal_name(sig));
+            end_run(&format!("Stopped: {why}"), &format!("NOTE {why}; the game is not finished"), 128 + sig);
+        }
+    });
 }
 
 /// An API key that is present but empty cannot authenticate any better than

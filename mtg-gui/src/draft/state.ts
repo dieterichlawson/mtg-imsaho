@@ -48,6 +48,9 @@ export interface PageState {
   review: ReviewPick[] | null;
   /** The review is open; it is asked for when it is opened. */
   reviewOpen: boolean;
+  /** The review's card read in place ("round.pick:index" into that pick's
+   *  pack), or null: a tap reads it, on a phone too (#889). */
+  reviewRead: string | null;
   refusal: Refusal | null;
   /** Drafting: `performance.now()` at which the pick timer runs out. */
   deadlineAt: number | null;
@@ -74,6 +77,8 @@ export interface Actions {
   sideboardReady(): void;
   /** Open or close the draft review. */
   toggleReview(): void;
+  /** Read one card of the review in place, or close it if it is the one read. */
+  readReview(key: string): void;
   dismiss(): void;
   dismissNotice(): void;
 }
@@ -83,7 +88,7 @@ export function initialState(): PageState {
     ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false, closed: null,
     seat: null, key: null, view: null,
     selected: null, hover: null, pendingPick: null,
-    deck: null, cursor: null, readySent: false, between: null, review: null, reviewOpen: false,
+    deck: null, cursor: null, readySent: false, between: null, review: null, reviewOpen: false, reviewRead: null,
     refusal: null, deadlineAt: null, hint: null, notice: null,
   };
 }

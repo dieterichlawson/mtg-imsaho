@@ -265,7 +265,10 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             state.last_activated_x_value = x_value;
             state.last_activated_sacrifice = sacrificed;
             state.last_activated_sacrifice_toughness = sacrificed_toughness;
-            let name = state.name_of(source_id, registry);
+            // Named as it went on the stack (CR 113.7a, #980).
+            let name = on_stack.as_ref()
+                .and_then(|e| state.ability_source_name(e, registry))
+                .unwrap_or_else(|| state.name_of(source_id, registry));
 
             // CR 608.2b applies to abilities as well as spells, and this path
             // used to skip the check entirely — an activated ability resolved

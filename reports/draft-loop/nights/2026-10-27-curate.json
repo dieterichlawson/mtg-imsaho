@@ -1,0 +1,42 @@
+{
+ "night": "2026-10-27",
+ "model": "claude-sonnet-5-5",
+ "attempts": 1,
+ "words": 695,
+ "missing_sections": [],
+ "usage": {
+  "input_tokens": 2,
+  "cache_creation_input_tokens": 9123,
+  "cache_read_input_tokens": 0,
+  "output_tokens": 1870,
+  "output_tokens_details": {
+   "thinking_tokens": 0
+  },
+  "server_tool_use": {
+   "web_search_requests": 0,
+   "web_fetch_requests": 0
+  },
+  "service_tier": "standard",
+  "cache_creation": {
+   "ephemeral_1h_input_tokens": 0,
+   "ephemeral_5m_input_tokens": 9123
+  },
+  "inference_geo": "global",
+  "iterations": [
+   {
+    "input_tokens": 2,
+    "output_tokens": 1870,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 9123,
+    "cache_creation": {
+     "ephemeral_5m_input_tokens": 9123,
+     "ephemeral_1h_input_tokens": 0
+    },
+    "type": "message"
+   }
+  ],
+  "speed": "standard",
+  "fallback_credit": null
+ },
+ "refused": []
+}

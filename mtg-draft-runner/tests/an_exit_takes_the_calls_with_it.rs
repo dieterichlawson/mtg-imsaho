@@ -324,3 +324,78 @@ fn a_fatal_with_stderr_closed_still_exits_and_sweeps() {
     assert!(left.is_empty(), "{} in-flight calls outlived the run (pids {left:?})", left.len());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #912: a Ctrl-C mid-run took the calls down and ended the process on the
+/// spot, so the run published no account of what it had spent; a fatal
+/// had printed one since #578. It now ends the way a fatal does: the
+/// in-flight calls gone, the usage so far on stderr, the reason the last
+/// record in the log, and the exit status a SIGINT gives.
+#[test]
+fn an_interrupt_prints_what_the_run_spent() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("mtg-draft-sigint-summary-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let pids = dir.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    // Each seat's first pick is answered; every call after it hangs.
+    let bin = dir.join("seat.py");
+    std::fs::write(&bin, r##"#!/usr/bin/env python3
+import json, os, re, sys, time
+argv = sys.argv[1:]
+if argv and argv[0] == "--version":
+    print("1.0.0 (stub)"); sys.exit(0)
+message = sys.stdin.read()
+if "Pick 1/" in message or "Pick 1 " in message or "Pick 1\n" in message:
+    out = {"pick": 0, "thoughts": "first"}
+    print(json.dumps({"type": "result", "is_error": False, "session_id": "s", "structured_output": out,
+                      "result": json.dumps(out), "usage": {"input_tokens": 10, "output_tokens": 3}}))
+    sys.exit(0)
+open(os.path.join(os.environ["STUB_PIDS"], str(os.getpid())), "w").write("x")
+time.sleep(600)
+"##).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let log = dir.join("run.log");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+        .args(["--model", "cc", "--best-of", "1", "--seed", "7", "-q", "--players", "2"])
+        .args(["--log", log.to_str().unwrap()])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &bin)
+        .env("STUB_PIDS", &pids)
+        .env("MTG_CLAUDE_CODE_TIMEOUT_SECS", "900")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the runner runs");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let hung = loop {
+        let seen = recorded_pids(&pids);
+        if seen.len() >= 2 {
+            break seen;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            reap(&seen);
+            panic!("the seats never reached their second pick");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let killed = std::process::Command::new("kill").args(["-INT", &child.id().to_string()]).status().unwrap();
+    assert!(killed.success());
+    let out = child.wait_with_output().unwrap();
+    let left = survivors(&hung, Duration::from_secs(10));
+    reap(&left);
+    assert!(left.is_empty(), "calls survived the interrupt: {left:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(130), "the status a SIGINT gives:\n{stderr}");
+    assert!(stderr.contains("=== Token Usage (run stopped early) ===") && stderr.contains("Draft:  2 calls"),
+        "the usage so far:\n{stderr}");
+    assert!(stderr.contains("Stopped: stopped by Ctrl-C (SIGINT)"), "{stderr}");
+    let logged = std::fs::read_to_string(&log).unwrap();
+    let last = logged.lines().filter(|l| l.starts_with("20")).last().unwrap_or_default();
+    assert!(last.contains("NOTE stopped by Ctrl-C (SIGINT); the run is not finished"), "{last}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

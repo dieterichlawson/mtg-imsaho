@@ -106,7 +106,14 @@ pub fn match_line(format: MatchFormat) -> Option<String> {
         MatchFormat::BestOf { best_of, game, your_wins, their_wins } => Some(if game == 1 {
             format!("Game 1 of a best-of-{best_of}")
         } else {
-            format!("Game {game} of a best-of-{best_of} · you {your_wins}, them {their_wins}")
+            // A drawn or abandoned game wins nothing: "you 0, them 0" before
+            // game 2 read as no game played (#971's review).
+            let none = match game.saturating_sub(1 + your_wins + their_wins) {
+                0 => String::new(),
+                1 => ", 1 game with no winner".to_string(),
+                n => format!(", {n} games with no winner"),
+            };
+            format!("Game {game} of a best-of-{best_of} · you {your_wins}, them {their_wins}{none}")
         }),
     }
 }
@@ -316,6 +323,7 @@ pub fn play_match(
         }
         let starts = if setup.chooser_plays.unwrap_or(true) { chooser } else if chooser == seat_a { seat_b } else { seat_a };
         let starter = if starts == seat_a { PlayerId(0) } else { PlayerId(1) };
+        let played = [&a.deck, &b.deck].map(played_cards);
         let (mut outcome, showed) = play_game(
             &mut a,
             &mut b,
@@ -325,6 +333,7 @@ pub fn play_match(
             MatchFormat::BestOf { best_of, game: game_number, your_wins: wins_b, their_wins: wins_a },
             rand::Rng::gen(&mut match_rng),
         );
+        outcome.decks = Some(played);
 
         // The loser chooses for the next game; after a draw, the same seat.
         if let Some(w) = outcome.winner {
@@ -372,7 +381,7 @@ pub fn play_match(
                 let forfeit = GameOutcome {
                     winner: Some(winner), turns: 0,
                     game_log: withdrawn.iter().map(|(_, line)| line.clone()).collect(),
-                    stalled_seat: Some(dead), abandoned: false,
+                    stalled_seat: Some(dead), abandoned: false, decks: None,
                 };
                 after_game(&forfeit);
                 games.push(forfeit);
@@ -387,6 +396,37 @@ pub fn play_match(
         wins_b,
         games,
     }
+}
+
+/// The non-basic cards of a deck, one name per copy: what a game's record
+/// says each seat played (#901). The basics are left out as a registered
+/// deck's `maindeck` leaves them out.
+fn played_cards(deck: &Decklist) -> Vec<String> {
+    deck.entries.iter()
+        .filter(|(name, _)| !mtg_draft::deckbuilding::BASIC_LANDS.contains(&name.as_str()))
+        .flat_map(|(name, n)| std::iter::repeat_n(name.clone(), *n as usize))
+        .collect()
+}
+
+/// What each seat showed its opponent: its cards (not tokens) that were
+/// public when the game ended, by the card's name. An object's `name` is
+/// the face it shows, so a transformed Grizzled Outcasts was recorded as
+/// "Krallenhorde Wantons", a name the card lines do not know, and the AI
+/// seat's sideboard prompt listed it bare, with no cost, type or front
+/// face (#908). A permanent that became a copy (Evil Twin) is the card
+/// it was cast as, not the one it copies (#908's review).
+fn shown_cards(state: &mtg_engine::state::GameState, registry: &CardRegistry) -> [Vec<String>; 2] {
+    [PlayerId(0), PlayerId(1)].map(|p| {
+        let mut cards: Vec<String> = state.objects.values()
+            .filter(|o| o.owner == p && !o.is_token)
+            .filter(|o| matches!(o.zone, Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack))
+            .map(|o| registry.card_data(o.copy_grantor.unwrap_or(o.card_id)).map_or_else(|| o.name.clone(), |c| c.name))
+            .map(|name| mtg_draft::front_face(&name).to_string())
+            .collect();
+        cards.sort();
+        cards.dedup();
+        cards
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -603,18 +643,7 @@ fn play_game(
         .map(|entry| entry.message.clone())
         .collect();
 
-    // What each seat showed its opponent: its cards (not tokens) that were
-    // public when the game ended.
-    let showed = [PlayerId(0), PlayerId(1)].map(|p| {
-        let mut cards: Vec<String> = state.objects.values()
-            .filter(|o| o.owner == p && !o.is_token)
-            .filter(|o| matches!(o.zone, Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack))
-            .map(|o| mtg_draft::front_face(&o.name).to_string())
-            .collect();
-        cards.sort();
-        cards.dedup();
-        cards
-    });
+    let showed = shown_cards(&state, registry);
 
     (GameOutcome {
         winner,
@@ -622,6 +651,7 @@ fn play_game(
         game_log,
         stalled_seat,
         abandoned,
+        decks: None,
     }, showed)
 }
 
@@ -787,9 +817,17 @@ mod harness_stop_tests {
     }
 
     #[test]
+    fn the_match_line_counts_a_game_with_no_winner() {
+        assert_eq!(super::match_line(super::MatchFormat::BestOf { best_of: 3, game: 2, your_wins: 0, their_wins: 0 }).unwrap(),
+            "Game 2 of a best-of-3 · you 0, them 0, 1 game with no winner");
+        assert_eq!(super::match_line(super::MatchFormat::BestOf { best_of: 3, game: 3, your_wins: 1, their_wins: 1 }).unwrap(),
+            "Game 3 of a best-of-3 · you 1, them 1");
+    }
+
+    #[test]
     fn an_abandoned_game_is_named_on_the_score_line() {
         let game = |stalled_seat, abandoned| GameOutcome {
-            winner: None, turns: 30, game_log: vec![], stalled_seat, abandoned,
+            winner: None, turns: 30, game_log: vec![], stalled_seat, abandoned, decks: None,
         };
         assert_eq!(unplayed_games_note(&[game(None, false)]), "");
         assert_eq!(unplayed_games_note(&[game(None, true)]),
@@ -799,11 +837,40 @@ mod harness_stop_tests {
         // A forfeit the table made before any game began says why, as its
         // log does, not "a seat stalled" (#759).
         let unplayed = |why: &str| GameOutcome {
-            winner: Some(1), turns: 0, game_log: vec![format!("forfeit: {why}")], stalled_seat: Some(0), abandoned: false,
+            winner: Some(1), turns: 0, game_log: vec![format!("forfeit: {why}")], stalled_seat: Some(0), abandoned: false, decks: None,
         };
         assert_eq!(unplayed_games_note(&[unplayed("no game page for seat 0"), unplayed("no game page for seat 0")]),
             " [2 games forfeited: no game page for seat 0]");
         assert_eq!(unplayed_games_note(&[game(Some(0), false), unplayed("the seat is away")]),
             " [1 game forfeited: a seat stalled] [1 game forfeited: the seat is away]");
+    }
+}
+
+#[cfg(test)]
+mod shown_cards_tests {
+    use super::shown_cards;
+    use mtg_engine::cards::CardRegistry;
+    use mtg_engine::ids::PlayerId;
+    use mtg_engine::state::GameState;
+    use mtg_engine::types::Zone;
+
+    /// #908: a transformed card is shown by its card's name, which the card
+    /// lines know, not by the back face it shows ("Krallenhorde Wantons").
+    #[test]
+    fn a_transformed_card_is_shown_by_its_front_face() {
+        let registry = CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let outcasts = registry.get_id_by_name("Grizzled Outcasts").expect("Grizzled Outcasts");
+        let id = state.create_object(outcasts, PlayerId(1), Zone::Battlefield, Some(4), Some(4));
+        let obj = state.get_object_mut(id).unwrap();
+        obj.name = "Krallenhorde Wantons".to_string();
+        obj.is_transformed = true;
+        let hidden = state.create_object(outcasts, PlayerId(1), Zone::Hand, Some(4), Some(4));
+        state.get_object_mut(hidden).unwrap().name = "Grizzled Outcasts".to_string();
+        assert_eq!(shown_cards(&state, &registry), [Vec::<String>::new(), vec!["Grizzled Outcasts".to_string()]]);
+        // An Evil Twin that became a copy of the Outcasts is an Evil Twin.
+        let twin = state.create_object(outcasts, PlayerId(0), Zone::Battlefield, Some(4), Some(4));
+        state.get_object_mut(twin).unwrap().copy_grantor = registry.get_id_by_name("Evil Twin");
+        assert_eq!(shown_cards(&state, &registry)[0], vec!["Evil Twin".to_string()]);
     }
 }

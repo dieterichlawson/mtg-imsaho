@@ -140,6 +140,20 @@ pub fn unplayed_games_note(games: &[GameOutcome]) -> String {
     out
 }
 
+/// A match's score from one side: games won, games lost, and the drawn
+/// games as a third figure when there were any, as MTR records a match
+/// (wins-losses-draws). "2-0" for a match of a draw and two wins left the
+/// draw in no count, and a match of three draws read "0-0", a match
+/// nobody played (#919). An abandoned game is not a draw (#743): the
+/// unplayed-games note counts it.
+#[must_use]
+pub fn match_score(won: usize, lost: usize, games: &[GameOutcome]) -> String {
+    match games.iter().filter(|g| g.winner.is_none() && !g.abandoned).count() {
+        0 => format!("{won}-{lost}"),
+        drawn => format!("{won}-{lost}-{drawn}"),
+    }
+}
+
 /// The per-match progress line on stderr. A forfeited game is a game nobody
 /// played; the score line is where a reader is looking when it happens
 /// (#488). A level match has no winner to name (#650).
@@ -156,11 +170,10 @@ pub fn match_score_line_with(result: &MatchResult, who: &dyn Fn(usize) -> String
         None => "drawn".to_string(),
     };
     format!(
-        "  {} vs {}: {}-{} ({outcome}){}",
+        "  {} vs {}: {} ({outcome}){}",
         who(result.player_a),
         who(result.player_b),
-        result.wins_a,
-        result.wins_b,
+        match_score(result.wins_a, result.wins_b, &result.games),
         unplayed_games_note(&result.games),
     )
 }
@@ -244,5 +257,22 @@ mod match_score_line_tests {
     fn a_drawn_match_names_no_winner() {
         assert_eq!(match_score_line(&result(1, 1)), "  Seat 0 vs Seat 1: 1-1 (drawn)");
         assert_eq!(match_score_line(&result(0, 2)), "  Seat 0 vs Seat 1: 0-2 (winner: Seat 1)");
+    }
+
+    /// #919: the drawn games of a match were in no count. A draw and two
+    /// wins read "2-0", three draws read "0-0" like a match nobody played.
+    /// MTR's record is wins-losses-draws; an abandoned game is not a draw
+    /// and keeps its own note.
+    #[test]
+    fn a_matchs_drawn_games_are_in_its_score() {
+        let game = |winner: Option<usize>, abandoned: bool| mtg_draft::tournament::GameOutcome {
+            winner, turns: 9, game_log: vec![], stalled_seat: None, abandoned, decks: None };
+        let with = |wins_a, wins_b, games| MatchResult { games, ..result(wins_a, wins_b) };
+        assert_eq!(match_score_line(&with(0, 2, vec![game(None, false), game(Some(1), false), game(Some(1), false)])),
+            "  Seat 0 vs Seat 1: 0-2-1 (winner: Seat 1)");
+        assert_eq!(match_score_line(&with(0, 0, vec![game(None, false); 3])), "  Seat 0 vs Seat 1: 0-0-3 (drawn)");
+        assert_eq!(match_score_line(&with(1, 1, vec![game(Some(0), false), game(Some(1), false), game(None, true)])),
+            "  Seat 0 vs Seat 1: 1-1 (drawn) [1 game abandoned: the action budget ran out, no winner]");
+        assert_eq!(super::match_score(2, 0, &[game(Some(0), false), game(Some(0), false)]), "2-0");
     }
 }

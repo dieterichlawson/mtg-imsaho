@@ -172,7 +172,7 @@ jobs:
               "" \
               "**Target**: the random seat or the fuzz deck sets (not the engine): the campaign's $games games never asked this question, so nothing in them exercised the engine's handling of it. Either no card in decks/coverage, decks/fuzz or decks/fuzz/flood can raise it under random play, or the random seat never answers its way into it (compare #664-#667)." \
               "" \
-              "**Repro**: run scripts/fuzz.sh and read logs/fuzz-reach-<date>.md; or play seeded random games with --decision-stats and look for \`$kind\` in the JSON." \
+              "**Repro**: run scripts/fuzz.sh and read logs/fuzz-reach-<date>.md; or play seeded random games with --decision-stats and look for \`$kind\` under \`kinds\` in the JSON (\`observed\` holds what was shown only to the invariant checker, #957)." \
               "" \
               "**Evidence** (the shard's reach report):" \
               '```' \

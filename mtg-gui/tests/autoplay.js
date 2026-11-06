@@ -13,22 +13,34 @@
 // widget's state. Page errors fail the run too. Every prompt kind reached
 // is counted, so a run's summary says what was exercised.
 
-const { chromium } = require("playwright");
-const { startRunner, finish } = require("./children.js");
+const { startRunner, finish, parseArgs } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 
-const arg = (name, def) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : def; };
-const games = Number(arg("--games", "1"));
-const seed0 = Number(arg("--seed", String(Math.floor(Math.random() * 100000))));
-const maxDecisions = Number(arg("--decisions", "400"));
-const shotsDir = arg("--shots", null);
-const decksArg = [arg("--deck1", null), arg("--deck2", null)];
+// Read when it runs as a script: `table_rehearsal.js` requires this file
+// for its `step`, and its flags are not these.
+let games = 1, seed0 = 0, maxDecisions = 400, shotsDir = null, decksArg = [null, null];
+function readArgs() {
+  const a = parseArgs({
+    "--games": { kind: "int", min: 1, def: 1 },
+    "--seed": { kind: "int", def: Math.floor(Math.random() * 100000) },
+    "--decisions": { kind: "int", min: 1, def: 400 },
+    "--shots": { kind: "string", def: null },
+    "--deck1": { kind: "string", def: null },
+    "--deck2": { kind: "string", def: null },
+  });
+  games = a["--games"]; seed0 = a["--seed"]; seedClicks(seed0); maxDecisions = a["--decisions"]; shotsDir = a["--shots"];
+  decksArg = [a["--deck1"], a["--deck2"]];
+}
 const DECKS = ["red-green", "white-black", "blue-white", "black-aggro", "innistrad-white", "innistrad-blue", "innistrad-green",
   "decks/coverage/ub-coverage.txt", "decks/coverage/rg-coverage.txt", "decks/coverage/wb-coverage.txt", "decks/coverage/ug-coverage.txt",
   "decks/coverage/br-coverage.txt", "decks/coverage/wu-coverage.txt", "decks/coverage/wg-coverage.txt", "decks/coverage/ur-coverage.txt"];
 
-let rngState = seed0 * 2654435761 >>> 0;
+let rngState = 0;
+/** Seed the clicks: by `--seed` run as a script, by the rehearsal's seed
+ *  when `table_rehearsal.js` borrows `step` (it read that `--seed` from
+ *  argv before the flags were parsed, #943's review). */
+function seedClicks(seed) { rngState = seed * 2654435761 >>> 0; }
 function rnd() { rngState = (rngState * 1664525 + 1013904223) >>> 0; return rngState / 4294967296; }
 function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
 
@@ -38,7 +50,7 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
   // The draw that once chose the port, kept so a seed plays the clicks and
   // decks it always did.
   rnd();
-  const { runner, urls, output } = await startRunner(
+  const { runner, urls, output, gone } = await startRunner(
     ["--p1", "gui:0", "--p2", "random", "--seed", String(seed), "--deck1", deck1, "--deck2", deck2, "-q", "--check-invariants"]);
   let page = null;
   const errors = [];
@@ -50,10 +62,21 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
     page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    await page.goto(urls["--p1"]);
+    // A page that does not load in 15s is the failure, said once: the
+    // default 30s timeout under a retry took 21 minutes to fail (#943).
+    await page.goto(urls["--p1"], { timeout: 15000 });
     let lastSeq = -1, stuck = 0, committed = false;
     while (decisions < maxDecisions) {
-      const ready = await page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 60000 }).catch(() => null);
+      const ready = await Promise.race([
+        page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 60000 }).catch(() => null),
+        gone.then(e => ({ gone: e })),
+      ]);
+      // The page's game over can arrive after the runner exits; only a
+      // runner gone with no game over is its failure.
+      if (ready && ready.gone && !(await page.evaluate(() => !!(window.mtg && window.mtg.gameOver)).catch(() => false))) {
+        fail(`${label}: the runner exited (${ready.gone.sig || ready.gone.code}) at decision ${decisions}:\n${output().slice(-1500)}`);
+        break;
+      }
       if (!ready) { fail(`${label}: no decision for 60s at decision ${decisions}`); await shot("hang"); break; }
       const snap = await snapshot(page);
       if (snap.over) { outcome = snap.over.split("\n")[0]; break; }
@@ -75,6 +98,15 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
   }
   console.log(`${label}: ${decisions} decisions, ${outcome}`);
   return decisions;
+}
+
+/** The attackers (page keys, "o<id>") the blocker `key` may block, from
+ *  the decision's `legal_blocks` (by bare id); every attacker when the
+ *  decision has none to say (#944). */
+function blockable(attackerKeys, legal, key) {
+  if (!legal) return attackerKeys;
+  const may = (legal[String(key).replace(/^o/, "")] || []).map(id => `o${id}`);
+  return attackerKeys.filter(k => may.includes(k));
 }
 
 /** What the page is asking, and what on it can be clicked. */
@@ -132,9 +164,13 @@ async function step(page, s) {
     }
     case "mark": {
       const want = Math.min(s.max, s.min + Math.floor(rnd() * (s.max - s.min + 1)));
-      for (let n = s.marked; n < want; n++) {
+      // Until the page says `want` are marked: a click that marked nothing
+      // was counted as a mark, and the step confirmed short of `min` and
+      // ended stuck on the refusal (#944's review).
+      for (let tries = 0; tries < 3 * (want + 1); tries++) {
         // Only things not yet marked: clicking a marked one unmarks it.
         const marked = await page.evaluate(() => window.mtg.ui.marked.slice());
+        if (marked.length >= want) break;
         const opts = (await clickableNow(page, ["perm", "hand", "player", "stack", "card", "row"])).filter(h => !h.key || !marked.includes(h.key));
         if (!opts.length) break;
         await click(page, pick(opts));
@@ -149,12 +185,38 @@ async function step(page, s) {
     }
     case "blockers": {
       const attackerKeys = await page.evaluate(() => [...(window.mtg.ui.attackers || [])]);
+      // Which attackers each blocker may block, as the engine offered them:
+      // an arbitrary attacker left a blocker selected on a flyer it could
+      // not block, the page then (rightly) refused "No blocks", and the
+      // run failed as stuck (#944).
+      const { legal, least } = await page.evaluate(() => {
+        const c = window.mtg.decision && window.mtg.decision.combat;
+        const d = c && Object.values(c)[0];
+        return { legal: (d && d.legal_blocks) || null, least: (d && d.min_blockers) || {} };
+      });
       const blockers = s.options.filter(o => o.kind === "perm" && !attackerKeys.includes(o.key));
+      const used = new Set();
       for (const b of blockers) {
-        if (rnd() >= 0.6) continue;
+        if (used.has(b.key) || rnd() >= 0.6) continue;
         await click(page, b);
-        const targets = (await clickableNow(page, ["perm"])).filter(h => attackerKeys.includes(h.key));
-        if (targets.length) await click(page, pick(targets)); else await click(page, b);
+        used.add(b.key);
+        // An attacker with menace takes two blockers or none: it is a target
+        // only with a second unused blocker that may block it too, sent with
+        // it, or the page refuses the block and the run ends stuck.
+        const partnerFor = (t) => blockers.find(o => !used.has(o.key) && blockable(attackerKeys, legal, o.key).includes(t));
+        const may = blockable(attackerKeys, legal, b.key)
+          .filter(t => (least[t.replace(/^o/, "")] || 1) < 2 || partnerFor(t));
+        const targets = (await clickableNow(page, ["perm"])).filter(h => may.includes(h.key));
+        if (!targets.length) { await click(page, b); continue; }
+        const t = pick(targets);
+        await click(page, t);
+        if ((least[String(t.key).replace(/^o/, "")] || 1) >= 2) {
+          const second = partnerFor(t.key);
+          used.add(second.key);
+          await click(page, second);
+          const again = (await clickableNow(page, ["perm"])).find(h => h.key === t.key);
+          if (again) await click(page, again);
+        }
       }
       if (!(await clickButton(page, s, primary))) await page.keyboard.press("Enter");
       return true;
@@ -182,6 +244,9 @@ async function step(page, s) {
 }
 
 async function main() {
+  // Here, not at the top: `autoplay_blocks.mjs` loads the helpers in the
+  // workflow's no-browser step.
+  const { chromium } = require("playwright");
   const browser = await chromium.launch();
   const kinds = new Map();
   let total = 0;
@@ -202,5 +267,5 @@ async function main() {
 
 // Run as a script it plays its own games; required, it lends its step to
 // another driver (`table_rehearsal.js` plays a hosted table's game pages).
-if (require.main === module) finish(main);
-module.exports = { step, snapshot };
+if (require.main === module) { readArgs(); finish(main); }
+module.exports = { step, snapshot, seedClicks, blockable };

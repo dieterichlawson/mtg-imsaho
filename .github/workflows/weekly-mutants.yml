@@ -60,8 +60,12 @@ jobs:
         run: |
           SHARDS="${{ inputs.shards || '10' }}"
           set +e
+          # `proofs` is the Kani harnesses, compiled only under cfg(kani):
+          # no `cargo test` can see a mutation of them, and proofs.yml is
+          # what checks them (#985).
           ANTHROPIC_API_KEY=dummy cargo mutants -p mtg-engine \
             -e isd \
+            -e proofs \
             --shard ${{ matrix.shard }}/"$SHARDS" \
             --timeout 300 \
             -- -p mtg-engine

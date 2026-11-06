@@ -81,6 +81,138 @@ fn delver_transforms_when_player_reveals_instant() {
     assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
 }
 
+/// CR 113.7a, CR 701.28f: a front-face Delver flipped in response to its own
+/// upkeep trigger still has that trigger resolve: its controller looks at the
+/// top card and may reveal it. Only the transform does nothing, since the
+/// Delver has transformed since the trigger went on the stack. The trigger
+/// used to read the face up at resolution and return, so the look and the
+/// reveal never happened (#986's review).
+#[test]
+fn a_delver_flipped_in_response_still_looks_and_does_not_flip_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+    state.move_object(bolt, Zone::Library, &reg);
+    state.players[0].library_order.insert(0, bolt);
+
+    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the front face's upkeep trigger is on the stack");
+
+    // In response, something transforms it.
+    helpers::apply_transform(&mut state, delver, &reg);
+    assert_eq!(state.name_of(delver, &reg), "Insectile Aberration");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(), "the trigger still asks about the top card");
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    assert_eq!(state.name_of(delver, &reg), "Insectile Aberration",
+        "revealing an instant does not flip it back (CR 701.28f)");
+}
+
+/// #996: a trigger is named after the face it triggered from, not the face
+/// up now. Delver's upkeep trigger, the Delver flipped in response, read
+/// "Insectile Aberration's upkeep trigger" on the stack and in the log.
+#[test]
+fn a_trigger_keeps_the_name_of_the_face_it_triggered_from() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+    state.move_object(bolt, Zone::Library, &reg);
+    state.players[0].library_order.insert(0, bolt);
+    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    let stack_name = |state: &mtg_engine::state::GameState| {
+        mtg_engine::view::GameView::for_player(state, P0, &reg).stack[0].name.clone()
+    };
+    assert!(stack_name(&state).starts_with("Delver of Secrets's upkeep trigger"), "{}", stack_name(&state));
+
+    helpers::apply_transform(&mut state, delver, &reg);
+    assert!(stack_name(&state).starts_with("Delver of Secrets's upkeep trigger"),
+        "flipped in response, still Delver's trigger: {}", stack_name(&state));
+
+    let before = state.game_log.len();
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    let log: Vec<&str> = state.game_log[before..].iter().map(|e| e.message.as_str()).collect();
+    assert!(log.iter().any(|l| l.starts_with("Delver of Secrets (#") && l.contains("upkeep trigger")), "{log:#?}");
+    assert!(!log.iter().any(|l| l.contains("Insectile Aberration (#")), "{log:#?}");
+}
+
+/// #989: a back-face ability on the stack carries its own face's text, not
+/// the front's. Homicidal Brute's end-step trigger read as Civilized
+/// Scholar's loot, and Nightfall Predator's fight as Daybreak Ranger's
+/// flying ping, on the page's stack inspector.
+#[test]
+fn a_back_face_ability_on_the_stack_carries_its_own_faces_text() {
+    let reg = registry();
+    let back_text = |name: &str| reg.get_id_by_name(name).and_then(|id| reg.get(id))
+        .and_then(|b| b.back_face_data()).map(|d| d.oracle_text).expect("a back face");
+    let front_text = |name: &str| reg.get_id_by_name(name).and_then(|id| reg.card_data(id))
+        .map(|d| d.oracle_text).expect("a front face");
+
+    // A back-face trigger, the source flipped back in response: still the back's.
+    let mut state = game_at_step(Step::EndStep, P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, scholar, &reg);
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    let text = |state: &mtg_engine::state::GameState| {
+        mtg_engine::view::GameView::for_player(state, P0, &reg).stack[0].oracle_text.clone()
+    };
+    assert_eq!(text(&state), back_text("Civilized Scholar"));
+    helpers::apply_transform(&mut state, scholar, &reg);
+    assert_eq!(text(&state), back_text("Civilized Scholar"), "flipped in response");
+
+    // A front-face trigger whose source flipped in response: the front's.
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    helpers::apply_transform(&mut state, delver, &reg);
+    assert_eq!(text(&state), front_text("Delver of Secrets"));
+
+    // A back face's activated ability: Nightfall Predator's fight.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    helpers::apply_transform(&mut state, ranger, &reg);
+    let bear = ready_creature(&mut state, P1, 2, 2);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1)]);
+    let state = activate_onto_stack(&state, &reg, ranger, Some(Target::Object(bear)));
+    let item = &mtg_engine::view::GameView::for_player(&state, P0, &reg).stack[0];
+    assert_eq!(item.name, "Nightfall Predator ability");
+    assert_eq!(item.oracle_text, back_text("Daybreak Ranger"));
+}
+
+/// #996: naming a trigger from the face it recorded is right only while
+/// every back-face trigger is collected with its face. Today those are the
+/// step triggers (`emit_from_face`); a back face with any other trigger
+/// needs its collector to record the face first.
+#[test]
+fn every_back_face_trigger_records_its_face() {
+    use mtg_engine::cards::TriggerKind;
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut back_faces = 0usize;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(back) = reg.get(id).and_then(|b| b.back_face_data()) else { continue };
+        back_faces += 1;
+        for t in &back.triggered_abilities {
+            if !matches!(t.kind, TriggerKind::Upkeep | TriggerKind::EndStep | TriggerKind::EndCombat) {
+                offenders.push(format!("{}: {:?}", back.name, t.kind));
+            }
+        }
+    }
+    assert!(back_faces > 10, "test premise: the pool has double-faced cards ({back_faces})");
+    assert!(offenders.is_empty(), "back-face triggers not collected with their face: {offenders:?}");
+}
+
 #[test]
 fn delver_does_not_transform_when_player_declines_reveal() {
     let reg = registry();
@@ -787,25 +919,33 @@ fn bloodline_keeper_creates_vampire_token() {
     assert_eq!(obj.toughness, Some(2));
 }
 
-/// CR 701.27f: a second activation of "{B}: Transform this creature", held on
-/// the stack under the first, does not transform Lord of Lineage back. It has
-/// transformed since that activation went on the stack, so the instruction is
-/// ignored.
+/// CR 701.28f, #987: an activated ability of a permanent that transforms it
+/// does nothing if the permanent has transformed since the ability went on
+/// the stack. Two Bloodline Keeper "{B}: Transform" activations on the stack
+/// at once flip it once: the second resolves against a Lord of Lineage and
+/// must not turn it back into a Keeper.
 #[test]
-fn bloodline_keepers_second_transform_held_under_the_first_does_nothing() {
+fn two_bloodline_keeper_transforms_on_the_stack_transform_it_once() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
+    for _ in 0..4 {
+        state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+            vec![Keyword::Flying], vec!["Vampire".into()], &reg);
+    }
+
     activate_via_hooks(&mut state, &reg, keeper, 1, &[]);
     activate_via_hooks(&mut state, &reg, keeper, 1, &[]);
+    assert_eq!(state.stack.len(), 2, "both activations are on the stack");
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-    assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage");
+    assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage", "the first one transforms it");
+
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert!(state.stack.is_empty());
     assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage",
-        "the second activation predates the transform, so it does not transform it back");
+        "the second does nothing: it has transformed since that ability went on the stack");
 
     // And Lord of Lineage has no transform ability of its own to activate.
     let card_id = state.get_object(keeper).unwrap().card_id;
@@ -1367,6 +1507,34 @@ fn garruk_fight_creature_lifelink_gains_life() {
     );
 }
 
+/// #988: Homicidal Brute's end-step trigger is the back face's ability
+/// whichever face is up when it resolves (CR 113.7a, CR 712.8). Moonmist in
+/// response flips the Brute to Civilized Scholar; the trigger still taps it,
+/// and only "then transform it" does nothing (CR 701.28f). Reading the face
+/// up now made the whole trigger do nothing, leaving the Scholar untapped.
+#[test]
+fn a_brute_flipped_in_response_is_still_tapped_and_does_not_flip_back() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::EndStep, P0);
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.name_of(scholar, &registry), "Homicidal Brute");
+
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    assert!(!state.stack.is_empty(), "the Brute's end-step trigger is on the stack");
+
+    // In response, something transforms it (Moonmist).
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.name_of(scholar, &registry), "Civilized Scholar");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
+    let obj = state.get_object(scholar).unwrap();
+    assert!(obj.tapped, "the trigger still taps the permanent");
+    assert_eq!(state.name_of(scholar, &registry), "Civilized Scholar",
+        "it has transformed since the ability went on the stack, so it stays (CR 701.28f)");
+}
+
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
@@ -1907,4 +2075,72 @@ fn a_double_faced_spell_on_the_stack_has_both_faces_in_the_view() {
     let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
     let faces = view.double_faces.get(&card_id).expect("the spell's faces are in the opponent's view");
     assert_eq!(faces[1].name, "Insectile Aberration");
+}
+
+/// #980, CR 113.7a: an ability on the stack is named after the object that
+/// activated it. Garruk, the Veil-Cursed paying his -1 from 1 loyalty dies
+/// to CR 704.5i with the ability still on the stack, and the card in the
+/// graveyard shows its front face (CR 712.8a). The ability was then called
+/// "Garruk Relentless ability" on the stack, in the RESPOND TO heading, in
+/// its search prompt and in the log: a card that has no -1.
+#[test]
+fn garruks_ability_keeps_the_veil_cursed_name_after_his_cost_kills_him() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 1);
+    helpers::apply_transform(&mut state, garruk, &reg);
+    let wolf = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(wolf).unwrap().card_types = vec![CardType::Creature];
+    stock_library_with(&mut state, &reg, P0, "Festerhide Boar", 2);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let minus_one = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, ability_index: 11, .. } if *object_id == garruk))
+        .expect("the -1 is offered at 1 loyalty");
+    let mut state = engine::submit_action(&state, minus_one, &reg);
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(garruk).unwrap().zone, Zone::Graveyard, "his cost killed him");
+    assert!(matches!(state.stack.last(), Some(StackEntry::Ability { .. })), "the ability is still on the stack");
+
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let top = &view.stack[0].name;
+    assert_eq!(top, "Garruk, the Veil-Cursed ability", "the stack pane");
+    let respond = engine::legal_actions(&state, &reg).context.unwrap_or_default();
+    assert!(respond.contains("Garruk, the Veil-Cursed (#"), "the RESPOND TO heading: {respond}");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let log: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    assert!(log.contains(&"Garruk, the Veil-Cursed ability resolved"), "the log: {log:?}");
+    assert!(!log.iter().any(|l| l.contains("Garruk Relentless ability")), "{log:?}");
+    // Whatever it asks while it resolves is headed by the same name.
+    assert!(state.awaiting_action.is_some(), "the search asks which creature card");
+    let ask = engine::legal_actions(&state, &reg).context.unwrap_or_default();
+    assert!(ask.contains("Garruk, the Veil-Cursed (#"), "the prompt: {ask}");
+}
+
+/// #980, the same search with nothing to find: its log line names the
+/// ability's source as it went on the stack, not the card he became.
+#[test]
+fn garruks_empty_search_keeps_the_veil_cursed_name_after_his_cost_kills_him() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 1);
+    helpers::apply_transform(&mut state, garruk, &reg);
+    let wolf = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(wolf).unwrap().card_types = vec![CardType::Creature];
+    stock_library_with(&mut state, &reg, P0, "Forest", 2);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let minus_one = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, ability_index: 11, .. } if *object_id == garruk))
+        .expect("the -1 is offered at 1 loyalty");
+    let mut state = engine::submit_action(&state, minus_one, &reg);
+    check_state_based_actions(&mut state, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let log: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    assert!(log.iter().any(|l| l.starts_with("Garruk, the Veil-Cursed (#") && l.contains("no matching card")),
+        "{log:?}");
+    assert!(!log.iter().any(|l| l.starts_with("Garruk Relentless") && l.contains("no matching")), "{log:?}");
 }

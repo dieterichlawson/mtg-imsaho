@@ -249,7 +249,7 @@ fn stack_entry_rules_are_checked() {
     s.stack.push(StackEntry::Ability {
         source_id: bear, ability_index: 0, behavior_card_id: s.get_object(bear).unwrap().card_id,
         targets: vec![Target::Object(bolt)], activator: P0, x_value: None, target_requirement: None,
-        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: 0, source_back_face: false,
+        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: None, source_name: None,
     });
     flags_core(&s, &reg, "has targets but no requirement");
     flags_core(&s, &reg, "remembers a sacrificed creature's toughness but no sacrifice");
@@ -624,7 +624,7 @@ fn the_healthy_shapes_of_the_stack_are_not_flagged() {
         sacrificed: Some(bear),
         sacrificed_toughness: Some(2),
         x_value: None,
-        loyalty: false, source_transforms: 0, source_back_face: false,
+        loyalty: false, source_transforms: None, source_name: None,
     });
     clean_core(&s, &reg);
 
@@ -906,6 +906,7 @@ fn damage_events_are_checked() {
     c.attackers.insert(bear, P1);
     c.blocker_assignments.insert(bear, vec![victim]);
     c.blocked_attackers.insert(bear);
+    c.blocking_creatures.insert(victim);
     state.combat = Some(c);
     // Non-lethal damage: the settled state must be a live one.
     state.get_object_mut(victim).unwrap().damage_marked = 1;
@@ -935,6 +936,17 @@ fn damage_events_are_checked() {
                     GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 }];
     s.events.swap(0, 1);
     flags_core(&s, &reg, "a blocker of #");
+    // The same blocker after its attacker left combat: still a blocking
+    // creature, blocking nothing, and it deals no combat damage (CR 510.1d,
+    // #983).
+    let mut s = state.clone();
+    let c = s.combat.as_mut().unwrap();
+    c.attackers.remove(&bear);
+    c.blocker_assignments.remove(&bear);
+    c.blocked_attackers.remove(&bear);
+    s.events = vec![GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+                    GameEvent::CombatDamageDealt { source: victim, target: DamageTarget::Player(P1), amount: 2 }];
+    flags_core(&s, &reg, "a blocking creature blocking nothing dealt combat damage (CR 510.1d)");
 }
 
 #[test]
@@ -2330,7 +2342,7 @@ fn the_costs_an_action_pays_are_checked_against_the_pool() {
         c.stack.push(StackEntry::Ability {
             source_id: cathar, ability_index: 0, behavior_card_id: card_id,
             targets: vec![], activator: P0, x_value: None, target_requirement: None,
-            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: 0, source_back_face: false,
+            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: None, source_name: None,
         });
         for (t, n) in added {
             c.events.push(GameEvent::ManaAdded { player: P0, mana_type: *t, amount: *n });
@@ -2617,6 +2629,7 @@ fn a_declaration_that_disagrees_with_the_submitted_blocks_is_flagged() {
             for &(b, a) in pairs {
                 c.blocker_assignments.entry(a).or_default().push(b);
                 c.blocked_attackers.insert(a);
+                c.blocking_creatures.insert(b);
             }
         }
         cur.events.push(GameEvent::BlockersDeclared { assignments: pairs.to_vec() });
@@ -2663,7 +2676,7 @@ fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
     p.stack.push(StackEntry::Trigger(mtg_engine::triggers::PendingTrigger::new(
         mtg_engine::triggers::TriggerSource {
             id: bear, card_id: p.get_object(bear).unwrap().card_id, controller: P0,
-            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, transforms: 0,
+            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, source_transforms: None,
         },
         mtg_engine::triggers::TriggerEvent::Upkeep,
     )));
@@ -3885,8 +3898,21 @@ fn combat_bookkeeping_clauses_each_have_a_violating_state() {
     c.attackers.insert(attacker, P1);
     c.blocker_assignments.insert(attacker, vec![blocker]);
     c.blocked_attackers.insert(attacker);
+    c.blocking_creatures.insert(blocker);
     state.combat = Some(c);
     clean(&state, &reg);
+
+    // CR 509.1g: a creature that blocks is a blocking creature (#983).
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().blocking_creatures.clear();
+    flags_settled(&s, &reg, "is not marked a blocking creature (CR 509.1g)");
+
+    // A blocking creature is a creature on the battlefield, like every
+    // other combatant — including one whose attacker has left (#983).
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().blocker_assignments.insert(attacker, vec![]);
+    s.objects.remove(&blocker);
+    flags_settled(&s, &reg, "blocking creature #");
 
     // CR 509.1h: an attacker with blockers is blocked.
     let mut s = state.clone();
@@ -4650,7 +4676,7 @@ fn the_target_arity_of_every_requirement_shape_is_checked() {
             source_id: source, ability_index: 0, behavior_card_id: card_id,
             targets: creatures[..n].iter().map(|id| Target::Object(*id)).collect(),
             activator: P0, x_value: None, target_requirement: Some(req),
-            sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: 0, source_back_face: false,
+            sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: None, source_name: None,
         });
         s
     };

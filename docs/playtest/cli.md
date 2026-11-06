@@ -273,6 +273,17 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   mid-prompt (tiny, huge, back), including with a target-selection or
   declare-blockers prompt open and a deep stack; look for panics,
   unrecoverable frames, unreachable prompts, misrouted input
+
+  **Re-run 2026-10-28 → #958-#964.** Resize is not a repaint problem any more:
+  no panic, wedge or misrouted key in two storms of 14 resizes, and every
+  pager reaches its end. What it finds now is *state chosen at the old
+  size*. A `/` search opened at 100+ columns stays open, invisibly, below
+  100 and eats the next answer (#958), because the fit check runs only on
+  entry. Look for every `*_fits()` check made once, outside a loop that
+  repaints on `Resize`. The short side is where the markers fail (#960,
+  #961): stage 22 permanents a side by save edit and walk the height down
+  from 24 to 12 at 120, 80 and 40 columns. Single-shot screens such as the
+  inspector detail page have no pager at all (#962).
 - V12 control-character and escape-sequence injection: send Ctrl
   chords, Escape, arrows, function keys, Tab, Backspace-on-empty and
   literal ANSI sequences at every prompt type; nothing unbound may be
@@ -367,7 +378,22 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   blocking — and check the battlefield line, `i` inspect, the CARDS reference,
   `/` search, `d` and `g` all agree with the `--save`, which is the engine's
   own view and the tiebreaker. A pane that lies is worse than a crash because
-  the player acts on it
+  the player acts on it. **Re-run 2026-11-05 (after #980/#981): holds.**
+  Stage the board by save edit: move objects to `Battlefield`, set
+  `counters` (`{"Loyalty": 2}`, `{"PlusOnePlusOne": 1}`) and, for a back
+  face, `is_transformed`, `transforms` AND `name`. `--resume` refuses a
+  save whose name cache disagrees with the face. Then Insectile Aberration,
+  Garruk, the Veil-Cursed, and Homicidal Brute with a counter (6/2, and
+  1/2 once it flips back) agree across the pane, the `i` list and detail,
+  `/`, and `g` (a dead Delver shows its front). The legend-rule rows read
+  "[2 loyalty, activated this turn]" against "[3 loyalty]". The pane
+  itself never says "activated", only the rows and `i` do. A grep for
+  `"  [0-9]+: "` drops a row's continuation lines, so a wrapped
+  "…targeting opponent" looks clipped. Capture the whole block before
+  calling a row cut. Still open on this axis: a trigger is named after
+  the face up now, not the face it came from (#996). After that fix,
+  answer the Delver's upkeep trigger with Moonmist and read the STACK
+  pane, RESPOND TO and `--log`
 - V29 stack depth as the stressor: L1 checked deep stacks as a RULES question;
   this asks what the MACHINE does at depth. Get 90+ objects on the stack (a
   sweeper into a board of death-triggers is the fastest route), then read the
@@ -485,7 +511,19 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   save round-trips the prompt exactly. Unreached: an ordering whose FINAL
   board state differs (no order-dependent trigger pair is cheap in ISD; try
   Curse of the Bloody Tome on yourself plus Delver of Secrets at one upkeep),
-  a 9+ `ChooseDamageAssignmentOrder`, and Ctrl-C/Ctrl-D at the prompt
+  a 9+ `ChooseDamageAssignmentOrder`, and Ctrl-C/Ctrl-D at the prompt.
+  **Re-run 2026-11-05: the reader holds.** Rolling Temblor into two Unruly
+  Mobs, a Delver and a Doomed Traveler gives p1 a 7-trigger screen. Each
+  row has its source id and its cause ("triggered by: Unruly Mob (#90)
+  died"). A repeat, a gap, an out-of-range index, `1a`, `-1` and a pane key
+  inside the list are each refused with a named reason, and commas are
+  accepted. In hotseat, the engine skips a priority window the other seat
+  cannot use. A second Enter after casting the sweeper therefore lands on
+  the ordering screen and keeps the order shown. Send one key at a time
+  and capture between them. The `--log` "ordered 7 triggers" line drops
+  each row's cause, so the six Mob triggers print as two repeated strings.
+  They are interchangeable here (same source, same ability), so no
+  information is lost
 - V37 [tried 2026-09-07 → #318, #320, #321, #322] the cardinality prompts as a
   family: every question that takes a SET under a constraint — exactly N, up to
   N, at least one. Read the readers first, because there is almost no reader:
@@ -695,6 +733,16 @@ whether it told the truth.
   twice must give a byte-identical `--log` (timestamps aside) and
   identical saves; `--on-the-play` honoured; different seeds actually
   differ
+
+  **Re-run 2026-10-28, holds** (35 games; seeds 21, 33, 34, 41). Every
+  single change gave the identical log (`cut -f4-`) and save: `--check-invariants`
+  (#956's observed passes), `--save`, `--log`, the size, a resize, opening
+  every viewer, and 12 kills plus `--resume`. A recorded keystroke script
+  must wait for each prompt and check its heading, because type-ahead of
+  the same identity is kept on purpose (#71) and can answer a later
+  prompt. The viewers have no `>`, so wait on a stable screen instead.
+  `--on-the-play N` does not reproduce the game a coin flip would have
+  made: the flip draws from the RNG before the shuffle. That is expected.
 - M4 flag and file matrix: flags in combination rather than one at a time
   — `--resume` plus everything else — and against a filesystem that
   fights back: read-only directories, a small tmpfs filled to capacity
@@ -1400,3 +1448,18 @@ whether it told the truth.
   outside: `--resume` validates a doctored save (a library id dropped from
   `library_order`) and refuses it before the first frame. When a fuzz seed
   fails, re-run it with `--p1 cli` to see that exit.
+- V60 [tried 2026-10-28, nothing found; from #953/#954, 4d27b89 and 0a5bb4d]
+  the turn's facts on the CLI. The battlefield rule now names each effect
+  in force for the turn by its source and adds "a creature died". The
+  inspector says "Attacked this turn" and "Once-per-turn ability used this
+  turn". `10 Civilized Scholar/10 Darkthicket Wolf/4 Moonmist/8 Forest/8
+  Island` against `20 Grizzly Bears/20 Forest` reaches all three: Moonmist
+  transforms every Human, so it flips the Scholar into Homicidal Brute
+  without a loot. Cast Moonmist in main phase 1 with mana left over, or
+  no screen comes up while it is in force. **Answered 2026-10-28: holds**
+  at 120, 80 and 60 columns, clears at cleanup, and the attack flag shows
+  only once the creature has left combat. Next time:
+  - two facts at once (a death and Moonmist), at 30 columns;
+  - an effect whose `source_name` is empty ("an effect in force");
+  - the CARDS pane, which shows only the hand, so the rule names
+    Moonmist and nothing on screen says what it does.

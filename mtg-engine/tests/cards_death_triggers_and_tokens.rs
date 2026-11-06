@@ -1298,6 +1298,8 @@ fn the_spirit_a_death_trigger_leaves_is_a_creature_entering() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let _mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    // Something to pay {1} with: an unpayable "may pay" is not asked (#940).
+    named_permanent(&mut state, &reg, "Plains", P0);
     let traveler = named_permanent(&mut state, &reg, "Doomed Traveler", P0);
 
     kill_by_damage(&mut state, &reg, traveler);

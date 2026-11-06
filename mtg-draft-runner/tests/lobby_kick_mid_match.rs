@@ -43,7 +43,9 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
     let log = server.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
     assert!(log.contains("MATCH Round 1 — Seat 0 vs Seat 1: 0-1 (Seat 1 wins)"),
         "the kicked seat forfeits its match:\n{log}");
-    let terminal = server.stderr();
+    // The standings' forfeit count is printed to the terminal after the log
+    // is written, so it is waited for, not read once.
+    let terminal = server.wait_for_stderr("game forfeited", Duration::from_secs(30));
     assert!(terminal.contains("withdrawn from the game (the host kicked seat 0)"), "{terminal}");
     // Where the game waits is said with the table's name for the seat, not
     // the game's `Seat0` (#850).
@@ -102,7 +104,7 @@ fn a_kick_while_the_opponent_holds_the_decision_forfeits_the_game_now() {
         assert!(Instant::now() < deadline, "the match never started:\n{}", server.stderr());
     }
     let mut pages: Vec<(usize, lobby_support::WsClient)> = urls.iter().enumerate().map(|(seat, url)| {
-        let ws = url.as_deref().unwrap().replacen("http://", "ws://", 1) + "ws";
+        let ws = server.link(url.as_deref().unwrap()).replacen("http://", "ws://", 1) + "ws";
         let mut page = lobby_support::WsClient::connect(&ws);
         page.send(serde_json::json!({"type": "hello"}));
         (seat, page)

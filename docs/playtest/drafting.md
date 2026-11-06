@@ -963,7 +963,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   decklist), that the chooser is the game-1 loser, and that the clock ends
   it with the decks as they stand. Then the runner: under the prompt stub
   (which sideboards half the time) read every `SIDEBOARD before game`
-  line against the deck the next game's log plays
+  line against the deck the next game's log plays. Tried 2026-11-06
+  (#998): every bad deck was refused, but `play_draw` is still taken
+  after `sideboard_ready`. Ask of every between-games message whether
+  "ready" locks it, on the page, the client and the server alike. To
+  send what no page sends, copy `table_rehearsal.js` to scratch and open
+  a raw `WebSocket` on the seat's join key from a hook in its between
+  branch. Mind `page.click`'s 30 s auto-wait: a hook that holds the loop
+  lets the stale `#sideboard-ready` click land on the next game's
+  between. To rehearse a `--resume`, pass it through and wait for "the
+  table carries on:" as well as "the draft starts when"
 - D44 [proposed 2026-10-21, same source, MTR 2.2] who plays first. Over a
   dozen stub matches at `--best-of 3`, read each game's first turn against
   the log's `chose to play first`/`draws first`: game 1 the coin flip's
@@ -1131,3 +1140,38 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `mtg-draft-replay`. Do this on the hosted table and in the batch
   runner. Each change must be refused or recorded. Use a stub that hashes
   `--system-prompt` and stdin, so that a drift changes the pick.
+  — **played 2026-10-27: five gaps (#948-#952).** With nothing changed,
+  all three surfaces are exact (48/48, 48/48, 10/10 calls), so any
+  difference is the input. The hosted snapshot has no guide. Neither
+  snapshot records `MTG_LLM_HISTORY`, the answer format or
+  `MTG_LLM_THINKING`. Positions do not record the set file. The batch
+  runner reads a repeated flag from its first occurrence, the server
+  from its last. A stub that hangs after N picks (`time.sleep` once its
+  call record holds N) gives a mid-draft snapshot in seconds. Next
+  time, try the timer flags with a person at the table, and the
+  draft-loop's `night.sh` resume path
+- D59 [proposed 2026-10-28, from b107519] the guide with no word cap.
+  `scripts/draft-loop/reflect.py` no longer holds the curator to 700
+  words. It refuses an answer only when it is empty or lacks one of the
+  six headings, and the guide went from 719 words (10-27) to 1,099
+  (10-28). The guide is in every guided seat's system prompt at every
+  pick. Run `reflect.py curate` with `DRAFT_LOOP_CURATOR` pointed at a
+  stub `claude` that answers (a) a 20,000-word guide, (b) the six headings
+  out of order, (c) the headings with the last section cut off mid-sentence,
+  as a reply would be at its output limit, and (d) the headings inside a
+  fence with prose before it. Check which ones are written to `guide.md`
+  and what the night report says. Then pass each kept guide to
+  `mtg-draft-runner --model cc --guide` under the prompt stub
+  (`scripts/measure-draft-prompts.sh`). Measure the system prompt's bytes
+  and the cache writes per guided seat, and check that nothing warns
+  as it grows. CLAUDE.md asks that a prompt change be measured, and b107519
+  measured nothing. Then read the night reports for the guide's word count
+  against `wc -w` (10-28 says 1,075 and the file holds 1,099 with its
+  header).
+  Run 2026-10-29 (#965-#967): the edge is argv, not tokens. The draft seat
+  passes its system prompt as one argument, so a guide over ~89 KB on top
+  of the 41,299 B base is E2BIG, and that is retried as if it were
+  transient. The word-count gap is the loop's 24-word header. Re-run it
+  with the guide's real size each time the guide passes 5,000 words. Also
+  try a guide in CRLF or with a byte-order mark: `sections()` and the
+  heading check both match on exact strings.

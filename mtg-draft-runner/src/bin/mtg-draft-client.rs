@@ -69,7 +69,8 @@ fn main() {
         let _ = tx.send((Instant::now(), "\u{0}eof".to_string()));
     });
 
-    match client::run(&mut ws, &rx) {
+    let origin = client::lobby_origin(&url).unwrap_or_default();
+    match client::run(&mut ws, &rx, &origin) {
         Ended::Over => {}
         Ended::Refused => std::process::exit(1),
     }

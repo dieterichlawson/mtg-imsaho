@@ -53,17 +53,17 @@ pub struct TriggerSource {
     /// triggered, not whatever face is up by then.
     #[serde(default)]
     pub from_back_face: bool,
-    /// The source's transform count as this went on the stack, stamped by
-    /// `put_on_stack` (CR 701.27f).
+    /// The source's transform count as this went on the stack (CR 701.28f);
+    /// stamped by `GameState::put_on_stack`.
     #[serde(default)]
-    pub transforms: u32,
+    pub source_transforms: Option<u32>,
 }
 
 impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
         Self { id, card_id, controller, description: description.into(),
-               chosen_targets: Vec::new(), from_back_face: false, transforms: 0 }
+               chosen_targets: Vec::new(), from_back_face: false, source_transforms: None }
     }
 
     /// Record which face this triggered from (CR 712.8 — the faces have
@@ -334,7 +334,7 @@ impl PendingTrigger {
         };
         crate::state::TriggerOrderOption {
             source: src,
-            source_name: self.source_name(registry, Some(state)),
+            source_name: self.source_name(registry),
             power_toughness,
             kind: self.event.phrase().to_string(),
             ability: self.description(registry, Some(state)),
@@ -373,9 +373,9 @@ impl PendingTrigger {
         self.display_name_with_state(registry, None)
     }
 
-    /// Display name with optional game state, so a transformed permanent shows
-    /// its back-face name. Every trigger kind gets this, not just upkeep —
-    /// the source object is now on the trigger regardless of event.
+    /// Display name with optional game state: the source named from the face
+    /// the ability triggered from (#996), and the state names what the
+    /// description refers to (#835).
     #[must_use]
     pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
         self.named(registry, state, false)
@@ -412,12 +412,20 @@ impl PendingTrigger {
         Named { trigger: self, registry, state, with_id: false }
     }
 
-    /// The source's name, from the face that is up if `state` can say
-    /// which.
-    fn source_name(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
-        let is_transformed = state
-            .and_then(|s| s.get_object(self.source.id))
-            .is_some_and(|o| o.is_transformed);
+    /// The source's name, from the face the ability triggered from.
+    ///
+    /// Not the face up now: once on the stack a triggered ability exists
+    /// independently of its source (CR 113.7a) and stays that face's ability
+    /// (CR 712.8). Read off the permanent, a Delver's upkeep trigger flipped
+    /// in response was "Insectile Aberration's upkeep trigger" on the stack
+    /// and in the log, a face with no such trigger, while its own question
+    /// said Delver (#996), and a back-face source that had left the
+    /// battlefield read as its front. `from_back_face` is the face
+    /// `trigger_face_is_back` resolves with, so the name and the effect
+    /// agree; `every_back_face_trigger_records_its_face` holds the pool to
+    /// collectors that record it.
+    fn source_name(&self, registry: &crate::cards::CardRegistry) -> String {
+        let is_transformed = self.source.from_back_face;
         registry
             .get(self.source.card_id)
             .and_then(|b| if is_transformed { b.back_face_data().map(|d| d.name) } else { None })
@@ -425,10 +433,10 @@ impl PendingTrigger {
             .unwrap_or_else(|| "Unknown".into())
     }
 
-    /// The name of the source, from the face that is up, if `state` can say
-    /// which; then whose ability and what it does.
+    /// The name of the source, from the face that triggered; then whose
+    /// ability and what it does.
     fn named(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>, with_id: bool) -> String {
-        let mut name = self.source_name(registry, state);
+        let mut name = self.source_name(registry);
         if with_id {
 
             name = format!("{name} (#{})", self.source.id.0);

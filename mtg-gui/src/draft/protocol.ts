@@ -26,7 +26,8 @@ export interface SeatInfo {
    *  the host started without it). */
   auto?: boolean;
   /** Where the seat is, in the table's one word: "not yet", "here",
-   *  "away", "in game", "game page closed", "kicked", "not answering".
+   *  "away", "in game", "game page not opened yet", "game page closed",
+   *  "kicked", "not answering".
    *  A person in a match is wherever their game page is (#822). */
   presence?: string;
 }
@@ -81,8 +82,9 @@ export interface Deck {
 export interface GameResult { winner: number | null; forfeited_by?: number | null; abandoned?: boolean }
 
 /**
- * One of the viewing seat's own matches. `url` is this seat's game page;
- * it is null while the match waits for its pages to open, for a match
+ * One of the viewing seat's own matches. `url` is this seat's game page:
+ * a path on the lobby's own host when the pages go through its port
+ * (#969), absolute with `--direct-game-ports`. It is null while the match waits for its pages to open, for a match
  * the table forfeited without opening one, and on the opponent's side
  * of the same match (each seat gets its own link, never the other's).
  */
@@ -92,6 +94,9 @@ export interface Match {
   url: string | null;
   status: MatchStatus;
   games: GameResult[];
+  /** The game a match being played is on; null once its games have
+   *  decided it, in the beat before its result is recorded (#916). */
+  next_game: number | null;
   result: string | null;
   /** Between two games of this match, or before the first for the coin
    *  flip's winner: what this seat may do before the next game. */
@@ -284,7 +289,7 @@ export const SHAPES: Record<string, Shape> = {
   game: { winner: "number|null", forfeited_by: "number|null?", abandoned: "boolean?" },
   match: {
     round: "number", opponent: "number", url: "string|null",
-    status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
+    status: "enum:waiting|playing|done", games: "array:game", next_game: "number|null", result: "string|null",
     between: "between|null?",
   },
   between: {

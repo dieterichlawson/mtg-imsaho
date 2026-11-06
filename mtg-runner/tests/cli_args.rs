@@ -683,3 +683,17 @@ fn a_saves_deck_names_cannot_drive_the_terminal() {
     assert!(!text.contains('\u{1b}') && !text.contains('\u{07}'),
         "and none reaches the file either, which is a thing people cat");
 }
+
+/// #952: a repeated flag is read at its last value, as `mtg-draft-server`
+/// reads one; the first was taken in silence, so `$BASE_FLAGS --p1 cc`
+/// played `$BASE_FLAGS`'s seat.
+#[test]
+fn a_repeated_flag_takes_its_last_value() {
+    let output = runner()
+        .args(["--p1", "random", "--p2", "random", "--seed", "1", "--seed", "abc"])
+        .output()
+        .expect("failed to run");
+    assert_clean_refusal(&output, "--seed 1 --seed abc");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("got 'abc'"), "the last --seed is the one read: {stderr}");
+}

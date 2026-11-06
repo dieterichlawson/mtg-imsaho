@@ -14,7 +14,8 @@
 #   nights/DATE-lessons.json    each seat's lessons (reflect.py debrief)
 #   nights/DATE-curate.json     the guide's rewrite and its usage
 #   nights/DATE.md              the night, for reading
-#   nights/DATE-positions.jsonl.xz   every pack a seat was handed, for the pick eval
+#   nights/DATE-positions.jsonl.xz   every pick a seat was asked, for the pick eval
+#                               (a pack's last card is taken without asking: no position)
 #   stats.md, stats.json        every night's tables (ledger.py stats)
 #   guide.md                    the guide the next night drafts with
 #

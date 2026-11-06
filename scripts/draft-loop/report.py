@@ -13,6 +13,13 @@ import json
 import os
 
 
+def count(n, one, many=None):
+    """`n` and the noun for it: "1 call", "8 calls" (the runner's
+    `mtg_draft_runner::count`, #914; this report said "curator: 1 calls"
+    every night, #947)."""
+    return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
 def load(path):
     return json.load(open(path)) if os.path.exists(path) else None
 
@@ -43,7 +50,7 @@ def main():
         if s.get("fallback_deck"):
             flags.append("substitute deck")
         if s.get("substituted_picks"):
-            flags.append(f"{s['substituted_picks']} picks substituted")
+            flags.append(count(s['substituted_picks'], 'pick') + " substituted")
         out.append(f"| {i} | {s['seat']} | {'yes' if s['guided'] else 'no'} | {s['colors']} | "
                    f"{s['match_wins']}-{s['match_losses']}-{s['match_draws']} | {s['game_wins']}-{s['game_losses']} | {', '.join(flags)} |")
     for label, want in (("guided", True), ("unguided", False)):
@@ -55,18 +62,29 @@ def main():
     subs = sum(s.get("substituted_picks", 0) for s in seats)
     decks = sum(1 for s in seats if s.get("fallback_deck"))
     if h:
-        out.append(f"\nWhat went wrong: {h['reasks']} re-asks, {h['unreadable']} replies no answer could be read from, "
-                   f"{h['panics']} panics or invariant breaks, {subs} picks and {decks} decks substituted for a seat. "
-                   f"The games made {h['game_calls']} calls: {h['out']} output tokens ({h['thinking']} thinking), "
+        out.append(f"\nWhat went wrong: {count(h['reasks'], 're-ask')}, {count(h['unreadable'], 'reply', 'replies')} no answer could be read from, "
+                   f"{count(h['panics'], 'panic, fatal stop or invariant break', 'panics, fatal stops or invariant breaks')}, "
+                   f"{count(h.get('harness_chose', 0), 'game answer')} the harness chose for a seat, "
+                   f"{count(subs, 'pick')} and {count(decks, 'deck')} substituted for a seat"
+                   # A resume under another guide, setting or set (#948, #949).
+                   + (f", {count(h['prompt_unlike'], 'resume line')} saying the night was asked under two system prompts"
+                      if h.get("prompt_unlike") else "") + ". "
+                   f"The games made {count(h['game_calls'], 'call')}: {count(h['out'], 'output token')} ({h['thinking']} thinking), "
                    f"{h['cache_read']} read from the cache, {h['cache_write']} written to it.")
     out += ["", "## Lessons", ""]
     for s in lessons["seats"]:
         for l in s["lessons"]:
             out.append(f"- seat {s['seat']} ({s['colors']}, {s['record']}): {l}")
     out += ["", "## The guide", ""]
+    def why(r):
+        # What reflect.py found wrong; a record from before #966 has only
+        # the headings it took to be missing.
+        if r.get("problems"):
+            return "it " + "; it ".join(r["problems"])
+        return f"missing {', '.join(r['missing_sections'])}" if r.get("missing_sections") else ""
     if curate.get("kept_old_guide"):
-        out.append(f"Not rewritten: the curator's answer was not a guide ({curate.get('words')} words, "
-                   f"missing {curate.get('missing_sections')}). The guide stays as it was.")
+        out.append(f"Not rewritten: the curator's answer was not a guide ({curate.get('words')} words; "
+                   f"{why(curate)}). The guide stays as it was.")
     elif curate:
         out.append(f"Rewritten by `{curate['model']}` in {curate.get('attempts', 1)} attempt(s): "
                    f"{curate['words']} words. `git log -p reports/draft-loop/guide.md` shows what changed.")
@@ -74,14 +92,13 @@ def main():
     # them is the one the line above already said.
     refused = curate.get("refused", [])
     for r in refused[:-1] if curate.get("kept_old_guide") else refused:
-        out.append(f"An answer was refused: {r['words']} words"
-                   + (f", missing {', '.join(r['missing_sections'])}" if r["missing_sections"] else "") + ".")
+        out.append(f"An answer was refused: {r['words']} words" + (f"; {why(r)}" if why(r) else "") + ".")
     if night.get("usage"):
         out += ["", "## What it spent", "", "```", *night["usage"], "```"]
     calls = [("debriefs", [s.get("usage") or {} for s in lessons["seats"]]),
              ("curator", [r.get("usage") or {} for r in refused]
               + ([] if curate.get("kept_old_guide") or not curate else [curate.get("usage") or {}]))]
-    spent = [f"{label}: {len(us)} calls, " + " / ".join(
+    spent = [f"{label}: {count(len(us), 'call')}, " + " / ".join(
                 f"{sum(u.get(k, 0) for u in us)} {short}" for k, short in
                 (("output_tokens", "out"), ("cache_read_input_tokens", "cache_read"), ("cache_creation_input_tokens", "cache_write")))
              for label, us in calls if us]

@@ -2036,21 +2036,11 @@ card_proof! {
     }
 }
 
-/// The ability of `source` resolving, put on the stack from its back face
-/// or not (CR 712.8d-e: the face up as it was activated, whichever is up
-/// now).
-fn resolving_from(source: ObjectId, card: CardId, activator: PlayerId, back: bool) -> crate::state::StackEntry {
-    crate::state::StackEntry::Ability {
-        source_id: source, ability_index: 0, behavior_card_id: card, targets: Vec::new(), activator, x_value: None,
-        target_requirement: None, sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: 0,
-        source_back_face: back,
-    }
-}
-
 /// Daybreak Ranger: face up, "{T}: This creature deals 2 damage to
 /// target creature with flying"; transformed, Nightfall Predator's
 /// "{R}, {T}: This creature fights target creature" (CR 701.14a); off
-/// the battlefield, neither. Its resolution is the proof below: the two
+/// the battlefield, neither. The two are numbered apart, 0 and 1, so the
+/// one activated is named by its index alone (#986). Its resolution is the proof below: the two
 /// in one harness, over a target the solver chose, ran out of memory at
 /// ten gigabytes. Where it is and which face is up are constants in each
 /// harness: the abilities are a list of a length they decide, read past
@@ -2068,7 +2058,7 @@ fn daybreak_ranger_has_its_abilities_placed(placed: u8) {
         assert!(defs.is_empty());
     } else if transformed {
         let fight = Ability { cost: mana(0, &[Color::Red]), tap: true, target: Some(TargetRequirement::Creature), ..Ability::default() };
-        assert!(defs.len() == 1 && defs[0].ability_index == 0 && fight.describes(&defs[0]));
+        assert!(defs.len() == 1 && defs[0].ability_index == 1 && fight.describes(&defs[0]));
         std::mem::forget(fight);
     } else {
         let ping = Ability {
@@ -2087,21 +2077,25 @@ case_by_case! { daybreak_ranger_has_its_abilities_placed;
 }
 
 card_proof! {
-    /// Daybreak Ranger's ability resolving as the face it was activated
-    /// from says, whichever face is up by then (CR 712.8d-e: Moonmist in
-    /// response turns no ping into a fight): 2 damage to its target, or a
-    /// fight with it; its target gone, nothing.
+    /// Daybreak Ranger's ability resolving as the ability activated, named
+    /// by its index, whichever face is up by then (CR 113.7a, 712.8:
+    /// Moonmist in response turns no ping into a fight, and a Predator
+    /// gone to the graveyard showing its front face fights all the same):
+    /// for Nightfall Predator's, 1, a fight with its target; for the
+    /// Ranger's, 0, 2 damage to it; its target gone, or an index neither
+    /// face prints, nothing.
     fn daybreak_ranger_pings_a_flyer_or_nightfall_predator_fights() {
         let mut b = permanent(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, true);
         let transformed = b.on() && kani::any();
         b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
-        let card = b.card();
-        let back: bool = kani::any();
-        b.state.resolving_ability = Some(resolving_from(b.me, card, b.you, back));
+        let index = usize::from(kani::any::<u8>() % 3);
         let target = any_target(b.others);
-        let before = b.resolve(0, &[target.clone()]);
+        let before = b.resolve(index, &[target.clone()]);
         match target {
-            Target::Object(id) if back => {
+            _ if index == 2 => {
+                assert!(acted() == 0);
+            }
+            Target::Object(id) if index == 1 => {
                 assert!(asked_for(&[Act::Fight(b.me, id)]));
             }
             Target::Object(id) => {

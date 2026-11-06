@@ -86,7 +86,7 @@ fn lobby_dealt(
         seats,
         best_of: 3,
         seed: 1,
-        guide_path: None,
+        guide_path: None, guide_hash: None,
         pick_seconds,
         build_seconds,
         sideboard_seconds,
@@ -107,7 +107,7 @@ fn a_table_dealt_for_the_wrong_number_of_seats_is_refused() {
     let config = LobbyConfig {
         set_code: "isd".into(), set_name: set_data.set_name.clone(),
         seats: vec![SeatKind::Human, SeatKind::Ai("cc".into())],
-        best_of: 1, seed: 1, guide_path: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None,
+        best_of: 1, seed: 1, guide_path: None, guide_hash: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None,
         out_dir: None,
     };
     let err = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).err()
@@ -264,7 +264,7 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     assert_eq!(to_play, vec![(1, 0, 1), (1, 2, 3)]);
     lobby.match_started(1, 0, 1, [Some("http://192.168.1.20:8801/".into()), None]);
     lobby.match_started(1, 2, 3, [None, None]);
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false, decks: None };
     lobby.game_finished(1, 0, 1, &game(0));
     let v = serde_json::to_value(lobby.view(0)).unwrap();
     assert_eq!(v["phase"], "playing");
@@ -463,6 +463,27 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
     }
 }
 
+/// #970: a pick for a pack that has moved on (it lost the race with the
+/// pick timer, or came from another tab) is refused in the page's own
+/// numbering, "pack 1, pick 2", not the table's ids ("pack 0 is not the
+/// pack in front of you (pack 2 is)") beside a heading of "Pack 1, pick 2".
+#[test]
+fn a_pick_for_a_pack_that_moved_on_is_refused_in_the_pages_numbering() {
+    let (mut lobby, _) = lobby_timed(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None, None);
+    lobby.connected(0);
+    lobby.start();
+    let first = jv(&lobby, 0)["pack"]["id"].as_u64().unwrap() as usize;
+    lobby.pick(0, first, 0).unwrap();
+    // The AI seat passes its pack on, so seat 0 has a second one in front.
+    let id = jv(&lobby, 1)["pack"]["id"].as_u64().expect("the AI seat holds a pack");
+    lobby.ai_pick(1, id as usize, 0, "prompt", "{\"pick\":0}", false).unwrap();
+    let v = jv(&lobby, 0);
+    let (round, pick) = (v["pack"]["round"].as_u64().unwrap(), v["pack"]["pick"].as_u64().unwrap());
+    let reason = lobby.pick(0, first, 0).unwrap_err();
+    assert!(reason.contains(&format!("you are on pack {round}, pick {pick}")), "{reason}");
+    assert!(!reason.contains(&format!("pack {first} ")), "no table id: {reason}");
+}
+
 /// #811: a seat that has drafted all its cards is building — its view
 /// says so, with its deck and its clock — while a slower seat still picks.
 /// The view carried the table's phase, so the page and the client showed
@@ -572,7 +593,7 @@ fn the_hosts_lines_name_a_seat_as_the_page_does() {
         deck: fallback_deck(&pool, &registry), attempts: vec![], retries: 0, fallback: false,
     });
     assert_eq!(lobby.begin_tournament(), vec![(1, 0, 1)]);
-    let game = GameOutcome { winner: Some(1), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false };
+    let game = GameOutcome { winner: Some(1), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false, decks: None };
     lobby.game_finished(1, 0, 1, &game);
     lobby.match_finished(1, 0, 1, MatchResult {
         player_a: 0, player_b: 1, wins_a: 0, wins_b: 2, games: vec![game.clone(), game],
@@ -701,8 +722,12 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     // In a match: the game page decides, whatever the draft page does.
     l.connected(0);
     assert!(l.set_game_pages(0, Some(0)));
-    assert_eq!(presence(&l, 0), "game page closed", "a match with nobody at its game");
+    // Not yet opened is not closed, and the first open is not "again" (#926).
+    assert_eq!(presence(&l, 0), "game page not opened yet", "a match with nobody at its game yet");
+    assert!(!l.game_page_opened(0));
+    l.take_events();
     assert!(l.set_game_pages(0, Some(1)));
+    assert_eq!(l.take_events(), vec!["seat 0's game page is open".to_string()]);
     assert_eq!(presence(&l, 0), "in game");
     l.disconnected(0);
     assert_eq!(presence(&l, 0), "in game", "playing with the draft page closed is not away");
@@ -713,8 +738,15 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert!(!l.set_game_pages(0, Some(0)), "no change, nothing to send");
     assert!(l.set_game_pages(0, Some(2)));
     assert!(l.take_events().iter().any(|e| e == "seat 0's game page is open again"));
+    assert_eq!(presence(&l, 0), "in game");
+    assert!(l.set_game_pages(0, Some(0)));
+    assert_eq!(presence(&l, 0), "game page closed", "opened, then closed");
     assert!(l.set_game_pages(0, None));
     assert_eq!(presence(&l, 0), "away", "the match is over and the draft page is closed");
+    // The next match's page starts unopened again.
+    assert!(l.set_game_pages(0, Some(0)));
+    assert_eq!(presence(&l, 0), "game page not opened yet");
+    assert!(l.set_game_pages(0, None));
 
     // A kick is the seat's state from then on, and the reason the table
     // gives for everything it does for the seat.
@@ -820,7 +852,7 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
         }
     }
     same_draft(&a, &b);
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
     let result = |p: usize, q: usize, wp: usize, wq: usize| MatchResult {
         player_a: p, player_b: q, wins_a: wp, wins_b: wq,
         // The match's loser's wins first: the games in an order a match is
@@ -930,7 +962,7 @@ fn a_doctored_snapshot_is_refused_with_its_reason() {
             a.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
         }
     }
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
     assert_eq!(a.begin_tournament(), vec![(1, 0, 1), (1, 2, 3)]);
     a.match_started(1, 0, 1, [None, None]);
     a.match_finished(1, 0, 1, MatchResult { player_a: 0, player_b: 1, wins_a: 2, wins_b: 0, games: vec![game(0), game(0)] });
@@ -1028,8 +1060,10 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     assert_eq!(l.play_draw(0, true).unwrap_err(), "you are not between games");
 
     // Game 2: seat 0 lost game 1 and chooses; both may sideboard.
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
+    assert_eq!(jv(&l, 0)["matches"][0]["next_game"], 1);
     l.game_finished(1, 0, 1, &game(1));
+    assert_eq!(jv(&l, 0)["matches"][0]["next_game"], 2, "1-0 of a best-of-3 is on game 2");
     let played = l.match_deck(1, 0, 1, 0).unwrap();
     l.open_between(1, 0, 1, 2, 0, [vec![], vec!["Brimstone Volley".into()]], [None, None]);
     let b0 = between(&l, 0);
@@ -1078,6 +1112,7 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     // Game 3: the clock runs out with seat 1 still deciding. Seat 0 went
     // back to its registered deck, which is a change from game 2's.
     l.game_finished(1, 0, 1, &game(0));
+    assert_eq!(jv(&l, 1)["matches"][0]["next_game"], 3, "1-1 is on game 3");
     l.open_between(1, 0, 1, 3, 1, [vec![], vec![]], [None, None]);
     l.sideboard(0, &played.maindeck, &played.lands).unwrap();
     assert!(!l.tick(std::time::Instant::now()), "not yet");
@@ -1086,6 +1121,75 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     let out = l.take_between(1, 0, 1).unwrap();
     assert_eq!(out.decks[0].as_ref().unwrap().maindeck, played.maindeck);
     assert_eq!(out.chooser_plays, None);
+}
+
+/// #916: a match decided by its games is still "playing" until its result
+/// is recorded, and the client counted one game more ("game 2" of a
+/// best-of-1). The view names no next game once the games decide it: 2-0
+/// of a best-of-3 here, by the match loop's own rule.
+#[test]
+fn a_decided_match_names_no_next_game() {
+    let registry = CardRegistry::with_all_cards();
+    let (mut l, _) = lobby(vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())]);
+    l.connected(0);
+    l.connected(1);
+    draft_to_the_end(&mut l, None);
+    for seat in 0..POD {
+        let deck = fallback_deck(&l.pool(seat), &registry);
+        if seat < 2 {
+            l.submit_deck(seat, &deck.maindeck, &deck.lands, &[]).unwrap();
+            l.ready(seat).unwrap();
+        } else {
+            l.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
+        }
+    }
+    let _ = l.begin_tournament();
+    l.match_started(1, 0, 1, [None, None]);
+    let won_by = |w: usize| GameOutcome { winner: Some(w), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
+    let drawn = GameOutcome { winner: None, ..won_by(0) };
+    l.game_finished(1, 0, 1, &drawn);
+    assert_eq!(jv(&l, 0)["matches"][0]["next_game"], 2, "a drawn game decides nothing");
+    l.game_finished(1, 0, 1, &won_by(0));
+    l.game_finished(1, 0, 1, &won_by(0));
+    for seat in [0, 1] {
+        let m = &jv(&l, seat)["matches"][0];
+        assert_eq!(m["status"], "playing", "the result is not recorded yet");
+        assert!(m["next_game"].is_null(), "2-0 decides a best-of-3: {m}");
+    }
+}
+
+/// #919: a match of three drawn games read "0-0" in the pairings and the
+/// seat's own result, like one nobody played, and a draw beside two wins
+/// was in no count. The score carries the draws, and a level match says so.
+#[test]
+fn a_drawn_match_says_so_and_its_draws_are_counted() {
+    let registry = CardRegistry::with_all_cards();
+    let (mut l, _) = lobby(vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())]);
+    l.connected(0);
+    l.connected(1);
+    draft_to_the_end(&mut l, None);
+    for seat in 0..POD {
+        let deck = fallback_deck(&l.pool(seat), &registry);
+        if seat < 2 {
+            l.submit_deck(seat, &deck.maindeck, &deck.lands, &[]).unwrap();
+            l.ready(seat).unwrap();
+        } else {
+            l.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
+        }
+    }
+    let _ = l.begin_tournament();
+    let game = |w: Option<usize>| GameOutcome { winner: w, turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
+    l.match_started(1, 0, 1, [None, None]);
+    l.match_finished(1, 0, 1, MatchResult { player_a: 0, player_b: 1, wins_a: 0, wins_b: 0, games: vec![game(None); 3] });
+    l.match_started(1, 2, 3, [None, None]);
+    let _ = l.match_finished(1, 2, 3, MatchResult { player_a: 2, player_b: 3, wins_a: 0, wins_b: 2,
+        games: vec![game(None), game(Some(3)), game(Some(3))] });
+    let v = jv(&l, 0);
+    let pairing = |a: u64| v["pairings"].as_array().unwrap().iter().find(|p| p["round"] == 1 && p["a"] == a).unwrap()["result"].clone();
+    assert_eq!(pairing(0), "0-0-3 (drawn)");
+    assert_eq!(pairing(2), "0-2-1");
+    assert_eq!(v["matches"][0]["result"], "0-0-3 (drawn)", "the seat's own result");
+    assert_eq!(jv(&l, 3)["matches"][0]["result"], "2-0-1", "from the winner's side");
 }
 
 /// A seat's draft review: every pack it was handed, as it was, and the

@@ -103,7 +103,7 @@ pub fn parse_seats(spec: &str, default_ai: &str) -> Result<Vec<SeatKind>, String
     }
     if seats.len() < MIN_SEATS || seats.len() > MAX_SEATS {
         return Err(format!(
-            "--seats names {} seats; a pod is {MIN_SEATS} to {MAX_SEATS}", seats.len()));
+            "--seats names {}; a pod is {MIN_SEATS} to {MAX_SEATS}", crate::count(seats.len(), "seat", "seats")));
     }
     if seats.iter().filter(|s| **s == SeatKind::Cli).count() > 1 {
         return Err("at most one cli seat: the terminal is one keyboard".to_string());
@@ -279,8 +279,8 @@ pub struct SeatView {
     /// Live connections right now; a joined seat with none is away.
     pub connected: usize,
     /// Where the seat is, in one word every surface prints as it is: "not
-    /// yet", "here", "away", "in game", "game page closed", "kicked",
-    /// "not answering". A person in a match is wherever their game page
+    /// yet", "here", "away", "in game", "game page not opened yet", "game
+    /// page closed", "kicked", "not answering". A person in a match is wherever their game page
     /// is; the draft page's socket said "here" for a player who had closed
     /// the game and "away" for one playing it (#822).
     pub presence: &'static str,
@@ -340,6 +340,11 @@ pub struct MatchView {
     pub url: Option<String>,
     pub status: &'static str,
     pub games: Vec<GameView>,
+    /// The game a match being played is on, and none once its games have
+    /// decided it: the result is recorded a beat after the deciding game,
+    /// and in that beat the client read "playing (game 2; ...)" for a
+    /// best-of-1 (#916).
+    pub next_game: Option<usize>,
     pub result: Option<String>,
     /// Between games of this match: what the seat may do before the next.
     pub between: Option<BetweenView>,
@@ -501,6 +506,65 @@ pub struct TableSave {
     /// it was recorded, where the taken cards are all there is to check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deal: Option<String>,
+    /// What the AI seats' system prompts were made under. The batch
+    /// runner's snapshot recorded the guide (#579) and this one did not, so
+    /// a table resumed with another `--guide`, or none, drafted the rest
+    /// under another system prompt in silence (#948, #949). Absent in a
+    /// snapshot written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<TablePrompt>,
+}
+
+/// The guide and the settings an AI seat's system prompt is made under at
+/// a hosted table: one guide for every AI seat, as `--guide` gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TablePrompt {
+    pub guide_path: Option<String>,
+    /// [`crate::llm_client::guide_digest`] of the guide's contents: a guide
+    /// edited in place between two runs keeps its path.
+    pub guide_hash: Option<String>,
+    #[serde(flatten)]
+    pub settings: crate::llm_client::DraftPromptSettings,
+}
+
+impl TablePrompt {
+    /// What this process asks `seats`' AI seats under, about the set
+    /// `reference` ([`crate::llm_client::reference_digest`]) names.
+    #[must_use]
+    pub fn live(seats: &[SeatKind], guide_path: Option<&str>, guide_hash: Option<&str>, reference: &str) -> Self {
+        Self {
+            guide_path: guide_path.map(str::to_string),
+            guide_hash: guide_hash.map(str::to_string),
+            settings: crate::llm_client::DraftPromptSettings::live(seats.iter().filter_map(|k| match k {
+                SeatKind::Ai(model) => Some(model.as_str()),
+                _ => None,
+            })).about(reference),
+        }
+    }
+
+    /// How `live` differs from what the replayed picks were asked under,
+    /// one line each; nothing when no seat is an AI seat. The game settings
+    /// only once a game was played (`games_played`).
+    #[must_use]
+    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
+        let mut out = Vec::new();
+        if live.settings.history.is_none() {
+            return out;
+        }
+        if self.guide_hash != live.guide_hash {
+            let describe = |p: &Self| match (&p.guide_path, &p.guide_hash) {
+                (Some(path), _) => format!("guide {path}"),
+                (None, _) => "no guide".to_string(),
+            };
+            let (was, now) = (describe(self), describe(live));
+            // The same path on both sides: the file was edited in place,
+            // and naming it twice says nothing (#950).
+            let (was, now) = if was == now { (format!("{was} as it was"), format!("{now} as it is now")) } else { (was, now) };
+            out.push(format!("the AI seats' replayed picks were made under {was}, and the rest of this draft will be made under {now}: this draft is a mixture of the two"));
+        }
+        out.extend(self.settings.unlike(&live.settings, games_played));
+        out
+    }
 }
 
 /// The snapshot format this build writes and reads.
@@ -580,7 +644,7 @@ impl TableSave {
     pub fn check(&self) -> Result<(), String> {
         let kinds = self.seat_kinds()?;
         if !(MIN_SEATS..=MAX_SEATS).contains(&kinds.len()) {
-            return Err(format!("it names {} seats; a pod is {MIN_SEATS} to {MAX_SEATS}", kinds.len()));
+            return Err(format!("it names {}; a pod is {MIN_SEATS} to {MAX_SEATS}", crate::count(kinds.len(), "seat", "seats")));
         }
         if kinds.iter().filter(|k| **k == SeatKind::Cli).count() > 1 {
             return Err("it has more than one cli seat".to_string());
@@ -645,6 +709,9 @@ pub struct LobbyConfig {
     pub best_of: usize,
     pub seed: u64,
     pub guide_path: Option<String>,
+    /// [`crate::llm_client::guide_digest`] of the guide at `guide_path`,
+    /// for the snapshot.
+    pub guide_hash: Option<String>,
     pub pick_seconds: Option<u64>,
     pub build_seconds: Option<u64>,
     /// Seconds a person has between games to sideboard and, when it is
@@ -671,6 +738,9 @@ struct SeatState {
     /// Pages attached to the seat's game while it is in a match with one;
     /// `None` outside a match.
     game_pages: Option<usize>,
+    /// Whether this match's game page has been open at all: one not opened
+    /// yet is not "closed", and its first open is not "open again" (#926).
+    game_page_opened: bool,
     deck: Option<DraftDeck>,
     deck_problem: Option<String>,
     ready: bool,
@@ -772,6 +842,9 @@ pub struct Lobby {
     round_pairings: Vec<(usize, usize)>,
     /// Lines for the host's terminal, drained by the server.
     events: Vec<String>,
+    /// What a game link that is a path is on, for the host's terminal: the
+    /// seats are sent the path alone (#969).
+    link_origin: String,
     started_pool_log: bool,
     /// Every pick in the order it was made, for the snapshot.
     pick_log: Vec<SavedPick>,
@@ -779,6 +852,9 @@ pub struct Lobby {
     ai_notes: Vec<Option<String>>,
     /// [`mtg_draft::pack::deal_digest`] of the packs dealt, for the snapshot.
     deal: String,
+    /// [`crate::llm_client::reference_digest`] of the set the AI seats are
+    /// asked about, for the snapshot (#951).
+    reference: String,
 }
 
 impl Lobby {
@@ -800,6 +876,8 @@ impl Lobby {
         }
         let table = Table::new(packs)?;
         let deal = mtg_draft::pack::deal_digest(packs);
+        let reference = crate::llm_client::reference_digest(set_data,
+            &crate::llm_client::build_card_reference(&set_data.all_card_names(), &registry));
         let book = CardBook::new(set_data, &registry, lines);
         let seats: Vec<SeatState> = config.seats.iter().enumerate().map(|(i, kind)| SeatState {
             kind: kind.clone(),
@@ -811,6 +889,7 @@ impl Lobby {
             kicked: false,
             gave_up: false,
             game_pages: None,
+            game_page_opened: false,
             deck: None,
             deck_problem: None,
             ready: false,
@@ -852,10 +931,12 @@ the order they happened, not in seat order", "");
             matches: Vec::new(),
             round_pairings: Vec::new(),
             events: Vec::new(),
+            link_origin: String::new(),
             started_pool_log: false,
             pick_log: Vec::new(),
             ai_notes: vec![None; pod],
             deal,
+            reference,
         })
     }
 
@@ -988,15 +1069,28 @@ the order they happened, not in seat order", "");
     /// told when a page closes on a game and when it comes back (#822).
     pub fn set_game_pages(&mut self, seat: usize, pages: Option<usize>) -> bool {
         let before = self.seats[seat].game_pages;
+        let opened = self.seats[seat].game_page_opened;
         self.seats[seat].game_pages = pages;
         let open = |p: Option<usize>| p.is_some_and(|n| n > 0);
         match (before, pages) {
             (Some(b), Some(0)) if b > 0 => self.event(format!(
                 "{}'s game page is closed; the game waits for them to open it again", self.who(seat))),
-            (Some(0), Some(n)) if n > 0 => self.event(format!("{}'s game page is open again", self.who(seat))),
+            (Some(0), Some(n)) if n > 0 && opened => self.event(format!("{}'s game page is open again", self.who(seat))),
+            (Some(0), Some(n)) if n > 0 => self.event(format!("{}'s game page is open", self.who(seat))),
             _ => {}
         }
+        // A new match's page starts unopened; a match's end forgets it.
+        self.seats[seat].game_page_opened = match pages {
+            Some(n) => n > 0 || (opened && before.is_some()),
+            None => false,
+        };
         open(before) != open(pages) || before.is_some() != pages.is_some()
+    }
+
+    /// Whether the seat's game page for its match has been open at all.
+    #[must_use]
+    pub fn game_page_opened(&self, seat: usize) -> bool {
+        self.seats[seat].game_page_opened
     }
 
     /// The seat's presence word; see [`SeatView::presence`].
@@ -1013,7 +1107,8 @@ the order they happened, not in seat order", "");
             "here"
         } else {
             match s.game_pages {
-                Some(0) => "game page closed",
+                Some(0) if s.game_page_opened => "game page closed",
+                Some(0) => "game page not opened yet",
                 Some(_) => "in game",
                 None if s.connected > 0 => "here",
                 None => "away",
@@ -1134,10 +1229,16 @@ the order they happened, not in seat order", "");
         }
         let front = self.table.in_front(seat).ok_or("no pack in front of you")?;
         if front.id != pack_id {
-            return Err(format!("pack {pack_id} is not the pack in front of you (pack {} is)", front.id));
+            // Said as the page and the client number packs: the table's own
+            // ids ("pack 0 ... (pack 2 is)") read against a heading of "Pack
+            // 1, pick 8" (#970). The usual cause is a pick that lost the
+            // race with the pick timer, or one from another tab.
+            return Err(format!(
+                "that pick was for a pack no longer in front of you (the pick timer or another tab already \
+                 picked from it); you are on pack {}, pick {}", front.round, front.pick));
         }
         let card = front.cards.get(index)
-            .ok_or_else(|| format!("card {index} is past the end of the pack ({} cards)", front.cards.len()))?
+            .ok_or_else(|| format!("card {index} is past the end of the pack ({})", crate::count(front.cards.len(), "card", "cards")))?
             .clone();
         let (round, pick) = (front.round, front.pick);
         let line = format!("{} picked {} ({round}.{pick})", self.who(seat), mtg_draft::front_face(&card));
@@ -1415,7 +1516,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
                 let lands_after = sent.lands.values().sum::<u32>() + short;
                 if lands_after > MAX_TOPPED_UP_LANDS {
                     return Err(Some(format!(
-                        "it was {short} cards short, and {lands_after} lands is not a deck")));
+                        "it was {short} card{} short, and {lands_after} lands is not a deck",
+                        if short == 1 { "" } else { "s" })));
                 }
                 let most = |lands: &HashMap<String, u32>| lands.iter()
                     .filter(|(_, n)| **n > 0)
@@ -1446,8 +1548,9 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         s.deck_fallback = fallback;
         s.build_deadline = None;
         let name = self.who(seat);
-        self.event(format!("{name} is ready: {} cards ({} spells, {} lands)",
-            deck.total_cards(), deck.maindeck.len(), deck.lands.values().sum::<u32>()));
+        self.event(format!("{name} is ready: {} ({}, {})",
+            crate::count(deck.total_cards(), "card", "cards"), crate::count(deck.maindeck.len(), "spell", "spells"),
+            crate::count(deck.lands.values().sum::<u32>() as usize, "land", "lands")));
         if let Some(dir) = &self.config.out_dir {
             let path = dir.join("decks").join(format!("seat-{seat}.txt"));
             if let Err(e) = crate::deck::write_deck_file(&path, deck) {
@@ -1662,11 +1765,25 @@ for the seat from here, and its games are forfeit"), ""));
         to_play
     }
 
+    /// Whether a match's games so far have decided it, by the rule the
+    /// match loop stops on (`game::match_is_over`).
+    fn decided(&self, m: &MatchState) -> bool {
+        let wins = |s: usize| m.games.iter().filter(|g| g.winner == Some(s)).count();
+        crate::game::match_is_over(self.config.best_of, m.games.len(), wins(m.a), wins(m.b))
+    }
+
     fn match_mut(&mut self, round: usize, a: usize, b: usize) -> Option<&mut MatchState> {
         self.matches.iter_mut().find(|m| m.round == round && m.a == a && m.b == b)
     }
 
-    /// A match's game pages are up: `urls` are seat `a`'s and seat `b`'s.
+    /// The lobby as the host reaches it (`http://host:port`): the host's
+    /// terminal prints a game link that is a path on it.
+    pub fn set_link_origin(&mut self, origin: String) {
+        self.link_origin = origin;
+    }
+
+    /// A match's game pages are up: `urls` are seat `a`'s and seat `b`'s,
+    /// as each seat is sent it.
     pub fn match_started(&mut self, round: usize, a: usize, b: usize, urls: [Option<String>; 2]) {
         if let Some(m) = self.match_mut(round, a, b) {
             m.urls.clone_from(&urls);
@@ -1674,7 +1791,8 @@ for the seat from here, and its games are forfeit"), ""));
         }
         for (seat, url) in [a, b].into_iter().zip(urls) {
             if let Some(url) = url {
-                self.event(format!("round {round}: {} plays at {url}", self.who(seat)));
+                let origin = if url.starts_with('/') { self.link_origin.as_str() } else { "" };
+                self.event(format!("round {round}: {} plays at {origin}{url}", self.who(seat)));
             }
         }
     }
@@ -1705,7 +1823,8 @@ for the seat from here, and its games are forfeit"), ""));
     /// A match ended. When the round is over it is recorded, the next one
     /// paired, and the matches to play next are returned.
     pub fn match_finished(&mut self, round: usize, a: usize, b: usize, result: MatchResult) -> Vec<(usize, usize, usize)> {
-        log_match_result!(self.log, round, a, b, result.wins_a, result.wins_b, result.winner());
+        log_match_result!(self.log, round, a, b,
+            &crate::standings::match_score(result.wins_a, result.wins_b, &result.games), result.winner());
         for (n, game) in result.games.iter().enumerate() {
             log_game_log!(self.log, round, n + 1, a, b, &game.game_log);
         }
@@ -1923,7 +2042,7 @@ for the seat from here, and its games are forfeit"), ""));
             player_a: a, player_b: b, wins_a, wins_b,
             games: (0..needed).map(|_| GameOutcome {
                 winner: Some(winner), turns: 0, game_log: vec![format!("forfeit: {why}")],
-                stalled_seat: Some(loser), abandoned: false,
+                stalled_seat: Some(loser), abandoned: false, decks: None,
             }).collect(),
         }
     }
@@ -2001,6 +2120,8 @@ for the seat from here, and its games are forfeit"), ""));
                 .filter_map(|m| m.result.clone().map(|result| SavedMatch { round: m.round, a: m.a, b: m.b, result }))
                 .collect(),
             deal: Some(self.deal.clone()),
+            prompt: Some(TablePrompt::live(&self.config.seats, self.config.guide_path.as_deref(),
+                self.config.guide_hash.as_deref(), &self.reference)),
         }
     }
 
@@ -2246,6 +2367,7 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
                     url: if self.seats[seat].kicked { None } else { m.urls[me].clone() },
                     status: m.status.word(),
                     games: m.games.clone(),
+                    next_game: (m.status == MatchStatus::Playing && !self.decided(m)).then_some(m.games.len() + 1),
                     result: m.result.as_ref().map(|r| score_for(r, seat)),
                     between: m.between.as_ref().map(|b| {
                         let deck = m.decks[me].clone().or_else(|| self.seats[seat].deck.clone()).unwrap_or_default();
@@ -2271,7 +2393,11 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
             round: m.round, a: m.a, b: Some(m.b), status: m.status.word(),
             // The table's score-line note: "0-2" alone read as two games
             // played and lost when they were forfeits (#744).
-            result: m.result.as_ref().map(|r| format!("{}-{}{}", r.wins_a, r.wins_b,
+            // And a level match says it is one: a bare "0-0" read as a match
+            // not played (#919).
+            result: m.result.as_ref().map(|r| format!("{}{}{}",
+                crate::standings::match_score(r.wins_a, r.wins_b, &r.games),
+                if r.winner().is_none() { " (drawn)" } else { "" },
                 crate::standings::unplayed_games_note(&r.games))),
         }).collect();
         if let Some(t) = &self.tournament {
@@ -2354,13 +2480,12 @@ fn millis_left(deadline: Instant, now: Instant) -> u64 {
     u64::try_from(deadline.saturating_duration_since(now).as_millis()).unwrap_or(u64::MAX)
 }
 
-/// A match's score from one seat's side.
+/// A match's score from one seat's side, its drawn games and a level
+/// match said (#919).
 fn score_for(r: &MatchResult, seat: usize) -> String {
-    if r.player_a == seat {
-        format!("{}-{}", r.wins_a, r.wins_b)
-    } else {
-        format!("{}-{}", r.wins_b, r.wins_a)
-    }
+    let (won, lost) = if r.player_a == seat { (r.wins_a, r.wins_b) } else { (r.wins_b, r.wins_a) };
+    format!("{}{}", crate::standings::match_score(won, lost, &r.games),
+        if r.winner().is_none() { " (drawn)" } else { "" })
 }
 
 /// The card the table takes for an absent seat: the first card of the

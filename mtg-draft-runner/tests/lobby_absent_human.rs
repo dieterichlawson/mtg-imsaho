@@ -52,7 +52,7 @@ fn an_absent_human_is_picked_for_until_it_joins() {
     c0.send(json!({"type": "pick", "pack_id": id, "index": 0}));
     let refusal = c0.next_refusal(T);
     let reason = refusal["reason"].as_str().unwrap();
-    assert!(reason.contains("not the pack in front of you") || reason.contains("no pack in front of you"), "{refusal}");
+    assert!(reason.contains("no longer in front of you") || reason.contains("no pack in front of you"), "{refusal}");
     assert_eq!(refusal["echo"]["pack_id"], id);
 
     // Kicked: the table finishes the draft and builds, and the seat is told

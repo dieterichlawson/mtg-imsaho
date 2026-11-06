@@ -4,7 +4,7 @@
 // view is the whole seat, so the page can be thrown away and rebuilt
 // from it, which is what a reconnect and a refusal both rely on.
 import { artFor, groupByColor, initials, parseLine, COLOR_NAMES } from "./cards.js";
-import { BASICS, MIN_DECK, counts, problem, summary } from "./deck.js";
+import { BASICS, MIN_DECK, count, counts, deckSum, problem, summary } from "./deck.js";
 /** A DOM builder: tag, properties and attributes, children. */
 export function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
@@ -78,11 +78,25 @@ function poolGroups(pool) {
     }
     return el;
 }
+/** A no-break space: what holds a unit of several words ("(seat 2)",
+ *  "[1 bye]", "— done") on one line at a phone's width (#881, #934). */
+const NBSP = "\u00a0";
 function seatName(view, seat) {
+    const label = `seat${NBSP}${seat}`;
     const s = view.seats.find(x => x.seat === seat);
-    if (!s)
-        return `seat ${seat}`;
-    return s.name === `seat ${seat}` ? s.name : `${s.name} (seat ${seat})`;
+    if (!s || s.name === `seat ${seat}`)
+        return label;
+    return `${s.name} (${label})`;
+}
+/** A standings tag's count stays with its noun: "[1 bye]" split as
+ *  "[1" / "bye]" (#881). */
+export function tagText(tags) {
+    return tags.replace(/(\d) /g, `$1${NBSP}`);
+}
+/** " — status": the dash leads the words it introduces, never ends a line
+ *  above them (#934). */
+function dashed(rest) {
+    return ` —${NBSP}${rest}`;
 }
 /** Where the seat is: the table's own word when it sends one (a person in
  *  a match is wherever their game page is, #822); else "here", "away"
@@ -98,11 +112,14 @@ function presence(s) {
 }
 /** The status word, with the table's hand named when it picks for the seat. */
 function statusWord(s) {
+    // "(table picks)" may wrap between its words: held whole, with four
+    // seats the table picks for, it pushed the seats table 10px into the
+    // page's gutter at 390 (#934's review).
     return s.auto ? `${s.status} (table picks)` : s.status;
 }
 function seatsTable(view) {
     const rows = view.seats.map((s) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(s.seat) }), h("td", { class: "name", text: s.name + (s.seat === view.seat ? " (you)" : "") }), h("td", { text: s.kind }), h("td", { text: presence(s) }), h("td", { text: statusWord(s) }), h("td", { class: "num", text: String(s.picks) })));
-    return h("table", { class: "seats" }, h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "joined", "status", "picks"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
+    return h("table", { class: "seats" }, h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "where", "status", "picks"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
 }
 /**
  * What the standings count. They are recorded when a round's last match
@@ -119,20 +136,21 @@ function standingsTable(view) {
         return h("p", { class: "muted", text: "No results yet." });
     const rows = view.standings.map((s, i) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(i + 1) }), 
     // The tags the terminal standings carry, in their words (#744).
-    h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }), 
+    h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${tagText(s.tags)}` : "") }), 
     // A drawn match is in the record too: it vanished from "0-0" (#744).
     h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }), h("td", { class: "num", text: String(s.points) }), 
     // The tiebreakers a tie on points is ordered by, first to last.
     h("td", { class: "num tiebreak", text: tiebreakText(s) })));
-    return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points", "OMW / GW / OGW %"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
+    return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points"].map(t => h("th", { text: t })), h("th", { class: "tiebreak", text: `OMW /${NBSP}GW /${NBSP}OGW${NBSP}%` }))), h("tbody", {}, ...rows));
 }
 /** "55.6 / 85.7 / 47.2": the tiebreakers as percentages, or "" before a
- *  round has counted. */
+ *  round has counted. Where the three wrap, a line starts with the "/"
+ *  rather than ending with it (#881). */
 export function tiebreakText(s) {
     if (!s.omw)
         return "";
     const pct = (f) => (100 * (f ?? 0)).toFixed(1);
-    return `${pct(s.omw)} / ${pct(s.gw)} / ${pct(s.ogw)}`;
+    return `${pct(s.omw)} /${NBSP}${pct(s.gw)} /${NBSP}${pct(s.ogw)}`;
 }
 function matchRow(view, m) {
     // A forfeit is not a game played and won, and an abandoned game is not a
@@ -141,19 +159,26 @@ function matchRow(view, m) {
     const games = m.games.map((g, i) => {
         const won = g.winner === null ? (g.abandoned ? "abandoned" : "drawn") : who(g.winner);
         const forfeit = g.forfeited_by !== undefined && g.forfeited_by !== null ? ` (${who(g.forfeited_by)} forfeited)` : "";
-        return `G${i + 1} ${won}${forfeit}`;
+        return `G${i + 1}${NBSP}${won}${forfeit}`;
     }).join(", ");
-    const status = m.status === "done" ? `done${m.result ? `, ${m.result}` : ""}` : m.status === "playing" ? "playing now" : "waiting to start";
+    // A match its games have decided is "playing" until its result is
+    // recorded; it is not on a next game (#916).
+    const playing = m.next_game === null ? "decided" : "playing now";
+    const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? playing : "waiting to start";
     // The link is this seat's own page. It is null until the match's pages
     // are open (a beat after the pairing), and stays null for a match the
-    // table settled without one (a forfeit).
+    // table settled without one (a forfeit). A decided match has no game
+    // left to open (#916's review).
+    // Through the lobby's port it is a path, on the host this page was
+    // opened on (a tunnel's, a tailnet name), and is shown resolved (#969).
     let link = null;
-    if (m.status !== "done") {
-        link = m.url
-            ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
+    if (m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
+        const url = m.url ? gameLink(m.url) : null;
+        link = url
+            ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: url, target: "_blank", rel: "noopener" }, ...urlPieces(url)))
             : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
     }
-    return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}`))), link, games ? h("div", { class: "match-games muted", text: games }) : null);
+    return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)}${dashed(status)}`))), link, games ? h("div", { class: "match-games muted", text: games }) : null);
 }
 /** Every match of the tournament, the whole table's, round by round. */
 function pairingsList(view) {
@@ -162,7 +187,7 @@ function pairingsList(view) {
         return null;
     const rows = pairings.map(p => {
         const who = p.b === null ? `${seatName(view, p.a)} has a bye` : `${seatName(view, p.a)} vs ${seatName(view, p.b)}`;
-        const how = p.b === null ? "" : p.status === "done" ? ` — ${p.result ?? "done"}` : p.status === "playing" ? " — playing" : " — waiting";
+        const how = p.b === null ? "" : dashed(p.status === "done" ? tagText(p.result ?? "done") : p.status === "playing" ? "playing" : "waiting");
         const mine = p.a === view.seat || p.b === view.seat;
         return h("li", { class: mine ? "me" : "" }, ...withRecords(`Round ${p.round}: ${who}${how}`));
     });
@@ -199,7 +224,7 @@ function drafting(view, state, actions) {
     const side = h("aside", { class: "side" });
     const grid = h("div", { class: "pack", id: "pack" });
     if (pack) {
-        const waiting = pack.waiting > 0 ? ` — ${pack.waiting} pack${pack.waiting === 1 ? "" : "s"} waiting` : "";
+        const waiting = pack.waiting > 0 ? dashed(`${pack.waiting} pack${pack.waiting === 1 ? "" : "s"} waiting`) : "";
         status.append(h("h2", { id: "pick-line", text: `Pack ${pack.round}, pick ${pack.pick} of ${pack.size}${waiting}` }), h("span", { class: "muted", text: dir }), h("span", { id: "countdown", class: "countdown" }));
         pack.cards.forEach((c, i) => grid.append(tile(c, state, actions, i + 1)));
         const shown = state.hover !== null ? pack.cards.find(c => c.index === state.hover)
@@ -232,7 +257,7 @@ function poolRows(list, pool, edit, state, actions, ready) {
     const c = counts(edit);
     // The count where the rows are, on a phone: the deck panel's own count
     // line is under the whole pool there, 1,500px from the first row (#792).
-    list.append(h("div", { class: "phone-count", id: "phone-count", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+    list.append(h("div", { class: "phone-count", id: "phone-count", text: deckSum(c) }));
     const groups = groupByColor(pool.map((c, i) => ({ ...c, poolIndex: i })));
     for (const g of groups) {
         list.append(h("h4", { class: `group-head color-${g.key}` }, `${g.label} (${g.cards.length})`));
@@ -277,8 +302,8 @@ function building(view, state, actions) {
     poolRows(list, view.pool, edit, state, actions, ready);
     const why = problem(edit, view.pool);
     const s = summary(edit, view.pool);
-    panel.append(h("h3", { text: ready ? "Deck — ready" : "Deck" }));
-    panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+    panel.append(h("h3", { text: ready ? `Deck${dashed("ready")}` : "Deck" }));
+    panel.append(h("div", { class: "count-line", id: "count-line", text: deckSum(c) }));
     if (!ready && view.build_deadline_ms != null) {
         panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one, up to 18 lands), or else the table builds one" })));
     }
@@ -288,7 +313,7 @@ function building(view, state, actions) {
         colorsEl.append(h("span", { class: `swatch color-${key}`, text: `${COLOR_NAMES[key]} ${n}` }));
     if (s.colors.length === 0)
         colorsEl.append(h("span", { class: "muted", text: "No spells in the main deck yet." }));
-    panel.append(h("div", { class: "summary" }, h("div", { class: "summary-title", text: `Colours (${s.creatures} creatures)` }), colorsEl));
+    panel.append(h("div", { class: "summary" }, h("div", { class: "summary-title", text: `Colours (${count(s.creatures, "creature", "creatures")})` }), colorsEl));
     const curve = h("div", { class: "curve" });
     const peak = Math.max(1, ...s.curve);
     s.curve.forEach((n, mv) => {
@@ -299,7 +324,7 @@ function building(view, state, actions) {
         panel.append(h("div", { class: "server-problem", id: "server-problem", text: `The server says: ${view.deck.problem}` }));
     }
     if (ready) {
-        panel.append(h("div", { class: "ready-line", id: "ready-line", text: "Ready — waiting for the others." }));
+        panel.append(h("div", { class: "ready-line", id: "ready-line", text: `Ready${dashed("waiting for the others.")}` }));
     }
     else {
         panel.append(h("button", { type: "button", class: "primary", id: "ready", disabled: !!why, title: why ?? "Send this deck as final", onclick: () => actions.ready() }, "Ready"));
@@ -330,10 +355,24 @@ function reviewSection(state, actions) {
                 parts.push(h("h4", { text: `Pack ${round}` }));
                 // Unnumbered: each row begins with its pick ("3.4"), and an ordered
                 // list put a second counter before it ("4. 3.4 Rage Thrower", #889).
+                // Every card in a row is a button that reads it in place, under the
+                // row: a hover tooltip was the only reading, and a phone has no
+                // hover (#889).
                 parts.push(h("ul", { class: "review-list" }, ...picks.map(p => {
-                    const taken = p.pack.find(c => c.name === p.card);
-                    const rest = p.pack.filter(c => c !== taken).map(c => c.name);
-                    return h("li", { "data-pick": `${p.round}.${p.pick}` }, h("span", { class: "review-pick", title: taken ? taken.text : "", text: `${p.round}.${p.pick} ${p.card}` }), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest", text: ` — over ${rest.join(", ")}` }) : null);
+                    const at = `${p.round}.${p.pick}`;
+                    const takenAt = p.pack.findIndex(c => c.name === p.card);
+                    const card = (i) => {
+                        const key = `${at}:${i}`;
+                        return h("button", { type: "button", class: `review-card${state.reviewRead === key ? " reading" : ""}`, "data-review-card": key,
+                            onclick: () => actions.readReview(key) }, p.pack[i].name);
+                    };
+                    const rest = p.pack.map((_, i) => i).filter(i => i !== takenAt);
+                    const over = [];
+                    // "; ", not ", ": "Grimgrin, Corpse-Born" read as two cards (#925).
+                    rest.forEach((i, n) => { if (n > 0)
+                        over.push("; "); over.push(card(i)); });
+                    const read = state.reviewRead !== null && state.reviewRead.startsWith(`${at}:`) ? p.pack[Number(state.reviewRead.slice(at.length + 1))] : undefined;
+                    return h("li", { "data-pick": at }, h("span", { class: "review-pick" }, `${at} `, takenAt >= 0 ? card(takenAt) : p.card), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest" }, `${dashed("over")} `, ...over) : null, read ? h("div", { class: "detail review-detail" }, cardDetail(read)) : null);
                 })));
             }
         }
@@ -349,9 +388,14 @@ export function ownByes(view) {
 export function matchScore(view, m) {
     const mine = m.games.filter(g => g.winner === view.seat).length;
     const theirs = m.games.filter(g => g.winner === m.opponent).length;
+    // A drawn game is counted as the match's score counts it, W-L-D: a bare
+    // "0-0" after a drawn game 1 read as no game played (#919, #971). An
+    // abandoned game has no winner and is no draw (#744).
+    const drawn = m.games.filter(g => g.winner === null && !g.abandoned).length;
+    const d = drawn ? `-${drawn}` : "";
     if (mine === theirs)
-        return `${mine}-${theirs}`;
-    return mine > theirs ? `you lead ${mine}-${theirs}` : `your opponent leads ${theirs}-${mine}`;
+        return `${mine}-${theirs}${d}`;
+    return mine > theirs ? `you lead ${mine}-${theirs}${d}` : `your opponent leads ${theirs}-${mine}${d}`;
 }
 /**
  * Before a game of a match: the choice to play or draw, for the seat that
@@ -364,18 +408,22 @@ function betweenPanel(view, m, b, state, actions) {
     const opponent = seatName(view, m.opponent);
     const ready = b.ready || state.readySent;
     const parts = [
-        h("h3", { id: "between-head" }, ...withRecords(`Before game ${b.game} vs ${opponent}${b.game > 1 ? ` — ${matchScore(view, m)}` : ""}`)),
+        h("h3", { id: "between-head" }, ...withRecords(`Before game ${b.game} vs ${opponent}${b.game > 1 ? dashed(matchScore(view, m)) : ""}`)),
     ];
     if (!ready && b.deadline_ms !== null) {
-        parts.push(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " — then the game starts with the deck as it stands" })));
+        parts.push(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: dashed("then the game starts with the deck as it stands") })));
     }
     if (b.you_choose) {
         // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
+        // A game stopped at the action budget was abandoned, not drawn: the
+        // match row above says "abandoned" (#743, #918).
         const last = m.games[m.games.length - 1];
         const why = b.game === 1 ? "You won the coin flip"
-            : last && last.winner === m.opponent ? `You lost game ${b.game - 1}` : `Game ${b.game - 1} was a draw, and the choice is still yours`;
+            : last && last.winner === m.opponent ? `You lost game ${b.game - 1}`
+                : last && last.winner === null && last.abandoned ? `Game ${b.game - 1} was abandoned with no winner, and the choice is still yours`
+                    : `Game ${b.game - 1} was a draw, and the choice is still yours`;
         const chosen = b.play_first;
-        parts.push(h("div", { class: "play-draw", id: "play-draw" }, h("span", { text: `${why}: play first or draw first? ` }), h("button", { type: "button", id: "play-first", class: chosen === true ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(true) }, "Play first"), " ", h("button", { type: "button", id: "draw-first", class: chosen === false ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(false) }, "Draw first"), h("span", { class: "muted", text: chosen === null ? " (not chosen yet: you play first)" : chosen ? " — you play first" : " — you draw first" })));
+        parts.push(h("div", { class: "play-draw", id: "play-draw" }, h("span", { text: `${why}: play first or draw first? ` }), h("button", { type: "button", id: "play-first", class: chosen === true ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(true) }, "Play first"), " ", h("button", { type: "button", id: "draw-first", class: chosen === false ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(false) }, "Draw first"), h("span", { class: "muted", text: chosen === null ? " (not chosen yet: you play first)" : chosen ? dashed("you play first") : dashed("you draw first") })));
     }
     else {
         parts.push(h("p", { class: "muted", id: "play-draw", text: b.game === 1
@@ -388,7 +436,7 @@ function betweenPanel(view, m, b, state, actions) {
     // under the choice.
     const readyEl = ready
         ? h("div", { class: "ready-line", id: "ready-line", text: b.opponent_ready
-                ? `Ready — game ${b.game} is starting.` : `Ready — waiting for ${opponent}.` })
+                ? `Ready${dashed(`game ${b.game} is starting.`)}` : `Ready${dashed(`waiting for ${opponent}.`)}` })
         : h("div", {}, h("button", { type: "button", class: "primary", id: "sideboard-ready", disabled: !!why, title: why ?? `Start game ${b.game}`, onclick: () => actions.sideboardReady() }, `Ready for game ${b.game}`), h("div", { class: "ready-reason", id: "ready-reason", text: why ?? (b.opponent_ready ? `${opponent} is ready.` : `${opponent} is still deciding.`) }));
     if (!(b.sideboarding && edit))
         parts.push(readyEl);
@@ -396,7 +444,7 @@ function betweenPanel(view, m, b, state, actions) {
         const c = counts(edit);
         const list = h("div", { class: "checklist" });
         poolRows(list, view.pool, edit, state, actions, ready);
-        const side = h("aside", { class: "deckpanel" }, h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }), landSteppers(edit, ready, actions), readyEl);
+        const side = h("aside", { class: "deckpanel" }, h("div", { class: "count-line", id: "count-line", text: deckSum(c) }), landSteppers(edit, ready, actions), readyEl);
         if (b.opponent_showed.length) {
             side.append(h("div", { class: "summary", id: "opponent-showed" }, h("div", { class: "summary-title", text: `${opponent} has shown (${b.opponent_showed.length})` }), h("ul", { class: "pool-list" }, ...b.opponent_showed.map(card => {
                 const p = parseLine(card.name, card.line);
@@ -421,14 +469,17 @@ function playing(view, done, state, actions) {
         const latest = Math.max(0, ...(view.pairings || []).map(p => p.round));
         sections.push(h("div", { class: "waiting" }, mine.length === 0
             ? (byes.includes(latest) ? `You have a bye in round ${latest}. Waiting for the others to finish their matches.` : "Waiting for the others to finish their matches.")
-            : me && me.status === "waiting" ? "Waiting for your opponent." : "Your match is on."));
+            : me && me.status === "waiting" ? "Waiting for your opponent."
+                // Decided by its games, its result a beat from recorded (#916's review).
+                : mine.every(m => m.status === "playing" && m.next_game === null) ? "Your match is decided; its result is being recorded."
+                    : "Your match is on."));
         const m = view.matches.find(x => x.between);
         if (m && m.between)
             sections.push(betweenPanel(view, m, m.between, state, actions));
     }
     const rows = [
         ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m) })),
-        ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" }, h("div", { class: "match-head", text: `Round ${round}: a bye — counted as a match won` })) })),
+        ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" }, h("div", { class: "match-head", text: `Round ${round}: a bye${dashed("counted as a match won")}` })) })),
     ].sort((a, b) => a.round - b.round);
     sections.push(h("h3", { text: "Your matches" }), rows.length ? h("ul", { class: "matches" }, ...rows.map(r => r.el)) : h("p", { class: "muted", text: "No pairings yet." }));
     sections.push(h("h3", { text: done ? "Final standings" : standingsHeading(view.standings_after) }), standingsTable(view));
@@ -438,7 +489,7 @@ function playing(view, done, state, actions) {
     sections.push(h("h3", { text: "Seats" }), seatsTable(view));
     if (view.deck) {
         sections.push(reviewSection(state, actions));
-        sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }), h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join(", ")));
+        sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }), h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join("; ")));
     }
     return h("section", { class: `phase phase-${done ? "done" : "playing"}` }, ...sections);
 }
@@ -490,6 +541,10 @@ export function packColumns(root) {
         return 1;
     const top = tiles[0].offsetTop;
     return Math.max(1, tiles.filter(t => t.offsetTop === top).length);
+}
+/** A game link as this page reaches it: a path is on the page's own host. */
+export function gameLink(url) {
+    return new URL(url, location.href).href;
 }
 /**
  * A URL as text pieces with a line break allowed only before a ':' or '/'

@@ -35,7 +35,7 @@ async function main() {
   let browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-    await page.goto(urls["--p1"]);
+    await page.goto(urls["--p1"], { timeout: 15000 });
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     if (said() < 1) fail(`the seat never said where its page was before anyone opened it:\n${output()}`);
     else ok(`before connecting, the seat named its URL (${said()}x)`);
@@ -60,7 +60,7 @@ async function main() {
     // is handed the decision the last one was holding.
     browser = await chromium.launch();
     const p2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-    await p2.goto(urls["--p1"]);
+    await p2.goto(urls["--p1"], { timeout: 15000 });
     const got = await p2.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 20000 })
       .then(() => p2.evaluate(() => ({ seq: window.mtg.decision.seq, mode: window.mtg.ui.mode })))
       .catch(e => ({ error: String(e).slice(0, 120) }));

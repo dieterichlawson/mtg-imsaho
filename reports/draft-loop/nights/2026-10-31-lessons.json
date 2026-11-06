@@ -1,0 +1,365 @@
+{
+ "night": "2026-10-31",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "BG",
+   "record": "0-3-0",
+   "lessons": [
+    "Where tonight contradicted the guide: a BG deck with Somberwald Spider and Spider Spawning still went 0-3, so the pair alone does not win; count flier answers and evasive finishers too.",
+    "My 0-3 BG deck ran ground bodies like Darkthicket Wolf, Festerhide Boar and Brain Weevil beside only Somberwald Spider and Orchard Spirit as fliers; cap ground filler and favour evasive finishers.",
+    "Hold Victim of Night and Dead Weight for fliers such as Chapel Geist, since my games ran 14 to 35 turns, so spend them on fliers, not early ground bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6679,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3076,
+    "output_tokens_details": {
+     "thinking_tokens": 2846
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6679
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3076,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6679,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6679,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Passing Sensory Deprivation for a second Ghoulraiser in pack 3 was my costliest pick: the WU deck used it, Claustrophobia and two Feeling of Dread to beat me 2-0.",
+    "Against WU's fliers (Abbey Griffin, Stitched Drake, Spectral Rider), my ground-heavy BR deck had too few answers, so take a flier-answer or early removal over a third ground two-drop.",
+    "The BR curve of Walking Corpse, Ghoulraiser and Stromkirk Patrol won 4 of 6 games and two matches 2-0, so stay black-red and prioritise removal and fliers over extra 2-drops."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3238,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1697,
+    "output_tokens_details": {
+     "thinking_tokens": 1460
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3238
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1697,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3238,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3238,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Two drafted Moon Herons sat in my sideboard while Unruly Mob and Riot Devils made the WR deck, which then lost 16 to 21 turn stalls to fliers it could not race; main white fliers over ground filler.",
+    "Tonight contradicted the guide's WR 56% figure: my 17-land WR deck with Unruly Mob and Riot Devils went 3-5 in games, pointing to ground filler more than the pair itself.",
+    "Land count stays unsettled; my 17-land WR deck stalled for 16 to 21 turns, so test 16 lands only after cutting ground filler and keeping three flier answers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6727,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3596,
+    "output_tokens_details": {
+     "thinking_tokens": 3375
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6727
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3596,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6727,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6727,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "WU",
+   "record": "3-0-0",
+   "lessons": [
+    "Take cheap removal and evasive threats early: Claustrophobia, Sensory Deprivation, Rebuke and Slayer of the Wicked carried white-blue to 3-0 in matches, and Spectral Rider and Stitched Drake supplied the fliers.",
+    "Spider Spawning, Lumberknot and Charmbreaker Devils, taken early in pack 1, never reached my deck, while white-blue flowed from pack 2, so stay flexible until mid-pack before committing.",
+    "Games ran 16 to 19 turns against the WR and BG decks, so prioritize evasive threats like Spectral Rider over filler creatures that stall on the board."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3180,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2594,
+    "output_tokens_details": {
+     "thinking_tokens": 2363
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3180
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2594,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3180,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3180,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Round 3 fell 1-2 to WU fliers like Angelic Overseer and Stitched Drake, even though my three flier answers (Tribute to Hunger, Spidery Grasp, Corpse Lunge) met the guide's minimum. Take four or more answers.",
+    "Somberwald Spider and Vampire Interloper carried my 9 Forest, 8 Swamp, 17-land BG to 2-1 without Spider Spawning. Take Spider Spawning early, ahead of extra ground bodies.",
+    "Round 1's 22- and 24-turn games were stalls my ground creatures could not break, matching the guide's stall warning. Draft evasion before a fourth ground body."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6798,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3250,
+    "output_tokens_details": {
+     "thinking_tokens": 3010
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6798
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3250,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6798,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6798,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "Victim of Night and Corpse Lunge carried my removal, but a thin WB creature deck with 17 lands and no card advantage lost 1-2 to BG and 0-2 to WU, so draft a stronger top end.",
+    "Passing Stitcher's Apprentice and Silver-Inlaid Dagger-style filler for playable tricks is fine, but my unused Skeletal Grimace cut left me short of plays in grindy games like the 24-turn Round 1 loss.",
+    "I drafted without a guide, so no guide was contradicted; the lesson is to check whether white creature decks have enough evasion, since Abbey Griffin and Murder of Crows beat my ground bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3260,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 238,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3260
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 238,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3260,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3260,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide's weak-WU note: my 17-land WU deck with Chapel Geist, Stitched Drake, Voiceless Spirit, Murder of Crows and Claustrophobia went 2-1, beating UR 2-1 and WB 2-0.",
+    "Cheap ground creatures plus Ghostly Possession and Hysterical Blindness won when fliers and answers were present, but I lost 0-2 to BG, so answer its ground-stalling pieces such as Somberwald Spider and Tribute to Hunger early.",
+    "Take Chapel Geist and Stitched Drake over a fourth cheap creature; in this draft my WU evasion carried the wins while the card I passed for ground depth never mattered."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6761,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1483,
+    "output_tokens_details": {
+     "thinking_tokens": 1227
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6761
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1483,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6761,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6761,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "My UR list of fifteen one-to-three drops lost 1-2 and 0-2 to WU and WB decks running Claustrophobia, Slayer of the Wicked, and Victim of Night; take removal and flyers over cheap bodies.",
+    "I spent two late picks on Cobbled Wings and one on Mulch, none of which made my deck; take the removal or playable creature instead."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3276,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3421,
+    "output_tokens_details": {
+     "thinking_tokens": 3283
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3276
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3421,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3276,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3276,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

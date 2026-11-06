@@ -2143,7 +2143,8 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
 /// triggers, and for a werewolf's the trigger that transforms it back,
 /// which sets `werewolf`: what the
 /// grammar reads of it (its keywords are its printed ones). Its abilities
-/// are numbered from its own first, as the engine numbers them.
+/// are numbered from its own first; [`back_faces`] numbers them apart from
+/// the front's.
 fn back_face_reads(back: &Printed) -> Option<Spec> {
     let mut spec = Spec { permanent: true, ..Spec::default() };
     for line in without_reminders(&back.oracle_text).replace(&back.name, "~").lines().map(str::trim).filter(|l| !l.is_empty()) {
@@ -6508,14 +6509,39 @@ fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) 
 }
 
 /// Each back face of a card the grammar reads, as a card of its own, for
-/// what fights as it.
+/// what fights as it, its activated abilities numbered as
+/// [`number_after_the_front`] says.
 fn back_faces(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
     cards.iter()
-        .filter_map(|(c, _)| {
+        .filter_map(|(c, front)| {
             let back = c.back.as_ref()?;
-            Some(((**back).clone(), back_face_reads(back)?))
+            let mut spec = back_face_reads(back)?;
+            number_after_the_front(front, &mut spec);
+            Some(((**back).clone(), spec))
         })
         .collect()
+}
+
+/// A back face's activated abilities numbered apart from its front's: one
+/// the front face prints too keeps the front's number, and any other comes
+/// after every number the front uses. The ability on the stack is named by
+/// its number alone and resolves as the ability activated, whichever face
+/// is up by then (CR 113.7a, 712.8), so two faces' different abilities may
+/// not share one (`card_data_invariants`,
+/// `a_double_faced_cards_two_faces_never_give_different_abilities_one_index`):
+/// Nightfall Predator's fight is 1, after Daybreak Ranger's 0, and Lord of
+/// Lineage's "{T}: Create a 2/2 black Vampire" is Bloodline Keeper's 0.
+fn number_after_the_front(front: &Spec, back: &mut Spec) {
+    let mut next = front.mana.iter().map(ManaAbility::indices).sum::<usize>() + front.activated.len();
+    for a in &mut back.activated {
+        let shared = front.activated.iter().find(|f| Activated { index: f.index, ..a.clone() } == **f);
+        if let Some(f) = shared {
+            a.index = f.index;
+        } else {
+            a.index = next;
+            next += 1;
+        }
+    }
 }
 
 /// The creatures the combat tests fight with: those the grammar reads whose

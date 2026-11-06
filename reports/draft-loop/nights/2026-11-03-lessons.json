@@ -1,0 +1,365 @@
+{
+ "night": "2026-11-03",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "RG",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight's RG deck went 1-2 and lost both WB matches in 19 to 37 turn grinds with no late evasive finisher, so keep one late flier even when playing green.",
+    "Two WB decks went 2-0 and 2-1 against my RG deck, contradicting the guide's avoid-WB verdict; their Rebuke and Dead Weight removal won long stalls.",
+    "I cut black for five cards and played RG, going 1-2, yet the guide's best-scoring pair is BR at 58%, so keep black removal rather than cutting it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 7324,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2256,
+    "output_tokens_details": {
+     "thinking_tokens": 2063
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 7324
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2256,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 7324,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 7324,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "My WB deck's grindy wins (37, 29 turns) ran on cheap removal like Dead Weight, Tribute to Hunger, Rebuke, and Smite the Monstrous, so prioritise those over early bodies.",
+    "The WU fliers deck (two Stitched Drake, Spectral Rider, Abbey Griffin, Chapel Geist, Claustrophobia) beat my WB 1-2, and my list had almost no reach or flier answers, so take some before pack 3.",
+    "Brain Weevil's second copy was a late-pack pick that made my deck, so by pack 3 the playables were thin; take removal and fliers earlier."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3287,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2084,
+    "output_tokens_details": {
+     "thinking_tokens": 1858
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3287
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2084,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3287,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3287,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "WU went 2-1 here with two Stitched Drakes, Spectral Rider and Claustrophobia, contradicting the guide's 1-2 WU warning: fliers plus removal and a clock still work in WU.",
+    "The guide says WB went 0-3 and to avoid it, yet seats 1 and 4 both finished 2-1, and I beat seat 1's WB 2-1, so do not write WB off.",
+    "I lost 1-2 to WG (19, 17, 13 turns) despite Claustrophobia and two Hysterical Blindness, so WU should keep its cheap two-drops and flier clock even when a stall looks likely."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 7199,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3519,
+    "output_tokens_details": {
+     "thinking_tokens": 3297
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 7199
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3519,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 7199,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 7199,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Round 2 sideboarding brought in black cards Victim of Night and Trepanation Blade, which were off-colour for this UR deck and had already been cut from the notes, so check every sideboard swap against the colours you are playing.",
+    "Every match I lost ran 13 to 20 turns, so prioritise cheap removal like Claustrophobia and Sensory Deprivation over tempo cards, since long games favoured the opponents' card quality.",
+    "Silent Departure and Delver of Secrets were UR's best early plays, but the deck stalled against WU and RG, so pick a finisher or card advantage source over a marginal fourth creature."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3370,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1189,
+    "output_tokens_details": {
+     "thinking_tokens": 970
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3370
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1189,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3370,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3370,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide: WB went 2-1 for me, not 0-3, after cutting Walking Corpse and playing two Rebuke, Dead Weight, Voiceless Spirit and Falkenrath Noble for fliers.",
+    "Evasion plus removal carried my deck through 40- and 34-turn wins, so keep Unburial Rites, Ghoulcaller's Chant and a flier like Voiceless Spirit for long stalls.",
+    "My 1-2 loss to BR, with two games ending on turns 14 and 15, shows BR's early pressure beat me; block early with cheap creatures like Thraben Sentry."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 7266,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2000,
+    "output_tokens_details": {
+     "thinking_tokens": 1775
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 7266
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2000,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 7266,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 7266,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Prioritize evasive finishers over filler: two 29-turn games and an 18-turn loss show my BR aggro deck had too few ways to close, so Thraben Purebloods and Rotting Fensnake should have yielded to better threats.",
+    "Stensia Bloodhall (pack 1 pick 8) and Cobbled Wings (pack 3 pick 13) were picks I cut, so after removal, take playable creatures for the curve over utility cards that never reach the deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3321,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2679,
+    "output_tokens_details": {
+     "thinking_tokens": 2511
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3321
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2679,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3321,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3321,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "WG",
+   "record": "3-0-0",
+   "lessons": [
+    "Tonight's WG deck went 3-0 (6-1 in games) with Spider Spawning, Prey Upon, Ghostly Possession, Bonds of Faith and Chapel Geist, contradicting the guide's WG 49% and ground-creature warnings; removal plus fliers won.",
+    "Commit to your pair early: my pack 2 first pick Victim of Night went unused, while on-colour Prey Upon and Spider Spawning carried the 3-0 deck.",
+    "Keep 17 lands (10 Forest, 7 Plains) and four-plus flier answers: the 3-0 WG deck fit the guide's counts, though it ran two Gatstaf Shepherd and two Villagers as ground bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 7226,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2422,
+    "output_tokens_details": {
+     "thinking_tokens": 2171
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 7226
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2422,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 7226,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 7226,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UR",
+   "record": "0-3-0",
+   "lessons": [
+    "Seat 3's UR deck held most of my blue-red core (Delver of Secrets, Moon Heron, Sensory Deprivation, Tormented Pariah, Village Ironsmith) and beat me 2-0, so check early whether a neighbour is already in your colours.",
+    "White was the strongest colour at this table (WG 3-0, WB 2-1, WU 2-1), and I never drafted it; my UR deck never found the pressure that closed games.",
+    "My games lasted 26, 40, and 34 turns with 17 lands, and I cut Blasphemous Act. In a stalled, grindy matchup, a sweeper or finisher is worth more than the 23rd spell."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3249,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1721,
+    "output_tokens_details": {
+     "thinking_tokens": 1486
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3249
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1721,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3249,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3249,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

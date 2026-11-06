@@ -717,6 +717,30 @@ fn the_card_search_says_why_it_cannot_open_on_a_narrow_terminal() {
     assert_clean_exit(&mut g);
 }
 
+/// Issue #958: the width check ran only when the search opened. A resize
+/// below 100 columns with the search open repainted a frame with no box and
+/// no `[/=search]` hint, and the next answer typed went into the hidden
+/// filter: "1 Enter" at the mulligan took no mulligan. The search closes,
+/// says why, and the answer reaches the prompt.
+#[test]
+fn a_resize_below_the_card_search_width_closes_it_and_says_so() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    g.answer("/");
+    // Something typed into the filter, so the open box is on screen before
+    // the resize; it is discarded with the search.
+    g.send("zq");
+    g.expect(" /zq", T);
+    g.resize(99, 40);
+    g.expect("Card search closed: the terminal is now 99 columns", T);
+    g.answer("1\r");
+    g.expect("mulligans taken: 1", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
 /// Issue #357: no pane in the game ever printed a permanent's color, and
 /// intimidate (CR 702.13a) is decided entirely by it.
 ///

@@ -644,7 +644,7 @@ fn nightfall_predator_can_fight_own_creature() {
     // Give mana for the {R} cost.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let new_state = activate(&state, &reg, ranger, 0, vec![Target::Object(own_creature)]);
+    let new_state = activate(&state, &reg, ranger, 1, vec![Target::Object(own_creature)]);
 
     // Both creatures should have dealt damage to each other.
     // Nightfall Predator is 4/4, own creature is 2/2.
@@ -1136,24 +1136,21 @@ fn howlpack_alphas_wolf_arrives_even_if_the_alpha_dies_in_response() {
         "under the player who controlled the Alpha when it triggered");
 }
 
-/// CR 701.27f: "If an activated or triggered ability of a permanent ... tries
-/// to transform it, the permanent does so only if it hasn't transformed or
-/// converted since the ability was put onto the stack."
+/// CR 701.28f, #987: "If an activated or triggered ability of a permanent
+/// that isn't a delayed triggered ability of that permanent tries to transform
+/// it, the permanent transforms only if it hasn't transformed or converted
+/// since the ability was put onto the stack."
 ///
 /// Moonmist ("Transform all Humans") in response to a front-face Werewolf's
 /// upkeep trigger is the reachable case. Mayor of Avabruck is a Human, so
-/// Moonmist flips it to Howlpack Alpha. The trigger on the stack is the front
-/// face's, "if no spells were cast last turn, transform this creature", and
-/// casting Moonmist this turn does not change what was cast *last* turn, so its
-/// condition holds (CR 603.4) — but it has transformed since the trigger went on
-/// the stack, so the instruction is ignored. It stays Howlpack Alpha.
-///
-/// This test used to say the trigger flips the Alpha back, which is what
-/// "transform" does with no rule in the way: the response would be undone by the
-/// ability it answered. The card semantics check's reference found it, reading
-/// 701.27f where the engine did not.
+/// Moonmist flips it to Howlpack Alpha. The trigger on the stack is still the
+/// front face's (CR 603.4 re-checks *its* condition, "no spells were cast last
+/// turn", which casting Moonmist this turn does not change) — but the Alpha
+/// has transformed since the trigger went on the stack, so the trigger's
+/// transform does nothing and it stays an Alpha. The engine used to flip it
+/// straight back to the Mayor.
 #[test]
-fn a_werewolf_trigger_does_not_undo_a_transform_in_response() {
+fn a_werewolf_trigger_does_not_transform_it_again_after_moonmist_flipped_it_in_response() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     // Nobody cast anything last turn: the front face's condition holds.
@@ -1171,12 +1168,61 @@ fn a_werewolf_trigger_does_not_undo_a_transform_in_response() {
     mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
     assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
 
-    // The front face's ability resolves. Its condition is still true, and it
-    // does nothing: the Mayor has transformed since it went on the stack.
+    // The front face's ability resolves. Its condition is still true, and the
+    // transform it asks for does nothing.
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
     assert!(state.get_object(mayor).unwrap().is_transformed,
-        "it transformed after the trigger went on the stack, which ignores its \"transform\" (CR 701.27f)");
+        "it has transformed since the trigger went on the stack, so it stays an Alpha");
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
+    assert!(state.game_log.iter().any(|l| l.message.contains("CR 701.28f")),
+        "the log says why it did not transform");
+}
+
+/// #987's mirror: a back face's "if a player cast two or more spells last
+/// turn" trigger, with the permanent flipped to its front face in response,
+/// does not flip it back either.
+#[test]
+fn a_back_face_werewolf_trigger_does_not_transform_it_again_after_it_flipped_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.num_spells_cast_last_turn.clear();
+    state.num_spells_cast_last_turn.insert(P1, 2);
+
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the back face's transform trigger is on the stack");
+
+    // Something flips it back in response.
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck",
+        "it has transformed since the trigger went on the stack");
+}
+
+/// The rule is about the transform since the ability went on the stack, not
+/// any transform ever: a werewolf that transformed on an earlier turn and
+/// triggers now still transforms.
+#[test]
+fn a_werewolf_that_transformed_before_its_trigger_went_on_the_stack_still_transforms() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.num_spells_cast_last_turn.clear();
+
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck");
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
     assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
 }
 
@@ -1383,4 +1429,75 @@ fn a_non_token_clone_of_a_werewolf_triggers_and_does_not_transform() {
     assert_eq!(announced, 2, "the clone's ability triggers like the card's");
     assert!(state.get_object(twin).unwrap().is_transformed,
         "and does nothing on resolution: the card under it has no other face");
+}
+
+/// The ability a Daybreak Ranger activated, offered and put on the stack at
+/// `target` — not yet resolved.
+fn ranger_ability_on_the_stack(
+    state: &mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    ranger: mtg_engine::ids::ObjectId,
+    target: mtg_engine::ids::ObjectId,
+) -> mtg_engine::state::GameState {
+    let legal = mtg_engine::engine::legal_actions(state, reg);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, mtg_engine::actions::Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == ranger && targets.contains(&Target::Object(target))))
+        .expect("the ability is offered at the target");
+    let after = mtg_engine::engine::submit_action(state, action, reg);
+    assert!(matches!(after.stack.last(), Some(mtg_engine::state::StackEntry::Ability { .. })),
+        "the ability is on the stack");
+    after
+}
+
+/// #986, A. CR 113.7a: the Predator's fight is on the stack independently of
+/// the Predator, and it stays a fight when the Predator dies in response.
+/// CR 701.12b: a fight whose creature has left deals no damage. A card in the
+/// graveyard shows its front face, and the ability used to resolve as that
+/// face's "2 damage to target creature with flying".
+#[test]
+fn nightfall_predators_fight_stays_a_fight_when_the_predator_is_sacrificed_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    let spirit = named_permanent(&mut state, &reg, "Voiceless Spirit", P1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let mut state = ranger_ability_on_the_stack(&state, &reg, ranger, spirit);
+    // In response, the Predator is sacrificed (Tribute to Hunger).
+    state.move_object(ranger, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let spirit_obj = state.get_object(spirit).unwrap();
+    assert_eq!(spirit_obj.zone, Zone::Battlefield, "the Spirit survives");
+    assert_eq!(spirit_obj.damage_marked, 0,
+        "a fight whose fighter has left deals no damage (CR 701.12b)");
+}
+
+/// #986, B. CR 712.8 and CR 113.7a: transforming the source does not change
+/// the ability already on the stack. The front face's "2 damage to target
+/// creature with flying", with Moonmist cast in response, used to resolve as
+/// the Predator's 4-power fight, and the Spirit dealt 2 back.
+#[test]
+fn daybreak_rangers_two_damage_stays_two_damage_when_it_transforms_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let spirit = named_permanent(&mut state, &reg, "Voiceless Spirit", P1);
+
+    let mut state = ranger_ability_on_the_stack(&state, &reg, ranger, spirit);
+    // In response, Moonmist transforms it.
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    assert_eq!(state.name_of(ranger, &reg), "Nightfall Predator");
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(ranger).unwrap().damage_marked, 0,
+        "nothing fought, so nothing dealt damage back");
+    let spirit_obj = state.get_object(spirit).unwrap();
+    assert!(spirit_obj.zone != Zone::Battlefield || spirit_obj.damage_marked == 2,
+        "the Spirit took the activated ability's 2 damage, not 4");
+    assert!(state.game_log.iter().any(|l| l.message.contains("dealt 2 damage to Voiceless Spirit")),
+        "the front face's 2 damage was dealt: {:?}",
+        state.game_log.iter().rev().take(8).map(|l| &l.message).collect::<Vec<_>>());
 }

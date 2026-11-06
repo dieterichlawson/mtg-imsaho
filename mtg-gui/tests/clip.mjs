@@ -54,6 +54,14 @@ for (const len of [0, 1, 5, 50, 101, 500, 17183]) {
   if (!v.endsWith(" (tap 2x Swamp) → Opponent")) fail(`the tap plan was cut: ${v}`);
   if ([...v].length * 4 > 246) fail(`over width: ${v}`);
 }
+// #938's review: a tap plan wider than the row was clipped from the end,
+// which is where the creatures it taps are (auto-tap spends them last). The
+// verb's start and the plan's end are kept.
+{
+  const v = clipKeepingTail(fakeCtx(), "Cast Devil's Play (tap Sol Ring, 4x Mountain, Forest, 2x Shimmering Grotto, 2x Avacyn's Pilgrim)", 138);
+  if (!v.startsWith("Cast") || !v.endsWith("2x Avacyn's Pilgrim)") || !v.includes(" (tap …")) fail(`the creatures were cut: ${v}`);
+  if ([...v].length * 4 > 138) fail(`over width: ${v}`);
+}
 // #693: a number widget's summary never drops lines silently, and never
 // drops "Payable X".
 {

@@ -43,7 +43,7 @@ fn every_record_is_filed_under_whom_it_is_about() {
     let seats = vec![SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())];
     let config = LobbyConfig {
         set_code: "isd".into(), set_name: set_data.set_name.clone(), seats,
-        best_of: 1, seed: 1, guide_path: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None, out_dir: None,
+        best_of: 1, seed: 1, guide_path: None, guide_hash: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None, out_dir: None,
     };
     let mut lobby = Lobby::new(config, &packs, &set_data, registry.clone(), &lines,
         DraftLogger::new(&log_path)).unwrap();
@@ -78,7 +78,7 @@ fn every_record_is_filed_under_whom_it_is_about() {
         let next = std::thread::scope(|s| std::thread::Builder::new().name(format!("seat {a} v {b}"))
             .spawn_scoped(s, || {
                 lobby.match_started(round, a, b, [None, None]);
-                let game = GameOutcome { winner: Some(a), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+                let game = GameOutcome { winner: Some(a), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
                 lobby.match_finished(round, a, b, MatchResult {
                     player_a: a, player_b: b, wins_a: 1, wins_b: 0, games: vec![game],
                 })

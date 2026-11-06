@@ -19,7 +19,7 @@ const path = require("path");
 const fs = require("fs");
 
 const guiDir = path.resolve(__dirname, "..");
-const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
+const shotsDir = require("./children.js").parseArgs({ "--shots": { kind: "string", def: null } })["--shots"];
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 function ok(msg) { console.log("ok: " + msg); }
@@ -88,7 +88,7 @@ async function main() {
         // art is a placeholder, not an error.
         if (m.type() === "error" && !/WebSocket|404/.test(m.text())) errors.push("console: " + m.text());
       });
-      await page.goto(`http://127.0.0.1:${port}/?seat=0&key=test-key`);
+      await page.goto(`http://127.0.0.1:${port}/?seat=0&key=test-key`, { timeout: 15000 });
       await page.waitForFunction(() => window.mtgDraftDebug && window.mtgDraft, null, { timeout: 15000 });
       const tag = String(viewport.width);
       const shot = async (name) => {
@@ -103,7 +103,9 @@ async function main() {
         scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth,
         scrollH: document.documentElement.scrollHeight, clientH: document.documentElement.clientHeight,
       }));
-      const text = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.textContent : null; }, sel);
+      // The wording, with the no-break spaces that hold its units on one
+      // line (#881, #934) read as the spaces they are.
+      const text = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.textContent.replace(/\u00a0/g, " ") : null; }, sel);
       // Every visible button whose label is under 3:1 against what it is drawn on
       // (#873: a classless button was #eee on the browser's #efefef face).
       const unreadable = () => page.evaluate(() => {
@@ -169,6 +171,16 @@ async function main() {
         await stage(unnamed);
         await page.waitForTimeout(50);
         check(await page.$eval("#name", el => el.value) === "", `${tag}: and stays empty for a seat with no name of its own`);
+      }
+
+      // #929: the Seats table's fourth column says where a seat is ("here",
+      // "in game", "game page closed", "away", "not yet"), not whether it
+      // joined, and its heading says so.
+      {
+        await stage(byName.playing);
+        await page.waitForTimeout(50);
+        const heads = await page.$$eval("table.seats thead th", t => t.map(x => x.textContent.trim()));
+        check(heads.includes("where") && !heads.includes("joined"), `${tag}: the Seats table heads its presence column "where" (${JSON.stringify(heads)})`);
       }
 
       // Drafting: click selects, a second click picks, the message names the pack and the index.
@@ -507,18 +519,84 @@ async function main() {
           await stage(byName.playing);
           await page.waitForTimeout(50);
         }
+        // Through the lobby's port the link is a path, opened on the host
+        // this page was (a tunnel's, a tailnet name), not the LAN address
+        // the server advertises (#969).
+        {
+          const pathed = JSON.parse(JSON.stringify(byName.playing));
+          const path = `/game/8805/${"0123456789abcdef".repeat(2)}/`;
+          for (const m of pathed.matches) if (m.url) m.url = path;
+          await stage(pathed);
+          await page.waitForTimeout(50);
+          const a = await page.evaluate(() => { const a = document.querySelector(".match-link a"); return a && { href: a.href, text: a.textContent }; });
+          const want = `http://127.0.0.1:${port}${path}`;
+          check(a && a.href === want && a.text === want, `${tag}: a path link is on the page's own host (${JSON.stringify(a)})`);
+          await stage(byName.playing);
+          await page.waitForTimeout(50);
+        }
         // A long one-word name and the #744 tags fit a phone (#789), and a
-        // record is never broken at its hyphen (#790).
+        // record is never broken at its hyphen (#790). The tiebreak heading
+        // may wrap, at a "/", as its numbers do (#881; checked below).
         const wide = JSON.parse(JSON.stringify(byName.playing));
         wide.seats[1].name = "Featherstonehaughmaximus";
         wide.standings.forEach((r, i) => { r.draws = i % 2; r.tags = "[substitute deck] [1 game forfeited]"; });
         await stage(wide);
         await page.waitForTimeout(50);
         const fit = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth,
-          broken: [...document.querySelectorAll(".standings td.num, .standings th, .rec")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
+          broken: [...document.querySelectorAll(".standings td.num:not(.tiebreak), .standings th:not(.tiebreak), .rec")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
         check(fit.sw <= fit.w, `${tag}: a 24-letter name keeps the page on screen (${fit.sw} <= ${fit.w})`);
         check(fit.broken.length === 0, `${tag}: no record or heading breaks across lines (${JSON.stringify(fit.broken)})`);
         check(await page.$$eval(".pairings-list .rec, .match-head .rec", els => els.length) > 0 || !(await page.$(".pairings-list")), `${tag}: the pairings' records are held whole`);
+        // A unit of several words holds together, and an ordinary word is
+        // never broken inside: "STRANGE" / "R ZERO", "[1" / "BYE]", a tiebreak
+        // line ending "/" (#881), "(seat" / "2)" and a line ending "—" (#934),
+        // and "G2" / "you" (#934's review). "(table picks)" may wrap: held
+        // whole it pushed the seats table into the gutter, checked below.
+        // Only a word too long for any column (the 24 letters of #789) breaks.
+        for (const rot of [0, 1, 2, 3]) {
+          const v = JSON.parse(JSON.stringify(byName.playing));
+          const names = ["Margaret", "Wilhelmina Fitzgerald", "Bartholomewmaximilianjoe", "Stranger Zero"];
+          v.seats.forEach((st, i) => { st.name = names[(i + rot) % names.length]; st.auto = true; st.status = i % 2 ? "building" : "picking"; });
+          v.standings.forEach((r, i) => { r.tags = ["[1 bye]", "[substitute deck] [2 games forfeited]", "", "[1 bye]"][i % 4]; r.omw = 0.415; r.gw = 1; r.ogw = 0.5; });
+          await stage(v);
+          await page.waitForTimeout(50);
+          const split = await page.evaluate(() => {
+            const lines = el => {
+              const out = []; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n, cur = null, top = null;
+              while ((n = w.nextNode())) for (let i = 0; i < n.data.length; i++) {
+                const rg = document.createRange(); rg.setStart(n, i); rg.setEnd(n, i + 1);
+                const rc = rg.getClientRects()[0]; if (!rc) continue;
+                const t = Math.round(rc.top);
+                if (t !== top) { if (cur !== null) out.push(cur); cur = ""; top = t; }
+                cur += n.data[i];
+              }
+              if (cur !== null) out.push(cur);
+              return out.map(x => x.replace(/\s+/g, " ").trim());
+            };
+            const bad = [];
+            for (const el of document.querySelectorAll(".standings td, .standings th, .seats td, .pairings-list li, .match-head, .match-games, #between-head")) {
+              const ls = lines(el); const full = el.textContent.replace(/\s+/g, " ");
+              for (let k = 0; k < ls.length - 1; k++) {
+                const a = ls[k], c = ls[k + 1];
+                const tail = a.split(" ").pop(), head = c.split(" ")[0];
+                const midWord = /[A-Za-z0-9.]$/.test(a) && /^[A-Za-z0-9.]/.test(c) && !full.includes(`${tail} ${head}`)
+                  && (full.split(" ").find(w => w.includes(tail + head)) || tail + head).replace(/[()[\]]/g, "").length < 15;
+                if (midWord || /\/$/.test(a) || /\(seat$/i.test(a) || /\[\d+$/.test(a) || /—$/.test(a) || /^G\d+$/.test(tail)) bad.push(ls.join(" | "));
+              }
+            }
+            return bad;
+          });
+          check(split.length === 0, `${tag}: names, tags, tiebreaks and seat labels hold together, rotation ${rot} (${JSON.stringify(split.slice(0, 3))})`);
+          // Held together inside the page's gutter, not only short of a
+          // sideways scroll: the seats table ran 10px into it (#934's review).
+          const over = await page.evaluate(() => {
+            const app = document.querySelector("#app"); const cs = getComputedStyle(app);
+            const right = app.getBoundingClientRect().right - parseFloat(cs.paddingRight);
+            return [...document.querySelectorAll("#app table")].filter(t => t.getBoundingClientRect().right > right + 0.5)
+              .map(t => `${t.className} ${Math.round(t.getBoundingClientRect().right)} > ${Math.round(right)}`);
+          });
+          check(over.length === 0, `${tag}: every table stays inside the gutter, rotation ${rot} (${JSON.stringify(over)})`);
+        }
         // A black pip is a disc on the panel, as the other colours are (#793).
         const pip = await page.evaluate(() => { const el = document.createElement("span"); el.className = "pip pip-B"; document.body.append(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; });
         check(pip !== "rgb(42, 30, 48)", `${tag}: the B pip is not the panel's colour (${pip})`);
@@ -570,6 +648,23 @@ async function main() {
         }
         check((await page.$$(".pairings-list li")).length === 4 && (await text(".pairings-list") || "").includes("has a bye"), `${tag}: every pairing of the tournament is listed, the bye included`);
         check(whole.includes("away") && whole.includes("(table picks)"), `${tag}: the seats table says who is away and whom the table picks for`);
+        // A match its games have decided is "playing" until the result is
+        // recorded, and is not on a next game (#916).
+        {
+          const v = JSON.parse(JSON.stringify(byName.playing));
+          const live = v.matches.find(m => m.status === "playing");
+          await stage(v);
+          await page.waitForTimeout(50);
+          check((await text(".match-playing .match-head") || "").includes("playing now"), `${tag}: a match on its next game is playing now`);
+          live.next_game = null;
+          await stage(v);
+          await page.waitForTimeout(50);
+          const head = (await text(".match-playing .match-head")) || "";
+          check(head.includes("decided") && !head.includes("playing now"), `${tag}: a decided match says so (${head})`);
+          check(await page.$(".match-playing .match-link") === null, `${tag}: and offers no game to open`);
+          if (v.matches.every(m => m.status === "done" || m === live))
+            check((await text(".waiting") || "").includes("decided"), `${tag}: the waiting line says the match is decided (${await text(".waiting")})`);
+        }
         await stage(byName.done);
         await page.waitForTimeout(50);
         check((await text("h2") || "").includes("Draft over"), `${tag}: done says the draft is over`);
@@ -585,12 +680,36 @@ async function main() {
         await stage(between);
         await page.waitForTimeout(50);
         check(((await text("#between-head")) || "").startsWith("Before game 2 vs"), `${tag}: the panel says which game is next (${await text("#between-head")})`);
+        // A drawn game 1 is scored as one, W-L-D, as the pairings say it
+        // (#919, #971); a bare "0-0" read as no game played.
+        {
+          const drawn = JSON.parse(JSON.stringify(between));
+          drawn.matches.find(m => m.between).games = [{ winner: null, abandoned: false }];
+          await stage(drawn);
+          await page.waitForTimeout(50);
+          const head = (await text("#between-head")) || "";
+          check(/—\s0-0-1$/.test(head), `${tag}: a drawn game is in the between-games score (${head})`);
+          await stage(between);
+          await page.waitForTimeout(50);
+        }
         check(((await text("#play-draw")) || "").includes("chooses whether to play or draw"), `${tag}: the opponent's choice is said as theirs`);
         check(((await text("#opponent-showed")) || "").includes(b.opponent_showed[0].name), `${tag}: what the opponent showed is listed`);
         const rows = await page.$$eval("#between .row", r => r.length);
         check(rows === between.pool.length, `${tag}: every pool card is a row to sideboard with (${rows})`);
         const inMain = await page.$$eval("#between .row.in-main", r => r.length);
         check(inMain === b.deck.main.length, `${tag}: the deck played last game is the one marked (${inMain} of ${b.deck.main.length})`);
+        // Keeping the deck is the usual choice on a running clock: Ready is
+        // on the first screen at either width, and on a phone it and the
+        // land steppers come before the pool, not ~1,900 px under it (#885).
+        {
+          const at = await page.evaluate(() => {
+            const top = sel => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect().top + scrollY : null; };
+            const bottom = sel => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect().bottom + scrollY : null; };
+            return { ready: bottom("#sideboard-ready"), steppers: top('#between [data-land="Plains"]'), firstRow: top("#between .row") };
+          });
+          check(at.ready !== null && at.ready <= viewport.height, `${tag}: Ready for the next game is on the first screen (bottom ${Math.round(at.ready)} <= ${viewport.height})`);
+          if (viewport.width < 760) check(at.steppers !== null && at.steppers < at.firstRow, `${tag}: the land steppers come before the pool (${Math.round(at.steppers)} < ${Math.round(at.firstRow)})`);
+        }
         const before = (await sent()).length;
         // One card out: 39, which the server would refuse, so nothing is sent
         // and Ready says why; a basic in for it is a deck again, and is sent.
@@ -613,6 +732,21 @@ async function main() {
         check(last2.join(",") === "sideboard,sideboard_ready", `${tag}: Ready sends the deck and then says so (${last2})`);
         check(((await text("#ready-line")) || "").includes("game 2 is starting"), `${tag}: the panel says the game is starting (${await text("#ready-line")})`);
         check(await page.$eval("#between .row", el => el.disabled), `${tag}: and nothing moves after Ready`);
+
+        // After a game with no winner the choice stays put, and a game
+        // abandoned at the action budget is not called a draw (#918).
+        for (const [last, said] of [[{ winner: null, forfeited_by: null, abandoned: true }, "Game 1 was abandoned with no winner"],
+                                    [{ winner: null, forfeited_by: null, abandoned: false }, "Game 1 was a draw"]]) {
+          const v = JSON.parse(JSON.stringify(between));
+          const m = v.matches.find(x => x.between);
+          Object.assign(m.between, { game: 2, you_choose: true, play_first: null, ready: false });
+          m.games = [last];
+          await stage(byName.done);
+          await stage(v);
+          await page.waitForTimeout(50);
+          const pd = (await text("#play-draw")) || "";
+          check(pd.includes(said) && pd.includes("the choice is still yours"), `${tag}: after ${last.abandoned ? "an abandoned" : "a drawn"} game the chooser is told so (${pd})`);
+        }
 
         // Before game 1, for the flip's winner: the choice and no deck.
         const flip = JSON.parse(JSON.stringify(between));
@@ -651,18 +785,63 @@ async function main() {
         const card = (name) => ({ name, line: name, text: `${name} text`, rarity: "common", colors: [] });
         await page.evaluate((m) => window.mtgDraftDebug.stage(m), { type: "review", picks: [
           { round: 1, pick: 1, card: "Chapel Geist", auto: false, pack: [card("Doomed Traveler"), card("Chapel Geist"), card("Moan of the Unhallowed")] },
-          { round: 1, pick: 2, card: "Typhoid Rats", auto: true, pack: [card("Typhoid Rats")] },
+          { round: 1, pick: 2, card: "Lost in the Mist", auto: false, pack: [card("Lost in the Mist"), card("Grimgrin, Corpse-Born"), card("Abattoir Ghoul")] },
+          { round: 1, pick: 3, card: "Typhoid Rats", auto: true, pack: [card("Typhoid Rats")] },
           { round: 2, pick: 1, card: "Brimstone Volley", auto: false, pack: [card("Brimstone Volley"), card("Geistflame")] },
         ] });
         await page.waitForTimeout(50);
-        const rows = await page.$$eval("#review li", els => els.map(e => e.textContent));
+        const rows = await page.$$eval("#review li", els => els.map(e => e.textContent.replace(/\u00a0/g, " ")));
         check(await page.$$eval("#review ol", els => els.length) === 0, `${tag}: the review's rows carry their pick and no second counter (#889)`);
-        check(rows.length === 3 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed",
+        check(rows.length === 4 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler; Moan of the Unhallowed",
           `${tag}: each pick is the card taken over the rest of its pack (${JSON.stringify(rows)})`);
-        check(rows[1].includes("the table's pick"), `${tag}: a pick the table made says so`);
+        // "; " between the names: "Grimgrin, Corpse-Born" is one card (#925).
+        check(rows[1] === "1.2 Lost in the Mist — over Grimgrin, Corpse-Born; Abattoir Ghoul", `${tag}: a name with a comma reads as one card (${rows[1]})`);
+        check(rows[2].includes("the table's pick"), `${tag}: a pick the table made says so`);
         check((await page.$$eval("#review h4", els => els.map(e => e.textContent))).join(",") === "Pack 1,Pack 2", `${tag}: by pack`);
         const o = await overflow();
         check(o.scrollW <= o.clientW, `${tag}: the review fits sideways (${o.scrollW} <= ${o.clientW})`);
+        // Every card of the review reads by a tap, the taken one and the
+        // rest, at a phone's width too: a hover tooltip was the only
+        // reading, and only of the taken card (#889).
+        const readOf = () => page.$$eval("#review .review-detail", els => els.map(e => e.textContent));
+        await page.click('#review [data-review-card="1.1:2"]');
+        await page.waitForTimeout(50);
+        let read = await readOf();
+        check(read.length === 1 && read[0].includes("Moan of the Unhallowed text"), `${tag}: a tap on a card passed over reads it (${JSON.stringify(read)})`);
+        await page.click('#review [data-review-card="2.1:0"]');
+        await page.waitForTimeout(50);
+        read = await readOf();
+        check(read.length === 1 && read[0].includes("Brimstone Volley text"), `${tag}: a tap on a taken card reads it instead (${JSON.stringify(read)})`);
+        await page.click('#review [data-review-card="2.1:0"]');
+        await page.waitForTimeout(50);
+        check((await readOf()).length === 0, `${tag}: a second tap closes it`);
+        await page.click("#review-toggle");
+      }
+
+      // Enter on a focused review card is that card's, twice over, while
+      // building: the redraw dropped the focus, and the second Enter moved
+      // the pool card under the cursor (#889's review, #787's shape).
+      {
+        await stage(byName.building);
+        await page.waitForTimeout(50);
+        await page.keyboard.press("ArrowDown");
+        await page.click("#review-toggle");
+        await page.waitForTimeout(50);
+        const card = (name) => ({ name, line: name, text: `${name} text`, rarity: "common", colors: [] });
+        await page.evaluate((m) => window.mtgDraftDebug.stage(m), { type: "review", picks: [
+          { round: 1, pick: 1, card: "Chapel Geist", auto: false, pack: [card("Doomed Traveler"), card("Chapel Geist")] }] });
+        await page.waitForTimeout(50);
+        const before = (await sent()).length;
+        await page.focus('#review [data-review-card="1.1:0"]');
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const opened = await page.$$eval("#review .review-detail", els => els.length);
+        const focused = await page.evaluate(() => document.activeElement && document.activeElement.dataset.reviewCard);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const closed = await page.$$eval("#review .review-detail", els => els.length);
+        check(opened === 1 && focused === "1.1:0", `${tag}: Enter on a review card reads it and keeps the focus (${opened}, ${focused})`);
+        check(closed === 0 && (await sent()).length === before, `${tag}: a second Enter closes it and moves no pool card (${closed}, ${JSON.stringify((await sent()).slice(before))})`);
         await page.click("#review-toggle");
       }
 

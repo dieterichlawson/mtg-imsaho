@@ -19,8 +19,9 @@ pub use claude_code::{available as claude_code_available, binary as claude_code_
 // The one `claude -p` subprocess driver, for both seats in the workspace
 // (#404).
 pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};
+pub use claude_code::{system_prompt_too_long as claude_code_system_prompt_too_long, MAX_ARG_BYTES as CLAUDE_CODE_MAX_ARG_BYTES};
 pub use claude_code::{ANSWER_SCHEMA_ENV as CLAUDE_CODE_ANSWER_SCHEMA_ENV, CACHE_TTL_ENV as CLAUDE_CODE_CACHE_TTL_ENV, UNREADABLE_LIMIT as CLAUDE_CODE_UNREADABLE_LIMIT};
-pub use claude_code::{stop_gracefully_on_signal, stop_signal};
+pub use claude_code::{signal_name, stop_gracefully_on_signal, stop_signal};
 pub use cost::{api_equivalent, cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
 
 
@@ -409,6 +410,14 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                     return Some(format!("`{path}` is {value}, not an object"));
                 };
                 let properties = schema.get("properties").and_then(serde_json::Value::as_object);
+                // A cancel undoes the cast and pays nothing, so the rest of
+                // the answer is never read: holding it to the list's
+                // minimum re-asked every `{"cancel": true, "indices": []}`
+                // and told the seat to pick a target (#990).
+                if properties.is_some_and(|p| p.contains_key("cancel"))
+                    && object.get("cancel") == Some(&serde_json::Value::Bool(true)) {
+                    return None;
+                }
                 let unread = |key: &str| properties.and_then(|p| p.get(key))
                     .is_some_and(|sub| sub.get(UNREAD).is_some());
                 // Not asked for, so not missing: what the format line
@@ -546,13 +555,29 @@ pub fn retry_budget(env: &str) -> std::time::Duration {
 pub const MAX_ENV_SECONDS: u64 = 86_400;
 
 /// `default`, unless `env` names a number of seconds to use instead, capped
-/// at [`MAX_ENV_SECONDS`].
+/// at [`MAX_ENV_SECONDS`]. A value it cannot read, or one it caps, is said
+/// once: "90s" ran the default 300 in silence (#915, #911's shape).
 #[must_use]
 pub fn env_seconds(env: &str, default: std::time::Duration) -> std::time::Duration {
-    std::env::var(env)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(default, |secs| std::time::Duration::from_secs(secs.min(MAX_ENV_SECONDS)))
+    let value = std::env::var(env).ok();
+    let (secs, warning) = read_seconds(value.as_deref(), default);
+    if let (Some(value), Some(instead)) = (value, warning) {
+        unknown_setting(env, &value, &instead);
+    }
+    secs
+}
+
+/// What a seconds setting's value means, and what to say about it when it
+/// is not taken as written.
+fn read_seconds(value: Option<&str>, default: std::time::Duration) -> (std::time::Duration, Option<String>) {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else { return (default, None) };
+    match value.parse::<u64>() {
+        Ok(secs) if secs > MAX_ENV_SECONDS => (std::time::Duration::from_secs(MAX_ENV_SECONDS),
+            Some(format!("it is capped at {MAX_ENV_SECONDS} seconds, a day"))),
+        Ok(secs) => (std::time::Duration::from_secs(secs), None),
+        Err(_) => (default, Some(format!("the default of {} seconds stands (a whole number of seconds sets one)",
+            default.as_secs()))),
+    }
 }
 
 /// How long to wait before attempt number `attempt` (1-based on retries).
@@ -927,9 +952,23 @@ pub const PASS_UNTIL_ENV: &str = "MTG_LLM_PASS_UNTIL";
 /// [`PASS_UNTIL_ENV`].
 #[must_use]
 pub fn pass_until_enabled() -> bool {
-    !std::env::var(PASS_UNTIL_ENV).is_ok_and(|v| {
-        matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no")
-    })
+    let Ok(value) = std::env::var(PASS_UNTIL_ENV) else { return true };
+    let (on, warning) = read_pass_until(&value);
+    if let Some(instead) = warning {
+        unknown_setting(PASS_UNTIL_ENV, &value, instead);
+    }
+    on
+}
+
+/// What a [`PASS_UNTIL_ENV`] value means. A value that is neither on nor off
+/// keeps the row, and says so: "disabled" kept it in silence and recorded
+/// `"pass_until": true` in the save (#915).
+fn read_pass_until(value: &str) -> (bool, Option<&'static str>) {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "off" | "0" | "false" | "no" => (false, None),
+        "" | "on" | "1" | "true" | "yes" => (true, None),
+        _ => (true, Some("the pass-until row stays on (off, 0, false or no leaves it out)")),
+    }
 }
 
 /// The one row every priority offer carries beside the engine's actions,
@@ -958,7 +997,7 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack since you said go, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase (or the first offer after it, if it had nothing on offer and went by); a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack since you said go, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -1532,8 +1571,16 @@ does not choose; the mulligan prompt tells you which you are.\n",
                 writeln!(s, "Matches are best-of-{n}: the match ends as soon as one of you \
 has won {needed} games, or after {n} games have been played, whichever comes first. \
 Whoever has won more games then wins the match.").unwrap();
+                // A game neither seat won is in the score too: "you 1, your
+                // opponent 0" before game 3 left an earlier draw out (#976,
+                // as #971 for the page's match line).
+                let no_winner = match game.saturating_sub(1 + your_wins + their_wins) {
+                    0 => String::new(),
+                    1 => ", and 1 game had no winner".to_string(),
+                    k => format!(", and {k} games had no winner"),
+                };
                 writeln!(s, "\n**This is game {game} of at most {n}.** The score so far is \
-**you {your_wins}, your opponent {their_wins}**.").unwrap();
+**you {your_wins}, your opponent {their_wins}**{no_winner}.").unwrap();
 
                 if already_won || already_lost {
                     let who = if already_won { "you have" } else { "your opponent has" };
@@ -1577,7 +1624,7 @@ match is still worth not losing.\n");
 previous one chooses in the same way. The mulligan prompt tells you which side you are on.\n");
                 } else {
                     writeln!(s, "\nThe loser of game {} may choose who goes first in this game \
-(after a drawn game, whoever chose before), and plays first if it does not choose. The \
+(after a game with no winner, drawn or abandoned, whoever chose before), and plays first if it does not choose. The \
 mulligan prompt tells you which side you are on.", game - 1).unwrap();
                 }
             }
@@ -1623,12 +1670,12 @@ Every prompt restates the whole position, in this order:
 - `Turn N - <step> (your turn|opp's turn)`. Steps: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
 - `Your notes from your last decision:` your own thoughts from the last prompt. No earlier prompt is kept, so this is how a plan carries over; trust the board over them.
 - `Recent events:` what happened since your last prompt, at most the most recent 80 entries (a marker such as `… 227 earlier entries omitted, through turn 94 …` says when older ones were dropped).
-- `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these) and `a creature died` (morbid).
+- `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these), `a creature died` (morbid) and each effect in force until end of turn that is on no one permanent (Moonmist's prevention).
 - `Mana pool:` yours and `Opp mana pool:` (when not empty); `Your board:` and `Opp board:`; `Stack:` (top first, with controller and targets); `Hand:` (cost, and base P/T for creatures); graveyards; exile; `Flashback available`.
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `blocking (no attacker left)` (still blocking, deals no combat damage); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `attacked this turn` (no longer attacking); `once-per-turn ability used` (its "only once each turn" or loyalty ability is spent this turn); `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
 ## Answering
 
@@ -3345,7 +3392,11 @@ impl LlmPlayer {
                 .filter(|(p, _)| (*p == view.you) == mine)
                 .map(|(_, n)| n).sum()
         };
-        writeln!(s, "This turn: spells cast — you {}, opp {}{}",
+        // And an effect in force for the rest of the turn on no one
+        // permanent: Moonmist's prevention was said in one prompt's recent
+        // events, and every later prompt of the turn read without it (#953).
+        let in_force: String = view.turn_effects.iter().map(|e| format!("; {e}")).collect();
+        writeln!(s, "This turn: spells cast — you {}, opp {}{}{in_force}",
             cast(true), cast(false),
             if view.creature_died_this_turn { "; a creature died" } else { "" }).unwrap();
 
@@ -3661,6 +3712,11 @@ impl LlmPlayer {
             if !c.blocking.is_empty() {
                 flag_parts.push(format!("blocking {}",
                     c.blocking.iter().map(|id| named(*id)).collect::<Vec<_>>().join(" and ")));
+            } else if c.is_blocking {
+                // A blocking creature whose attacker left combat (CR
+                // 510.1d): it deals no combat damage, and with no flag it
+                // read as an idle creature out of combat (#983).
+                flag_parts.push("blocking (no attacker left)".into());
             }
             if !c.blocked_by.is_empty() {
                 flag_parts.push(format!("blocked by {}",
@@ -3682,6 +3738,16 @@ impl LlmPlayer {
                 .map(|id| named(*id)).collect();
             if !from.is_empty() {
                 flag_parts.push(format!("damaged this turn by {}", from.join(" and ")));
+            }
+            // Facts of this turn no other flag carries: Homicidal Brute's
+            // end step reads the attack, and a spent once-each-turn ability
+            // is only a row the menu stopped offering (#954). An attacker
+            // still in combat says so already.
+            if c.attacked_this_turn && c.attacking.is_none() {
+                flag_parts.push("attacked this turn".into());
+            }
+            if c.once_per_turn_used {
+                flag_parts.push("once-per-turn ability used".into());
             }
             // A live regeneration shield (CR 701.15a), which decides whether
             // removal is worth casting and whether an attack trades. The seat
@@ -3735,6 +3801,13 @@ impl LlmPlayer {
             }
             if let Some(suffix) = Self::format_counters(&o.counters) {
                 flag_parts.push(suffix);
+            }
+            // A planeswalker's spent loyalty ability (CR 606.3), the flag
+            // GAME_RULES defines: it was printed for creatures only, so two
+            // Lilianas at the legend rule could not be told apart by which
+            // had activated (#981).
+            if o.once_per_turn_used {
+                flag_parts.push("once-per-turn ability used".into());
             }
             // A Curse's entire identity is whom it enchants (CR 702.5c).
             // It attaches to a *player*, so it is not in `aura_map` (keyed on
@@ -4845,7 +4918,7 @@ impl LlmPlayer {
     fn offer_cancel(schema: &mut serde_json::Value) {
         schema["properties"]["cancel"] = serde_json::json!({
             "type": "boolean",
-            "description": "true to cancel the cast or activation this question belongs to: it is undone and nothing is paid. false to answer.",
+            "description": "true to cancel the cast or activation this question belongs to: it is undone, nothing is paid and the rest of the answer is not read. false to answer.",
         });
         if let Some(required) = schema["required"].as_array_mut() {
             required.push(serde_json::json!("cancel"));
@@ -5382,6 +5455,14 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        // A pass the game loop shows the seat only because something is
+        // watching every submit. Unwatched, the loop passes and the seat is
+        // never called; consulted, the plan stopped here with another
+        // reason, the next prompt said so, and the same seed played another
+        // game under `--check-invariants` (#956).
+        if legal.is_observed_pass() {
+            return Action::PassPriority;
+        }
         let action = self.decide(view, legal, true);
         if std::mem::take(&mut self.plan_done_pending) && self.pass_until.is_none() {
             self.pass_until = Some(PassUntil::done_at(view));
@@ -6206,6 +6287,8 @@ impl LlmPlayer {
     ///   activation is on offer. A second main phase with nothing
     ///   to do at sorcery speed is not a decision: an instant can be cast
     ///   at the next stop as well;
+    /// - the first offer after that first main phase, when it had nothing
+    ///   on offer and the engine passed it without asking (#972);
     /// - no Pass on the menu, which is not a priority offer at all.
     ///
     /// The seat's own turn beginning used to stop it too, and was a model
@@ -6281,6 +6364,23 @@ impl LlmPlayer {
             if let Some(ab) = legal.activatable_abilities.iter().find(|ab| ab.sorcery_speed) {
                 return Some(format!("you could activate {} ({}) at sorcery speed", ab.name, ab.description));
             }
+        }
+        // The first main phase it passes towards, gone by unasked: one with
+        // nothing on offer is passed by the engine (or as an observed pass,
+        // #956), and the pass ran on into the next turn (#972). The first
+        // offer after it is the stop — later that turn, or on the
+        // opponent's turn after it (two players alternate: the turn before
+        // theirs was the seat's).
+        let before_main = |step: Step| matches!(step, Step::Untap | Step::Upkeep | Step::Draw);
+        let this_turns = mode.our_turn && before_main(mode.step);
+        let went_by = if our_turn {
+            !before_main(view.step) && (view.turn_number > mode.turn || (this_turns && view.turn_number == mode.turn))
+        } else {
+            let prev = view.turn_number.saturating_sub(1);
+            prev > mode.turn || (this_turns && prev == mode.turn)
+        };
+        if went_by {
+            return Some("your first main phase went by with nothing to do in it".to_string());
         }
         None
     }
@@ -6805,8 +6905,12 @@ from your hand to put on the bottom of your library.\n\
         // model call that came back "pass" (reports/llm-cost.md, phase 3).
         let action = self.decide_combat_prompt(view, prompt);
         // Attackers declared, the seat waits for blocks as a person does.
+        // A pass-until from an earlier turn is replaced: this turn's first
+        // main phase is behind the seat, which was just asked, and its "went
+        // by" stop would fire at the next offer with a reason that is not
+        // so (#972's review).
         if self.offer_pass_until && matches!(prompt, CombatPrompt::ChooseAttackers { .. })
-            && self.pass_until.is_none()
+            && self.pass_until.as_ref().map_or(true, |m| m.turn != view.turn_number)
         {
             let mode = PassUntil::engaged_at(view);
             self.log("AUTO_PASS", &format!("engaged at {} after declaring attackers: passing until a block or your second main phase", mode.since()));
@@ -7430,6 +7534,7 @@ pub(crate) mod tests {
             "a blocker is declared against your attacker",
             "the opponent attacks you and blocks are in",
             "your next first main phase",
+            "the first offer after it, if it had nothing on offer and went by",
             "a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer",
             "any prompt that is not a plain priority pass",
             "After you declare attackers you pass this way too",
@@ -8815,6 +8920,59 @@ pub(crate) mod tests {
         }
     }
 
+    /// #990: a cancel with every list left empty is the answer a seat
+    /// backing out gives, and the lists are not read once `cancel` is true.
+    /// The check held them to their minimum anyway, so each such cancel was
+    /// a second call whose re-ask told the seat to pick a target. Each
+    /// cancellable prompt, with a list that needs at least one entry, now
+    /// takes it in one call.
+    #[test]
+    fn a_cancel_with_empty_lists_is_taken_without_a_reask() {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+        use mtg_engine::state::{PendingEffect, ResolutionChoiceKind};
+        let with = |kind: ResolutionChoiceKind| mtg_engine::engine::LegalActions {
+            resolution_prompt: Some(kind), ..x_funding_offer()
+        };
+        let ids = vec![ObjectId(501), ObjectId(502)];
+        let prompts = [
+            ("x-funding", x_funding_offer()),
+            ("target-set", with(ResolutionChoiceKind::ChooseTargetSet {
+                description: "Ghoulcaller's Chant: choose 1 target".to_string(),
+                options: ids.iter().map(|&o| Target::Object(o)).collect(), min: 1, max: 1,
+                source_id: ObjectId(400), fixed: vec![], by_count: vec![],
+            })),
+            ("exile-cost", with(ResolutionChoiceKind::ChooseExileFromGraveyard {
+                description: "Stitched Drake: exile a creature card".to_string(),
+                options: ids.clone(), min: 1, max: 1, source_id: ObjectId(400),
+            })),
+            ("activation-taps", with(ResolutionChoiceKind::ChooseObjectSet {
+                description: "tap two untapped creatures".to_string(),
+                options: ids.clone(), min: 2, max: 2,
+                effect: PendingEffect::PayActivationTaps { source_id: ObjectId(400) },
+            })),
+        ];
+        for (name, legal) in prompts {
+            let schemas = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut p = LlmPlayer::for_prompt_tests(&format!("Seat-990-{name}")).with_pass_until(false);
+            p.backend = Box::new(SchemaRecorder {
+                reply: serde_json::json!({"thoughts": "t", "cancel": true, "indices": [], "sources": []}),
+                schemas: schemas.clone(),
+            });
+            let chosen = p.choose_action(&empty_view(), &legal);
+            assert!(matches!(chosen, Action::ResolveChoice { choice: ResolvedChoice::CancelCast }),
+                "{name}: {chosen:?}");
+            assert_eq!(schemas.borrow().len(), 1, "{name}: a cancel was asked again");
+        }
+        // Answering is still held to the list: `cancel: false` with nothing
+        // picked is the slip the re-ask is for.
+        let schema = serde_json::json!({"type": "object",
+            "properties": {"indices": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
+                           "cancel": {"type": "boolean"}},
+            "required": ["indices", "cancel"]});
+        assert!(schema_violation(&schema, &serde_json::json!({"cancel": false, "indices": []})).is_some());
+        assert_eq!(schema_violation(&schema, &serde_json::json!({"cancel": true, "indices": []})), None);
+    }
+
     /// Issue #596: the X-funding reader was `as_str().and_then(parse).
     /// unwrap_or(0)`, so an answer whose values were JSON numbers instead of
     /// the schema's strings read as 0 for every group. The response became
@@ -9216,6 +9374,7 @@ pub(crate) mod tests {
             first_strike_damage_step: false,
             creature_died_this_turn: false,
             spells_cast_this_turn: vec![],
+            turn_effects: vec![],
             double_faces: Default::default(),
             nameable_cards: Default::default(),
             exile: vec![],
@@ -9403,6 +9562,43 @@ pub(crate) mod tests {
         assert!(view.creature_died_this_turn);
         let body = LlmPlayer::format_state_body(&view);
         assert!(body.contains("This turn: spells cast — you 0, opp 2; a creature died\n"), "{body}");
+
+        // #953: Moonmist's prevention holds for the rest of the turn, and
+        // was said once, in the recent events after it resolved.
+        state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventCombatDamageExcept {
+            filter: mtg_engine::types::CreatureFilter::Or(vec![
+                mtg_engine::types::CreatureFilter::HasSubtype("Wolf".into()),
+                mtg_engine::types::CreatureFilter::HasSubtype("Werewolf".into()),
+            ]),
+            source_name: "Moonmist".into(),
+        });
+        let view = GameView::for_player(&state, PlayerId(0), &registry);
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("This turn: spells cast — you 0, opp 2; a creature died; Moonmist: combat damage that \
+would be dealt this turn by creatures other than Wolves or Werewolves is prevented\n"), "{body}");
+    }
+
+    /// Issue #954: an attacker that has left combat, and a creature whose
+    /// once-each-turn ability is spent, say so on the board; one still
+    /// attacking says only that.
+    #[test]
+    fn the_board_says_what_a_permanent_did_this_turn() {
+        use mtg_engine::view::AttackTarget;
+        let (you, opp) = (PlayerId(0), PlayerId(1));
+        let mut brute = perm(34, "Homicidal Brute", 5, 1, you);
+        brute.attacked_this_turn = true;
+        let mut attacking = perm(35, "Homicidal Brute", 5, 1, you);
+        attacking.attacked_this_turn = true;
+        attacking.attacking = Some(AttackTarget::Player(opp));
+        let mut wolf = perm(36, "Darkthicket Wolf", 2, 2, you);
+        wolf.once_per_turn_used = true;
+        let owned = vec![brute, attacking, wolf];
+        let all: Vec<&PermanentView> = owned.iter().collect();
+        let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        let line = |id: u32| board.lines().find(|l| l.contains(&format!("(#{id})"))).unwrap_or_default().to_string();
+        assert!(line(34).ends_with("[attacked this turn]"), "{board}");
+        assert!(!line(35).contains("attacked this turn"), "{board}");
+        assert!(line(36).ends_with("[once-per-turn ability used]"), "{board}");
     }
 
     /// Issue #835: two of Rakish Heir's triggers, one for the Heir and one
@@ -9780,6 +9976,8 @@ pub(crate) mod tests {
             effective_toughness: Some(toughness),
             damage_marked: 0,
             damaged_by: Vec::new(),
+            attacked_this_turn: false,
+            once_per_turn_used: false,
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,
@@ -9799,6 +9997,7 @@ pub(crate) mod tests {
             blocking: vec![],
             blocked_by: vec![],
             blocked: false,
+            is_blocking: false,
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -10189,9 +10388,28 @@ this Aura deals 1 damage to that player.";
         let mut g = perm(54, "Forest", 0, 0, you);
         g.card_types = vec![CardType::Land];
         g.owner = opp;
-        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g];
+        // An attack made and a pump spent this turn (#954).
+        let mut h = perm(55, "Homicidal Brute", 5, 1, you);
+        h.attacked_this_turn = true;
+        h.once_per_turn_used = true;
+        // A blocker whose attacker left combat (#983).
+        let mut lone = perm(56, "Elite Inquisitor", 2, 2, opp);
+        lone.is_blocking = true;
+        // A planeswalker whose loyalty ability is spent (#981).
+        let mut lili = perm(57, "Liliana of the Veil", 0, 0, you);
+        lili.card_types = vec![CardType::Planeswalker];
+        lili.power = None;
+        lili.toughness = None;
+        lili.effective_power = None;
+        lili.effective_toughness = None;
+        lili.once_per_turn_used = true;
+        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g, &h, &lone, &lili];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        assert!(board.lines().any(|l| l.contains("Liliana of the Veil (#57)") && l.contains("once-per-turn ability used")),
+            "a planeswalker's spent loyalty ability: {board}");
         assert!(board.contains("blocked (no blockers left)"), "{board}");
+        assert!(board.contains("Elite Inquisitor (#56) 2/2 colorless [blocking (no attacker left)]"), "{board}");
+        assert!(board.contains("[attacked this turn,once-per-turn ability used]"), "{board}");
         assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
         assert!(board.contains("1x Forest [owned by opponent]"), "{board}");
         let legend_start = GAME_RULES.find("Status flags after a permanent").expect("the legend");
@@ -10271,6 +10489,8 @@ this Aura deals 1 damage to that player.";
             effective_toughness: None,
             damage_marked: 0,
             damaged_by: Vec::new(),
+            attacked_this_turn: false,
+            once_per_turn_used: false,
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: Some(ObjectId(attached_to)),
@@ -10290,6 +10510,7 @@ this Aura deals 1 damage to that player.";
             blocking: vec![],
             blocked_by: vec![],
             blocked: false,
+            is_blocking: false,
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -11289,5 +11510,37 @@ mod env_seconds_cap {
         assert_eq!(env_seconds(ENV, std::time::Duration::from_secs(5)), std::time::Duration::from_secs(7));
         std::env::remove_var(ENV);
         assert_eq!(env_seconds(ENV, std::time::Duration::from_secs(5)), std::time::Duration::from_secs(5));
+    }
+
+    /// #915: a value it cannot read ran the default in silence, and a capped
+    /// one ran a day in silence. Both are said; a number, unset or empty is
+    /// not.
+    #[test]
+    fn a_seconds_value_not_taken_as_written_is_said() {
+        let five = std::time::Duration::from_secs(5);
+        assert_eq!(read_seconds(None, five), (five, None));
+        assert_eq!(read_seconds(Some(" "), five), (five, None));
+        assert_eq!(read_seconds(Some("90"), five), (std::time::Duration::from_secs(90), None));
+        let (secs, said) = read_seconds(Some("90s"), five);
+        assert_eq!(secs, five);
+        assert!(said.is_some_and(|s| s.contains("default of 5 seconds")));
+        let (secs, said) = read_seconds(Some("100000"), five);
+        assert_eq!(secs, std::time::Duration::from_secs(MAX_ENV_SECONDS));
+        assert!(said.is_some_and(|s| s.contains("capped")));
+    }
+
+    /// #915: `MTG_LLM_PASS_UNTIL=disabled` kept the row in silence.
+    #[test]
+    fn a_pass_until_value_neither_on_nor_off_is_said() {
+        for off in ["off", "0", "FALSE", " no "] {
+            assert_eq!(read_pass_until(off), (false, None), "{off}");
+        }
+        for on in ["", "on", "1", "true", "Yes"] {
+            assert_eq!(read_pass_until(on), (true, None), "{on}");
+        }
+        for typo in ["disabled", "n"] {
+            let (on, said) = read_pass_until(typo);
+            assert!(on && said.is_some(), "{typo}");
+        }
     }
 }

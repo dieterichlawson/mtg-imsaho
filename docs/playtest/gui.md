@@ -122,6 +122,14 @@ random game happened to reach.
   engine dedups by name (a second copy of the same spell, an ability offered
   once for two identical sources) and what the page owes the copies it draws.
   #512 is the CLI's version of the same question.
+  [2026-10-30] Hand, attack, block, sacrifice and target copies all hold
+  (G25's row). **The graveyard does not**: the engine collapses identical
+  untargeted flashbacks (`casting.rs:483`), the borrowing walks only
+  `your_hand`, so two of three Think Twice answer no click (#968). Any zone
+  the page draws per card while the engine offers per name is this bug —
+  look for the next one (an ability offered once for two identical sources
+  on the battlefield). Wait ~250 ms after `mtg.decision` before reading
+  `mtg.hits`, or you read the previous frame's.
 
 - G25 [proposed 2026-09-22, from #572 and #573, both found by a person at the
   page and neither by a night] the copies, by hand: gw-humans against
@@ -236,6 +244,19 @@ random game happened to reach.
   stack in a window where you could actually respond — `main.ts:96` auto-passes
   pass-only priorities before `autoPassDecides` is ever consulted, so the
   "stops for a spell on the stack" clause may be unreachable by construction.
+  [2026-10-30] The stack clause is reachable and holds when you can answer
+  (5/5 stops on the opponent's spell with instants and mana; refused over
+  your own spell 8/8). What is unreachable is every stop on a *pass-only*
+  priority: the short-circuit at `main.ts:148` answers before
+  `autoPassDecides`, so `f` passes a pass-only Main Phase 1 and stays on
+  (#972). Under `s` the same stops fire, so `s` changes which of `f`'s
+  stops exist. [fixed 2026-10-30, #972] The main-phase stop is now "reached
+  or gone by": the first priority shown after a Main Phase 1 that went by
+  unseen ends `f` (and the CLI's `f`, and the LLM seat's pass-until); the
+  pass-only short-circuit stays ahead of the stops, so the other stops
+  still fire only where the page is shown the priority. G12 the same night: seed 32 (innistrad-white v white-black)
+  hides 406 of 491 priorities; see #973-#975 for what the notice, the
+  heading under `s` and the band lose.
 - G9 two tabs on one seat, and a tab closed mid-prompt and reopened: the
   pending decision must come back, and an answer from the stale tab
   must not land on a newer prompt.
@@ -351,6 +372,13 @@ random game happened to reach.
   #501, #504 list what has been missing before.
 - G11 art and names: a card whose art file is missing renders a
   placeholder, never blank; a stack ability shows its source's art.
+  [2026-11-04] **Holds.** All 290 `name:` definitions under
+  `mtg-engine/src/cards` have a manifest entry, back faces included, and so
+  do the four named token types (Spirit, Zombie, Spider, Homunculus). The 46
+  distinct trigger and ability names that 24 random coverage games put on
+  the stack all resolve to art through `artNames`. A placeholder is drawn
+  only for a name the manifest lacks. Next time, check a card added after
+  this night against the manifest rather than re-running the sweep.
 
 - G20 [proposed 2026-09-17, from tonight's G10 screenshots] the stack as a
   readable object: hover an opponent's Geistflame while it is on the stack,
@@ -546,6 +574,14 @@ random game happened to reach.
   back to the last `view`, never to a pack it invented. Also the game
   link: the URL the draft page shows must be the one the game page
   answers on, on the `--bind` address, not on loopback
+  [2026-10-30] The page matches the view (635 comparisons, three tables),
+  timers survive reloads, refusals fall back to the server's pack. Found:
+  the link names the advertised address, not the host the page was opened
+  on, so a tunnel gets a LAN URL (#969); a pick racing the timer is refused
+  in internal pack ids (#970). Test a "tunnel" by forwarding a loopback port
+  to the `--bind` address and comparing the shown link with
+  `location.host`. Under the sandbox proxy, unset `HTTPS_PROXY` in the
+  driver or Chromium's `ws://` to a non-loopback address gets a 502.
 - G29 [proposed 2026-10-10, from the R1 sweep, #752/#753 and #758] the page's
   `f` against the CLI's auto-pass, clause by clause. Each auto-pass fix has
   copied only the stop it was filed about, so `autoPassStop` in `mtg-gui/src/`
@@ -713,3 +749,28 @@ writing it up as the page's problem alone.
   cookies (101 and the whole body expected), 70 KB (431 on every URL, the
   status line read before the close), `Upgrade: websocket, h2c` (101) and
   a handshake with no key (400, not a silent close).
+- G39 [proposed 2026-11-03, from #991 and #959] every strip of the page
+  at its largest. The band's stack chips had no bound: a 6th covered the
+  turn and log lines and past 11 they ran off the board, with nothing
+  counting what was hidden (#991). Do the same to every other row the
+  page lays out by count: overwrite `window.mtg.view` (stack, a side's
+  battlefield, graveyard, exile, hand, `turn_effects`, the band's flags
+  all on at once) with 1, 6, 12 and 30 entries, call
+  `window.mtgDebug.render()`, and read `window.mtg.hits` for any hit past
+  its pane's edge or overlapping another's, then look at the screenshot.
+  Every overflow should be clipped on purpose and counted ("+N more"),
+  and each entry it hides should still be reachable from the inspector
+  [2026-11-04] Run over a real page (seed 39, at the mulligan) with ten
+  strips at 1, 6, 12 and 30 entries. **The battlefield rows, the zone
+  counts and the graveyard/exile overlays hold.** Three overflows are not
+  counted. With both "first strike" and "creature died" on, the band drops
+  `turn_effects` entirely (Moonmist gone), and a third effect is cut with
+  "…" (#993). The hand has no fit cap like #513's, so 60 cards draw to
+  x=661 under the panel and still take clicks there (#994). Six kinds of
+  floating mana beside double-digit zone counts cut the strip's pool at
+  "2…" (#995). The inspector's facts are uncapped too: past about 24 fact
+  lines they run under the prompt panel and its title goes. Nothing in the
+  pool makes that many, so it is not filed. Method: wrap
+  `CanvasRenderingContext2D.prototype.fillText` in `addInitScript` and read
+  the strings drawn at a strip's y. `hits` covers only what can be clicked,
+  and the band's flags and the strip's parts are text.

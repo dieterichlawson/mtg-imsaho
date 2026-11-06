@@ -690,3 +690,23 @@ fn one_call_can_ask_for_the_hour_ttl() {
     let ttl: Vec<&str> = log.lines().filter(|l| l.starts_with("TTL5M=")).collect();
     assert_eq!(ttl, ["TTL5M=unset", "TTL5M=1"], "{log}");
 }
+
+/// #965: the draft guide is in a game seat's system prompt too, and a guide
+/// past what one argument can carry failed every spawn with E2BIG, retried
+/// across the whole budget. The seat gives up on its first decision, says
+/// why, and never runs the CLI.
+#[test]
+fn a_system_prompt_too_long_for_one_argument_gives_the_seat_up_at_once() {
+    use mtg_player::Player;
+    let fake = Fake::new("e2big", OK_BODY);
+    let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin())
+        .with_guide("Take removal. ".repeat(10_000));
+    p.init_conversation(&[("Swamp".to_string(), 17)], "Swamp | Land", &registry, MatchFormat::SingleGame);
+    let started = std::time::Instant::now();
+    assert_eq!(p.backend_send_for_test("pick"), "0");
+    let why = p.gave_up().expect("no decision can be asked");
+    assert!(why.contains("one argument") && why.contains("guide"), "it says why: {why}");
+    assert!(fake.calls().is_empty(), "the CLI was never run:\n{}", fake.log());
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "no backoff was slept");
+}

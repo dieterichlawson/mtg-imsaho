@@ -16,7 +16,7 @@ const path = require("path");
 const fs = require("fs");
 
 const root = path.resolve(__dirname, "..", "..");
-const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
+const shotsDir = require("./children.js").parseArgs({ "--shots": { kind: "string", def: null } })["--shots"];
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 function ok(msg) { console.log("ok: " + msg); }
@@ -30,7 +30,7 @@ async function main() {
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    await page.goto(urls["--p1"]);
+    await page.goto(urls["--p1"], { timeout: 15000 });
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     // Keep, play through to a board with lands and a creature or two, then cut the socket.
     await page.evaluate(() => window.mtgSend("MulliganKeep"));
@@ -208,10 +208,53 @@ async function main() {
           } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
           return out;
         });
-        if (!drawn.includes("X = 2: 1 Red from the pool, tap Forest")) fail(`choose-x: the typed X's plan is not drawn: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
+        if (!drawn.includes("X = 2: for X, 1 Red from the pool, tap Forest")) fail(`choose-x: the typed X's plan is not drawn: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
         else ok("choose-x → plan drawn before Enter");
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
+      }
+      // #938: a long plan was one clipped line, and the cut fell on the
+      // creatures the allocator spends last. It wraps, whole, in the modal
+      // and in the panel beside it.
+      const src = (name, category, n) => ({ name, category, source_ids: Array.from({ length: n }, (_, i) => ids.mine[i % ids.mine.length]), mana_per_tap: 1, mana_type: "Red" });
+      const many = { pool: {}, groups: [src("Mountain", "BasicLand", 4), src("Forest", "BasicLand", 1), src("Shimmering Grotto", "NonbasicLand", 2), src("Avacyn's Pilgrim", "Creature", 2)], max_x: 9, x_discount: 0 };
+      if (await stage("choose-x-long", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options: many, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
+        await page.keyboard.type("9");
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        const pilgrims = drawn.filter(t => t.includes("2x Avacyn's Pilgrim"));
+        if (pilgrims.length < 2) fail(`choose-x-long: the creatures X taps are not drawn in the modal and the panel: ${JSON.stringify(drawn.filter(t => /X = 9|Pilgrim|Grotto/.test(t)))}`);
+        else if (drawn.some(t => /Grot…|Avacyn.*…/.test(t))) fail(`choose-x-long: the plan is still clipped: ${JSON.stringify(drawn.filter(t => t.includes("…")))}`);
+        else ok("choose-x-long → the whole plan is drawn, creatures included");
+        // And the panel's text stays above its buttons, with the log open
+        // (a 100px panel) and a refusal notice too (#938's review).
+        for (const logOpen of [false, true]) {
+          const clash = await page.evaluate((logOpen) => {
+            window.mtg.logOpen = logOpen;
+            window.mtg.notice = "X = 8 is not payable: the sources pay 0-7 and 9.";
+            const orig = CanvasRenderingContext2D.prototype.fillText;
+            const at = [];
+            try {
+              CanvasRenderingContext2D.prototype.fillText = function (s, x, y) { at.push({ s: String(s), x, y }); return orig.apply(this, arguments); };
+              window.mtgDebug.render();
+            } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+            const buttons = window.mtg.hits.filter(h => h.kind === "button" && h.x >= 480);
+            const top = Math.min(...buttons.map(b => b.y));
+            const labels = new Set(buttons.map(b => b.label));
+            const over = at.filter(t => t.x >= 480 && !labels.has(t.s) && t.y + 7 > top && t.y < top + 30);
+            window.mtg.logOpen = false; window.mtg.notice = null;
+            return { top, over: over.map(t => `${t.s}@${t.y}`) };
+          }, logOpen);
+          if (clash.over.length) fail(`choose-x-long${logOpen ? " (log open)" : ""}: panel text under the buttons at ${clash.top}: ${JSON.stringify(clash.over)}`);
+          else ok(`choose-x-long${logOpen ? " (log open)" : ""} → the panel's text ends above its buttons`);
+        }
       }
     }
     // 8a. AssignCombatDamage (#637): the amount is one number, lethal to
@@ -362,6 +405,26 @@ async function main() {
       if (await stage("pay-or-not", legal({ actions, resolution_prompt: { PayOrNot: { description: "Pay {1}?", spell_id: 1, source_spell_id: 2, cost: { symbols: [{ Generic: 1 }] } } } }), null, "list")) {
         await clickHit("(h, m) => h.kind === 'row' && h.y === Math.max(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
         await expectSent("pay-or-not", a => a.ResolveChoice && a.ResolveChoice.choice.PayDecision === false);
+      }
+      // #939: the engine puts the payment plan at the question's end, and a
+      // two-line cap on the modal's title cut it off in nearly every one.
+      const long = "Pay {1} to prevent Grizzly Bears from being countered? (Pay: tap Forest, Swamp, 3x Mountain, Shimmering Grotto)";
+      if (await stage("pay-or-not-long", legal({ actions, resolution_prompt: { PayOrNot: { description: long, spell_id: 1, source_spell_id: 2, cost: { symbols: [{ Generic: 1 }] } } } }), null, "list")) {
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        const said = drawn.join(" ");
+        // In the modal and in the panel beside it (#939's review).
+        if (drawn.filter(t => /Grotto\)$/i.test(t)).length < 2 || drawn.some(t => t.endsWith("…"))) fail(`pay-or-not-long: the plan at the question's end is cut: ${JSON.stringify(drawn.filter(t => /Pay|Grotto|countered/.test(t)))}`);
+        else ok("pay-or-not-long → the whole question, plan included");
+        const fits = await page.evaluate(() => { const m = window.mtg.hits.find(h => h.kind === "modal"); return m && m.y >= 0 && m.y + m.h <= 360; });
+        if (!fits) fail("pay-or-not-long: the modal runs off the board");
       }
     }
     // 10. A set prompt: bottom one of the hand.
@@ -573,6 +636,34 @@ async function main() {
             await page.evaluate(() => window.mtgDebug.message({ type: "settings", stop_at_pass: false, auto_pass_since_turn: null }));
           }
         }
+      }
+      // A pass-only Main Phase 1 is answered unseen, and auto-pass ran on
+      // past it into the next turn, passing what it would have shown (#972).
+      // The next priority it is shown ends it, on the opponent's turn too.
+      {
+        const res = await page.evaluate((seq) => {
+          const m = window.mtg, v = m.view;
+          const was = { turn: v.turn_number, step: v.step, active: v.active_player, stack: v.stack };
+          m.stopAtPass = false;
+          m.autoPass = { sinceTurn: was.turn, declined: 0 };
+          const menu = (actions, context) => ({ actions, combat_prompt: null, castable_spells: [], activatable_abilities: [], context, resolution_prompt: null, set_prompt: null });
+          const n0 = window.mtgDebug.sent.length;
+          Object.assign(v, { turn_number: was.turn + 1, step: "PrecombatMain", active_player: v.you, stack: [] });
+          window.mtgDebug.message({ type: "decision", seq, view: v, combat: null, legal: menu(["PassPriority", "Concede"], null) });
+          const afterMain = { autoPass: m.autoPass, sent: window.mtgDebug.sent.length - n0 };
+          const cast = { CastSpell: { object_id: m.view.your_hand.length ? m.view.your_hand[0].object_id : 1, targets: [], sacrifice: null, exile_count: null, exile_ids: [], alternative_cost: null, tap_plan: [] } };
+          Object.assign(v, { turn_number: was.turn + 2, step: "EndStep", active_player: 1 - v.you });
+          window.mtgDebug.message({ type: "decision", seq: seq + 1, view: v, combat: null, legal: menu(["PassPriority", "Concede", cast], "END STEP") });
+          const out = { afterMain, autoPass: m.autoPass, notice: m.notice, mode: m.ui && m.ui.mode };
+          Object.assign(v, { turn_number: was.turn, step: was.step, active_player: was.active, stack: was.stack });
+          m.autoPass = null;
+          return out;
+        }, seq + 550);
+        if (res.afterMain.sent !== 1) fail(`f-main-went-by: the pass-only main was not passed unseen (${JSON.stringify(res)})`);
+        else if (res.autoPass) fail(`f-main-went-by: auto-pass still on the turn after (${JSON.stringify(res)})`);
+        else if (!(res.notice || "").startsWith("Auto-pass off: your main phase went by.")) fail(`f-main-went-by: notice ${JSON.stringify(res.notice)}`);
+        else if (res.mode !== "menu") fail(`f-main-went-by: the priority is not shown (${JSON.stringify(res)})`);
+        else ok("f-main-went-by → " + res.notice);
       }
       // A double-click on Pass that straddles the next decision passes once
       // (#806): the second click would answer a question nobody saw drawn.
@@ -1194,6 +1285,39 @@ async function main() {
         else ok(`inspector-fit: all ${inBox.length} lines in the inspector's text box stay in it`);
       }
     }
+    // 24c. An effect in force for the rest of the turn is named in the band
+    // by its source, beside "creature died" and short of the stack (#953).
+    {
+      const drawn = await page.evaluate(() => {
+        const m = window.mtg;
+        const keep = JSON.parse(JSON.stringify([m.view.creature_died_this_turn, m.view.first_strike_damage_step, m.view.turn_effects || []]));
+        const orig = CanvasRenderingContext2D.prototype.fillText;
+        const out = [];
+        try {
+          CanvasRenderingContext2D.prototype.fillText = function (s, x) {
+            const w = this.measureText(String(s)).width;
+            const left = this.textAlign === "center" ? x - w / 2 : this.textAlign === "right" ? x - w : x;
+            out.push({ s: String(s), left, right: left + w });
+            return orig.apply(this, arguments);
+          };
+          m.view.creature_died_this_turn = true;
+          m.view.first_strike_damage_step = false;
+          m.view.turn_effects = ["Moonmist: combat damage that would be dealt this turn by creatures other than Wolves or Werewolves is prevented"];
+          window.mtgDebug.render();
+        } finally {
+          CanvasRenderingContext2D.prototype.fillText = orig;
+          [m.view.creature_died_this_turn, m.view.first_strike_damage_step, m.view.turn_effects] = keep;
+          window.mtgDebug.render();
+        }
+        return out;
+      });
+      const died = drawn.find(d => d.s === "creature died");
+      const moon = drawn.find(d => d.s.startsWith("Moon"));
+      if (!moon) fail(`turn-effects: the band does not name Moonmist: ${JSON.stringify(drawn.filter(d => d.left < 180 && d.left >= 40).slice(0, 6))}`);
+      else if (moon.right > 180) fail(`turn-effects: it runs into the stack: ${JSON.stringify(moon)}`);
+      else if (died && moon.left < died.right) fail(`turn-effects: drawn over "creature died": ${JSON.stringify([died, moon])}`);
+      else ok("turn-effects: the band names the effect in force");
+    }
     // 24b. What this turn has done that no zone shows is on the board
     // (#832): "creature died" in the band for morbid, short of the stack
     // at x=180, and each player's "Cast N" in their strip for werewolves,
@@ -1218,11 +1342,13 @@ async function main() {
           m.view.first_strike_damage_step = true;
           m.view.spells_cast_this_turn = [[you, 2], [opp, 1]];
           m.view.your_mana_pool = { mana: { White: 19, Blue: 19, Black: 19, Red: 19, Green: 19, Colorless: 19 } };
+          m.view.turn_effects = ["Moonmist: combat damage that would be dealt this turn by creatures other than Wolves or Werewolves is prevented"];
           window.mtgDebug.render();
         } finally {
           CanvasRenderingContext2D.prototype.fillText = orig;
           [m.view.creature_died_this_turn, m.view.spells_cast_this_turn,
             m.view.first_strike_damage_step, m.view.your_mana_pool] = keep;
+          m.view.turn_effects = [];
           window.mtgDebug.render();
         }
         return out;
@@ -1233,6 +1359,9 @@ async function main() {
       else if (drawn.some(d => d.s === "first strike" && d.right > died.left))
         fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => d.s === "first strike" || d === died))}`);
       else ok("turn-facts: the band says a creature died");
+      // Where the band has no readable room left, the effect is not drawn
+      // as a letter and an ellipsis over the stack (#953).
+      if (drawn.some(d => d.s.startsWith("Moon") && d.right > 180)) fail(`turn-facts: the effect runs into the stack: ${JSON.stringify(drawn.filter(d => d.s.startsWith("Moon")))}`);
       const casts = drawn.filter(d => d.s === "Cast 2" || d.s === "Cast 1");
       if (casts.length !== 2) fail(`turn-facts: each strip says its spells cast, got ${JSON.stringify(casts)}`);
       else if (casts.some(d => d.right > 480)) fail(`turn-facts: a strip's cast count leaves the board: ${JSON.stringify(casts)}`);
@@ -1265,17 +1394,41 @@ async function main() {
           const trig = { object_id: 0, name: card.name + " ability", controller: m.view.you, targets: [], source_id: 9901, card_id: 0 };
           const keepB = m.view.battlefield, keepS = m.view.stack;
           m.view.battlefield = keepB.concat([perm]); m.view.stack = keepS.concat([trig]);
-          let trigger = null;
+          let trigger = null, flipped = null, activated = null, gone = null;
           try {
             m.hover = { key: "stack0", kind: "stack", stackIndex: m.view.stack.length - 1 };
             const t = window.mtgDebug.inspectHover();
             trigger = t && t.otherFace;
+            // The front's trigger with its source flipped in response: the
+            // item carries the front's text, so its other face is the back,
+            // not the front read off the source now (#989).
+            m.view.battlefield = keepB.concat([{ ...perm, name: "Test Back Face" }]);
+            m.view.stack = keepS.concat([{ ...trig, oracle_text: "the front's text" }]);
+            const f = window.mtgDebug.inspectHover();
+            flipped = f && f.otherFace;
+            // A back face's activated ability: keyed by its own card, named
+            // "X ability", carrying the back's text. Its other face is the
+            // front, whichever face the source shows (#989).
+            m.view.stack = keepS.concat([{ ...trig, card_id: card.card_id, name: "Test Back Face ability",
+              oracle_text: "the back's own words" }]);
+            const a = window.mtgDebug.inspectHover();
+            activated = a && a.otherFace;
+            // A trigger whose source has left the battlefield: found in the
+            // graveyard, its other face still named.
+            m.view.battlefield = keepB;
+            const keepG = m.view.graveyards;
+            m.view.graveyards = [[m.view.you, [{ ...perm, name: card.name }]]].concat(keepG || []);
+            m.view.stack = keepS.concat([{ ...trig, oracle_text: "the back's own words" }]);
+            try {
+              const g = window.mtgDebug.inspectHover();
+              gone = g && g.otherFace;
+            } finally { m.view.graveyards = keepG; }
           } finally { m.view.battlefield = keepB; m.view.stack = keepS; m.hover = null; }
           const was = [m.selected, m.hover];
           m.selected = card.object_id; m.hover = null;
           window.mtgDebug.render();
           [m.selected, m.hover] = was;
-          return { front: front && front.otherFace, trigger, drawn };
+          return { front: front && front.otherFace, frontName: card.name, trigger, flipped, activated, gone, drawn };
         } finally {
           CanvasRenderingContext2D.prototype.fillText = orig;
           m.view.double_faces = keep;
@@ -1284,6 +1437,9 @@ async function main() {
       });
       if (got.front !== "Test Back Face") fail(`double-faced: the inspector's other face is ${JSON.stringify(got.front)}`);
       else if (got.trigger !== "Test Back Face") fail(`double-faced: a trigger from the permanent names no other face: ${JSON.stringify(got.trigger)}`);
+      else if (got.flipped !== "Test Back Face") fail(`double-faced: a front trigger whose source flipped names ${JSON.stringify(got.flipped)} as its other face (#989)`);
+      else if (got.activated !== got.frontName) fail(`double-faced: a back face's activated ability names ${JSON.stringify(got.activated)} as its other face (#989)`);
+      else if (got.gone !== got.frontName) fail(`double-faced: a back-face trigger whose source left names ${JSON.stringify(got.gone)} as its other face (#989)`);
       else ok("double-faced: the inspector names the other face");
       if (!got.drawn.some(t => t.includes("Other face: Test Back Face")) || !got.drawn.some(t => t.includes("back's own words")))
         fail(`double-faced: the other face is not drawn: ${JSON.stringify(got.drawn.filter(t => /face|back/i.test(t)))}`);

@@ -327,15 +327,15 @@ each_sacrifice! {
 }
 
 /// An ability put on the stack (`cards::push_ability`, CR 602.2a, 601.2c,
-/// 608.2h, 701.27f): one entry, on top, from its source, as the ability of
+/// 608.2h, 701.28f, 113.7a): one entry, on top, from its source, as the ability of
 /// that index of the card granting it, holding its targets and the
 /// requirement they were chosen under (a creature, if `required`, none
 /// otherwise: each its own harness, a requirement the solver chose being
 /// matched as every requirement there is), under its activator, not a
 /// loyalty ability, and carrying what its costs left to resolve with: the
 /// X announced, the creature sacrificed and that creature's toughness as
-/// last read (`costs_paid`), and how often, and to which face, its source
-/// had transformed. For an activator either player, the source theirs on
+/// last read (`costs_paid`), how often its source had transformed, and
+/// its source's name as it went on. For an activator either player, the source theirs on
 /// the battlefield or already sacrificed to the graveyard, and any of
 /// each.
 fn pushing(required: bool) {
@@ -367,13 +367,14 @@ fn pushing(required: bool) {
 
     assert!(matches!(state.stack.as_slice(), [StackEntry::Ability {
         source_id, ability_index, behavior_card_id, targets, activator: by, x_value, target_requirement,
-        sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_back_face,
+        sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_name,
     }] if *source_id == source && *ability_index == index && *behavior_card_id == blank && *by == activator
         && matches!(targets.as_slice(), [Target::Object(o)] if *o == other)
         && matches!(target_requirement, Some(TargetRequirement::Creature)) == required
         && target_requirement.is_some() == required
         && *x_value == x && *s == sacrificed && *t == toughness
-        && *source_transforms == transforms && *source_back_face == back));
+        && *source_transforms == Some(transforms)
+        && source_name.as_deref() == state.get_object(source).map(|o| o.name.as_str())));
     std::mem::forget((registry, state));
 }
 

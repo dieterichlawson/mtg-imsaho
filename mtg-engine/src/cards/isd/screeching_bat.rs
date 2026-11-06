@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::cards::helpers;
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
+use crate::state::{GameState, LogLevel};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 use crate::actions::Target;
 
@@ -93,26 +93,14 @@ impl CardBehavior for ScreechingBat {
         let cost = Self::transform_cost();
         // The plan named here is the one `pay_cost_with_sources` runs on a
         // Yes (issue #866: a second planner here counted Sol Ring under
-        // Stony Silence).
-        let Some(tap_plan) = crate::engine::payment_plan_with_sources(state, controller, &cost, registry) else {
-            return;
-        };
-
+        // Stony Silence); not asked when nothing can pay (`ask_may_pay`).
         let current_name = state.obj_name(self_id);
-        let plan_suffix = helpers::format_tap_plan_names(state, &tap_plan);
-        let description = if plan_suffix.is_empty() {
-            format!("{current_name}: pay {{2}}{{B}}{{B}} to transform?")
-        } else {
-            format!("{current_name}: pay {{2}}{{B}}{{B}} ({plan_suffix}) to transform?")
-        };
-
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: controller,
-            source: self_id,
-            choice: ResolutionChoiceKind::YesNo {
-                description,
-                source_card: self_id,
-            },
+        helpers::ask_may_pay(state, controller, self_id, &cost, registry, |plan| {
+            if plan.is_empty() {
+                format!("{current_name}: pay {{2}}{{B}}{{B}} to transform?")
+            } else {
+                format!("{current_name}: pay {{2}}{{B}}{{B}} ({plan}) to transform?")
+            }
         });
     }
 

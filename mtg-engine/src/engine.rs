@@ -117,6 +117,40 @@ pub struct LegalActions {
 }
 
 impl LegalActions {
+    /// The offer the game loop makes in place of a pass it would make on a
+    /// player's behalf, when [`crate::state::GameState::observe_every_submit`] asks to see
+    /// every submitted action: the pass (and the ever-present concede), and
+    /// nothing else — not even a context line, which every real priority
+    /// offer carries.
+    #[must_use]
+    pub fn observed_pass() -> Self {
+        LegalActions {
+            actions: vec![Action::PassPriority, Action::Concede],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: None,
+        }
+    }
+
+    /// Whether this is [`LegalActions::observed_pass`]: a pass the loop
+    /// would have made itself had nobody been watching. A player whose own
+    /// bookkeeping reacts to every offer it sees has to answer it as the
+    /// loop would, without being moved by it, or watching a game
+    /// (`--check-invariants`, a gui seat) changes it (#956).
+    #[must_use]
+    pub fn is_observed_pass(&self) -> bool {
+        self.context.is_none()
+            && matches!(self.actions.as_slice(), [Action::PassPriority, Action::Concede])
+            && self.combat_prompt.is_none()
+            && self.castable_spells.is_empty()
+            && self.activatable_abilities.is_empty()
+            && self.resolution_prompt.is_none()
+            && self.set_prompt.is_none()
+    }
+
     /// Whether this offers the acting player nothing at all — no menu and
     /// no prompt of any kind.
     ///
@@ -402,6 +436,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         let top_name = match state.stack.last() {
             Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
             Some(crate::state::StackEntry::Trigger(t)) => t.display_name_with_state(registry, Some(state)),
+            // As it went on the stack (CR 113.7a, #980).
+            Some(crate::state::StackEntry::Ability { source_id, source_name: Some(name), .. }) =>
+                format!("{name} (#{})", source_id.0),
             Some(crate::state::StackEntry::Ability { source_id, .. }) => card_name(state, registry, *source_id),
             None => "?".into(),
         };
@@ -1061,10 +1098,15 @@ pub(crate) fn perform_turn_based_actions(state: &mut GameState, registry: &CardR
                     "Regular combat damage step (second of two, CR 510.5)".into());
             }
 
-            let has_attackers = state.combat.as_ref()
-                .is_some_and(|c| !c.attackers.is_empty());
+            // Attacking or blocking creatures: a first-strike blocker whose
+            // lone attacker was destroyed after blocks is still a blocking
+            // creature (CR 510.1d), and the phase still gets its
+            // first-strike step (CR 510.4) though no attacker is left
+            // (#983).
+            let has_combatants = state.combat.as_ref()
+                .is_some_and(|c| !c.attackers.is_empty() || !c.blocking().is_empty());
 
-            if has_attackers {
+            if has_combatants {
                 if second_damage_step {
                     // Second combat damage step (CR 510.5): regular damage
                     // from creatures that didn't deal first-strike damage,
@@ -1621,16 +1663,7 @@ fn run_game_loop_inner<F>(
             if state.observe_every_submit {
                 // An observer wants to see this pass as a decision of its
                 // own; the menu is the pass (and the ever-present concede).
-                let pass_only = LegalActions {
-                    actions: vec![Action::PassPriority, Action::Concede],
-                    combat_prompt: None,
-                    castable_spells: vec![],
-                    activatable_abilities: vec![],
-                    context: None,
-                    resolution_prompt: None,
-                    set_prompt: None,
-                };
-                choose_action(state, acting_player, &pass_only)
+                choose_action(state, acting_player, &LegalActions::observed_pass())
             } else {
                 Action::PassPriority
             }

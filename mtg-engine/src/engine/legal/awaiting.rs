@@ -180,7 +180,10 @@ pub(crate) fn legal_actions_while_awaiting(
         } => {
             use crate::actions::ResolvedChoice;
             use crate::state::ResolutionChoiceKind;
-            let source_name = card_name(state, registry, *source);
+            // An ability asking its question is named as it went on the
+            // stack: Garruk, the Veil-Cursed's search, after his own cost
+            // killed him, was headed "Garruk Relentless (#3)" (#980).
+            let source_name = state.resolving_source_name(*source);
             // "Pay" taps whatever the engine's plan picks (CR 608.2g), so the
             // question says what that is, the way every cast row names its
             // tap plan. Said in the description rather than a row label

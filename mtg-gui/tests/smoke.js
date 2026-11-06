@@ -14,7 +14,7 @@ const { startRunner, finish } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 
-const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
+const shotsDir = require("./children.js").parseArgs({ "--shots": { kind: "string", def: null } })["--shots"];
 
 function fail(msg) { console.error("FAIL: " + msg); process.exitCode = 1; }
 
@@ -27,7 +27,7 @@ async function main() {
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    await page.goto(urls["--p1"]);
+    await page.goto(urls["--p1"], { timeout: 15000 });
     const waitDecision = () => page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 30000 });
     const info = () => page.evaluate(() => ({
       mode: window.mtg.ui && window.mtg.ui.mode, context: window.mtg.decision && window.mtg.decision.legal.context,

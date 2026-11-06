@@ -1,6 +1,7 @@
 //! A pick a draft kept is asked again as the prompt it was live.
 //!
-//! `MTG_DRAFT_POSITIONS` keeps every pick's position; `mtg-draft-replay`
+//! `MTG_DRAFT_POSITIONS` keeps every asked pick's position (a pack's last
+//! card is taken without asking); `mtg-draft-replay`
 //! asks those positions again, which is what the draft's pick-quality eval
 //! is built on (`scripts/decision-eval/draft-replay.py`). The eval compares
 //! models and builds on the same positions, so a position that replayed as
@@ -60,6 +61,32 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
         assert_eq!(r["chosen"], r["live"], "position {} was asked as another prompt: {r}", r["id"]);
         assert_eq!(r["usage"]["calls"], 1, "one call a pick: {r}");
     }
+    assert!(!String::from_utf8_lossy(&replay.stderr).contains("not the live one"),
+        "the same set file says nothing: {}", String::from_utf8_lossy(&replay.stderr));
+
+    // #951: a position kept under another set file — a card removed, the
+    // set's name edited — is said, as another history is.
+    assert!(kept.iter().all(|p| p["reference"].as_str().is_some_and(|d| d.len() == 16)),
+        "each position records the set its system prompt described");
+    let other = dir.join("other-set.jsonl");
+    std::fs::write(&other, kept.iter().take(2).map(|p| {
+        let mut p = p.clone();
+        p["reference"] = "0000000000000000".into();
+        format!("{p}\n")
+    }).collect::<String>()).unwrap();
+    let moved = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
+        .current_dir(repo_root())
+        .env("CLAUDE_CODE_BIN", &stub)
+        .env("STUB_CALLS", "/dev/null")
+        .args(["--positions", other.to_str().unwrap(), "--model", "cc"])
+        .output()
+        .expect("the replay runs");
+    let stderr = String::from_utf8_lossy(&moved.stderr);
+    assert!(moved.status.success(), "{stderr}");
+    let said: Vec<&str> = stderr.lines().filter(|l| l.contains("its system prompt is not the live one")).collect();
+    assert_eq!(said.len(), 1, "said once, by the line it was first seen on: {stderr}");
+    assert!(said[0].contains("line 1") && said[0].contains("is not the one it was asked about") && said[0].ends_with("(set isd)"),
+        "{stderr}");
 
     // A metered seat is refused, not spent on.
     let metered = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
@@ -68,6 +95,18 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
         .output()
         .expect("the replay runs");
     assert!(!metered.status.success() && String::from_utf8_lossy(&metered.stderr).contains("--metered"));
+    // A mistyped provider is named as one, with or without --metered, and
+    // is not sent to --metered (#922).
+    for extra in [&[][..], &["--metered"][..]] {
+        let typo = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
+            .current_dir(repo_root())
+            .args(["--positions", positions.to_str().unwrap(), "--model", "CC"])
+            .args(extra)
+            .output()
+            .expect("the replay runs");
+        let err = String::from_utf8_lossy(&typo.stderr);
+        assert!(!typo.status.success() && err.contains("unknown provider 'CC'") && !err.contains("metered seat"), "{err}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

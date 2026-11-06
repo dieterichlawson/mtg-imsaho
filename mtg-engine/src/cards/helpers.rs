@@ -628,9 +628,9 @@ pub enum TransformResult {
     /// CR 400.7: there is nothing on the battlefield to transform. The
     /// ability still resolves (CR 113.7a); it just has no permanent.
     NotAPermanent,
-    /// CR 701.27f: the ability resolving is the permanent's own, and the
-    /// permanent has transformed since it went on the stack. Moonmist in
-    /// response to a werewolf's upkeep trigger, or a second activation of
+    /// CR 701.28f: the permanent's own ability tried to transform it, and it
+    /// has transformed since that ability was put onto the stack: Moonmist
+    /// in response to a werewolf's upkeep trigger, or a second activation of
     /// Bloodline Keeper's transform held under the first.
     AlreadyTransformed,
 }
@@ -660,7 +660,7 @@ pub fn transform_line(name: &str, result: TransformResult, new_name: &str) -> St
         TransformResult::NotAPermanent =>
             format!("{name} does not transform — it is no longer on the battlefield (CR 400.7)"),
         TransformResult::AlreadyTransformed =>
-            format!("{name} does not transform — it has transformed since this ability went on the stack (CR 701.27f)"),
+            format!("{name} does not transform — it has transformed since this ability was put on the stack (CR 701.28f)"),
     }
 }
 
@@ -752,14 +752,10 @@ pub fn transform_quietly(
         return TransformResult::SingleFaced;
     }
 
-    // CR 701.27f: "If an activated or triggered ability of a permanent ...
-    // tries to transform it, the permanent does so only if it hasn't
-    // transformed or converted since the ability was put onto the stack."
-    // The entry resolving is held across a question it asks, so a "you may
-    // transform" answered later is still that ability's.
-    if state.resolving_ability.as_ref().zip(state.get_object(object_id))
-        .is_some_and(|(entry, obj)| entry.predates_a_transform_of(obj))
-    {
+    // CR 701.28f, `transformed_since_its_own_ability_was_stacked`. The entry
+    // resolving is held across a question it asks, so a "you may transform"
+    // answered later is still that ability's.
+    if transformed_since_its_own_ability_was_stacked(state, object_id) {
         return TransformResult::AlreadyTransformed;
     }
 
@@ -778,6 +774,31 @@ pub fn transform_quietly(
         }
     }
     TransformResult::Transformed
+}
+
+/// CR 701.28f: "If an activated or triggered ability of a permanent that
+/// isn't a delayed triggered ability of that permanent tries to transform it,
+/// the permanent transforms only if it hasn't transformed or converted since
+/// the ability was put onto the stack."
+///
+/// The ability asking is the one resolving, and its stack entry carries the
+/// source's transform count from when it went on (`put_on_stack`). A spell
+/// (Moonmist), another permanent's ability, and the engine's one delayed
+/// trigger are not this rule's business. Each werewolf's upkeep trigger
+/// re-checked only its CR 603.4 condition, so Moonmist in response flipped it
+/// forward and the trigger flipped it straight back (#987).
+fn transformed_since_its_own_ability_was_stacked(state: &GameState, object_id: ObjectId) -> bool {
+    use crate::state::StackEntry;
+    let stamped = match &state.resolving_ability {
+        Some(StackEntry::Trigger(t))
+            if t.source.id == object_id
+                && !matches!(t.event, crate::triggers::TriggerEvent::DelayedTokenExile { .. }) =>
+            t.source.source_transforms,
+        Some(StackEntry::Ability { source_id, source_transforms, .. }) if *source_id == object_id =>
+            *source_transforms,
+        _ => None,
+    };
+    stamped.is_some_and(|then| state.get_object(object_id).is_some_and(|o| o.transforms != then))
 }
 
 /// The werewolf upkeep trigger: "At the beginning of each upkeep, if <no
@@ -816,6 +837,37 @@ pub fn werewolf_on_upkeep(
         state.log(crate::state::LogLevel::Event, format!(
             "{name} does not transform — its condition is no longer true (CR 603.4)"));
     }
+}
+
+/// "You may pay {cost}": ask `player` with a Yes/No naming what Yes taps,
+/// when the cost can be paid. When it cannot, the "may" is a no (CR 117.3:
+/// no player can choose to pay a cost they cannot pay) and nothing is
+/// asked; returns whether the question was put.
+///
+/// `describe` gets the tap plan in the words a cast row uses ("Forest,
+/// 2x Swamp"), empty when the pool alone pays. Mentor of the Meek asked
+/// with nothing untapped, and Yes logged "could not pay {1}" — a question
+/// with an answer it could not honour, which Screeching Bat, the other
+/// copy of this, had never asked (#940). The plan is the one
+/// `engine::pay_cost_with_sources` runs on the Yes (#866).
+pub fn ask_may_pay(
+    state: &mut GameState,
+    player: PlayerId,
+    source: ObjectId,
+    cost: &crate::types::ManaCost,
+    registry: &crate::cards::CardRegistry,
+    describe: impl FnOnce(&str) -> String,
+) -> bool {
+    let Some(plan) = crate::engine::payment_plan_with_sources(state, player, cost, registry) else {
+        return false;
+    };
+    let description = describe(&format_tap_plan_names(state, &plan));
+    state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+        player,
+        source,
+        choice: crate::state::ResolutionChoiceKind::YesNo { description, source_card: source },
+    });
+    true
 }
 
 /// Format a tap plan as a short human-readable string like `tap 2x Swamp, Sol Ring`.
@@ -937,23 +989,25 @@ pub fn entering_with_more_counters(
     e
 }
 
-/// Whether the ability of `source` resolving now is its back face's: the face
-/// that was up as it went on the stack (CR 712.8d-e), which is not the face up
-/// now if the permanent transformed in response — the ability on the stack is
-/// its own object (CR 113.7a). With no ability of `source` resolving, the face
-/// up now.
+/// Which face of `object_id` a triggered ability belongs to. Inside a trigger's
+/// resolution it is the face the ability triggered from, recorded with the
+/// trigger; outside one (the trigger-time check) it is the face up now.
 ///
-/// A card whose two faces' abilities share an index reads this to know which
-/// one it is resolving. Daybreak Ranger read `is_transformed` instead, so
-/// Moonmist in response to "deal 2 damage to target creature with flying"
-/// made Nightfall Predator fight it.
-#[must_use]
-pub fn ability_from_back_face(state: &GameState, source: ObjectId) -> bool {
-    match &state.resolving_ability {
-        Some(crate::state::StackEntry::Ability { source_id, source_back_face, .. }) if *source_id == source => *source_back_face,
-        Some(crate::state::StackEntry::Trigger(t)) if t.source.id == source => t.source.from_back_face,
-        _ => state.get_object(source).is_some_and(|o| o.is_transformed),
-    }
+/// A trigger stays the ability of the face it came from whichever face is up
+/// by the time it resolves (CR 113.7a, CR 712.8): a permanent flipped in
+/// response (Moonmist) still does what that face's ability says, and only a
+/// "transform it" in it does nothing (CR 701.28f, `transform_quietly`). A hook
+/// that reads `is_transformed` off the permanent instead drops the rest of
+/// the effect (Delver's look, #986; Homicidal Brute's tap, #988).
+///
+/// Only the step triggers (upkeep, end of combat, end step) record their
+/// face today: they are collected with `emit_from_face`. Every other
+/// collector uses `emit`, which records the front, and no card in the pool
+/// has a back-face trigger outside a step. A card that adds one must have its
+/// collector record the face before its hook can ask this.
+pub fn trigger_face_is_back(state: &GameState, object_id: ObjectId) -> bool {
+    state.resolving_trigger_from_back_face
+        .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed))
 }
 
 pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
@@ -964,14 +1018,12 @@ pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool
     //
     // These differ when the permanent transforms between the trigger and its
     // resolution: Moonmist in response to a front-face Werewolf's upkeep
-    // trigger flips it forward, and the front face's condition, "no spells were
-    // cast last turn", is unchanged by anything cast this turn. The trigger
-    // still transforms nothing — the permanent has transformed since it went on
-    // the stack (CR 701.27f, in `transform_quietly`) — but it is the front
-    // face's ability resolving, and its condition is the one to report.
-    let back_face = state.resolving_trigger_from_back_face
-        .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed));
-    if back_face {
+    // trigger flips it forward. The front face's condition is the one
+    // re-checked, and it is still true ("no spells were cast last turn" is
+    // unchanged by anything cast this turn) — but the transform it asks for
+    // then does nothing, because the permanent has transformed since the
+    // ability went on the stack (CR 701.28f, `transform_quietly`; #987).
+    if trigger_face_is_back(state, object_id) {
         state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
     } else {
         state.num_spells_cast_last_turn.values().sum::<u32>() == 0
@@ -1096,7 +1148,7 @@ pub fn search_library(
     // match is the searcher's own hidden information.
     if optional && candidates.is_empty() {
         state.log(crate::state::LogLevel::Private,
-            format!("{}: no matching card in library; search declined", state.obj_name(source_id)));
+            format!("{}: no matching card in library; search declined", state.resolving_source_name(source_id)));
         return;
     }
     let candidates = one_of_each_card(state, candidates);
@@ -1129,7 +1181,7 @@ pub fn search_library(
         // say whether there was anything to find, and this line would say it
         // for them — including through the shared --log file (issue #119).
         state.log(crate::state::LogLevel::Private,
-            format!("{}: no matching card in library", state.obj_name(source_id)));
+            format!("{}: no matching card in library", state.resolving_source_name(source_id)));
         shuffle_library(state, searcher);
         return;
     }

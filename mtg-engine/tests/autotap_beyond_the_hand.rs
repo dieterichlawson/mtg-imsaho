@@ -92,6 +92,34 @@ fn gavony_township_is_not_spent_on_a_generic_pip_it_needs_kept() {
         "after the cast Gavony Township's ability is still payable");
 }
 
+/// Issue #977: Kessig Wolf Run's `{X}{R}{G}, {T}` is a demand like the
+/// Drownyard's, but its X made every payability check say "no" (the planner
+/// refuses a cost with X), so it was never protected: Brimstone Volley's
+/// `{2}{R}` tapped Mountain, the Wolf Run and Stensia Bloodhall with three
+/// Mountains idle. X = 0 is always a legal announcement (CR 107.3, 601.2b),
+/// so the ability is payable exactly when its cost without X is.
+#[test]
+fn a_cast_does_not_tap_kessig_wolf_run_whose_x_ability_another_plan_keeps() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ids = lands(&mut state, &reg,
+        &["Mountain", "Mountain", "Mountain", "Mountain", "Forest", "Swamp",
+          "Kessig Wolf Run", "Stensia Bloodhall"]);
+    let wolf_run = ids[6];
+    named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let volley = spell_in_hand(&mut state, &reg, "Brimstone Volley", P0);
+    assert!(offers_ability_of(&state, &reg, wolf_run), "the Wolf Run is payable before the cast");
+
+    let cast = offered_cast(&state, &reg, volley);
+    let plan = plan_of(&cast);
+    assert!(!plan.iter().any(|(id, _)| *id == wolf_run),
+        "Brimstone Volley's plan spends Kessig Wolf Run: {:?}", names(&state, &plan));
+    let state = engine::submit_action(&state, &cast, &reg);
+    assert!(offers_ability_of(&state, &reg, wolf_run),
+        "after the cast Kessig Wolf Run's ability is still payable");
+}
+
 /// Issue #838: nine lands, Think Twice `{1}{U}` in hand, Moan of the
 /// Unhallowed in the graveyard with flashback `{5}{B}{B}`. Island and a
 /// Swamp left one black source; Island and a Plains keep the flashback.

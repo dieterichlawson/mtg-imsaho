@@ -17,14 +17,17 @@ use serde_json::Value;
 macro_rules! seat_commands {
     () => {
 "While drafting, type a card's number to pick it (a number typed before a
-new pack has been up 300 ms is not taken: type it again). While building:
+new pack has been up 300 ms is not taken: type it again); pool lists what
+you have drafted. While building:
 add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
 show, ready.
 Between games of a match: play or draw (when the choice is yours), the
 same add, drop and lands to sideboard (from game 2), and ready to start
 the game.
 text <n> prints a card's rules text: the pack's card <n> while drafting,
-the pool's card <n> while building or sideboarding.
+the pool's card <n> while building or sideboarding. text <name> reads a
+card by its name, or the start of it, from the pack, the pool or the
+last review, the cards passed over included.
 review prints every pack you were handed and what you took from it."
     };
 }
@@ -64,6 +67,9 @@ pub struct Build {
     /// built before the server read them carries an older record, which
     /// must not undo them (#815's review).
     in_flight: Vec<Value>,
+    /// The last `review` the server sent: its cards passed over are in no
+    /// pack and no pool, and `text <name>` reads them from here (#889).
+    review: Option<Value>,
 }
 
 /// How a client's session ended.
@@ -75,16 +81,44 @@ pub enum Ended {
     Refused,
 }
 
+/// The lobby's own `http://host:port` in a `ws://host:port/ws?...` join
+/// link (`https` for `wss`): the host the seat reached the table by.
+#[must_use]
+pub fn lobby_origin(ws_url: &str) -> Option<String> {
+    let (scheme, rest) = if let Some(rest) = ws_url.strip_prefix("wss://") {
+        ("https", rest)
+    } else {
+        ("http", ws_url.strip_prefix("ws://")?)
+    };
+    let host = rest.split(['/', '?']).next().filter(|h| !h.is_empty())?;
+    Some(format!("{scheme}://{host}"))
+}
+
+/// A game link through the lobby's port is a path on whatever host the
+/// seat reached the lobby by (#969); printed, it is a whole URL on that
+/// host. An absolute link (`--direct-game-ports`) is left as it is.
+pub fn resolve_links(view: &mut Value, origin: &str) {
+    let Some(matches) = view["matches"].as_array_mut() else { return };
+    for m in matches {
+        if let Some(path) = m["url"].as_str().filter(|u| u.starts_with('/')) {
+            m["url"] = Value::String(format!("{origin}{path}"));
+        }
+    }
+}
+
 /// A seat's session: print each view as it comes, run each line from
 /// `lines` (stamped with when it was typed), until the person quits or the
 /// table closes. A line `"\u{0}eof"` says nobody is typing any more.
+/// `origin` is the lobby as this seat reached it ([`lobby_origin`]).
 pub fn run(
     ws: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
     rx: &mpsc::Receiver<(Instant, String)>,
+    origin: &str,
 ) -> Ended {
     let mut view: Option<Value> = None;
     let mut shown = String::new();
     let mut shown_table = String::new();
+    let mut shown_key = String::new();
     let mut build = Build::default();
     let mut built_for_phase = String::new();
     // The pack on screen (id and pick) and when it was printed.
@@ -116,18 +150,27 @@ pub fn run(
         }
         match ws.read() {
             Ok(tungstenite::Message::Text(text)) => {
-                let Ok(msg) = serde_json::from_str::<Value>(&text) else { continue };
+                let Ok(mut msg) = serde_json::from_str::<Value>(&text) else { continue };
                 match msg["type"].as_str() {
                     Some("view") => {
+                        resolve_links(&mut msg, origin);
                         refresh_build(&msg, &mut build, &mut built_for_phase);
                         // Reprinted when something of this seat's own
                         // changed, not on every other seat's pick; the
                         // table's state is one line when only that moved.
                         let (table, mine) = render(&msg, &build);
+                        // The one line only when it says something new to
+                        // this seat: a clock tick changes the table but not
+                        // the line, and while a pack is in front of the seat
+                        // only its own queue concerns it. A line per tick or
+                        // per other seat's pick pushed the pack off (#894).
+                        let key = table_line_key(&msg);
                         if mine != shown {
                             out(&format!("{table}{mine}"));
                             shown = mine;
-                        } else if table != shown_table {
+                            shown_key = key;
+                        } else if table != shown_table && key != shown_key {
+                            shown_key = key;
                             out(&table_line(&msg));
                         }
                         shown_table = table;
@@ -139,7 +182,10 @@ pub fn run(
                         }
                         view = Some(msg);
                     }
-                    Some("review") => out(&review_listing(&msg)),
+                    Some("review") => {
+                        out(&review_listing(&msg));
+                        build.review = Some(msg);
+                    }
                     // The host ended the table: said, and nothing to wait for
                     // (#824). The close frame follows.
                     Some("closed") => {
@@ -201,7 +247,7 @@ pub fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut Stri
         let key = format!("between {} {}", m["round"], b["game"]);
         if key != *built_for_phase {
             if let Some(deck) = b["deck"].as_object() {
-                *build = build_from_view(view, deck);
+                *build = Build { review: build.review.take(), ..build_from_view(view, deck) };
             }
             *built_for_phase = key;
         }
@@ -226,7 +272,7 @@ pub fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut Stri
     let differs = !same_deck(deck, &deck_message(view, build));
     if new_phase || (differs && (final_deck || build.in_flight.is_empty())) {
         let in_flight = if new_phase || final_deck { Vec::new() } else { std::mem::take(&mut build.in_flight) };
-        *build = build_from_view(view, deck);
+        *build = Build { review: build.review.take(), ..build_from_view(view, deck) };
         build.in_flight = in_flight;
     }
 }
@@ -293,7 +339,7 @@ fn send_edit(v: &Value, build: &Build) -> Command {
     }
     let total = build.main.len() + build.lands.values().sum::<u32>() as usize;
     if total < 40 {
-        return Command::Print(format!("{total} cards: the deck for the next game needs 40 or more; nothing sent yet"));
+        return Command::Print(format!("{}: the deck for the next game needs 40 or more; nothing sent yet", crate::count(total, "card", "cards")));
     }
     Command::Send(vec![sideboard_message(v, build)])
 }
@@ -338,6 +384,7 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         "quit" | "q" | "exit" => Command::Quit,
         "name" => Command::Send(vec![serde_json::json!({"type": "name", "name": words[1..].join(" ")})]),
         "show" => view.map_or(Command::Nothing, |v| Command::Print({ let (t, m) = render(v, build); format!("{t}{m}") })),
+        "pool" => view.map_or(Command::Print("no view yet".into()), |v| Command::Print(pool_listing(v))),
         "ready" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             if let Some((_, b)) = between(v) {
@@ -374,7 +421,8 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         }
         "text" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
-            Command::Print(card_text(v, words.get(1).copied()))
+            let arg = words[1..].join(" ");
+            Command::Print(card_text(v, (!arg.is_empty()).then_some(arg.as_str()), build.review.as_ref()))
         }
         "lands" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
@@ -426,7 +474,27 @@ pub fn table_line(v: &Value) -> String {
         };
         format!("{who} {} {}p{joined}{auto}", x["status"].as_str().unwrap_or("?"), x["picks"])
     }).collect();
-    format!("[{}]", parts.join("; "))
+    // The packs queued behind the one on screen: printed in the seat's own
+    // part, a new count reprinted the whole pack and scrolled it off (#894).
+    let queued = match v["pack"]["waiting"].as_u64().unwrap_or(0) {
+        0 => String::new(),
+        1 => " 1 more pack waiting for you".to_string(),
+        n => format!(" {n} more packs waiting for you"),
+    };
+    format!("[{}]{queued}", parts.join("; "))
+}
+
+/// What decides whether the table's one line is printed again: the line
+/// itself, or, while a pack is in front of the seat, only what is the
+/// seat's own: the count of packs queued behind it and its own row (a
+/// name it just gave itself) (#894).
+fn table_line_key(v: &Value) -> String {
+    if v["phase"] == "drafting" && v["pack"].is_object() {
+        let me = v["seats"].as_array().into_iter().flatten().find(|x| x["seat"] == v["seat"]);
+        format!("queued {} me {}", v["pack"]["waiting"], me.map(|x| x["name"].to_string()).unwrap_or_default())
+    } else {
+        table_line(v)
+    }
 }
 
 /// The view as the terminal shows it: the table (everybody's state) and
@@ -457,9 +525,11 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
             None => " (not here yet)".to_string(),
         };
         let auto = if x["auto"].as_bool().unwrap_or(false) { " [table picks]" } else { "" };
-        table.push_str(&format!("  seat {} {:<6} {:<12} {} {} picks{joined}{auto}\n",
+        // "1 pick", not "1 picks" (#914, #874's slip).
+        let picks = x["picks"].as_u64().unwrap_or(0);
+        table.push_str(&format!("  seat {} {:<6} {:<12} {} {picks} pick{}{joined}{auto}\n",
             x["seat"], x["kind"].as_str().unwrap_or("?"), x["name"].as_str().unwrap_or("?"),
-            x["status"].as_str().unwrap_or("?"), x["picks"]));
+            x["status"].as_str().unwrap_or("?"), if picks == 1 { "" } else { "s" }));
     }
     if let Some(notice) = v["notice"].as_str() {
         s.push_str(&format!("!! {notice}\n"));
@@ -468,11 +538,19 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
         "lobby" => s.push_str("waiting for everybody to join\n"),
         "drafting" => {
             if let Some(pack) = v["pack"].as_object() {
+                // The pool goes above the pack as one line (`pool` lists
+                // it), so the pack and the question are the last thing on
+                // screen: listed under them, ~40 rows scrolled the pack
+                // off an 80x24 terminal from mid-draft on (#894). The
+                // count of packs queued is the table's, for the same
+                // reason: it changes often and reprinted the pack.
+                s.push_str(&pool_line(v));
                 let waiting = pack["waiting"].as_u64().unwrap_or(0);
+                if waiting > 0 {
+                    table.push_str(&format!("  {waiting} more pack{} waiting for you\n", if waiting == 1 { "" } else { "s" }));
+                }
                 let dir = v["pass_direction"].as_str().unwrap_or("");
-                s.push_str(&format!("\nPack {} pick {} of {}, {waiting} waiting, passing {dir}",
-                    pack["round"], pack["pick"], pack["size"]));
-                s.push('\n');
+                s.push_str(&format!("\nPack {} pick {} of {}, passing {dir}\n", pack["round"], pack["pick"], pack["size"]));
                 if let Some(ms) = pack["deadline_ms"].as_u64() {
                     table.push_str(&format!("  {}s left to pick\n", ms / 1000));
                 }
@@ -481,9 +559,9 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 }
                 s.push_str("type a number to pick, or text <n> to read the card\n");
             } else {
+                s.push_str(&pool_line(v));
                 s.push_str("\nno pack in front of you; waiting on the seat upstream\n");
             }
-            s.push_str(&pool_listing(v));
         }
         "building" => {
             // The clock the page shows beside the deck, and what happens
@@ -527,7 +605,9 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 // not something to open). It goes on a line of its own,
                 // last: with the page's key in it (#872) it is ~70
                 // characters, and a URL cannot be wrapped and still pasted.
-                let link = m["url"].as_str().filter(|_| status != "done");
+                // Nor a decided one, whose games are over (#916's review).
+                let decided = status == "playing" && m.get("next_game").is_some_and(Value::is_null);
+                let link = m["url"].as_str().filter(|_| status != "done" && !decided);
                 if let Some(r) = m["result"].as_str() {
                     s.push_str(&format!(" — {r}"));
                 }
@@ -545,6 +625,19 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 if let Some(url) = link {
                     s.push_str(&format!("  open {url}\n"));
                 }
+            }
+            // With no match left to play this round, what the seat waits
+            // for, as the page says it; the client said nothing, and a bye
+            // or an early finish read like the end of the night (#927).
+            let live = v["matches"].as_array().into_iter().flatten().any(|m| m["status"] != "done");
+            if phase == "playing" && !live {
+                let pairings = v["pairings"].as_array().map(Vec::as_slice).unwrap_or_default();
+                let latest = pairings.iter().filter_map(|p| p["round"].as_u64()).max().unwrap_or(0);
+                let bye = pairings.iter().any(|p| p["b"].is_null() && p["a"].as_u64() == me && p["round"].as_u64() == Some(latest));
+                if bye {
+                    s.push_str(&format!("You have a bye in round {latest}. "));
+                }
+                s.push_str("Waiting for the others to finish their matches.\n");
             }
             for p in v["pairings"].as_array().into_iter().flatten() {
                 let a = who(p["a"].as_u64().unwrap_or(0));
@@ -611,7 +704,7 @@ mod tests {
                       {"seat": 1, "name": "Lawson", "kind": "human", "status": "playing", "picks": 42, "joined": true}],
             "matches": [
                 {"round": 1, "opponent": 1, "url": "http://h:8801/", "status": "done", "games": [], "result": "0-2"},
-                {"round": 2, "opponent": 1, "url": "http://h:8803/", "status": "playing", "games": [], "result": null},
+                {"round": 2, "opponent": 1, "url": "http://h:8803/", "status": "playing", "games": [], "next_game": 1, "result": null},
                 {"round": 3, "opponent": 1, "url": null, "status": "waiting", "games": [], "result": null},
             ],
             "pairings": [], "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
@@ -648,6 +741,31 @@ mod tests {
         // The table's lines name a seat as the page does (#816).
         assert!(mine.contains("  round 2: Bea (seat 1) has a bye\n"), "{mine}");
         assert!(mine.contains("  round 2: Ann (seat 0) vs Cy (seat 2) (playing)\n"), "{mine}");
+    }
+
+    /// #927: a seat with no match left this round, given a bye or done
+    /// early, was told nothing of what it waits for; the page says it.
+    #[test]
+    fn a_seat_with_nothing_to_play_is_told_what_it_waits_for() {
+        let view = |seat: u64, matches: Value| serde_json::json!({
+            "type": "view", "phase": "playing", "seat": seat, "set": "isd",
+            "seats": [{"seat": 0, "name": "Ann", "kind": "human", "status": "playing", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "Bea", "kind": "human", "status": "bye", "picks": 42, "joined": true},
+                      {"seat": 2, "name": "Cy", "kind": "ai", "status": "playing", "picks": 42, "joined": true}],
+            "matches": matches,
+            "pairings": [{"round": 1, "a": 0, "b": 2, "status": "playing", "result": null},
+                         {"round": 1, "a": 1, "b": null, "status": "done", "result": "bye"}],
+            "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
+        });
+        let (_, mine) = render(&view(1, serde_json::json!([])), &Build::default());
+        assert!(mine.contains("You have a bye in round 1. Waiting for the others to finish their matches.\n"), "{mine}");
+        let done = serde_json::json!([{"round": 1, "opponent": 2, "url": null, "status": "done", "games": [{"winner": 2}], "result": "0-1"}]);
+        let (_, mine) = render(&view(0, done), &Build::default());
+        assert!(mine.contains("Waiting for the others to finish their matches.\n") && !mine.contains("a bye in"), "{mine}");
+        // A seat still in its match is not waiting on the others.
+        let live = serde_json::json!([{"round": 1, "opponent": 2, "url": null, "status": "playing", "games": [], "next_game": 1, "result": null}]);
+        let (_, mine) = render(&view(0, live), &Build::default());
+        assert!(!mine.contains("Waiting for the others"), "{mine}");
     }
 
     /// #816: the one-line table summary names a seat as the page does.
@@ -836,7 +954,7 @@ mod tests {
             "matches": [
                 {"round": 1, "opponent": 1, "url": null, "status": "done", "result": "0-1",
                  "games": [{"winner": 1, "forfeited_by": 0, "abandoned": false}]},
-                {"round": 2, "opponent": 1, "url": null, "status": "done", "result": "0-0",
+                {"round": 2, "opponent": 1, "url": null, "status": "done", "result": "0-0 (drawn)",
                  "games": [{"winner": null, "forfeited_by": null, "abandoned": true}]},
             ],
             "pairings": [], "pool": [], "picks": [], "deck": null, "notice": null,
@@ -845,7 +963,7 @@ mod tests {
         });
         let (_, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-1 [1 game forfeited]\n"), "{mine}");
-        assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 (drawn) [1 game abandoned, no winner]\n"), "{mine}");
         assert!(mine.contains("  1. Lawson (seat 1) 1-0-1 (4 points)\n"), "{mine}");
         assert!(mine.contains("  2. seat 0 0-1-1 (1 point) [substitute deck] [1 game forfeited]\n"), "{mine}");
     }
@@ -860,13 +978,80 @@ mod tests {
             "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 42, "joined": true, "presence": "in game"},
                       {"seat": 1, "name": "Lawson", "kind": "human", "status": "playing", "picks": 42, "joined": true, "presence": "game page closed"}],
             "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
-                         "games": [{"winner": 1}, {"winner": 0}], "result": null}],
+                         "games": [{"winner": 1}, {"winner": 0}], "next_game": 3, "result": null}],
             "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
         });
         let (table, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs Lawson (seat 1): playing (game 3; G1 Lawson (seat 1), G2 you)\n  open http://h:1/\n"), "{mine}");
         assert!(table.contains("Lawson") && table.contains("(game page closed)"), "{table}");
         assert!(table_line(&v).contains("Lawson (seat 1) playing 42p, game page closed"), "{}", table_line(&v));
+    }
+
+    /// #916: between a match's deciding game and its recorded result the
+    /// match is still "playing", and the client counted one game more: a
+    /// best-of-1 read "playing (game 2; G1 seat 1)". The view says no game
+    /// is next.
+    #[test]
+    fn a_game_link_is_on_the_host_the_seat_joined_by() {
+        // Through a tunnel the lobby is reached at a host it does not
+        // know; the link it sends is a path on it (#969).
+        let origin = lobby_origin("ws://tunnel.example:9866/ws?seat=0&key=k").unwrap();
+        assert_eq!(origin, "http://tunnel.example:9866");
+        assert_eq!(lobby_origin("wss://t.example/ws?seat=0&key=k").as_deref(), Some("https://t.example"));
+        let mut v = serde_json::json!({"matches": [
+            {"url": "/game/9861/abc/"}, {"url": "http://192.0.2.2:9861/abc/"}, {"url": null}]});
+        resolve_links(&mut v, &origin);
+        assert_eq!(v["matches"][0]["url"], "http://tunnel.example:9866/game/9861/abc/");
+        assert_eq!(v["matches"][1]["url"], "http://192.0.2.2:9861/abc/", "a direct link is left as sent");
+        assert!(v["matches"][2]["url"].is_null());
+    }
+
+    #[test]
+    fn a_decided_match_is_not_on_a_next_game() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "seat 1", "kind": "ai", "status": "playing", "picks": 42, "joined": true}],
+            "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
+                         "games": [{"winner": 1}], "next_game": null, "result": null}],
+            "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
+        });
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Round 1 vs seat 1: playing (decided; G1 seat 1)"), "{mine}");
+        assert!(!mine.contains("game 2"), "{mine}");
+        assert!(!mine.contains("open http://h:1/"), "no game is left to open: {mine}");
+        // A server from before `next_game` sends no such field: that is not
+        // a decided match.
+        let mut old = v.clone();
+        old["matches"][0].as_object_mut().unwrap().remove("next_game");
+        let (_, mine) = render(&old, &Build::default());
+        assert!(mine.contains("playing (game 2; G1 seat 1)\n  open http://h:1/"), "{mine}");
+    }
+
+    /// #918: a game stopped at the action budget has no winner and was
+    /// abandoned, not drawn; the chooser is told which.
+    #[test]
+    fn after_an_abandoned_game_the_chooser_is_not_told_it_was_a_draw() {
+        let card = |n: &str| serde_json::json!({"name": n, "line": format!("{n} {{1}}{{R}}"), "text": ""});
+        let main: Vec<String> = (0..23).map(|i| format!("Card {i}")).collect();
+        let view = |last: Value| serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 30, "joined": true},
+                      {"seat": 1, "name": "Bo", "kind": "human", "status": "playing", "picks": 30, "joined": true}],
+            "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
+                         "games": [last], "next_game": 2, "result": null,
+                         "between": {"game": 2, "sideboarding": true, "you_choose": true, "play_first": null,
+                                     "ready": false, "opponent_ready": false, "deadline_ms": null,
+                                     "deck": {"main": main, "lands": {"Mountain": 17}, "sideboard": [], "valid": true, "problem": null, "ready": false},
+                                     "opponent_showed": []}}],
+            "pool": (0..30).map(|i| card(&format!("Card {i}"))).collect::<Vec<_>>(),
+            "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
+        });
+        let (_, mine) = render(&view(serde_json::json!({"winner": null, "abandoned": true})), &Build::default());
+        assert!(mine.contains("game 1 was abandoned with no winner, and the choice is still yours"), "{mine}");
+        assert!(!mine.contains("draw, and"), "{mine}");
+        let (_, mine) = render(&view(serde_json::json!({"winner": null, "abandoned": false})), &Build::default());
+        assert!(mine.contains("game 1 was a draw, and the choice is still yours"), "{mine}");
     }
 
     /// Between games: who chooses, what the opponent showed, the pool to
@@ -883,7 +1068,7 @@ mod tests {
             "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 30, "joined": true},
                       {"seat": 1, "name": "Bo", "kind": "human", "status": "playing", "picks": 30, "joined": true}],
             "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
-                         "games": [{"winner": 1}], "result": null,
+                         "games": [{"winner": 1}], "next_game": 2, "result": null,
                          "between": {"game": 2, "sideboarding": true, "you_choose": true, "play_first": null,
                                      "ready": false, "opponent_ready": false, "deadline_ms": 90_500,
                                      "deck": {"main": main, "lands": {"Mountain": 17}, "sideboard": [], "valid": true, "problem": null, "ready": false},
@@ -897,10 +1082,23 @@ mod tests {
         let (table, mine) = render(&v, &build);
         assert!(table.contains("90s left before game 2"), "{table}");
         assert!(mine.contains("Before game 2 vs Bo (seat 1) (they lead 1-0):"), "{mine}");
+        // A drawn game is in the score (#919, #971); an abandoned one is not (#744).
+        for (games, want) in [(serde_json::json!([{"winner": null}]), "(0-0-1)"),
+                              (serde_json::json!([{"winner": null, "abandoned": true}]), "(0-0)")] {
+            let mut d = v.clone();
+            d["matches"][0]["games"] = games;
+            let (_, text) = render(&d, &build);
+            assert!(text.contains(&format!("Before game 2 vs Bo (seat 1) {want}:")), "{text}");
+        }
         assert!(mine.contains("you lost game 1: type play or draw (not chosen yet: you play first)"), "{mine}");
         assert!(mine.contains("Bo (seat 1) has shown: Brimstone Volley"), "{mine}");
         assert!(mine.contains(" 23 [side] Card 23"), "{mine}");
         assert!(mine.contains("23 spells + 17 lands = 40 cards"), "{mine}");
+        // The last line says the choice again, under the pool's rows,
+        // where the line above them has scrolled off (#885's review).
+        let last: Vec<&str> = mine.trim_end().lines().rev().take(2).collect();
+        assert_eq!(last, ["type ready to start game 2 (they are still deciding)", "type play or draw (not chosen yet: you play first)"]);
+        assert!(last.iter().all(|l| l.chars().count() <= 80), "{last:?}");
 
         let sent = |c: Command| match c { Command::Send(m) => m, Command::Print(p) => panic!("printed {p}"), _ => panic!("nothing") };
         let printed = |c: Command| match c { Command::Print(p) => p, _ => panic!("not printed") };
@@ -938,14 +1136,99 @@ mod tests {
              "pack": [{"name": "Doomed Traveler"}, {"name": "Chapel Geist"}, {"name": "Moan of the Unhallowed"}]},
             {"round": 1, "pick": 2, "card": "Typhoid Rats", "auto": true, "pack": [{"name": "Typhoid Rats"}]}]});
         let text = review_listing(&msg);
-        assert!(text.contains("Pack 1\n  1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed\n"), "{text}");
+        assert!(text.contains("Pack 1\n  1.1 Chapel Geist — over Doomed Traveler; Moan of the Unhallowed\n"), "{text}");
         assert!(text.contains("  1.2 Typhoid Rats (the table's pick)\n"), "{text}");
         // #904: two copies in the pack, one taken: the other was passed over.
         let twice = serde_json::json!({"type": "review", "picks": [
             {"round": 1, "pick": 1, "card": "Shimmering Grotto", "auto": false,
              "pack": [{"name": "Shimmering Grotto"}, {"name": "Moonmist"}, {"name": "Shimmering Grotto"}]}]});
-        assert!(review_listing(&twice).contains("1.1 Shimmering Grotto — over Moonmist, Shimmering Grotto\n"),
+        assert!(review_listing(&twice).contains("1.1 Shimmering Grotto — over Moonmist; Shimmering Grotto\n"),
             "{}", review_listing(&twice));
+        // #925: a name with a comma in it is one card in the list.
+        let comma = serde_json::json!({"type": "review", "picks": [
+            {"round": 3, "pick": 2, "card": "Lost in the Mist", "auto": false,
+             "pack": [{"name": "Lantern Spirit"}, {"name": "Lost in the Mist"}, {"name": "Grimgrin, Corpse-Born"}, {"name": "Abattoir Ghoul"}]}]});
+        assert!(review_listing(&comma).contains("3.2 Lost in the Mist — over Lantern Spirit; Grimgrin, Corpse-Born; Abattoir Ghoul\n"),
+            "{}", review_listing(&comma));
+    }
+
+    /// #894: while drafting, the pack and the question are the last thing
+    /// on screen. The pool (~40 rows by pack 3) was listed under them and
+    /// scrolled the pack off an 80x24 terminal; it is one line above the
+    /// pack, and `pool` lists it. The count of packs queued is the table's,
+    /// so a new count does not reprint the pack.
+    #[test]
+    fn while_drafting_the_pack_is_the_last_thing_on_screen() {
+        let card = |n: String| serde_json::json!({"name": n, "line": format!("{n} {{1}}{{R}}"), "text": ""});
+        let mut v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd", "pass_direction": "left",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "picking", "picks": 30, "joined": true}],
+            "pool": (0..30).map(|i| card(format!("Card {i}"))).collect::<Vec<_>>(),
+            "pack": {"id": 7, "round": 3, "pick": 3, "size": 14, "waiting": 0, "deadline_ms": null,
+                     "cards": (0..12).map(|i| { let mut c = card(format!("Pack card {i}")); c["index"] = i.into(); c }).collect::<Vec<_>>()}});
+        let (table, mine) = render(&v, &Build::default());
+        assert!(mine.ends_with("type a number to pick, or text <n> to read the card\n"), "{mine}");
+        assert!(mine.contains("your pool: 30 cards (type pool to list them)\n") && !mine.contains("Card 29 {1}{R}"), "{mine}");
+        assert!(mine.lines().count() <= 16, "{mine}");
+        let Command::Print(listed) = command("pool", Some(&v), &mut Build::default(), None) else { panic!("pool prints") };
+        assert!(listed.contains("your pool (30 cards):") && listed.contains("1x Card 29 {1}{R}"), "{listed}");
+        v["pack"]["waiting"] = 2.into();
+        let (table2, mine2) = render(&v, &Build::default());
+        assert_eq!(mine2, mine, "a new count of packs queued is not a new screen");
+        assert!(table2 != table && table2.contains("2 more packs waiting for you"), "{table2}");
+        assert!(table_line(&v).ends_with("] 2 more packs waiting for you"), "{}", table_line(&v));
+        // Another seat's pick moves the table, not this seat's line while it
+        // holds a pack; its own queue does (#894's review).
+        let key = table_line_key(&v);
+        v["seats"][0]["picks"] = 31.into();
+        assert_eq!(table_line_key(&v), key);
+        v["seats"][0]["name"] = "Host".into();
+        assert_ne!(table_line_key(&v), key, "this seat's own new name is a line");
+        let key = table_line_key(&v);
+        v["pack"]["waiting"] = 1.into();
+        assert_ne!(table_line_key(&v), key);
+        // Building, before a deck is sent: the last line is what to type,
+        // not "0 spells + 0 lands = 0 cards" (#894's review).
+        v["phase"] = "building".into();
+        v["pack"] = Value::Null;
+        v["deck"] = Value::Null;
+        let listing = build_listing(&v, &Build::default());
+        assert!(listing.ends_with("add <n> to put pool card n in the deck, lands plains=7 island=10, then ready\n"), "{listing}");
+    }
+
+    /// #914: a seat with one pick reads "1 pick", as #874 made the page's
+    /// counts read; the client said "1 picks".
+    #[test]
+    fn a_seat_with_one_pick_is_said_in_the_singular() {
+        let v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd", "pack": null, "pool": [],
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "picking", "picks": 0, "joined": true},
+                      {"seat": 1, "name": "seat 1", "kind": "ai", "status": "waiting", "picks": 1, "joined": true}]});
+        let (table, _) = render(&v, &Build::default());
+        assert!(table.contains(" waiting 1 pick\n") && table.contains(" picking 0 picks\n"), "{table}");
+    }
+
+    /// #889: a card the review shows as passed over is in no pack and no
+    /// pool, and `text <n>` could not reach it; `text <name>` reads it from
+    /// the last review, by its whole name or the start of it.
+    #[test]
+    fn text_reads_a_card_of_the_review_by_name() {
+        let v = serde_json::json!({"phase": "building", "pack": null,
+            "pool": [{"name": "Chapel Geist", "line": "Chapel Geist {1}{W}{W}", "text": "Flying"}]});
+        let review = serde_json::json!({"type": "review", "picks": [
+            {"round": 1, "pick": 1, "card": "Chapel Geist", "auto": false, "pack": [
+                {"name": "Chapel Geist", "line": "Chapel Geist {1}{W}{W}", "text": "Flying"},
+                {"name": "Grimgrin, Corpse-Born", "line": "Grimgrin, Corpse-Born {3}{U}{B}", "text": "Grimgrin enters tapped."},
+                {"name": "Moan of the Unhallowed", "line": "Moan of the Unhallowed {2}{B}{B}", "text": "Create two 2/2 black Zombie tokens."},
+                {"name": "Moon Heron", "line": "Moon Heron {3}{U}", "text": "Flying"}]}]});
+        let read = card_text(&v, Some("grimgrin, corpse-born"), Some(&review));
+        assert!(read.starts_with("Grimgrin, Corpse-Born {3}{U}{B}\nGrimgrin enters tapped."), "{read}");
+        let read = card_text(&v, Some("Moan"), Some(&review));
+        assert!(read.contains("Create two 2/2"), "{read}");
+        assert!(card_text(&v, Some("Mo"), Some(&review)).contains("could be Moan of the Unhallowed; Moon Heron"));
+        assert!(card_text(&v, Some("Moan"), None).starts_with("no card named Moan"));
+        // The pool's own card by name, and by number as before.
+        assert!(card_text(&v, Some("chapel geist"), None).ends_with("\nFlying"));
+        assert!(card_text(&v, Some("0"), None).ends_with("\nFlying"));
+        assert!(review_listing(&review).starts_with("your draft (text <name> reads any card here):\n"));
     }
 
     /// The order a tie on points is broken by is printed beside the
@@ -965,7 +1248,10 @@ mod tests {
 }
 
 /// "game 2; G1 you": the game a match in progress is on and how each one
-/// before it went, the viewing seat as "you".
+/// before it went, the viewing seat as "you". "decided; G1 you" in the
+/// beat between a match's deciding game and its recorded result: the
+/// view's `next_game` is none then, where this used to count one more
+/// game, "game 2" of a best-of-1 (#916).
 fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<String> {
     let games = m["games"].as_array()?;
     let name = |s: u64| if s == me { "you".to_string() } else { who(s) };
@@ -977,8 +1263,30 @@ fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<Strin
         };
         format!("G{} {won}", i + 1)
     }).collect();
-    let on = format!("game {}", games.len() + 1);
+    // A server from before the field sends none: the game after the last.
+    let on = match m.get("next_game") {
+        Some(Value::Null) => "decided".to_string(),
+        Some(n) => format!("game {}", n.as_u64().unwrap_or(0)),
+        None => format!("game {}", games.len() + 1),
+    };
     Some(if done.is_empty() { on } else { format!("{on}; {}", done.join(", ")) })
+}
+
+/// "22 spells + 17 lands = 39 cards", singular at one ("1 spell + 0 lands
+/// = 1 card" after the first `add`; #946's review).
+fn deck_sum(spells: usize, lands: u32) -> String {
+    format!("{} + {} = {}\n", crate::count(spells, "spell", "spells"),
+        crate::count(lands as usize, "land", "lands"), crate::count(spells + lands as usize, "card", "cards"))
+}
+
+/// While drafting, the pool in one line above the pack: its size, and the
+/// command that lists it.
+fn pool_line(v: &Value) -> String {
+    match v["pool"].as_array().map_or(0, Vec::len) {
+        0 => "your pool is empty\n".to_string(),
+        1 => "your pool: 1 card (type pool to list it)\n".to_string(),
+        n => format!("your pool: {n} cards (type pool to list them)\n"),
+    }
 }
 
 fn pool_listing(v: &Value) -> String {
@@ -994,7 +1302,7 @@ fn pool_listing(v: &Value) -> String {
         return "your pool is empty\n".to_string();
     }
     counts.sort();
-    let mut s = format!("your pool ({} cards):\n", v["pool"].as_array().map_or(0, Vec::len));
+    let mut s = format!("your pool ({}):\n", crate::count(v["pool"].as_array().map_or(0, Vec::len), "card", "cards"));
     for (line, n) in counts {
         s.push_str(&format!("  {n}x {line}\n"));
     }
@@ -1005,8 +1313,13 @@ fn pool_listing(v: &Value) -> String {
 /// the headline only, and the client had no way to read a card at all,
 /// where the page shows the text of the card under the cursor (#792).
 /// While drafting `n` is the pack's number for the card; otherwise the
-/// pool's.
-fn card_text(v: &Value, arg: Option<&str>) -> String {
+/// pool's. A name instead of a number reads the card by name from the
+/// pack, the pool or the last review, whose cards passed over could not be
+/// read at all (#889).
+fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
+    if let Some(name) = arg.filter(|a| a.parse::<usize>().is_err()) {
+        return card_by_name(v, review, name);
+    }
     // While drafting the pool is listed by counts, not numbers, so the only
     // numbers on screen are the pack's.
     if v["phase"].as_str() == Some("drafting") && !v["pack"].is_object() {
@@ -1034,6 +1347,32 @@ fn card_text(v: &Value, arg: Option<&str>) -> String {
     format!("{}\n{body}", card["line"].as_str().unwrap_or("?"))
 }
 
+/// `text <name>`: the card of that name, or the one whose name starts with
+/// it, among the pack, the pool and the last review's packs.
+fn card_by_name(v: &Value, review: Option<&Value>, name: &str) -> String {
+    let mut cards: Vec<&Value> = v["pack"]["cards"].as_array().into_iter().flatten()
+        .chain(v["pool"].as_array().into_iter().flatten()).collect();
+    if let Some(r) = review {
+        cards.extend(r["picks"].as_array().into_iter().flatten()
+            .flat_map(|p| p["pack"].as_array().into_iter().flatten()));
+    }
+    let want = name.to_lowercase();
+    let named = |c: &&Value| c["name"].as_str().map(str::to_lowercase);
+    let exact = cards.iter().find(|c| named(c).as_deref() == Some(want.as_str()));
+    let mut starts: Vec<&str> = cards.iter().filter(|c| named(c).is_some_and(|n| n.starts_with(&want)))
+        .filter_map(|c| c["name"].as_str()).collect();
+    starts.sort_unstable();
+    starts.dedup();
+    let card = match (exact, starts.as_slice()) {
+        (Some(c), _) => *c,
+        (None, [one]) => cards.iter().find(|c| c["name"].as_str() == Some(*one)).copied().unwrap_or(&Value::Null),
+        (None, []) => return format!("no card named {name} in the pack, the pool or your last review"),
+        (None, many) => return format!("{name} could be {}: type more of the name", many.join("; ")),
+    };
+    let body = card["text"].as_str().filter(|t| !t.is_empty()).unwrap_or("(no rules text)");
+    format!("{}\n{body}", card["line"].as_str().unwrap_or("?"))
+}
+
 /// Before a game of a match: who chooses to play or draw, and from game 2
 /// the deck, sideboarded from the pool, beside what the opponent showed.
 fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(u64) -> String) -> String {
@@ -1042,19 +1381,30 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
     let me = v["seat"].as_u64();
     let wins = |s: Option<u64>| m["games"].as_array().into_iter().flatten().filter(|g| g["winner"].as_u64() == s).count();
     let (mine, theirs) = (wins(me), wins(m["opponent"].as_u64()));
+    // A drawn game is in the score, W-L-D, as the match's own score says it
+    // (#919): "(0-0)" after a drawn game 1 read as no game played (#971).
+    // An abandoned game has no winner and is no draw (#744).
+    let drawn = m["games"].as_array().into_iter().flatten()
+        .filter(|g| g["winner"].is_null() && g["abandoned"] != true).count();
+    let d = if drawn > 0 { format!("-{drawn}") } else { String::new() };
     let score = match mine.cmp(&theirs) {
         _ if game == 1 => String::new(),
-        std::cmp::Ordering::Equal => format!(" ({mine}-{theirs})"),
-        std::cmp::Ordering::Greater => format!(" (you lead {mine}-{theirs})"),
-        std::cmp::Ordering::Less => format!(" (they lead {theirs}-{mine})"),
+        std::cmp::Ordering::Equal => format!(" ({mine}-{theirs}{d})"),
+        std::cmp::Ordering::Greater => format!(" (you lead {mine}-{theirs}{d})"),
+        std::cmp::Ordering::Less => format!(" (they lead {theirs}-{mine}{d})"),
     };
     let mut s = format!("\nBefore game {game} vs {opponent}{score}:\n");
     // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
-    let last_winner = m["games"].as_array().and_then(|g| g.last()).and_then(|g| g["winner"].as_u64());
+    // A game stopped at the action budget had no winner either, and was
+    // abandoned, not drawn: the match list says so (#743, #918).
+    let last = m["games"].as_array().and_then(|g| g.last());
+    let last_winner = last.and_then(|g| g["winner"].as_u64());
+    let abandoned = last.is_some_and(|g| g["abandoned"] == true);
     if b["you_choose"] == true {
         let why = match last_winner {
             _ if game == 1 => "you won the coin flip".to_string(),
             Some(w) if Some(w) != me => format!("you lost game {}", game - 1),
+            None if abandoned => format!("game {} was abandoned with no winner, and the choice is still yours", game - 1),
             _ => format!("game {} was a draw, and the choice is still yours", game - 1),
         };
         let now = match b["play_first"].as_bool() {
@@ -1074,7 +1424,7 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         let shown: Vec<&str> = b["opponent_showed"].as_array().into_iter().flatten()
             .filter_map(|c| c["name"].as_str()).collect();
         if !shown.is_empty() {
-            s.push_str(&format!("  {opponent} has shown: {}\n", shown.join(", ")));
+            s.push_str(&format!("  {opponent} has shown: {}\n", shown.join("; ")));
         }
         s.push_str("your pool — add <n> / drop <n> to sideboard, text <n> to read a card, lands plains=7 island=10:\n");
         for (i, c) in v["pool"].as_array().into_iter().flatten().enumerate() {
@@ -1084,13 +1434,23 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         let lands: u32 = build.lands.values().sum();
         s.push_str(&format!("lands: {}\n", build.lands.iter().map(|(l, n)| format!("{l}={n}"))
             .collect::<Vec<_>>().join(" ")));
-        s.push_str(&format!("{} spells + {lands} lands = {} cards\n", build.main.len(), build.main.len() as u32 + lands));
+        s.push_str(&deck_sum(build.main.len(), lands));
     }
     s.push_str(&if b["ready"] == true {
         if b["opponent_ready"] == true { format!("ready — game {game} is starting\n") } else { format!("ready — waiting for {opponent}\n") }
     } else {
         let them = if b["opponent_ready"] == true { "they are ready" } else { "they are still deciding" };
-        format!("type ready to start game {game} ({them})\n")
+        // Under the pool, the choice is said again beside ready: printed
+        // only above the pool's ~45 rows, it scrolled off an 80x24
+        // terminal, as Ready sat under them on the page (#885's review).
+        // A line of its own: beside ready it was 103 columns (#885's review).
+        let choice = match (b["sideboarding"] == true && b["you_choose"] == true, b["play_first"].as_bool()) {
+            (false, _) => "",
+            (true, None) => "type play or draw (not chosen yet: you play first)\n",
+            (true, Some(true)) => "you play first (type draw to change it)\n",
+            (true, Some(false)) => "you draw first (type play to change it)\n",
+        };
+        format!("{choice}type ready to start game {game} ({them})\n")
     });
     s
 }
@@ -1101,7 +1461,7 @@ pub fn review_listing(msg: &Value) -> String {
     if picks.is_empty() {
         return "no picks yet".to_string();
     }
-    let mut s = String::from("your draft:\n");
+    let mut s = String::from("your draft (text <name> reads any card here):\n");
     for p in &picks {
         if p["pick"] == 1 {
             s.push_str(&format!("Pack {}\n", p["round"]));
@@ -1116,8 +1476,9 @@ pub fn review_listing(msg: &Value) -> String {
         }
         let auto = if p["auto"] == true { " (the table's pick)" } else { "" };
         s.push_str(&format!("  {}.{} {card}{auto}", p["round"], p["pick"]));
+        // "; ", not ", ": "Grimgrin, Corpse-Born" read as two cards (#925).
         if !rest.is_empty() {
-            s.push_str(&format!(" — over {}", rest.join(", ")));
+            s.push_str(&format!(" — over {}", rest.join("; ")));
         }
         s.push('\n');
     }
@@ -1134,7 +1495,7 @@ fn build_listing(v: &Value, build: &Build) -> String {
     let spells = build.main.len();
     s.push_str(&format!("lands: {}\n", build.lands.iter().map(|(l, n)| format!("{l}={n}"))
         .collect::<Vec<_>>().join(" ")));
-    s.push_str(&format!("{spells} spells + {lands} lands = {} cards\n", spells as u32 + lands));
+    s.push_str(&deck_sum(spells, lands));
     if let Some(deck) = v["deck"].as_object() {
         if let Some(problem) = deck["problem"].as_str() {
             s.push_str(&format!("not legal yet: {problem}\n"));
@@ -1143,6 +1504,10 @@ fn build_listing(v: &Value, build: &Build) -> String {
         } else if deck["valid"].as_bool().unwrap_or(false) {
             s.push_str("legal — type ready when it is final\n");
         }
+    } else {
+        // Before the first deck is sent the count was the last line, and the
+        // commands were on the heading ~42 rows up (#894's review).
+        s.push_str("add <n> to put pool card n in the deck, lands plains=7 island=10, then ready\n");
     }
     s
 }
