@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""scripts/kani-bounded.py [NAME...] [--results FILE] [--batch N] [--timeout S] [--bound B] [--as-built]
-                          [--start-unwind U] [--loops FILE] [--jobs J --mem-cap GB] [--memory-checks]
+"""scripts/kani-bounded.py [NAME...] [--list FILE] [--results FILE] [--batch N] [--timeout S] [--bound B]
+                          [--as-built] [--start-unwind U] [--loops FILE] [--jobs J --mem-cap GB]
+                          [--memory-checks] [--shard K/N --times FILE] [--expect-open FILE]
 
 Run the Kani proofs in mtg-engine/src/proofs/ the way `cargo kani` does,
 with one addition: every function in a harness's final goto program that
@@ -58,9 +59,22 @@ at risk, not only the one that needed it.
 
 A NAME is a harness's path or last part, or a module (`vec_map`,
 `cards::auras`) for every harness in it; with none, every harness the
-proofs define. One line per harness
+proofs define. --list FILE adds the names in FILE, one a line (`#` starts
+a comment). One line per harness
 goes to RESULTS (default logs/kani/results.txt):
     RESULT  SECONDS  NAME  [bounds, covers, size, or what failed]
+
+With --shard K/N, only the Kth of N shares of the harnesses selected,
+shared out by how long each took in --times FILE (a RESULTS file of an
+earlier run; a harness not in it is taken as two minutes), the longest
+first, each to the share with least so far: the scheduled run of every
+harness in CI is N jobs, each held to six hours.
+
+The exit status is 1 if any harness selected (in this shard) has no
+result in RESULTS, or a last result other than SUCCESSFUL, unless it is
+named in --expect-open FILE (the harnesses known not to prove, in the
+form of --list); 0 otherwise. A harness expected open that proved is
+said so, for the list to be pruned.
 """
 import argparse, concurrent.futures, fcntl, glob, json, os, re, subprocess, sys, tempfile, threading, time
 
@@ -519,7 +533,13 @@ def main():
     ap.add_argument('--mem-cap', type=float, default=None, help='gigabytes of address space per cbmc, with --jobs')
     ap.add_argument('--solo-cap', type=float, default=12, help='gigabytes for a harness run again alone')
     ap.add_argument('--reverse', action='store_true', help='run the harnesses last first, as a second run sharing the results')
+    ap.add_argument('--list', action='append', default=[], help='a file of harness names, one a line')
+    ap.add_argument('--shard', default=None, help='K/N: the Kth of N shares of the harnesses, by --times')
+    ap.add_argument('--times', default=None, help='a results file whose seconds share out --shard')
+    ap.add_argument('--expect-open', default=None, help='a file of the harnesses known not to prove')
     a = ap.parse_args()
+    for f in a.list:
+        a.harness += read_names(f)
     global START_UNWIND, LOOPS, MEMORY_CHECKS
     START_UNWIND, LOOPS, MEMORY_CHECKS = a.start_unwind, a.loops, a.memory_checks
     os.makedirs(os.path.dirname(a.results), exist_ok=True)
@@ -543,6 +563,8 @@ def main():
             for w in unknown:
                 res.write(f"{'NOT_RUN':10s} {'-':>8s}  {w}  not a harness this script finds\n")
         print(f'not harnesses this script finds: {" ".join(unknown)}', file=sys.stderr)
+    if a.shard:
+        wanted = shard_of(wanted, a.shard, a.times)
     todo = [h for h in wanted if h not in done()]
     if a.reverse:
         todo.reverse()
@@ -593,6 +615,59 @@ def main():
         for h in again:
             one(h, *found[h], a.solo_cap)
 
+    return verdict(wanted, a.results, read_names(a.expect_open) if a.expect_open else [])
+
+
+def read_names(path):
+    """The harness names in `path`, one a line, `#` starting a comment."""
+    with open(path) as f:
+        return [n for n in (l.split('#', 1)[0].strip() for l in f) if n]
+
+
+def shard_of(wanted, shard, times):
+    """The `K/N`th share of `wanted`, by the seconds each took in `times`."""
+    k, n = (int(x) for x in shard.split('/'))
+    assert 1 <= k <= n, f'--shard {shard}: K from 1 to N'
+    took = {}
+    if times:
+        with open(times, errors='replace') as f:
+            for l in f:
+                p = l.split()
+                m = re.match(r'(\d+)s$', p[1]) if len(p) > 2 else None
+                if m:
+                    took[p[2]] = took.get(p[2], 0) + int(m.group(1))
+    shares = [[0, []] for _ in range(n)]
+    for h in sorted(wanted, key=lambda h: (-took.get(h, 120), h)):
+        least = min(shares, key=lambda s: s[0])
+        least[0] += took.get(h, 120)
+        least[1].append(h)
+    mine = set(shares[k - 1][1])
+    print(f'shard {k}/{n}: {len(mine)} harnesses, about {shares[k - 1][0] / 3600:.1f} hours', flush=True)
+    return [h for h in wanted if h in mine]
+
+
+def verdict(wanted, results, expected_open):
+    """Exit status 1 if a harness of `wanted` has no result or did not prove
+    and is not expected open, and say which."""
+    last = {}
+    if os.path.exists(results):
+        with open(results, errors='replace') as res:
+            for l in res:
+                p = l.split()
+                if len(p) > 2:
+                    last[p[2]] = p[0]
+    expected = set(expected_open)
+    proved = [h for h in wanted if last.get(h) == 'SUCCESSFUL']
+    open_still = [h for h in wanted if last.get(h) != 'SUCCESSFUL' and h in expected]
+    broken = [h for h in wanted if last.get(h) != 'SUCCESSFUL' and h not in expected]
+    pruned = [h for h in proved if h in expected]
+    print(f'{len(wanted)} harnesses: {len(proved)} proved, {len(open_still)} expected open, {len(broken)} not proved', flush=True)
+    for h in broken:
+        print(f'NOT PROVED  {last.get(h, "no result"):10s} {h}', flush=True)
+    for h in pruned:
+        print(f'now proved, expected open: {h}', flush=True)
+    return 1 if broken else 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
