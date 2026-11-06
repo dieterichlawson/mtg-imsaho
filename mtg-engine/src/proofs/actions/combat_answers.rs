@@ -116,11 +116,20 @@ fn ordered(reply: u8) {
     std::mem::forget((registry, state, answer));
 }
 
+/// Stands in for `combat::log_completed_order`, which only logs the order
+/// placed, for people: nothing. Built here, its names joined (`format!` is
+/// stood in for, but its arguments are built first) ran the four whole
+/// orders out of 12 GB, which a blocker placed one at a time, logging
+/// nothing, does not reach.
+#[allow(dead_code)] // named only by `kani::stub`
+fn no_order_line(_: &mut GameState, _: ObjectId) {}
+
 /// The proofs of a damage assignment order answered, one per reply.
 macro_rules! each_order_reply {
     ($($name:ident: $reply:expr;)*) => {$(
         card_proof! {
             #[kani::stub(crate::combat::announce_damage_assignment_order, next_order)]
+            #[kani::stub(crate::combat::log_completed_order, no_order_line)]
             /// [`ordered`] for the reply of its name.
             fn $name() {
                 ordered($reply);
