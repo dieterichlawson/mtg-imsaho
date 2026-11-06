@@ -774,7 +774,32 @@ fn keyword_title(k: mtg_engine::types::Keyword) -> String {
     }
 }
 
-/// Repaint an input line from the buffer, clipped to `cap` display columns.
+/// What of a typed line the echo shows in `cap` columns: all of it when it
+/// fits, else its END behind a "…", as a shell scrolls. Keeping the start
+/// hid the pair just typed, which is the one a person checks as they type
+/// (#964).
+fn echo_text(typed: &str, cap: usize) -> String {
+    if str_cols(typed) <= cap {
+        return typed.to_string();
+    }
+    if cap == 0 {
+        return String::new();
+    }
+    let mut cols = 0;
+    let mut tail: Vec<char> = Vec::new();
+    for c in typed.chars().rev() {
+        let w = col_width(c);
+        if cols + w > cap - 1 {
+            break;
+        }
+        cols += w;
+        tail.push(c);
+    }
+    std::iter::once('\u{2026}').chain(tail.into_iter().rev()).collect()
+}
+
+/// Repaint an input line from the buffer in `cap` display columns, its end
+/// kept when it does not fit (`echo_text`).
 ///
 /// The readers used to keep a parallel model of what was on screen and paint
 /// deltas into it. It desynchronised from the buffer three ways — a grapheme
@@ -785,7 +810,7 @@ fn keyword_title(k: mtg_engine::types::Keyword) -> String {
 /// for max X (issue #281). Painting the whole line from the buffer cannot
 /// drift from it.
 fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: usize) {
-    let shown = clip_cols(&sanitize_for_display(buf), cap);
+    let shown = echo_text(&sanitize_for_display(buf), cap);
     // `cap` is what this row is allowed to print; it is therefore also what
     // it is allowed to erase (#355).
     clear_cols(out, col, row, cap);
@@ -863,6 +888,14 @@ fn clip_cols(s: &str, max: usize) -> String {
 /// pane: the header, the battlefield rule, the opponent's status line, the
 /// divider, your status line and the HAND rule (#960).
 const FRAME_KEPT_ROWS: usize = 6;
+
+/// The columns a prompt's label leaves for what is typed after it (#964),
+/// counting the border column the echo's cap keeps clear: a block pair or
+/// an X at a line prompt, "yes" at a yes/no question. Small, so a hint that
+/// fitted beside a short answer ("X (0-5, c = cancel the activation, or
+/// concede) = " at 100 columns) still fits whole.
+const LINE_ECHO_ROOM: usize = 6;
+const YN_ECHO_ROOM: usize = 4;
 
 /// What a pager's marker says the keys are. One string per pager, so the
 /// row can be measured before the page it describes is chosen.
@@ -3339,15 +3372,8 @@ impl CliPlayer {
             // wide-character filter used to wrap onto the next terminal row
             // and paint over the STACK panel (#109). Show the TAIL — what
             // the player just typed is the useful part.
-            let text = format!(" /{filter}");
-            let text = if str_cols(&text) > right_w {
-                let tail: String = text.chars().rev().collect::<String>();
-                let mut kept = clip_cols(&tail, right_w.saturating_sub(1));
-                kept = kept.chars().rev().collect();
-                format!("\u{2026}{kept}")
-            } else {
-                text
-            };
+            // The same tail as every prompt's echo (#964).
+            let text = echo_text(&format!(" /{filter}"), right_w);
             let pad = right_w.saturating_sub(str_cols(&text));
             format!("{}{}", text, " ".repeat(pad))
         };
@@ -3582,7 +3608,12 @@ impl CliPlayer {
             let gutter_w = w / 5;
             let mid_w = w.saturating_sub(gutter_w * 2 + 2);
             let right_col = u16::try_from(gutter_w + 1 + mid_w + 1).unwrap_or(u16::MAX);
-            let cursor_x = right_col + 2 + u16::try_from(card_filter.chars().count()).unwrap_or(u16::MAX);
+            // After the search box's text as painted: its tail, in columns.
+            // Counted in chars past it, the cursor left the gutter once the
+            // filter overflowed, and a wide character put it a cell short
+            // (#964's review).
+            let shown = echo_text(&format!(" /{card_filter}"), gutter_w);
+            let cursor_x = right_col + u16::try_from(str_cols(&shown)).unwrap_or(u16::MAX);
             let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
             let _ = stdout().flush();
 
@@ -5101,6 +5132,14 @@ impl CliPlayer {
         w / 5 + 1 + Self::middle_panel_width_at(w)
     }
 
+    /// The columns a prompt's label may take of `room`, leaving the echo
+    /// at least `echo` of them (a third of the row on a narrow one). Clipped
+    /// to the whole panel, the combat prompt's label filled it at 40
+    /// columns and nothing typed was shown at all (#964).
+    fn prompt_room(room: usize, echo: usize) -> usize {
+        room.saturating_sub(echo.min(room / 3))
+    }
+
     /// How many columns the echo of a typed answer may occupy, for a reader
     /// whose input starts at column `col` at terminal width `w`.
     ///
@@ -5178,7 +5217,8 @@ impl CliPlayer {
         // then over the CARDS pane beside it (issue #320).
         // Cut closed, like the board's rows: "(0-5, c = cancel the
         // activation, or conce" left its parenthesis open (#781's review).
-        let shown = Self::clip_closed_or_cut(prompt, Self::middle_panel_width_at(Self::term_width()));
+        let shown = Self::clip_closed_or_cut(prompt,
+            Self::prompt_room(Self::middle_panel_width_at(Self::term_width()), LINE_ECHO_ROOM));
         let _ = execute!(out, Print(&shown));
         let _ = out.flush();
         tui_raw_on();
@@ -5192,8 +5232,8 @@ impl CliPlayer {
         // The echo stops at the terminal's right edge minus one: an
         // unbounded echo let a 5000-character paste wrap across the whole
         // pane and scroll the frame away (issue #109; same cap idea as the
-        // menu reader's, #53). Input beyond the cap still lands in `buf`,
-        // it just isn't painted.
+        // menu reader's, #53). Input beyond the cap still lands in `buf`;
+        // the echo shows its end (#964).
         let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
         let mut echo_cap = Self::echo_cap_at(Self::term_width(), start_col);
         let mut buf = String::new();
@@ -5210,7 +5250,8 @@ impl CliPlayer {
                 redraw();
                 // The panel is a different width now, so the prompt is
                 // re-clipped to the new one rather than to the old.
-                let reshown = Self::clip_closed_or_cut(prompt, Self::middle_panel_width_at(w as usize));
+                let reshown = Self::clip_closed_or_cut(prompt,
+                    Self::prompt_room(Self::middle_panel_width_at(w as usize), LINE_ECHO_ROOM));
                 let _ = execute!(out, Print(&reshown));
                 let _ = out.flush();
                 (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
@@ -5265,7 +5306,8 @@ impl CliPlayer {
         // in place. The old reprompt printed a fresh row per junk key,
         // eating the LOG panel one row at a time (issue #125).
         let (mut px, mut py) = cursor::position().unwrap_or((0, 20));
-        let first = Self::fit_yn_question(prompt, Self::middle_panel_edge().saturating_sub(usize::from(px)));
+        let first = Self::fit_yn_question(prompt,
+            Self::prompt_room(Self::middle_panel_edge().saturating_sub(usize::from(px)), YN_ECHO_ROOM));
         let _ = execute!(out, Print(&first));
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
@@ -5309,7 +5351,8 @@ impl CliPlayer {
                     let row = cursor::position().map_or(py, |(_, r)| r);
                     py = (row + 1).min(h.saturating_sub(1));
                     px = Self::middle_panel_col();
-                    let shown = Self::fit_yn_question(prompt, Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)));
+                    let shown = Self::fit_yn_question(prompt,
+                        Self::prompt_room(Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)), YN_ECHO_ROOM));
                     Self::clear_panel_row(&mut out, px, py);
                     let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
                     echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
@@ -5319,7 +5362,8 @@ impl CliPlayer {
                     // rather than over a frame the terminal hard-wrapped.
                     // The screen is drawn again once it is answered.
                     clear_frame(&mut out);
-                    let shown = Self::fit_yn_question(prompt.trim_start(), (w as usize).saturating_sub(1));
+                    let shown = Self::fit_yn_question(prompt.trim_start(),
+                        Self::prompt_room((w as usize).saturating_sub(1), YN_ECHO_ROOM));
                     (px, py) = (0, 0);
                     let _ = execute!(out, cursor::MoveTo(0, 0), Print(&shown));
                     echo_col = u16::try_from(shown.chars().count()).unwrap_or(0);
@@ -5361,7 +5405,7 @@ impl CliPlayer {
                                 prompt.trim_start());
                             // "…concede? (y/n" at 80 columns (#781's review).
                             let clipped = Self::fit_yn_question(&msg,
-                                Self::middle_panel_edge().saturating_sub(usize::from(px)));
+                                Self::prompt_room(Self::middle_panel_edge().saturating_sub(usize::from(px)), YN_ECHO_ROOM));
                             Self::clear_panel_row(&mut stdout(), px, py);
                             let _ = execute!(stdout(), cursor::MoveTo(px, py), Print(&clipped));
                             let _ = stdout().flush();
@@ -5414,8 +5458,8 @@ impl CliPlayer {
         let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
         // The echo stops at the middle panel's right border: an unbounded echo
         // let one long pasted line wrap over the card panel and scroll the
-        // whole UI away (#53). Input beyond the cap still lands in `buf`, it
-        // just isn't painted. This used to re-derive the panel's geometry from
+        // whole UI away (#53). Input beyond the cap still lands in `buf`, and
+        // the echo shows its end (#964). This used to re-derive the panel's geometry from
         // the terminal width by hand, a second copy of
         // `middle_panel_width_at`, and then measure from the prompt's length
         // rather than from where the cursor actually is.
@@ -5942,7 +5986,8 @@ impl CliPlayer {
         let footer_lines = |f: &str| Self::wrap_indented(f, w.saturating_sub(1));
         let chrome = footer_lines(&widest).len()
             + 1
-            + footer_lines(VIEWER_PAGED_FOOTER).len().max(footer_lines(DETAIL_FOOTER).len());
+            + Self::input_footer_rows(VIEWER_PAGED_FOOTER, w).len()
+                .max(Self::input_footer_rows(DETAIL_FOOTER, w).len());
         let avail = Self::viewer_avail(h, chrome);
         let (start, shown, paged) = Self::menu_page_lines(&vec![1; n], avail, offset, 0);
         let end = start + shown;
@@ -5964,7 +6009,7 @@ impl CliPlayer {
                 }
             }
         }
-        let footer = footer_lines(if paged { VIEWER_PAGED_FOOTER } else { DETAIL_FOOTER }).join("\n");
+        let footer = Self::pager_footer(if paged { VIEWER_PAGED_FOOTER } else { DETAIL_FOOTER }, w);
         let _ = execute!(out, Print(format!("\n{footer}")));
         (start, end, n, avail)
     }
@@ -5994,7 +6039,7 @@ impl CliPlayer {
                 " INSPECT BATTLEFIELD (showing {n}-{n} of {n} rows)", n = rows.len());
             let chrome = Self::pager_lines(&widest_heading, w)
                 + 2
-                + Self::pager_lines(DECK_PAGED_FOOTER, w);
+                + Self::input_footer_rows(DECK_PAGED_FOOTER, w).len();
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page.get(), 0);
             page.set(start);
@@ -6127,12 +6172,23 @@ return",
         let _ = execute!(out, Print("\n"));
     }
 
-    /// A pager's footer, each of its lines wrapped by `pager_rows`; the
-    /// last is left open for the input, as it was (#963's review).
+    /// A full-screen page's footer rows, each line wrapped by `pager_rows`
+    /// (#963's review). The last is left open for the input, and ends far
+    /// enough short of the echo's bound — the middle panel's border — to
+    /// leave it `LINE_ECHO_ROOM`: the deck browser's 68-column paged
+    /// footer left a 69-column terminal no room to show what was typed
+    /// (#964's review).
+    fn input_footer_rows(footer: &str, w: usize) -> Vec<String> {
+        let lines: Vec<&str> = footer.split('\n').collect();
+        let last_w = (Self::middle_panel_edge_at(w).saturating_sub(LINE_ECHO_ROOM) + 1).clamp(2, w.max(2));
+        lines.iter().enumerate()
+            .flat_map(|(i, l)| Self::pager_rows(l, if i + 1 == lines.len() { last_w } else { w }))
+            .collect()
+    }
+
+    /// `input_footer_rows`, as printed.
     fn pager_footer(footer: &str, w: usize) -> String {
-        footer.split('\n')
-            .map(|l| Self::pager_rows(l, w).join("\n"))
-            .collect::<Vec<_>>().join("\n")
+        Self::input_footer_rows(footer, w).join("\n")
     }
 
     /// The rows `pager_footer` paints for one of its lines.
@@ -6231,7 +6287,7 @@ return",
             let widest_heading = format!("{title} (showing {n}-{n} of {n})");
             let chrome = Self::pager_lines(&widest_heading, w)
                 + 1
-                + Self::pager_lines(VIEWER_PAGED_FOOTER, w);
+                + Self::input_footer_rows(VIEWER_PAGED_FOOTER, w).len();
             (heights, Self::viewer_avail(h, chrome))
         };
         // The last window is the page that ends at the last entry, which is
@@ -6731,7 +6787,7 @@ return",
             // and the footer itself.
             let chrome = Self::pager_lines(&widest_heading, w)
                 + 2
-                + Self::pager_lines(DECK_PAGED_FOOTER, w);
+                + Self::input_footer_rows(DECK_PAGED_FOOTER, w).len();
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page.get(), 0);
             page.set(start);
@@ -12219,6 +12275,46 @@ Wolves or Werewolves is prevented".into()];
         assert!(CliPlayer::try_engage_auto_pass(&v, &l).is_ok());
     }
 
+    #[test]
+    fn the_echo_keeps_the_end_of_what_is_typed() {
+        // #964: the pairs typed last are the ones a person checks.
+        let typed = "0:1 2:3 3:5 5:6 6:7 7:3";
+        assert_eq!(echo_text(typed, 40), typed, "a line that fits is whole");
+        let shown = echo_text(typed, 16);
+        assert_eq!(shown, "\u{2026}3:5 5:6 6:7 7:3");
+        assert_eq!(str_cols(&shown), 16);
+        assert_eq!(echo_text(typed, 1), "\u{2026}");
+        assert_eq!(echo_text(typed, 0), "");
+        // Wide characters are counted in columns.
+        assert!(str_cols(&echo_text("ab\u{4e00}\u{4e00}\u{4e00}", 4)) <= 4);
+
+        // The label leaves room to echo into: at 40x12 the combat prompt's
+        // label filled the panel and nothing typed showed.
+        let label = "  Block (blocker:attacker / enter=none)> ";
+        for panel in [20, 30, 40, 60, 100] {
+            let room = CliPlayer::prompt_room(panel, LINE_ECHO_ROOM);
+            let shown = CliPlayer::clip_closed_or_cut(label, room);
+            assert!(panel - str_cols(&shown) >= LINE_ECHO_ROOM.min(panel / 3),
+                "{panel}: {shown:?} leaves {} columns", panel - str_cols(&shown));
+        }
+        assert_eq!(CliPlayer::prompt_room(100, LINE_ECHO_ROOM), 94);
+        // A full-screen page's footer ends short of the echo's bound: the
+        // deck browser's paged footer left a 69-column terminal none.
+        for w in [40, 69, 70, 80, 100, 150] {
+            for f in [DECK_PAGED_FOOTER, VIEWER_PAGED_FOOTER, DETAIL_FOOTER] {
+                let rows = CliPlayer::input_footer_rows(f, w);
+                let last = rows.last().unwrap();
+                let cap = CliPlayer::echo_cap_at(w, u16::try_from(str_cols(last)).unwrap());
+                assert!(cap + 1 >= LINE_ECHO_ROOM, "{w}: {last:?} leaves the echo {cap}");
+                assert!(rows.iter().all(|r| str_cols(r) < w), "{w}: {rows:?}");
+            }
+        }
+        // At 100 columns the middle panel is 58: the X hint (51) still fits
+        // whole beside its answer.
+        let x = "  X (0-5, c = cancel the activation, or concede) = ";
+        assert_eq!(CliPlayer::clip_closed_or_cut(x, CliPlayer::prompt_room(CliPlayer::middle_panel_width_at(100), LINE_ECHO_ROOM)), x);
+    }
+
     // Issue #109: echo and filter displays clip by display COLUMNS, so a
     // wide-character (CJK) filter can't take twice its char count in cells
     // and wrap over neighbouring panels.
@@ -14049,7 +14145,7 @@ Wolves or Werewolves is prevented".into()];
             CliPlayer::info_line_text(&lines[0]), CliPlayer::info_line_text(&lines[1])));
         assert!(rows[0].starts_with(" GAME LOG") && rows[1].starts_with(' '), "{rows:#?}");
         let want: usize = lines.iter().map(|l| CliPlayer::pager_rows(&CliPlayer::info_line_text(l), w).len()).sum();
-        let chrome = CliPlayer::pager_lines(heading, w) + 1 + CliPlayer::pager_lines(VIEWER_PAGED_FOOTER, w);
+        let chrome = CliPlayer::pager_lines(heading, w) + 1 + CliPlayer::input_footer_rows(VIEWER_PAGED_FOOTER, w).len();
         assert_eq!(rows.len(), chrome + want, "the page is as tall as the layout measured it: {rows:#?}");
 
         let rows = vec![("   0:".to_string(), " 10x Doomed Traveler {W} 1/1 (3hand, 7lib)".to_string())];
