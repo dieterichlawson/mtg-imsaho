@@ -4,8 +4,9 @@
 Kani that reads a constant through a static with the same initial bytes
 (`docs/plans/formal-verification.md`, "What is trusted"); the card
 library's `LISTINGS_HANDED` and `ACTED` were among the statics read so.
-The run at f288a21, with the proofs' statics `Held`, replaces this
-ledger when it finishes.
+The run at 156d7ad, with the proofs' statics `Held` and the scan for a
+constant read through one before each harness, replaces this ledger when
+it finishes.
 
 Every card harness was run in one pass over every harness the proofs
 define. The pass began at f6a9869 and moved to 65fde47 after 1,212

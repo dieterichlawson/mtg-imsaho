@@ -194,7 +194,7 @@ values. Each gets a spec written from the CR, proved for every input.
 | combat damage division, `divide_combat_damage` | 510.1c-d, 702.19b, with 509.2's order | **proved** sound and complete, one defect fixed |
 | X funding from floating mana, `allocate_for_x`'s pool step | 107.3, and the reserve property of payment | **proved** by reuse of `pay_around`, one defect fixed |
 | X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
-| autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **checked exhaustively** on every board of up to three sources (29.6 million); not yet proved for every board |
+| autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **proved for every board**: every plan returned has been run and found to pay, each step of that run is proved to be what the engine's activation does for each kind of source in the pool, and a plan whose side effects change what later steps can do is rehearsed (see [the autotap planner](#the-autotap-planner-every-small-board)); two defects fixed. Also checked exhaustively on every board of up to three sources (29.6 million) |
 | autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
 | power and toughness from counters and effects (layer 7) | 611.3a, 613.1f, 613.4 | **proved** on the engine with Kani for a setting, +1/+1 and -1/-1 counters and a change at once, each change until end of turn, and each change an Aura, Equipment or lord prints (`proofs::actions::power_and_toughness`, `until_end_of_turn`, `effects`, `scopes`), on two creatures; **checked** against the card-semantics reference on every cast, death and combat; not extracted into a kernel |
 | lethal damage, deathtouch, zero toughness, and counter pairs | 704.5f-h, 704.5q | **proved** (`sba::creature_fate`, `sba::annihilate`), called by the state-based actions; indestructible, regeneration and attachments stay in the engine, checked against the same reference |
@@ -473,7 +473,8 @@ Grotto's filters, Deranged Assistant's side effect), every floating pool
 and every cost of each shape a generator draws. On each board the planner
 must offer a plan exactly when some way of tapping by hand pays, and the
 plan must execute the way the engine executes it, name each source once and
-tap nothing it did not need.
+tap nothing it did not need; and `within_reach`, the auto-pass gate's
+test, must not rule out a cost some plan pays.
 
 - `cargo test`: every board of up to two sources and one floating mana,
   about 1.4 million.
@@ -487,6 +488,47 @@ The three-source scope found defect 6 below on 9,500 boards, all with
 three-colour costs, which no card in the pool has yet; the random sweeps of
 2,000 boards each had not. The four-source scope found nothing for the
 shapes the pool has.
+
+Soundness, that a plan offered is one the payment can make, now holds on
+every board, by construction and a proof of each step:
+
+1. **The planner returns only plans it has run.** Every plan
+   `compute_autotap_around` returns has been through `pool_after`, the
+   planner's own run of a plan the way the engine executes one, and found
+   to pay. With nothing else to keep payable it asks `plan_pays`, the same
+   steps and then `can_pay`, which is `pool_after`'s answer for any
+   reserve because `pay_around` pays exactly when the pool can
+   (`mtg-kernel`). A greedy plan that does not pay is searched around, with
+   something to keep payable, or is no plan. Before, a greedy plan
+   `pool_after` found not to pay was handed on untouched, which is how
+   issue #252 reached a player (defect 24 below).
+2. **Each step of that run is what the engine's activation does.**
+   `mana::tap_step` pays an ability's own mana cost, if it has one, around
+   the cost being paid and adds what it produces; `proofs::actions::
+   mana_abilities` proves that `engine::activate_mana_source_reserving`,
+   on the ability as the planner is given it (`available_mana_abilities`),
+   leaves the pool exactly as the step does, taps the source and
+   announces both, and changes nothing else, for each kind of source in
+   the pool: a basic land, a dual's second colour, Sol Ring, a utility
+   land, Shimmering Grotto's `{C}` and its filter paid out of the pool
+   around the cost, a mana creature, Deranged Assistant; and that a
+   source the planner could not run (tapped, summoning sick, a filter
+   with nothing to pay for it) changes nothing. Which abilities each card
+   has is the card proofs' (`proofs::cards::mana`).
+3. **The last payment's success is the pool's.** The engine pays the cost
+   around what everything else needs, the planner around the hand; both
+   succeed exactly when the pool can pay (`pay_around`).
+4. **What the planner cannot see is rehearsed.** A step can change what a
+   later one can do only through what an ability does besides adding mana:
+   Deranged Assistant's cost mills a card, and with one card left a second
+   Assistant's cannot be paid (defect 23). Every offer of a payment plans
+   through `engine::plan_payment`, which runs a plan tapping such a source
+   on a copy of the game first, as a cast's tap plan always was, and
+   offers none that does not pay there.
+
+Completeness is still the exhaustive check's: a heuristic that misses a
+plan offers nothing, which is a missing row on the menu, not a refused
+payment.
 
 ### Cards against their Oracle text
 
@@ -1486,6 +1528,7 @@ for both players and boards as its doc comment states):
 | `apply_transform` (701.28), and so `transform_quietly`, which it calls and logs around: exactly a double-faced permanent turned over, not a token or a copy by way of a one-faced card (701.28c), nor one transformed since the ability transforming it went on the stack (701.28f); and the rule for a trigger, its own or another permanent's, delayed or not, stamped with the count now, an older one or none: only its own, not delayed, stamped before the last transform, transforms nothing ("isn't a delayed triggered ability", #987) | proved, 89 s and, the trigger's, 92 s |
 | `store_ids`, `load_ids`, `clear_ids`: the lists a card keeps while it waits on an answer read back as stored, every other entry kept | proved, 9 to 91 s each |
 | `payment_plan_with_sources`, `pay_cost_with_sources` (118.3, 302.6, 605.3a, 608.2g): with nothing to tap, and with a Forest, its plan, its payment and the Forest's activation, for six costs, either player and each pool of up to two of white, green and colourless | proved, 106 to 641 s each |
+| a mana ability activated as a tap plan's entry is run (`activate_mana_source_reserving`, 605.3a, 302.6, 118.3), against the planner's own step (`mana::tap_step`): for a basic land, a dual's second colour, Sol Ring, a utility land, Shimmering Grotto's `{C}` and its filter paid out of the pool around the cost, a mana creature and Deranged Assistant, the pool left exactly as the step leaves it, the source tapped and both announced, nothing else changed but the Assistant's mill; a source tapped, a creature summoning sick and a filter with nothing to pay for it changing nothing; each for either player as the controller | proved, 24 harnesses, 122 to 377 s each at 3 GB |
 | what each until-end-of-turn effect a card adds does (611.2a): one or two power and toughness changes on a creature (613.4c), each keyword granted (613.1f), defender lost, can't block (509.1a) | proved, 24 to 45 s each |
 | the cleanup step's end of them (514.2, `end_until_end_of_turn_effects`), each creature whose control one changed going to whom the effects still in force give it (613.7a, 110.2a) | proved, 226 to 402 s each, at 7 GB but for two changes of the second creature's, which took 12 |
 | a creature's power and toughness from a setting, counters and a change at once (613.4b-c, 613.7a), none, one or two settings | proved, 48 to 75 s each |
@@ -1523,7 +1566,7 @@ for both players and boards as its doc comment states):
 | abilities that triggered together going on the stack (`process_pending_trigger_pushes`, 603.3b, 101.4): the active player's first, each player's own in the order they choose, asked when two can be told apart and are not yet ordered; and the answer, a whole order or one trigger to put on now | all twelve out of memory at 12 GB or out of time in symbolic execution, the question read back a variant narrower than the prompt's union, as the exile cost's |
 | a spell's additional costs paid as named (601.2b, 601.2h, 118.3): a sacrifice made once, the creature cards named for an exile exiled in order, and an exile of X exiling the cards named, or as many as there are for an X past them, and counting them | proved, 57 to 89 s each |
 | a permanent entering as a copy (614.1c, 707.9): asked among the creatures there, those it may copy pruned to those still there, and the choice recorded finishing the entry under its owner or the controller held for it | proved, 30 to 63 s each |
-| the check of a submitted cast's or activation's targets (`targets_are_legal`, 601.2c, 602.2b) for each shape of requirement: none, one, up to two, and a modal one, each target named legal under the requirement (defect 22) | the requirements of none, one and up to two proved, 9 to 13 s each; the modal one out of memory at 12 GB |
+| the check of a submitted cast's or activation's targets (`targets_are_legal`, 601.2c, 602.2b) for each shape of requirement: none, one, up to two, and a modal one, each target named legal under the requirement (defect 22) | proved, 13 to 16 s each: the modal one as the choice it is, each mode asked in turn with the targets as named until one says yes, what a mode says the other three proofs' (`legal_under_mode`, split out of `targets_are_legal` for it); followed through each mode it ran out of memory at 12 GB |
 
 A card proof ends at what the card leaves on the board: Giant Growth's
 says the card adds a `TemporaryEffect::ModifyPT` of +3/+3 on its target
@@ -1606,7 +1649,12 @@ bytes in lost what was written there, so that the offer proofs of who
 may attack and block failed (the value is now first, where it was). Built so,
 the first-strike step of a blocked attacker and its blocker passes (512
 s; 613 thousand steps of symbolic execution where the shared constant
-cost 1.5 million).
+cost 1.5 million). Three changes after 156d7ad reach proofs the run
+holds: the autotap planner's (the payment proofs, `proofs::actions::
+paying`, 226 harnesses, are run on it instead, and not at 156d7ad), the
+check of a submitted cast's targets split per mode (its four proofs run
+again), and the own-trigger transform proof's trigger built through the
+collector (run again, 103 s); the activation proofs are new.
 
 The engine paths a card proof stands in for or takes for granted were
 then walked function by function for any with no proof: the answers to
@@ -1704,6 +1752,8 @@ so each night starts from everything the last one reached.
 | 20 | a cast from a graveyard checked its timing with its own copy of the check, which left out artifacts and planeswalkers, so a card of either type that its text lets be cast from a graveyard was never offered | proving the timing once, for a hand and a graveyard alike | latent: the pool's one such card, Skaab Ruinator, is a creature |
 | 21 | a library search's answer was taken on trust: the card named was found whether or not the search had offered it, so answering "search for a basic land card" with any card id found that card (CR 701.19a-b), as the looked-at choice once did | writing the proofs of each answer to a question asked mid-resolution, setting the three answers by card side by side: the other two check the card against what was offered | any seat that builds its answer rather than picking a row: the game loop admits any answer to a standing question and leaves its contents to `resolve_choice` (Traveler's Amulet, Caravan Vigil, Ghost Quarter, Garruk) |
 | 22 | the check of a submitted cast's targets asked an "up to N" requirement's targets their requirement and the card's restriction and not whether the source may target them, the half defect 16 added to every other requirement's: a Feeling of Dread at a creature with protection from instants went onto the stack | writing the proof of that check, which `casting` and `activating` stood in for as any answer | as 16, for the pool's three "up to two target creatures" spells; latent but for a test, as every protection the pool grants is from creatures |
+| 23 | the autotap planner counted each Deranged Assistant's ability as it is before any of the plan runs, so two over a one-card library were both planned for `{2}`: a cast was offered and then refused, and a resolving "you may pay {2}" was asked, and paying it tapped the first, milled the card and then could not pay (CR 701.17b, 118.3) | proving the planner sound for every board: asking what a step can change that the next step reads | two Deranged Assistants and one card left in the library |
+| 24 | a greedy plan that did not pay was handed on as it was: with nothing in hand to keep payable it was never run, and with something it was run, found not to pay, and returned all the same | the same: reading every way out of `keep_the_hand_castable` | latent: no board of up to three sources reaches it |
 
 Each has a regression test that fails without its fix.
 
