@@ -90,6 +90,19 @@ pub(crate) fn announce_activation(
         "p{} activated ability on {name}: {description}{target_suffix}{x_suffix}", player.0));
 }
 
+/// The log line for the creatures a "tap N creatures you control" cost was
+/// paid with (issue #670), named as a sacrifice cost's creature is: "p0
+/// tapped A and B to pay for C's ability".
+///
+/// Its own function so that a proof can stand in for it: the log is for
+/// people, and the names joined, over a list of a length the proof leaves
+/// open, ran an ability's costs out of 12 GB (`proofs::actions::activating`).
+pub(crate) fn tapped_for_cost_line(state: &GameState, player: crate::ids::PlayerId, object_id: ObjectId, tapped: &[ObjectId]) -> String {
+    let names: Vec<String> = tapped.iter().map(|&id| state.obj_name(id)).collect();
+    let source_name = state.obj_name(object_id);
+    format!("p{} tapped {} to pay for {source_name}'s ability", player.0, names.join(" and "))
+}
+
 /// Pay a deferred activation cost, in the order CR 601.2h fixes: mana (the
 /// tap plan first), then the `{T}`, then counters, then the sacrifice.
 ///
@@ -121,13 +134,11 @@ pub(crate) fn pay_activation_costs(
     // The creatures a "tap N creatures you control" cost was paid with
     // (issue #670), named in the log as a sacrifice cost's creature is.
     if !cost.tapped_creatures.is_empty() {
-        let names: Vec<String> = cost.tapped_creatures.iter().map(|&id| state.obj_name(id)).collect();
+        let line = tapped_for_cost_line(state, player, object_id, &cost.tapped_creatures);
         for &id in &cost.tapped_creatures {
             state.tap(id);
         }
-        let source_name = state.obj_name(object_id);
-        state.log(LogLevel::Event, format!("p{} tapped {} to pay for {source_name}'s ability",
-            player.0, names.join(" and ")));
+        state.log(LogLevel::Event, line);
     }
     // Before the sacrifice below, which moves the permanent to the graveyard
     // and clears every counter it has at once — "remove three" has to remove
