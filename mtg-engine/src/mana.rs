@@ -321,6 +321,27 @@ fn pool_after(
     cost: &ManaCost,
     reserve: &ManaCost,
 ) -> Option<ManaPool> {
+    let mut pool = run_plan(plan, pool, sources, cost)?;
+    auto_pay_reserving(&mut pool, cost, reserve).ok()?;
+    Some(pool)
+}
+
+/// Whether `plan` pays `cost`: whether [`pool_after`] is `Some`, for any
+/// reserve, since a payment around a reserve is made exactly when the
+/// pool can pay at all (`pay_around`, proved in `mtg-kernel`). Asked
+/// without one, which is the cheaper question.
+fn plan_pays(plan: &[(ObjectId, usize)], pool: &ManaPool, sources: &[ManaSource], cost: &ManaCost) -> bool {
+    run_plan(plan, pool, sources, cost).is_some_and(|pool| can_pay(&pool, cost))
+}
+
+/// The pool once every entry of `plan` has run ([`tap_step`]), or `None`
+/// if one names no ability of its source or cannot be paid for.
+fn run_plan(
+    plan: &[(ObjectId, usize)],
+    pool: &ManaPool,
+    sources: &[ManaSource],
+    cost: &ManaCost,
+) -> Option<ManaPool> {
     let mut pool = pool.clone();
     for &(object_id, ability_index) in plan {
         let ability = sources.iter()
@@ -328,17 +349,18 @@ fn pool_after(
             .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))?;
         tap_step(&mut pool, ability, cost)?;
     }
-    auto_pay_reserving(&mut pool, cost, reserve).ok()?;
     Some(pool)
 }
 
-/// One entry of a plan, as [`pool_after`] runs it on `pool`: the ability's
-/// own mana cost paid around `cost`, then what it adds; `None`, with the
-/// pool as it was, when the pool cannot pay the ability's cost. What the
+/// One entry of a plan, run on `pool`: the ability's own mana cost, if it
+/// has one, paid around `cost`, then what it adds; `None`, with the pool
+/// as it was, when the pool cannot pay the ability's cost. What the
 /// engine's activation does to the pool
 /// (`engine::activate_mana_source_reserving`, `proofs::actions::mana_abilities`).
 pub(crate) fn tap_step(pool: &mut ManaPool, ability: &ManaAbilityDef, cost: &ManaCost) -> Option<()> {
-    auto_pay_reserving(pool, &ability.cost, cost).ok()?;
+    if !ability.cost.symbols.is_empty() {
+        auto_pay_reserving(pool, &ability.cost, cost).ok()?;
+    }
     for &(mana_type, amount) in &ability.produced {
         pool.add(mana_type, amount);
     }
@@ -373,9 +395,9 @@ pub(crate) fn tap_step(pool: &mut ManaPool, ability: &ManaAbilityDef, cost: &Man
 /// keep deciding everything they decided before.
 ///
 /// Nor is any plan returned that [`pool_after`] does not find to pay
-/// `cost`: a greedy plan that does not is searched around as one that
-/// strands everything would be, and with no plan found that pays, there
-/// is none.
+/// `cost`. With nothing else to keep payable, a greedy plan that does not
+/// pay is no plan; otherwise it is searched around as one that strands
+/// everything would be, and with no plan found that pays, there is none.
 fn keep_the_hand_castable(
     plan: Vec<(ObjectId, usize)>,
     cost: &ManaCost,
@@ -386,6 +408,9 @@ fn keep_the_hand_castable(
     let castable_before: Vec<&Demand> = demands.iter()
         .filter(|d| d.payable(pool, sources, &[]))
         .collect();
+    if castable_before.is_empty() {
+        return plan_pays(&plan, pool, sources, cost).then_some(plan);
+    }
     let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
     let reserve = hand_reserve(&costs);
     let tapped = |p: &[(ObjectId, usize)]| -> Vec<&ManaSource> {
@@ -1684,21 +1709,26 @@ mod tests {
 
     /// What the planner returns is a plan `pool_after` found to pay, on
     /// every board: a greedy plan that does not pay is not handed on
-    /// (issue #252: one was offered, and the cast silently refused), but
-    /// searched around for one that does, and with none found there is no
-    /// plan. Given here as a greedy pass that taps nothing for `{G}`.
+    /// (issue #252: one was offered, and the cast silently refused). With
+    /// a spell in hand to keep payable it is searched around for one that
+    /// does, and with none found, or nothing in hand, there is no plan.
+    /// Given here as a greedy pass that taps nothing for `{G}`.
     #[test]
     fn a_plan_that_does_not_pay_is_never_returned() {
         let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
         let forest = vec![make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)])];
         let mountain = vec![make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)])];
         let hand = [Demand { cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]), keep: None }];
-        for demands in [&hand[..0], &hand[..]] {
-            let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), &forest, demands);
-            assert_eq!(plan, Some(vec![(ObjectId(1), 0)]), "the Forest pays {{G}}, around {demands:?}");
-            let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), &mountain, demands);
-            assert_eq!(plan, None, "nothing pays {{G}}, around {demands:?}");
+        let both = [forest[0].clone(), mountain[0].clone()];
+        let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), &both, &hand);
+        assert_eq!(plan, Some(vec![(ObjectId(1), 0)]), "the Forest pays {{G}}, and the Mountain is kept for {{R}}");
+        for (sources, demands) in [(&forest, &hand[..0]), (&mountain, &hand[..0]), (&mountain, &hand[..])] {
+            let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), sources, demands);
+            assert_eq!(plan, None, "no plan from {sources:?}, around {demands:?}");
         }
+        // A plan that pays, with nothing in hand, is returned as it is.
+        let plan = keep_the_hand_castable(vec![(ObjectId(1), 0)], &cost, &ManaPool::new(), &forest, &[]);
+        assert_eq!(plan, Some(vec![(ObjectId(1), 0)]));
     }
 
     /// Issue #684: a `{C}` pip paid with the free `{C}` of the only source
