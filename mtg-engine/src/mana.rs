@@ -868,32 +868,32 @@ fn match_pips_to_sources(preferred: &[Vec<usize>], n_sources: usize) -> Option<V
 ///
 /// Being necessary rather than exact is the point for its one caller, the
 /// auto-pass gate: it can stop for a spell the planner missed, and it never
-/// passes a seat past a spell the sources really could pay for.
+/// passes a seat past a spell the sources really could pay for. That is
+/// `mtg_kernel::reach::reach_is_necessary`, proved for every pool, board
+/// and plan, of the count this hands it.
+///
+/// An ability's adds are counted by type, so one that listed a type twice
+/// would count as all of it; the count took the most of any one entry of
+/// a source's, which would have ruled out what such an ability pays.
+/// Latent: every mana ability in the pool adds one kind
+/// (`proofs::cards::mana`).
 #[must_use]
 pub fn within_reach(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) -> bool {
-    let cost = cost.without_x();
-    let net = |a: &ManaAbilityDef| ability_total_mana(a).saturating_sub(ability_cost(a));
-    let total: u32 = pool.total()
-        + sources.iter()
-            .map(|s| s.abilities.iter().map(net).max().unwrap_or(0))
-            .sum::<u32>();
-    if total < cost.mana_value() {
-        return false;
+    let reach: Vec<Vec<ReachAbility>> = sources.iter()
+        .map(|s| s.abilities.iter().map(reach_ability).collect())
+        .collect();
+    mtg_kernel::reach::within_reach(&pips_of(&cost.without_x()), &amounts_of(pool), &reach)
+}
+
+/// A mana ability as the count sees it: the pips of its own mana cost, and
+/// what it adds of each type, the way a plan's step pays and adds them
+/// ([`tap_step`]).
+fn reach_ability(ability: &ManaAbilityDef) -> ReachAbility {
+    let mut adds: Amounts = [0; 6];
+    for &(mana_type, amount) in &ability.produced {
+        adds[slot_of(mana_type)] += amount;
     }
-    let reach = |mana_type: ManaType| -> u32 {
-        pool.get(mana_type)
-            + sources.iter()
-                .map(|s| s.abilities.iter()
-                    .flat_map(|a| a.produced.iter())
-                    .filter(|&&(mt, _)| mt == mana_type)
-                    .map(|&(_, amount)| amount)
-                    .max()
-                    .unwrap_or(0))
-                .sum::<u32>()
-    };
-    let colored_ok = cost.colored_requirements().into_iter()
-        .all(|(color, count)| reach(ManaType::from(color)) >= count);
-    colored_ok && reach(ManaType::Colorless) >= cost.colorless_amount()
+    ReachAbility { cost: pips_of(&ability.cost), adds }
 }
 
 /// Check if a mana pool can pay a given cost.
@@ -953,6 +953,7 @@ const GENERIC_ORDER: [ManaType; 6] = [
 // left here is reading the pool in and writing it back, and turning a cost
 // into `Pips` (`src/proofs/mana_payment.rs` proves the last with Kani).
 pub(crate) use mtg_kernel::mana::{pay_around, pay_fixed, surplus_order, Amounts, Pips};
+use mtg_kernel::reach::Ability as ReachAbility;
 
 pub(crate) fn slot_of(mana_type: ManaType) -> usize {
     match mana_type {
@@ -1603,6 +1604,19 @@ mod tests {
             "one dual land cannot pay {{1}}{{W}}");
         let w = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
         assert!(within_reach(&w, &ManaPool::new(), &dual), "but it pays {{W}}");
+    }
+
+    /// An ability that lists a type twice adds both: `{C}{C}` from one
+    /// that adds `{C}` and `{C}` is within reach, as tapping it pays. The
+    /// count took the most of any one entry, and ruled it out.
+    #[test]
+    fn within_reach_counts_every_entry_of_an_ability_by_type() {
+        let mut twice = mono_ability(ManaType::Colorless);
+        twice.produced = vec![(ManaType::Colorless, 1), (ManaType::Colorless, 1)];
+        let sources = vec![make_source(1, ManaSourceKind::BasicMana, vec![twice])];
+        let cc = ManaCost::new(vec![ManaSymbol::Colorless(2)]);
+        assert!(plan_pays(&[(ObjectId(1), 0)], &ManaPool::new(), &sources, &cc), "tapping it pays {{C}}{{C}}");
+        assert!(within_reach(&cc, &ManaPool::new(), &sources));
     }
 
     /// Reach is per colour as well as in total: two Forests are two mana
