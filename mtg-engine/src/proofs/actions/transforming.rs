@@ -89,3 +89,63 @@ fn transforming_turns_over_exactly_a_double_faced_permanent() {
     kani::cover!(result == TransformResult::Transformed && back_up, "back to its front");
     std::mem::forget((registry, state));
 }
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// CR 701.28f for a triggered ability: "If an activated or triggered
+/// ability of a permanent that isn't a delayed triggered ability of that
+/// permanent tries to transform it, the permanent transforms only if it
+/// hasn't transformed or converted since the ability was put onto the
+/// stack." A double-faced permanent, either face up, with a trigger
+/// resolving that is its own or another permanent's, delayed or not, put
+/// on the stack when the permanent had transformed as often as now, or
+/// less often, or with no count kept (an entry from before the count was
+/// kept, which is not checked): it is turned over, and has transformed
+/// once more, unless the trigger is its own, not delayed, and was put on
+/// the stack before its last transform, when it is left as it was and
+/// the answer says why.
+fn a_permanents_own_trigger_does_not_transform_it_again() {
+    use crate::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+    let (registry, mut state, blank, two) = board(Box::new(TwoFaced));
+    let owner = PlayerId(u8::from(kani::any::<bool>()));
+    let id = state.create_object(two, owner, Zone::Battlefield, None, None);
+    let other = state.create_object(blank, owner, Zone::Battlefield, None, None);
+    let back_up: bool = kani::any();
+    let transforms = u32::from(kani::any::<u8>() % 3);
+    let o = state.get_object_mut(id).expect("just created");
+    o.is_transformed = back_up;
+    o.name = if back_up { "Back".into() } else { "Front".into() };
+    o.transforms = transforms;
+    let (own, delayed): (bool, bool) = (kani::any(), kani::any());
+    let stamp = match kani::any::<u8>() % 3 {
+        0 => None,
+        1 => Some(transforms),
+        _ => Some(transforms.wrapping_add(1)),
+    };
+    let mut source = TriggerSource::new(if own { id } else { other }, two, owner, "");
+    source.source_transforms = stamp;
+    let event = if delayed { TriggerEvent::DelayedTokenExile { target_id: id } } else { TriggerEvent::Upkeep };
+    state.resolving_ability = Some(StackEntry::Trigger(PendingTrigger::new(source, event)));
+    let before = Snapshot::of(&state);
+
+    let result = helpers::apply_transform(&mut state, id, &registry);
+
+    let held = own && !delayed && stamp.is_some_and(|s| s != transforms);
+    assert!(result == if held { TransformResult::AlreadyTransformed } else { TransformResult::Transformed });
+    let o = state.get_object(id).expect("on the board");
+    if held {
+        assert!(Snapshot::of(&state) == before);
+        assert!(o.transforms == transforms && o.name == if back_up { "Back" } else { "Front" });
+    } else {
+        assert!(Snapshot::of(&state) == before.with_transformed(id, !back_up));
+        assert!(o.transforms == transforms + 1 && o.name == if back_up { "Front" } else { "Back" });
+    }
+    kani::cover!(held, "its own trigger, stacked before a transform");
+    kani::cover!(own && delayed && stamp.is_some_and(|s| s != transforms) && !held, "a delayed trigger of its own");
+    std::mem::forget((registry, state));
+}
