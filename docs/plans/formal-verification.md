@@ -1699,7 +1699,16 @@ holds: the autotap planner's (the payment proofs, `proofs::actions::
 paying`, 226 harnesses, are run on it instead, and not at 156d7ad), the
 check of a submitted cast's targets split per mode (its four proofs run
 again), and the own-trigger transform proof's trigger built through the
-collector (run again, 103 s); the activation proofs are new.
+collector (run again, 103 s); the activation proofs are new. And 18
+harnesses that proved at the first try in the run before ran out of
+memory at 3.5 GB here, the delayed exile of Geist of Saint Traft's token
+among them: measured at each commit between, the master merge took that
+one from 271 thousand steps to 347, all of it in naming a trigger's
+targets for its log line, which the merge's exile trigger now carries
+and which were built as `format!`'s argument whether or not a line was
+written. Named only as the line is written (1ea7067), it takes 267
+thousand steps and 0.5 million clauses where it took 1.3 million, and
+proves at 2.5 GB; those 18 run again on that code.
 
 The engine paths a card proof stands in for or takes for granted were
 then walked function by function for any with no proof: the answers to
