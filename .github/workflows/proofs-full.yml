@@ -33,7 +33,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Kani built from source and its toolchain set up is minutes of a
+      # half-hour job; kept between runs, keyed on scripts/prove.sh, which
+      # pins the version.
+      - name: Cache Kani
+        id: kani-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-kani
+            ~/.cargo/bin/kani
+            ~/.kani
+          key: kani-${{ runner.os }}-${{ hashFiles('scripts/prove.sh') }}
+
       - name: Install Kani
+        if: steps.kani-cache.outputs.cache-hit != 'true'
         run: |
           cargo install --locked kani-verifier --version "$(sed -n 's/^KANI_VERSION=//p' scripts/prove.sh)"
           cargo kani setup
