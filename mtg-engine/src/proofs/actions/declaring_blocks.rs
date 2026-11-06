@@ -183,8 +183,11 @@ each_block! {
 /// The blocks recorded (`combat::declare_blockers`, CR 509.1h, 509.2):
 /// each attacker attacking is blocked by exactly the blockers declared on
 /// it, in order, and is blocked for the rest of the combat if any was
-/// declared on it; an attacker not attacking is neither; and the
-/// declaration's one event lists exactly the blocks declared, in order.
+/// declared on it; an attacker not attacking is neither; a creature is a
+/// blocking creature exactly if it was declared blocking an attacker
+/// attacking (509.1g), which it stays whatever becomes of the attacker
+/// (510.1d, `leaving_combat`); and the declaration's one event lists
+/// exactly the blocks declared, in order.
 /// For `blocks` and which attackers attack constants of each harness.
 fn recording(blocks: &[(u64, u64)], attacking: [bool; 2]) {
     let (registry, mut state, _, attacking, _) = board(attacking);
@@ -211,6 +214,10 @@ fn recording(blocks: &[(u64, u64)], attacking: [bool; 2]) {
         } else {
             assert!(combat.blocker_assignments.get(&a).is_none() && !combat.blocked_attackers.contains(&a));
         }
+    }
+    for id in 1..=4u64 {
+        let blocking = blocks.iter().any(|&(b, x)| b == id && attacking[usize::try_from(x).expect("small") - 1]);
+        assert!(combat.blocking_creatures.contains(&ObjectId(id)) == blocking);
     }
     assert!(matches!(&state.events[events..], [GameEvent::BlockersDeclared { assignments }] if *assignments == declared));
     std::mem::forget((registry, state, declared));
