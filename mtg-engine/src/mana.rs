@@ -285,6 +285,12 @@ impl Demand {
 /// greedy pass is a heuristic, and a plan of it the payment could not
 /// execute was once offered and then silently refused (issue #252).
 /// [`keep_the_hand_castable`] returns no other kind.
+///
+/// And it returns a plan whenever some plan pays, on every board small
+/// enough to search whole ([`EXHAUSTIVE_REPAIR_PLANS`] plans or fewer):
+/// where the greedy pass offers none that pays, every plan there is is
+/// tried ([`searched_plan`]). A cost the count rules out has no plan
+/// (`mtg_kernel::reach::reach_is_necessary`) and is not searched.
 #[must_use]
 pub fn compute_autotap_around(
     cost: &ManaCost,
@@ -293,8 +299,54 @@ pub fn compute_autotap_around(
     demands: &[Demand],
 ) -> Option<Vec<(ObjectId, usize)>> {
     let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
-    let plan = greedy_autotap(cost, pool, sources, &costs)?;
+    if let Some(plan) = greedy_autotap(cost, pool, sources, &costs)
+        .and_then(|plan| keep_the_hand_castable(plan, cost, pool, sources, demands))
+    {
+        return Some(plan);
+    }
+    let plan = searched_plan(cost, pool, sources)?;
     keep_the_hand_castable(plan, cost, pool, sources, demands)
+}
+
+/// A plan for `cost` where the greedy pass offers none that pays: on a
+/// board of [`EXHAUSTIVE_REPAIR_PLANS`] plans or fewer, the best of every
+/// plan there is that pays (fewest sources with a side effect, then the
+/// lowest tiers, then the fewest taps), and on a bigger board none.
+///
+/// The count asks first: a cost out of reach ([`within_reach`]) has no plan
+/// (`mtg_kernel::reach::reach_is_necessary`), as most a player cannot
+/// afford are, so they are never searched.
+fn searched_plan(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) -> Option<Vec<(ObjectId, usize)>> {
+    if cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X)) || !within_reach(cost, pool, sources) {
+        return None;
+    }
+    let plans: usize = sources.iter()
+        .map(|s| s.abilities.len() + 1)
+        .try_fold(1usize, usize::checked_mul)
+        .unwrap_or(usize::MAX);
+    if plans > EXHAUSTIVE_REPAIR_PLANS {
+        return None;
+    }
+    let rank = |plan: &[(ObjectId, usize)]| -> (usize, u32, usize) {
+        let (mut side_effects, mut tiers) = (0, 0);
+        for source in plan.iter().filter_map(|(id, _)| sources.iter().find(|s| s.object_id == *id)) {
+            side_effects += usize::from(source.source_kind == ManaSourceKind::HasSideEffects);
+            tiers += source.source_kind as u32;
+        }
+        (side_effects, tiers, plan.len())
+    };
+    let mut best: Option<((usize, u32, usize), Vec<(ObjectId, usize)>)> = None;
+    every_plan(sources, 0, &mut Vec::new(), &mut |candidate: &[(ObjectId, usize)]| {
+        let mut candidate = candidate.to_vec();
+        free_abilities_first(&mut candidate, sources);
+        if plan_pays(&candidate, pool, sources, cost) {
+            let key = rank(&candidate);
+            if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
+                best = Some((key, candidate));
+            }
+        }
+    });
+    best.map(|(_, plan)| plan)
 }
 
 /// The pips of `hand_costs` that only one kind of mana pays — coloured and
@@ -1604,6 +1656,30 @@ mod tests {
             "one dual land cannot pay {{1}}{{W}}");
         let w = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
         assert!(within_reach(&w, &ManaPool::new(), &dual), "but it pays {{W}}");
+    }
+
+    /// Where the greedy pass offers nothing, every plan is tried on a board
+    /// small enough: the best paying one is found (the Forest, not the
+    /// Assistant, which mills), a cost no plan pays has none though within
+    /// reach (one dual for both its colours), and a cost out of reach is
+    /// not searched.
+    #[test]
+    fn a_plan_is_searched_for_when_the_greedy_pass_offers_none() {
+        let g = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let mut mills = mono_ability(ManaType::Colorless);
+        mills.has_side_effects = true;
+        let sources = vec![
+            make_source(1, ManaSourceKind::HasSideEffects, vec![mills]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+        ];
+        assert_eq!(searched_plan(&g, &ManaPool::new(), &sources), Some(vec![(ObjectId(2), 0)]));
+        let rw = ManaCost::new(vec![ManaSymbol::Colored(Color::Red), ManaSymbol::Colored(Color::White)]);
+        let mut pool = ManaPool::new();
+        pool.add(ManaType::Green, 1);
+        let dual = vec![make_source(3, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Red, ManaType::White))];
+        assert!(within_reach(&rw, &pool, &dual), "by counting, {{R}}{{W}} is within reach of {{G}} and the dual");
+        assert_eq!(searched_plan(&rw, &pool, &dual), None, "one dual pays one of {{R}} and {{W}}");
+        assert_eq!(searched_plan(&g, &ManaPool::new(), &[]), None, "nothing to tap and nothing floating");
     }
 
     /// An ability that lists a type twice adds both: `{C}{C}` from one
