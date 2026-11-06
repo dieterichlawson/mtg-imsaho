@@ -17,8 +17,9 @@ pointer. That is a different program from the one Rust compiled, in
 either direction: a constant may read as whatever a proof stored.
 
 A constant laid out in memory is read as `*(T *)(unsigned char *)&g`,
-with `g` a Kani global named `<crate>::global::<n>::`; through a static
-the same expression names the static. A pointer constant into such an
+with `g` a Kani global named `<crate>::global::<n>::`, or memory of its
+named `<crate>::AllocId(..)`, marked `#constant`; through a static the
+same expression names the static, which is not. A pointer constant into such an
 allocation is `(T *)((unsigned char *)&g + k)`, the same expression a
 program's own `&raw const S` makes, so it is told from one only by where
 it is: a static of the proofs is named by the proofs' code alone (their
@@ -65,14 +66,25 @@ def scan(strings, symbols, functions):
         w = named(t.subs[0], K_WIDTH)
         return t.subs[0].id == UNSIGNEDBV and w is not None and text(w) == '8'
 
-    # Statics and Kani's constant globals: lvalues of static lifetime
-    # (`write_goto_binary`'s flags, bits 5 and 4). Kani's are named
-    # `<crate>::global::<n>::`.
+    # The memory a program can change that a constant could be read
+    # through: lvalues of static lifetime (`write_goto_binary`'s flags, bits
+    # 5 and 4) whose type is not marked `#constant`. Kani marks so every
+    # allocation it lays out as a constant (its `::global::<n>::` globals,
+    # the `AllocId(..)` memory a constant pointer points at) and every
+    # static that is never written; a `static mut` it does not. A constant
+    # read through memory that cannot change reads the bytes it was laid
+    # out with, which are the constant's.
+    K_CONSTANT = sid('#constant')
+
+    def constant(t):
+        c = named(t, K_CONSTANT) if t is not None else None
+        return c is not None and text(c) == '1'
+
     pretty, statics = {}, set()
     for t, v, loc, names, ordering, flags in symbols:
         name = strings[names[0]].decode(errors='replace')
         pretty[name] = strings[names[4]].decode(errors='replace')
-        if flags & 0b110000 == 0b110000 and '::global::' not in name:
+        if flags & 0b110000 == 0b110000 and '::global::' not in name and not constant(t):
             statics.add(name)
 
     reads, pointers = [], []
