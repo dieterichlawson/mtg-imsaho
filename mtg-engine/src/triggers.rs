@@ -735,18 +735,42 @@ pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards:
     let Some(crate::state::StackEntry::Trigger(t)) = state.stack.last() else { return };
     let controller = t.controller();
 
-    // The names are worked out as the line is written (`PendingTrigger::logged`).
+    // The names are worked out as the line is written (`PendingTrigger::logged`,
+    // `TargetNames`).
     let msg = if t.chosen_targets().is_empty() {
         format!("p{}'s {} goes on the stack", controller.0, t.logged(registry, state))
     } else {
-        let names: Vec<String> = t.chosen_targets().iter().map(|tg| match tg {
-            Target::Object(id) => state.obj_name(*id),
-            Target::Player(p) => format!("p{}", p.0),
-            Target::Illegal => "an illegal target".into(),
-        }).collect();
-        format!("p{}'s {} goes on the stack targeting {}", controller.0, t.logged(registry, state), names.join(", "))
+        format!("p{}'s {} goes on the stack targeting {}", controller.0, t.logged(registry, state),
+            TargetNames { targets: t.chosen_targets(), state })
     };
     state.log(crate::state::LogLevel::Event, msg);
+}
+
+/// A trigger's targets as its line in the log names them, worked out only
+/// when the line is written, as [`PendingTrigger::logged`] is. Collected
+/// into a list of names and joined as `format!`'s argument, they were built
+/// whether or not a line was, and every proof that puts a targeted trigger
+/// on the stack, with the log stood in for, built them: a third of the
+/// proof of the delayed exile of Geist of Saint Traft's token.
+struct TargetNames<'a> {
+    targets: &'a [Target],
+    state: &'a GameState,
+}
+
+impl std::fmt::Display for TargetNames<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, target) in self.targets.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            match target {
+                Target::Object(id) => f.write_str(&self.state.obj_name(*id))?,
+                Target::Player(p) => write!(f, "p{}", p.0)?,
+                Target::Illegal => f.write_str("an illegal target")?,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Put one pending trigger onto the stack: directly when it is untargeted,
