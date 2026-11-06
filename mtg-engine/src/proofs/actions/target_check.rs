@@ -106,12 +106,61 @@ each_requirement! {
     up_to_two_legal_targets_are_named_for_a_requirement_of_up_to_two:
         TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature)),
         |n, each| n <= 2 && each[..n].iter().all(|&e| e);
-    /// A modal requirement's targets are legal under one of its modes (CR
-    /// 700.2a, 601.2c): here one creature, or up to two.
-    the_targets_of_a_modal_requirement_are_legal_under_one_of_its_modes:
-        TargetRequirement::ModalChoice(vec![
+}
+
+/// The modes asked of (each by its address) and the targets they were
+/// asked with, in order, and what each said.
+static mut MODES_ASKED: Held<[Option<(usize, usize, usize, bool)>; 2]> = Held::new([None; 2], (&raw const MODES_ASKED).cast());
+
+/// Stands in for `targeting::legal_under_mode`: any answer, recorded.
+#[allow(dead_code)] // named only by `kani::stub`
+fn under_mode(_: &GameState, mode: &TargetRequirement, targets: &[Target], _: PlayerId, _: ObjectId, _: &dyn CardBehavior, _: &CardRegistry) -> bool {
+    let legal: bool = kani::any();
+    // SAFETY: a proof runs on one thread, and only this function and the
+    // harness name MODES_ASKED.
+    let asked = unsafe { &mut *std::ptr::addr_of_mut!(MODES_ASKED.value) };
+    let slot = asked.iter_mut().find(|a| a.is_none()).expect("no more modes asked than the requirement has");
+    *slot = Some((std::ptr::from_ref(mode) as usize, targets.as_ptr() as usize, targets.len(), legal));
+    legal
+}
+
+card_proof! {
+    #[kani::stub(crate::engine::targeting::legal_under_mode, under_mode)]
+    /// A modal requirement's targets are legal exactly when they are under
+    /// one of its modes (CR 700.2a, 601.2c): each mode asked in turn, with
+    /// the targets as named, until one says they are, and none after. Here
+    /// two modes, as Ghoulcaller's Chant prints, for none to three targets
+    /// named. What a mode says is the proofs above, of each kind of
+    /// requirement a mode is: followed through each mode, this proof ran
+    /// out of memory in symbolic execution, at 12 GB after 6.5 million
+    /// steps.
+    fn the_targets_of_a_modal_requirement_are_legal_under_one_of_its_modes() {
+        let req = TargetRequirement::ModalChoice(vec![
             TargetRequirement::Creature,
             TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature)),
-        ]),
-        |n, each| (n == 1 && each[0]) || (n <= 2 && each[..n].iter().all(|&e| e));
+        ]);
+        let registry = CardRegistry::new();
+        let state = crate::proofs::cards::new_game();
+        let n = usize::from(kani::any::<u8>() % 4);
+        let named = [Target::Object(ObjectId(1)), Target::Object(ObjectId(2)), Target::Object(ObjectId(3))];
+
+        let legal = crate::engine::targeting::targets_are_legal(&state, &req, &named[..n], PlayerId(0), ObjectId(4), &Restricting, &registry);
+
+        let TargetRequirement::ModalChoice(modes) = &req else { unreachable!() };
+        // SAFETY: as in `under_mode`.
+        let asked = unsafe { *std::ptr::addr_of!(MODES_ASKED.value) };
+        let of = |i: usize, (mode, at, len, _): (usize, usize, usize, bool)| {
+            mode == std::ptr::from_ref(&modes[i]) as usize && at == named.as_ptr() as usize && len == n
+        };
+        match asked {
+            [Some(first), None] => {
+                assert!(of(0, first) && first.3 && legal);
+            }
+            [Some(first), Some(second)] => {
+                assert!(of(0, first) && !first.3 && of(1, second) && legal == second.3);
+            }
+            _ => panic!("the first mode is asked"),
+        }
+        std::mem::forget((registry, state, req));
+    }
 }

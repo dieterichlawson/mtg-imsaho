@@ -614,6 +614,29 @@ pub(crate) fn targets_are_legal(
     behavior: &dyn crate::cards::CardBehavior,
     registry: &CardRegistry,
 ) -> bool {
+    match target_req {
+        // Legal under any one mode, which is what choosing a mode means
+        // (CR 700.2a, 601.2c).
+        crate::cards::TargetRequirement::ModalChoice(modes) => modes.iter()
+            .any(|mode| legal_under_mode(state, mode, targets, caster, source_id, behavior, registry)),
+        _ => legal_under_mode(state, target_req, targets, caster, source_id, behavior, registry),
+    }
+}
+
+/// [`targets_are_legal`] for a requirement that is not a choice of modes,
+/// or is one mode of such a choice. Its own function so that a choice of
+/// modes is proved as the choice it is, each mode's answer any
+/// (`proofs::actions::target_check`): followed through each mode, the
+/// proof ran out of memory in symbolic execution.
+fn legal_under_mode(
+    state: &GameState,
+    target_req: &crate::cards::TargetRequirement,
+    targets: &[crate::actions::Target],
+    caster: PlayerId,
+    source_id: ObjectId,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> bool {
     use crate::cards::TargetRequirement as R;
     // And whether the spell or ability may target it at all, as the offered
     // lists ask (`valid_targets_for_req`): `is_target_legal` asks hexproof
@@ -669,10 +692,8 @@ pub(crate) fn targets_are_legal(
                         && behavior.is_valid_target(state, caster, t, registry)
                 })
         }
-        // Legal under any one mode, which is what choosing a mode means.
-        R::ModalChoice(modes) => modes.iter().any(|mode| {
-            targets_are_legal(state, mode, targets, caster, source_id, behavior, registry)
-        }),
+        // A choice of modes within a mode is a choice of modes again.
+        R::ModalChoice(_) => targets_are_legal(state, target_req, targets, caster, source_id, behavior, registry),
         // Every other requirement names exactly one target, and a spell that
         // names one cannot be cast without it (CR 601.2c).
         _ => targets.len() == 1 && one(&targets[0]),
