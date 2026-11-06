@@ -186,7 +186,7 @@ Client → server:
 { "type": "ready" }                                    // deck final; the seat is ready to play
 { "type": "name", "name": "Lawson" }                   // optional, cosmetic
 { "type": "sideboard", "main": ["..."], "lands": {"Plains": 7} }   // between games, from game 2: a whole deck of 40+
-{ "type": "play_draw", "play": true }                  // between games, the chooser only
+{ "type": "play_draw", "play": true }                  // between games, the chooser only, until its "sideboard_ready"
 { "type": "sideboard_ready" }                          // done between games; the game starts when both are
 ```
 

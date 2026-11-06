@@ -23,7 +23,7 @@ add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
 show, ready.
 Between games of a match: play or draw (when the choice is yours), the
 same add, drop and lands to sideboard (from game 2), and ready to start
-the game.
+the game; ready settles both.
 text <n> prints a card's rules text: the pack's card <n> while drafting,
 the pool's card <n> while building or sideboarding. text <name> reads a
 card by its name, or the start of it, from the pack, the pool or the
@@ -404,6 +404,10 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         "play" | "draw" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             match between(v) {
+                // Ready commits the choice with the deck; the server
+                // refuses it after, and the page disables the buttons (#998).
+                Some((_, b)) if b["you_choose"] == true && b["ready"] == true =>
+                    Command::Print("you are ready for the next game: play or draw was settled when you said ready".into()),
                 Some((_, b)) if b["you_choose"] == true =>
                     Command::Send(vec![serde_json::json!({"type": "play_draw", "play": *first == "play"})]),
                 Some(_) => Command::Print("the choice to play or draw is your opponent's".into()),
@@ -1112,6 +1116,13 @@ mod tests {
         // A later view of the same game keeps the edit; the next game starts from the record.
         refresh_build(&v, &mut build, &mut phase);
         assert!(build.main.contains(&25) && !build.main.contains(&0));
+        // Ready settles the choice: not sent, and not offered (#998).
+        let mut ready = v.clone();
+        ready["matches"][0]["between"]["ready"] = true.into();
+        ready["matches"][0]["between"]["play_first"] = true.into();
+        assert!(printed(command("draw", Some(&ready), &mut build, None)).contains("settled when you said ready"));
+        let (_, text) = render(&ready, &build);
+        assert!(text.contains("you lost game 1: you play first\n") && !text.contains("type play or draw") && !text.contains("to change it"), "{text}");
         v["matches"][0]["between"]["you_choose"] = false.into();
         assert!(printed(command("play", Some(&v), &mut build, None)).contains("your opponent's"));
         v["matches"][0]["between"]["game"] = 3.into();
@@ -1407,12 +1418,18 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
             None if abandoned => format!("game {} was abandoned with no winner, and the choice is still yours", game - 1),
             _ => format!("game {} was a draw, and the choice is still yours", game - 1),
         };
-        let now = match b["play_first"].as_bool() {
-            None => "not chosen yet: you play first",
-            Some(true) => "you play first",
-            Some(false) => "you draw first",
-        };
-        s.push_str(&format!("  {why}: type play or draw ({now})\n"));
+        // After ready the choice is settled, and `play`/`draw` are refused (#998).
+        if b["ready"] == true {
+            let now = if b["play_first"].as_bool() == Some(false) { "you draw first" } else { "you play first" };
+            s.push_str(&format!("  {why}: {now}\n"));
+        } else {
+            let now = match b["play_first"].as_bool() {
+                None => "not chosen yet: you play first",
+                Some(true) => "you play first",
+                Some(false) => "you draw first",
+            };
+            s.push_str(&format!("  {why}: type play or draw ({now})\n"));
+        }
     } else if game == 1 {
         s.push_str(&format!("  {opponent} won the coin flip and chooses whether to play or draw\n"));
     } else if last_winner.is_some() && last_winner == me {
