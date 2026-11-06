@@ -24,6 +24,13 @@
 /// A static of the proofs: declared `static mut NAME: Held<T> =
 /// Held::new(value, (&raw const NAME).cast())`, and read and written
 /// through `addr_of!(NAME.value)` and `addr_of_mut!(NAME.value)`.
+///
+/// The value first (`repr(C)`), where it was before it was held. Laid out
+/// as Rust lays it out, the address first and the value eight bytes in, an
+/// `Option<bool>` written into the offer proofs' answers read back as none
+/// the instruction after (`get_or_insert_with`'s `unwrap_unchecked`
+/// reached), and both proofs of who may attack and block failed.
+#[repr(C)]
 pub(crate) struct Held<T> {
     pub(crate) value: T,
     /// The static's own address, read by nothing: what makes its bytes its
