@@ -82,13 +82,13 @@ pub(crate) fn from_hand(
                             (true, vec![])
                         } else {
                             // Need to tap for the colored portion.
-                            match mana::compute_autotap_around(&non_x_cost, &player_state.mana_pool, &mana_sources, &others) {
+                            match plan_payment(state, player, &non_x_cost, &player_state.mana_pool, &mana_sources, &others, registry) {
                                 Some(plan) => (true, plan),
                                 None => (false, vec![]),
                             }
                         }
                     } else {
-                        match mana::compute_autotap_around(&non_x_cost, &player_state.mana_pool, &mana_sources, &others) {
+                        match plan_payment(state, player, &non_x_cost, &player_state.mana_pool, &mana_sources, &others, registry) {
                             Some(plan) => (true, plan),
                             None => (false, vec![]),
                         }
@@ -98,7 +98,7 @@ pub(crate) fn from_hand(
                 }
             } else if let Some(cost) = &data.cost {
                 let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                match mana::compute_autotap_around(&effective_cost, &player_state.mana_pool, &mana_sources, &others) {
+                match plan_payment(state, player, &effective_cost, &player_state.mana_pool, &mana_sources, &others, registry) {
                     Some(plan) => (true, plan),
                     None => (false, vec![]),
                 }
@@ -181,7 +181,7 @@ pub(crate) fn from_hand(
                     &CastMethod::Alternative(alt_costs[0].clone()),
                 ).mana;
                 // Compute autotap for the alternative cost.
-                let alt_tap_plan = mana::compute_autotap_around(&alt_mana, &player_state.mana_pool, &mana_sources, &others)
+                let alt_tap_plan = plan_payment(state, player, &alt_mana, &player_state.mana_pool, &mana_sources, &others, registry)
                     .unwrap_or_default();
                 if can_pay_normal {
                     // Player can pay normally — add alternative cost copies
@@ -474,7 +474,7 @@ pub(crate) fn flashback(
                 .filter(|(id, _)| *id != obj.id)
                 .map(|(_, d)| d.clone())
                 .collect();
-            let Some(fb_tap_plan) = mana::compute_autotap_around(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &others) else {
+            let Some(fb_tap_plan) = plan_payment(state, player, fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &others, registry) else {
                 // This particular cost is unaffordable; another may not be.
                 continue;
             };

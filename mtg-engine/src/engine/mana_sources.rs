@@ -96,7 +96,47 @@ pub fn payment_plan_with_sources(
         return Some(Vec::new());
     }
     let sources = gather_mana_sources(state, player, registry);
-    mana::compute_autotap_around(cost, pool, &sources, &resolution_demands(state, registry, player))
+    plan_payment(state, player, cost, pool, &sources, &resolution_demands(state, registry, player), registry)
+}
+
+/// [`mana::compute_autotap_around`] for `player`, held to a plan the
+/// engine can run: every offer of a payment plans through here.
+///
+/// The planner works from each source's abilities as they are before any
+/// of the plan has run, and an ability that does more than add mana can
+/// change that: Deranged Assistant's cost mills a card (CR 701.17a), and
+/// with one card left in the library a second Assistant's cost cannot be
+/// paid once the first has (701.17b, 118.3). The planner tapped both for a
+/// `{2}`, and paying it tapped the first, milled the card and then could
+/// not pay. So a plan tapping such a source is run on a copy of the game
+/// first, as a cast's tap plan always is (`actions::cast`), and one that
+/// does not pay there is no plan. With no such source, what the planner
+/// found to pay ([`mana::tap_step`], run by `mana::pool_after`) is what
+/// the engine does (`proofs::actions::mana_abilities`).
+pub(crate) fn plan_payment(
+    state: &GameState,
+    player: PlayerId,
+    cost: &ManaCost,
+    pool: &crate::types::ManaPool,
+    sources: &[mana::ManaSource],
+    demands: &[mana::Demand],
+    registry: &CardRegistry,
+) -> Option<Vec<(ObjectId, usize)>> {
+    let plan = mana::compute_autotap_around(cost, pool, sources, demands)?;
+    let does_more = plan.iter().any(|&(id, index)| sources.iter()
+        .filter(|s| s.object_id == id)
+        .flat_map(|s| s.abilities.iter())
+        .any(|a| a.ability_index == index && a.has_side_effects));
+    if does_more {
+        let mut probe = state.clone();
+        for &(source_id, ability_index) in &plan {
+            activate_mana_source_reserving(&mut probe, source_id, ability_index, Some(cost), registry);
+        }
+        if !mana::can_pay(&probe.get_player(player).mana_pool, cost) {
+            return None;
+        }
+    }
+    Some(plan)
 }
 
 /// What a payment made while something resolves keeps payable: everything

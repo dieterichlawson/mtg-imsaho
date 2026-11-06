@@ -40,7 +40,7 @@ pub(crate) use targeting::can_target_player;
 pub(crate) use cards_flow::{announced_targets_suffix, card_name, has_castable_with_potential_mana, notify_discard};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};
 pub(crate) use mana_sources::{
-    activatable_mana_abilities, gather_mana_sources, prevents_artifact_abilities,
+    activatable_mana_abilities, gather_mana_sources, plan_payment, prevents_artifact_abilities,
 };
 pub(crate) use targeting::{
     arity_ok,

@@ -89,7 +89,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()
                 } else {
-                    match mana::compute_autotap_around(&non_x_cost, mana_pool, &ability_sources, &others) {
+                    match plan_payment(state, player, &non_x_cost, mana_pool, &ability_sources, &others, registry) {
                         Some(plan) => plan,
                         None => continue,
                     }
@@ -99,7 +99,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 // returns no taps itself then, unless spending the pool would
                 // strand a spell an untapped source could have kept castable
                 // (issue #678).
-                match mana::compute_autotap_around(&ab.cost, mana_pool, &ability_sources, &others) {
+                match plan_payment(state, player, &ab.cost, mana_pool, &ability_sources, &others, registry) {
                     Some(plan) => plan,
                     None => continue,
                 }

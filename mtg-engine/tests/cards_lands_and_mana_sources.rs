@@ -306,6 +306,38 @@ fn a_second_deranged_assistant_cannot_mill_an_empty_library() {
     assert!(!state.get_object(second).unwrap().tapped, "and it is not tapped");
 }
 
+/// The same board, planned for: a payment that needs both Assistants'
+/// mana cannot be made (CR 701.17b, 118.3), so none is planned and none
+/// is offered, and paying it anyway is refused with nothing milled and
+/// nothing tapped. The planner counted each Assistant's ability as it is
+/// before any of the plan runs, and the payment tapped the first, milled
+/// the only card and then found the second unpayable.
+#[test]
+fn two_deranged_assistants_over_one_card_are_not_planned_together() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let first = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
+    let second = named_permanent(&mut state, &reg, "Deranged Assistant", P0);
+    let lib_card = state.create_object(
+        reg.get_id_by_name("Forest").unwrap(), P0, Zone::Library, None, None);
+    state.players[0].library_order = vec![lib_card];
+
+    let two = ManaCost::new(vec![ManaSymbol::Generic(2)]);
+    assert_eq!(engine::payment_plan_with_sources(&state, P0, &two, &reg), None);
+    assert!(!engine::can_pay_with_sources(&state, P0, &two, &reg));
+    assert!(!engine::pay_cost_with_sources(&mut state, P0, &two, &reg));
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Library, "nothing milled");
+    assert!(!state.get_object(first).unwrap().tapped && !state.get_object(second).unwrap().tapped,
+        "nothing tapped");
+    assert!(state.get_player(P0).mana_pool.is_empty(), "nothing added");
+
+    // One of them still pays {1}.
+    let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+    assert!(engine::pay_cost_with_sources(&mut state, P0, &one, &reg));
+    assert_eq!(state.get_object(lib_card).unwrap().zone, Zone::Graveyard);
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Ghoulcaller's Bell
 // ══════════════════════════════════════════════════════════════════
