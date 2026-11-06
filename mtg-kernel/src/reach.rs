@@ -23,7 +23,7 @@ use vstd::prelude::*;
 // A glob: the specifications named from `mana` (`sum`, `paid_exactly`,
 // `payable`) are erased from an ordinary build, and a list naming them
 // would not resolve there.
-#[allow(unused_imports)]
+#[allow(unused_imports, clippy::wildcard_imports)]
 use crate::mana::*;
 
 verus! {
@@ -349,6 +349,7 @@ pub proof fn reach_is_necessary(cost: Pips, pool: Amounts, srcs: Seq<Vec<Ability
 }
 
 /// How much is in six counts, as one number.
+#[allow(clippy::cast_lossless)] // `as`: what Verus specifies
 fn total_of(a: &Amounts) -> (t: u64)
     ensures t == sum(*a), t <= 6 * 0xffff_ffff,
 {
@@ -356,6 +357,7 @@ fn total_of(a: &Amounts) -> (t: u64)
 }
 
 /// What an ability nets.
+#[allow(clippy::cast_lossless, clippy::implicit_saturating_sub)] // the arithmetic Verus reads
 fn net_of(a: &Ability) -> (r: u64)
     ensures r == net(*a), r <= 6 * 0xffff_ffff,
 {
@@ -400,14 +402,14 @@ fn total_net_of(sources: &Vec<Vec<Ability>>) -> (t: u64)
         }
         assert(t + best <= (s + 1) * (6 * 0xffff_ffff)) by (nonlinear_arith)
             requires t <= s * (6 * 0xffff_ffff), best <= 6 * 0xffff_ffff;
-        t = t + best;
+        t += best;
         s += 1;
     }
     t
 }
 
 /// The most of type `slot` each source adds, in all.
-#[allow(clippy::ptr_arg)]
+#[allow(clippy::ptr_arg, clippy::cast_lossless)]
 fn total_adds_of(sources: &Vec<Vec<Ability>>, slot: usize) -> (t: u64)
     requires sources.len() <= 0x1_0000, slot < 6,
     ensures t == total_adds(sources@, slot as int, sources.len() as int), t <= sources.len() * 0xffff_ffff,
@@ -442,7 +444,7 @@ fn total_adds_of(sources: &Vec<Vec<Ability>>, slot: usize) -> (t: u64)
         }
         assert(t + most <= (s + 1) * 0xffff_ffff) by (nonlinear_arith)
             requires t <= s * 0xffff_ffff, most <= 0xffff_ffff;
-        t = t + most;
+        t += most;
         s += 1;
     }
     t
@@ -451,7 +453,8 @@ fn total_adds_of(sources: &Vec<Vec<Ability>>, slot: usize) -> (t: u64)
 /// Whether `cost` is within reach of `pool` and `sources`, each source's
 /// abilities its own list: [`in_reach`], which [`reach_is_necessary`]
 /// proves every cost some plan pays is.
-#[allow(clippy::ptr_arg)]
+#[allow(clippy::ptr_arg, clippy::cast_lossless)]
+#[must_use]
 pub fn within_reach(cost: &Pips, pool: &Amounts, sources: &Vec<Vec<Ability>>) -> (r: bool)
     requires sources.len() <= 0x1_0000,
     ensures r == in_reach(*cost, *pool, sources@),
