@@ -215,7 +215,7 @@ values. Each gets a spec written from the CR, proved for every input.
 | X funding from floating mana, `allocate_for_x`'s pool step | 107.3, and the reserve property of payment | **proved** by reuse of `pay_around`, one defect fixed |
 | X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
 | autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **proved for every board**: every plan returned has been run and found to pay, each step of that run is proved to be what the engine's activation does for each kind of source in the pool, and a plan whose side effects change what later steps can do is rehearsed (see [the autotap planner](#the-autotap-planner-every-small-board)); two defects fixed. Also checked exhaustively on every board of up to three sources (29.6 million) |
-| autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
+| autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **by construction** on every board of 4,096 plans or fewer: where the greedy pass offers nothing that pays, every plan is tried (`searched_plan`), the proved count first; **checked exhaustively** as above, one defect fixed; on a bigger board, the greedy pass alone |
 | the auto-pass gate's count (`within_reach`): never rules out a cost some plan pays | 601.2g, 605.3 | **proved** for every pool, every board and every plan (`mtg-kernel/src/reach.rs`), one latent defect fixed; also checked exhaustively on every board of up to three sources |
 | power and toughness from counters and effects (layer 7) | 611.3a, 613.1f, 613.4 | **proved** on the engine with Kani for a setting, +1/+1 and -1/-1 counters and a change at once, each change until end of turn, and each change an Aura, Equipment or lord prints (`proofs::actions::power_and_toughness`, `until_end_of_turn`, `effects`, `scopes`), on two creatures; **checked** against the card-semantics reference on every cast, death and combat; not extracted into a kernel |
 | lethal damage, deathtouch, zero toughness, and counter pairs | 704.5f-h, 704.5q | **proved** (`sba::creature_fate`, `sba::annihilate`), called by the state-based actions; indestructible, regeneration and attachments stay in the engine, checked against the same reference |
@@ -547,9 +547,16 @@ every board, by construction and a proof of each step:
    on a copy of the game first, as a cast's tap plan always was, and
    offers none that does not pay there.
 
-Completeness is still the exhaustive check's: a heuristic that misses a
-plan offers nothing, which is a missing row on the menu, not a refused
-payment.
+Completeness holds by construction on every board of 4,096 plans or
+fewer (seven sources of two abilities each, or twelve of one): where the
+greedy pass and its repair offer no plan that pays, every plan of the
+board is tried, the best that pays taken (fewest sources with a side
+effect, then the lowest tiers, then the fewest taps) and repaired as a
+greedy plan would be. The count asks first, so a cost out of reach,
+which no plan pays (`reach_is_necessary`), is never searched. On a
+bigger board it is the greedy pass's alone, which the exhaustive check
+holds to tapping by hand on boards of up to three sources: a plan it
+misses is a missing row on the menu, not a refused payment.
 
 ### The auto-pass gate's count
 
