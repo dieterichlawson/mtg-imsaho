@@ -638,34 +638,15 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                 .filter(|(_, t)| t.source.controller == controller)
                 .map(|(i, _)| i)
                 .collect();
-            let first = &queue[indices[0]];
+            // The front of the group is the front of the queue: the group
+            // is every trigger its controller controls.
+            let first = &queue[0];
             let distinguishable = indices.iter().any(|&i| {
                 queue[i].source.id != first.source.id
                     || queue[i].source.description != first.source.description
             });
             if !settled && indices.len() >= 2 && distinguishable {
-                let mut options: Vec<String> = indices.iter()
-                    .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
-                    .collect();
-                let details: Vec<crate::state::TriggerOrderOption> = indices.iter()
-                    .map(|&i| queue[i].order_option(registry, state))
-                    .collect();
-
-                // CR 603.3b: an ordering choice must identify what is being
-                // ordered. Two same-named permanents' triggers rendered
-                // byte-identical (issue #116) — tag each repeated option
-                // with the source's P/T and object id, the same tail the
-                // target pickers use.
-                let repeated: Vec<bool> = options.iter()
-                    .map(|o| options.iter().filter(|x| *x == o).count() > 1)
-                    .collect();
-                for (k, &i) in indices.iter().enumerate() {
-                    if repeated[k] {
-                        options[k] = format!("{}{}", options[k],
-                            crate::engine::cards_flow::source_tag(
-                                state, registry, queue[i].source.id));
-                    }
-                }
+                let (options, details) = order_question_words(state, registry, queue, &indices);
                 let source = first.source.id;
                 state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                     player: controller,
@@ -693,6 +674,43 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
     }
 }
 
+
+/// What an ordering question says of each trigger of the group at
+/// `indices` of `queue`: its name, and the details a seat shows beside it
+/// (its source, the source's power and toughness, what set it off).
+///
+/// CR 603.3b: an ordering choice must identify what is being ordered. Two
+/// same-named permanents' triggers rendered byte-identical (issue #116), so
+/// each repeated option is tagged with the source's P/T and object id, the
+/// same tail the target pickers use.
+///
+/// Its own function because it is display: the proofs of the order
+/// (`proofs::actions::trigger_order`) stand in for it, as for the names
+/// and details it is made of. Followed through, the comparison of every
+/// name with every other was most of what the proof of a question cost.
+fn order_question_words(
+    state: &GameState,
+    registry: &CardRegistry,
+    queue: &[PendingTrigger],
+    indices: &[usize],
+) -> (Vec<String>, Vec<crate::state::TriggerOrderOption>) {
+    let mut options: Vec<String> = indices.iter()
+        .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
+        .collect();
+    let details: Vec<crate::state::TriggerOrderOption> = indices.iter()
+        .map(|&i| queue[i].order_option(registry, state))
+        .collect();
+    let repeated: Vec<bool> = options.iter()
+        .map(|o| options.iter().filter(|x| *x == o).count() > 1)
+        .collect();
+    for (k, &i) in indices.iter().enumerate() {
+        if repeated[k] {
+            options[k] = format!("{}{}", options[k],
+                crate::engine::cards_flow::source_tag(state, registry, queue[i].source.id));
+        }
+    }
+    (options, details)
+}
 
 /// A trigger's name, as [`PendingTrigger::logged`] and
 /// [`PendingTrigger::shown`] hand it out.

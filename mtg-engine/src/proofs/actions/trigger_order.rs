@@ -4,7 +4,8 @@
 //! choose, asked of them when it matters. What going on the stack does to
 //! one trigger is `trigger_targets`' (`push_one_pending_trigger`), recorded
 //! here; what an ordering question says of each trigger (its name, its
-//! source's power and toughness) is display, stood in for as nothing.
+//! source's power and toughness, `order_question_words`) is display, stood
+//! in for as nothing.
 
 use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
@@ -29,20 +30,12 @@ fn pushed(_: &mut GameState, trigger: PendingTrigger, _: &CardRegistry) {
     *n += 1;
     std::mem::forget(trigger);
 }
+/// Stands in for `triggers::order_question_words`, the words of an
+/// ordering question: a name for each trigger asked about, each nothing,
+/// and no details.
 #[allow(dead_code)]
-fn no_name(_: &PendingTrigger, _: &CardRegistry, _: Option<&GameState>) -> String {
-    String::new()
-}
-#[allow(dead_code)]
-fn no_details(t: &PendingTrigger, _: &CardRegistry, _: &GameState) -> crate::state::TriggerOrderOption {
-    crate::state::TriggerOrderOption {
-        source: t.source.id, source_name: String::new(), power_toughness: None,
-        kind: String::new(), ability: String::new(), cause: String::new(),
-    }
-}
-#[allow(dead_code)]
-fn no_tag(_: &GameState, _: &CardRegistry, _: ObjectId) -> String {
-    String::new()
+fn no_words(_: &GameState, _: &CardRegistry, _: &[PendingTrigger], indices: &[usize]) -> (Vec<String>, Vec<crate::state::TriggerOrderOption>) {
+    (vec![String::new(); indices.len()], Vec::new())
 }
 
 /// What each case queues: (source index 0-2, description, whether already
@@ -142,9 +135,7 @@ macro_rules! each_queue {
     ($($name:ident: $case:expr;)*) => {$(
         card_proof! {
             #[kani::stub(crate::triggers::push_one_pending_trigger, pushed)]
-            #[kani::stub(crate::triggers::PendingTrigger::display_name_with_state, no_name)]
-            #[kani::stub(crate::triggers::PendingTrigger::order_option, no_details)]
-            #[kani::stub(crate::engine::cards_flow::source_tag, no_tag)]
+            #[kani::stub(crate::triggers::order_question_words, no_words)]
             /// [`processed`] for the case of its name.
             fn $name() {
                 processed($case);
