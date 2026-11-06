@@ -870,15 +870,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             Some(format!("chose {n}, required {min}..={max}"))
                         } else if chosen.iter().any(|id| !options.contains(id)) {
                             Some("chosen id not in options".to_string())
+                        } else if chosen.iter().enumerate().any(|(i, id)| chosen[..i].contains(id)) {
+                            // Each against those before it, not a sorted
+                            // copy deduplicated: the same answer, and a
+                            // proof follows no sort (`cast_answers`).
+                            Some("duplicate ids in choice".to_string())
                         } else {
-                            let mut dedup = chosen.clone();
-                            dedup.sort();
-                            dedup.dedup();
-                            if dedup.len() == chosen.len() {
-                                None
-                            } else {
-                                Some("duplicate ids in choice".to_string())
-                            }
+                            None
                         }
                     };
                     if let Some(err) = validation_error {
