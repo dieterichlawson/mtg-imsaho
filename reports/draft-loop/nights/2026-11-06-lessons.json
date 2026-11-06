@@ -1,0 +1,366 @@
+{
+ "night": "2026-11-06",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide: RG went 3-0 with no fliers, Brimstone Volley and Blasphemous Act, beating my WG 2-0, while both WR decks went 1-2 instead of the 3-0 model.",
+    "My WG had only two evasive threats, Voiceless Spirit and Orchard Spirit, short of the guide's three, and Cloistered Youth at pick 6 never made the deck; skip it for a flier.",
+    "Keep at least eight Forests for the three GG Somberwald Spiders; my 10 Forest, 7 Plains build went 2-1, as the guide advised."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8089,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 5681,
+    "output_tokens_details": {
+     "thinking_tokens": 5467
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8089
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 5681,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8089,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8089,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "Against the green Somberwald Spider and Spider Spawning deck, my ground-based Zombie bodies, such as Typhoid Rats and Diregraf Ghoul, lost 0-2, so value flyers and cheap removal above filler bodies.",
+    "Round 3's 52- and 48-turn games against WR show UB needs a way to break stalls; Moan of the Unhallowed and Murder of Crows did that, so prefer them over an extra Disciple of Griselbrand.",
+    "Dead Weight, Victim of Night and Sensory Deprivation carried the 2-0 win over WG, so take cheap removal early; it mattered more than the Shimmering Grotto pick I later cut."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3241,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2245,
+    "output_tokens_details": {
+     "thinking_tokens": 2004
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3241
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2245,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3241,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3241,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Pack 1 picks 11\u201314 went to Naturalize, Gnaw to the Bone and Ghoulcaller's Bell, which the guide already lists as skips and none of which made my WG deck; take a playable creature there.",
+    "Tonight's WG went 1-2 on the 9 Forest/8 Plains split the guide credited with a 2-1, despite four evasive threats and Geistcatcher's Rig, so evasion count alone did not save it.",
+    "My WG went 2-5 in games with only Prey Upon x2, Fiend Hunter and Slayer as removal; prioritise cheap removal over marginal creatures, as pick order 1 says."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8146,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3500,
+    "output_tokens_details": {
+     "thinking_tokens": 3272
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8146
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3500,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8146,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8146,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "RG",
+   "record": "3-0-0",
+   "lessons": [
+    "Red was the deep, open colour in this pod: I took Riot Devils in pack 1 and two Pitchburn Devils in pack 2, so prioritise strong red playables early and expect more to come.",
+    "Green was thin for my RG deck: only five green playables made the cut, forcing 6 Forest against 11 Mountain, so don't spend early picks on green filler before red is set.",
+    "My RG deck went 6-0 in games with 17 lands (11 Mountain, 6 Forest) and 18 red playables, but that sample covers only three opponents."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3235,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1619,
+    "output_tokens_details": {
+     "thinking_tokens": 1428
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3235
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1619,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3235,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3235,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight's guided WR deck went 1-2 in matches (3-4 in games), contradicting the guide's 3-0 model claim; with only Abbey Griffin and Chapel Geist as fliers, the 'three evasive threats' rule was missed.",
+    "Take an on-colour flier over Moon Heron at pick 4 of pack 3: my blue pick went unplayed while I ended with only two fliers and lost 1-2 to WG's Somberwald Spiders.",
+    "Against WG's Somberwald Spider walls my deck had one real finisher, Abbey Griffin, so games stalled past 16-21 turns; follow the guide's keep-one-late-threat rule."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8067,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2944,
+    "output_tokens_details": {
+     "thinking_tokens": 2708
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8067
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2944,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8067,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8067,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "Take cheap removal early: Dead Weight, Claustrophobia, Tribute to Hunger and Corpse Lunge won most of our games, and our 2-0 and 2-1 wins depended on them.",
+    "Skip situational graveyard cards like Unburial Rites: it was cut, while Skaab Goliath and Stitched Drake, real bodies, did the work.",
+    "Our 0-2 loss to RG, including an 11-turn game, showed slow UB starts get punished, so take early blockers like Walking Corpse over expensive fillers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3269,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2026,
+    "output_tokens_details": {
+     "thinking_tokens": 1834
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3269
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2026,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3269,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3269,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "WU",
+   "record": "0-3-0",
+   "lessons": [
+    "Tonight's 0-3 WU deck contradicted the guide's 'WU 52%' line: I main-decked three Delver of Secrets (guide: marginal) and a Fortress Crab (guide: skip), and the 1-toughness fliers were exposed to WR's Brimstone Volley and Geistflame.",
+    "The guide's warning about ground filler held: Makeshift Mauler, Fortress Crab, Creepy Doll and Village Bell-Ringer sat in my WU list, and they did not stop the early pressure that ended my games at 18 to 24 turns.",
+    "In pack 3 I took Delver of Secrets and Fortress Crab over playable fliers and cheap blockers, which the guide's skip list warns against, so take the flier or the two-drop over filler."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8094,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3284,
+    "output_tokens_details": {
+     "thinking_tokens": 3015
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8094
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3284,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8094,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8094,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Against UB removal-and-value decks (Round 2 and Round 3 losses, both 1-2), prioritise evasive finishers like Voiceless Spirit, Spectral Rider and Abbey Griffin over ground filler; my 52- and 48-turn losses suggested I lacked a closer.",
+    "Seat 3's RG deck went 3-0 while my WR went 1-2, so check which red pair is actually strong before committing to white.",
+    "My low-curve WR list ran 17 lands and went 4-5 in games with several close losses, so test 16 lands with Tormented Pariah and Reckless Waif before cutting a playable."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3280,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3272,
+    "output_tokens_details": {
+     "thinking_tokens": 3052
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3280
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3272,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3280,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3280,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
