@@ -41,6 +41,13 @@ successful, with every one of them UNREACHABLE.
 CBMC's pointer and bounds checks are off (`NO_MEMORY_CHECKS` says why);
 --memory-checks keeps them.
 
+Before cbmc, `scripts/static-constants.py` reads the goto program for a
+constant Kani lays out over a static (its allocation table shares one
+global between a constant and a static of the same initial bytes, so the
+constant reads whatever the program last stored there):
+`mtg-engine/src/proofs/held.rs` says how the proofs keep their statics
+from it. A harness that has one is an ERROR, not run.
+
 With --jobs J, J harnesses of a batch are verified at once, each cbmc
 held to GB gigabytes of address space; one that runs out of it is run
 again alone, once the rest are done, held to the --solo-cap (12): with
@@ -272,6 +279,10 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
         p = run(cmd)
         if p.returncode != 0:
             return ('ERROR', '-', f'{os.path.basename(cmd[1] if cmd[0] == sys.executable else cmd[0])} failed: {p.stderr[-200:]}')
+    shared = run([sys.executable, f'{ROOT}/scripts/static-constants.py', out])
+    if shared.returncode != 0:
+        lines = shared.stdout.strip().splitlines()
+        return ('ERROR', '-', f'{lines[-1] if lines else shared.stderr[-200:]}: {lines[0] if len(lines) > 1 else ""}')
     rec = bounds(out, bound)
     by_name = pretty_names(out)
     full = unwind or 7
