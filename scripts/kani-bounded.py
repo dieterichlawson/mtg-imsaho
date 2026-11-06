@@ -550,10 +550,20 @@ def main():
     wanted = [h for h in every if not a.harness
               or any(h == w or h.endswith('::' + w) or f'::{w}::' in f'::{h}' for w in a.harness)]
     def done():
+        # A harness with a result is done, but not one whose build failed:
+        # a crate that did not compile, or a codegen killed for memory, is
+        # the run's failure and not the harness's, and resuming runs it
+        # again. Counted done, a batch built from a tree caught mid-edit
+        # was every harness of it NOT_RUN for good.
         if not os.path.exists(a.results):
             return set()
+        last = {}
         with open(a.results, errors='replace') as res:
-            return {l.split()[2] for l in res if len(l.split()) > 2}
+            for l in res:
+                p = l.split()
+                if len(p) > 2:
+                    last[p[2]] = l
+        return {h for h, l in last.items() if not (l.startswith('NOT_RUN') and 'codegen failed' in l)}
 
     # A name that selects no harness is said so, in the results, not passed
     # over: a harness this script does not find is one no run proves.
