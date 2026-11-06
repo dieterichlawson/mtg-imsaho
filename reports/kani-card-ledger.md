@@ -1,14 +1,24 @@
-# Card proofs at 2e6ea36
+# Card proofs at 65fde47
 
-Each result is the latest run of the harness at a commit whose code the
-harness reaches is the code at the head (the card's file, the board it is
-proved over, and the engine actions and stand-ins it follows). Results
-from before a change to any of those were run again; the ones this
-round's changes reached (`creatures_controlled_by`, Grimoire of the
-Dead's scan, the proof boards split into cases) all were. Runs are
-`scripts/kani-bounded.py`'s, at 3.5, 6, 7 or 12 GB, one solver at a time
-for those at 12; `docs/plans/formal-verification.md` says what each proof
-is over and what its bounds are.
+Every card harness was run in one pass over every harness the proofs
+define. The pass began at f6a9869 and moved to 65fde47 after 1,212
+harnesses had passed; the two differ in the recorder's write of an
+action (the same value into the same slot, written by its index rather
+than through a pointer, which made several proofs far cheaper) and in a
+cast's log words, which no card proof reaches. So a pass at either
+commit proves the same thing: 758 of the card harnesses here passed at
+f6a9869, the rest at 65fde47. The engine changes after 65fde47 are a
+cast's log line, which no card proof reaches, and the answer to an "up
+to N" slot's targets, an arm of `resolve_choice` that the card proofs
+calling it (Liliana of the Veil's piles, the choices, the looking)
+cannot take: each gives an answer of another kind. Runs are
+`scripts/kani-bounded.py`'s, at 3.5 GB three at a time, then each that
+ran out of memory alone at 7 GB, then at 12 (14 card harnesses needed
+12: Sever the Bloodline's four, Moldgraf Monstrosity's two, Grimoire of
+the Dead's two and one each of Mikaeus, Rolling Temblor, Curse of the
+Pierced Heart, Bitterheart Witch, Ghoulraiser and Woodland Sleuth).
+`docs/plans/formal-verification.md` says what each proof is over and
+what its bounds are.
 
 989 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
 
@@ -269,10 +279,10 @@ is over and what its bounds are.
 
 | harness | result | time |
 |---|---|---|
-| `activated::targeted_abilities_accept_what_their_text_targets` | SUCCESSFUL | 82s |
+| `activated::targeted_abilities_accept_what_their_text_targets` | SUCCESSFUL | 71s |
 | `curses::the_static_curses_print_what_their_text_says` | SUCCESSFUL | 7s |
-| `curses::the_upkeep_curses_trigger_in_the_enchanted_players_upkeep` | SUCCESSFUL | 26s |
-| `targets::the_two_target_spells_accept_what_their_text_targets` | SUCCESSFUL | 19s |
+| `curses::the_upkeep_curses_trigger_in_the_enchanted_players_upkeep` | SUCCESSFUL | 24s |
+| `targets::the_two_target_spells_accept_what_their_text_targets` | SUCCESSFUL | 20s |
 
 ## Cards that are their printed data alone
 
