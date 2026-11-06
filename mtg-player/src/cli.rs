@@ -2431,6 +2431,25 @@ impl CliPlayer {
         [status, label]
     }
 
+    /// A yes/no question in `room` columns, keeping its "(y/n)> " hint: a
+    /// plain clip cut the hint first, so at 50 columns the concede question
+    /// read "Are you sure you want to concede? (…)" and never said which
+    /// keys answer it (#963). The question is what is cut instead.
+    fn fit_yn_question(prompt: &str, room: usize) -> String {
+        const HINT: &str = " (y/n)> ";
+        if str_cols(prompt) <= room {
+            return prompt.to_string();
+        }
+        let Some(question) = prompt.strip_suffix(HINT) else {
+            return Self::clip_closed_or_cut(prompt, room);
+        };
+        let head = Self::clip_closed(question, room.saturating_sub(str_cols(HINT)));
+        if head.trim().is_empty() {
+            return Self::clip_closed_or_cut(prompt.trim_start(), room);
+        }
+        format!("{head}{HINT}")
+    }
+
     /// `clip_closed`, or a plain cut when not even "x…" fits.
     fn clip_closed_or_cut(s: &str, room: usize) -> String {
         let cut = Self::clip_closed(s, room);
@@ -5246,7 +5265,8 @@ impl CliPlayer {
         // in place. The old reprompt printed a fresh row per junk key,
         // eating the LOG panel one row at a time (issue #125).
         let (mut px, mut py) = cursor::position().unwrap_or((0, 20));
-        let _ = execute!(out, Print(prompt));
+        let first = Self::fit_yn_question(prompt, Self::middle_panel_edge().saturating_sub(usize::from(px)));
+        let _ = execute!(out, Print(&first));
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
         tui_raw_on();
@@ -5266,7 +5286,7 @@ impl CliPlayer {
         // with no Enter, while they were still typing (issue #249). The
         // answer is short, but "the keystroke that ends the game" cannot be
         // one the player has not finished choosing.
-        let mut echo_col = px + u16::try_from(prompt.chars().count()).unwrap_or(0);
+        let mut echo_col = px + u16::try_from(first.chars().count()).unwrap_or(0);
         // The panel's border, like the other two readers — this was the
         // terminal's width, so everything typed past column 118 of a 150-column
         // terminal printed straight through the frame and over the CARDS pane,
@@ -5289,7 +5309,7 @@ impl CliPlayer {
                     let row = cursor::position().map_or(py, |(_, r)| r);
                     py = (row + 1).min(h.saturating_sub(1));
                     px = Self::middle_panel_col();
-                    let shown = Self::clip_closed_or_cut(prompt, Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)));
+                    let shown = Self::fit_yn_question(prompt, Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)));
                     Self::clear_panel_row(&mut out, px, py);
                     let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
                     echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
@@ -5299,7 +5319,7 @@ impl CliPlayer {
                     // rather than over a frame the terminal hard-wrapped.
                     // The screen is drawn again once it is answered.
                     clear_frame(&mut out);
-                    let shown = Self::clip_closed_or_cut(prompt.trim_start(), (w as usize).saturating_sub(1));
+                    let shown = Self::fit_yn_question(prompt.trim_start(), (w as usize).saturating_sub(1));
                     (px, py) = (0, 0);
                     let _ = execute!(out, cursor::MoveTo(0, 0), Print(&shown));
                     echo_col = u16::try_from(shown.chars().count()).unwrap_or(0);
@@ -5340,11 +5360,17 @@ impl CliPlayer {
                             let msg = format!("{indent}Please answer y or n. {}",
                                 prompt.trim_start());
                             // "…concede? (y/n" at 80 columns (#781's review).
-                            let clipped = Self::clip_closed_or_cut(&msg,
+                            let clipped = Self::fit_yn_question(&msg,
                                 Self::middle_panel_edge().saturating_sub(usize::from(px)));
                             Self::clear_panel_row(&mut stdout(), px, py);
-                            let _ = execute!(stdout(), Print(clipped));
+                            let _ = execute!(stdout(), cursor::MoveTo(px, py), Print(&clipped));
                             let _ = stdout().flush();
+                            // What is typed next goes after the reprompt's
+                            // hint, not after the shorter question it
+                            // replaced: from there the echo's erase wiped
+                            // "… (y/n)> " at the first key (#963's review).
+                            echo_col = px + u16::try_from(clipped.chars().count()).unwrap_or(0);
+                            echo_cap = Self::echo_cap_at(Self::term_width(), echo_col);
                             buf.clear();
                         }
                     }
@@ -5562,25 +5588,28 @@ impl CliPlayer {
     /// Paint one page of the battlefield inspector: heading, a blank row, the
     /// permanent rows, then the footer. Wraps its own writer for the same
     /// reason `paint_paged_page` does (#470).
-    fn paint_inspect_page(out: &mut impl Write, heading: &str, rows: &[(bool, String)], footer: &str) {
+    fn paint_inspect_page(out: &mut impl Write, heading: &str, rows: &[(bool, String)], footer: &str, w: usize) {
         let out = &mut CrlfWriter::new(out);
-        Self::print_colored(out, Color::Cyan, heading);
-        let _ = execute!(out, Print("\n"));
+        Self::paint_pager_heading(out, heading, w);
 
         for (bold, text) in rows {
-            if *bold {
-                let _ = execute!(out, SetAttribute(Attribute::Bold),
-                    Print(format!("{text}\n")), SetAttribute(Attribute::Reset));
-            } else {
-                // The index is bold, the rest is not, as before.
-                let (idx, tail) = text.split_at(text.find(':').unwrap_or(0));
-                let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(idx),
-                    SetAttribute(Attribute::Reset), Print(format!("{tail}\n")));
+            // Wrapped here, at a word, not by the terminal (#963).
+            for (n, row) in Self::pager_rows(text, w).into_iter().enumerate() {
+                if *bold {
+                    let _ = execute!(out, SetAttribute(Attribute::Bold),
+                        Print(format!("{row}\n")), SetAttribute(Attribute::Reset));
+                } else {
+                    // The index is bold, the rest is not, as before; a
+                    // continuation row has no index.
+                    let (idx, tail) = if n == 0 { row.split_at(row.find(':').unwrap_or(0)) } else { ("", row.as_str()) };
+                    let _ = execute!(out,
+                        SetAttribute(Attribute::Bold), Print(idx),
+                        SetAttribute(Attribute::Reset), Print(format!("{tail}\n")));
+                }
             }
         }
 
-        let _ = execute!(out, Print(footer));
+        let _ = execute!(out, Print(Self::pager_footer(footer, w)));
     }
 
     /// The inspector's detail page for one permanent, a line per fact and
@@ -5959,13 +5988,13 @@ impl CliPlayer {
             let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
             let (w, h) = (term_w as usize, term_h as usize);
             let heights: Vec<usize> = rows.iter()
-                .map(|(_, t)| Self::wrapped_height(str_cols(t), w))
+                .map(|(_, t)| Self::pager_rows(t, w).len())
                 .collect();
             let widest_heading = format!(
-                " INSPECT BATTLEFIELD (showing {n}-{n} of {n})", n = rows.len());
-            let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+                " INSPECT BATTLEFIELD (showing {n}-{n} of {n} rows)", n = rows.len());
+            let chrome = Self::pager_lines(&widest_heading, w)
                 + 2
-                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
+                + Self::pager_lines(DECK_PAGED_FOOTER, w);
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page.get(), 0);
             page.set(start);
@@ -5980,7 +6009,7 @@ impl CliPlayer {
             let footer = Self::viewer_footer(notice.borrow().clone(),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
-            Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer);
+            Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer, w);
             let _ = out.flush();
             *laid.borrow_mut() = (heights, avail, end, paged);
         };
@@ -6076,19 +6105,6 @@ return",
         }
     }
 
-    /// How many terminal rows a printed line of `cols` display columns takes
-    /// once the terminal folds it at width `w`.
-    ///
-    /// The viewers print each entry unclipped and let the terminal wrap, so
-    /// an entry wider than the pane is more than one row — "p0 declared
-    /// attackers: …" out of a seven-creature attack is 213 columns. A page
-    /// counted in entries was therefore taller than the window it was given,
-    /// and what the terminal scrolled off the top was the heading that says
-    /// which slice is showing (#365).
-    fn wrapped_height(cols: usize, w: usize) -> usize {
-        if w == 0 { 1 } else { cols.div_ceil(w).max(1) }
-    }
-
     /// How many rows a full-screen viewer has for its entries: the pane less
     /// the chrome around them.
     ///
@@ -6101,12 +6117,52 @@ return",
         term_h.saturating_sub(chrome_rows).max(1)
     }
 
-    /// The display columns one `InfoLine` occupies when printed.
-    fn info_line_cols(line: &InfoLine) -> usize {
+    /// A pager's heading, wrapped by `pager_rows` (#963's review), and the
+    /// blank row under it.
+    fn paint_pager_heading(out: &mut impl Write, heading: &str, w: usize) {
+        for row in Self::pager_rows(heading, w) {
+            // Ends its own row.
+            Self::print_colored(out, Color::Cyan, &row);
+        }
+        let _ = execute!(out, Print("\n"));
+    }
+
+    /// A pager's footer, each of its lines wrapped by `pager_rows`; the
+    /// last is left open for the input, as it was (#963's review).
+    fn pager_footer(footer: &str, w: usize) -> String {
+        footer.split('\n')
+            .map(|l| Self::pager_rows(l, w).join("\n"))
+            .collect::<Vec<_>>().join("\n")
+    }
+
+    /// The rows `pager_footer` paints for one of its lines.
+    fn pager_lines(text: &str, w: usize) -> usize {
+        Self::pager_rows(text, w).len()
+    }
+
+    /// A pager's row as the page draws it `w` columns wide: wrapped at a
+    /// word by `wrap_row`, each continuation under the row's own indent, and
+    /// one column short of the edge, as `oracle_lines` is. The `d`, `l`, `g`,
+    /// `e` and `s` pages left long rows to the terminal, which broke them
+    /// mid-token at 30-40 columns ("{1}{R" / "}", "2" / "/1") and started
+    /// every continuation at column 0 (#963). The page's heights are these
+    /// rows' count, so a page still fits the pane it is measured for (#365).
+    fn pager_rows(text: &str, w: usize) -> Vec<String> {
+        let width = w.saturating_sub(1).max(1);
+        let body = text.trim_start_matches(' ');
+        // An indent wider than half the row would leave the text a sliver.
+        let indent = (text.len() - body.len()).min(width / 2);
+        let pad = " ".repeat(indent);
+        Self::wrap_row(body, width - indent).into_iter()
+            .map(|r| format!("{pad}{r}"))
+            .collect()
+    }
+
+    /// An `InfoLine`'s text as printed: a mana line sits behind three spaces.
+    fn info_line_text(line: &InfoLine) -> String {
         match line {
-            InfoLine::Plain(s) | InfoLine::Bold(s) | InfoLine::Dim(s) => str_cols(s),
-            // Printed behind a three-space indent.
-            InfoLine::Mana(s) => 3 + str_cols(s),
+            InfoLine::Plain(s) | InfoLine::Bold(s) | InfoLine::Dim(s) => s.clone(),
+            InfoLine::Mana(s) => format!("   {s}"),
         }
     }
 
@@ -6128,31 +6184,31 @@ return",
     /// painted into a buffer and checked. It wraps the writer itself rather
     /// than taking a wrapped one, so the CRLF guarantee (#470) belongs to the
     /// painting and not to a caller that has to remember it.
-    fn paint_paged_page(out: &mut impl Write, heading: &str, lines: &[InfoLine], footer: &str) {
+    fn paint_paged_page(out: &mut impl Write, heading: &str, lines: &[InfoLine], footer: &str, w: usize) {
         let out = &mut CrlfWriter::new(out);
-        Self::print_colored(out, Color::Cyan, heading);
-        let _ = execute!(out, Print("\n"));
+        Self::paint_pager_heading(out, heading, w);
         for line in lines {
-            match line {
-                InfoLine::Plain(s) => {
-                    let _ = execute!(out, Print(format!("{s}\n")));
-                }
-                InfoLine::Bold(s) => {
-                    let _ = execute!(out, SetAttribute(Attribute::Bold),
-                        Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
-                }
-                InfoLine::Dim(s) => {
-                    let _ = execute!(out, SetAttribute(Attribute::Dim),
-                        Print(format!("{s}\n")), SetAttribute(Attribute::Reset));
-                }
-                InfoLine::Mana(s) => {
-                    let _ = execute!(out, Print("   "));
-                    Self::print_with_mana(out, s, None);
-                    let _ = execute!(out, Print("\n"));
+            for row in Self::pager_rows(&Self::info_line_text(line), w) {
+                match line {
+                    InfoLine::Plain(_) => {
+                        let _ = execute!(out, Print(format!("{row}\n")));
+                    }
+                    InfoLine::Bold(_) => {
+                        let _ = execute!(out, SetAttribute(Attribute::Bold),
+                            Print(format!("{row}\n")), SetAttribute(Attribute::Reset));
+                    }
+                    InfoLine::Dim(_) => {
+                        let _ = execute!(out, SetAttribute(Attribute::Dim),
+                            Print(format!("{row}\n")), SetAttribute(Attribute::Reset));
+                    }
+                    InfoLine::Mana(_) => {
+                        Self::print_with_mana(out, &row, None);
+                        let _ = execute!(out, Print("\n"));
+                    }
                 }
             }
         }
-        let _ = execute!(out, Print(footer));
+        let _ = execute!(out, Print(Self::pager_footer(footer, w)));
     }
 
     fn show_paged_lines(title: &str, lines: &[InfoLine], start_at_end: bool) {
@@ -6166,16 +6222,16 @@ return",
             // Pages are measured in the rows the entries actually take once
             // the terminal wraps them, not in entries (#365).
             let heights: Vec<usize> = lines.iter()
-                .map(|l| Self::wrapped_height(Self::info_line_cols(l), w))
+                .map(|l| Self::pager_rows(&Self::info_line_text(l), w).len())
                 .collect();
             // The heading is measured at its widest — which slice it names is
             // not known until the page is chosen, the same bind
             // `marker_lines` solves for the menu's marker.
             let n = lines.len();
             let widest_heading = format!("{title} (showing {n}-{n} of {n})");
-            let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+            let chrome = Self::pager_lines(&widest_heading, w)
                 + 1
-                + Self::wrapped_height(str_cols(VIEWER_PAGED_FOOTER), w);
+                + Self::pager_lines(VIEWER_PAGED_FOOTER, w);
             (heights, Self::viewer_avail(h, chrome))
         };
         // The last window is the page that ends at the last entry, which is
@@ -6204,7 +6260,8 @@ return",
             } else {
                 "  Press enter to return..."
             };
-            Self::paint_paged_page(&mut out, &heading, &lines[start..end], footer);
+            let w = terminal::size().map_or(80, |(w, _)| w as usize);
+            Self::paint_paged_page(&mut out, &heading, &lines[start..end], footer, w);
             let _ = out.flush();
             *laid.borrow_mut() = (heights, avail, end);
         };
@@ -6459,19 +6516,25 @@ return",
     /// Paint one page of the deck browser: heading, a blank row, the deck
     /// rows, then the footer. Wraps its own writer for the same reason
     /// `paint_paged_page` does (#470).
-    fn paint_deck_page(out: &mut impl Write, heading: &str, rows: &[(String, String)], footer: &str) {
+    fn paint_deck_page(out: &mut impl Write, heading: &str, rows: &[(String, String)], footer: &str, w: usize) {
         let out = &mut CrlfWriter::new(out);
-        Self::print_colored(out, Color::Cyan, heading);
-        let _ = execute!(out, Print("\n"));
+        Self::paint_pager_heading(out, heading, w);
 
         for (idx, tail) in rows {
-            let _ = execute!(out,
-                SetAttribute(Attribute::Bold), Print(idx),
-                SetAttribute(Attribute::Reset),
-                Print(format!("{tail}\n")));
+            // Wrapped here, at a word, not by the terminal (#963). The
+            // index is bold on the first row.
+            for (n, row) in Self::pager_rows(&format!("{idx}{tail}"), w).into_iter().enumerate() {
+                let (head, rest) = if n == 0 && row.starts_with(idx.as_str()) {
+                    row.split_at(idx.len())
+                } else { ("", row.as_str()) };
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold), Print(head),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!("{rest}\n")));
+            }
         }
 
-        let _ = execute!(out, Print(footer));
+        let _ = execute!(out, Print(Self::pager_footer(footer, w)));
     }
 
     /// Oracle text as the detail pages print it: each paragraph indented by
@@ -6659,16 +6722,16 @@ return",
             let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
             let (w, h) = (term_w as usize, term_h as usize);
             let heights: Vec<usize> = rows.iter()
-                .map(|(a, b)| Self::wrapped_height(str_cols(a) + str_cols(b), w))
+                .map(|(a, b)| Self::pager_rows(&format!("{a}{b}"), w).len())
                 .collect();
             let n = deck_cards.len();
             let widest_heading = format!(
                 " YOUR DECK ({total_cards} cards, showing {n}-{n} of {n} entries)");
             // Heading, the blank under it, the blank the footer leads with,
             // and the footer itself.
-            let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+            let chrome = Self::pager_lines(&widest_heading, w)
                 + 2
-                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
+                + Self::pager_lines(DECK_PAGED_FOOTER, w);
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page.get(), 0);
             page.set(start);
@@ -6682,7 +6745,7 @@ return",
             let footer = Self::viewer_footer(notice.borrow().clone(),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
-            Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer);
+            Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer, w);
             let _ = out.flush();
             *laid.borrow_mut() = (heights, avail, end, paged);
         };
@@ -6886,7 +6949,7 @@ return",
             Self::clear_mid_from(&mut out, r);
             let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-                Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
+                Print(clip_cols(" Eligible attackers:", panel_w)), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             let avail = h.saturating_sub(r as usize + reserved).max(floor);
             let (offset, shown, paged) =
@@ -6912,13 +6975,22 @@ return",
             if !defending_planeswalkers.is_empty() {
                 let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                     SetForegroundColor(Color::Yellow),
-                    Print(" Attackable planeswalkers (use N>pwM):"), ResetColor);
+                    Print(Self::clip_closed_or_cut(" Attackable planeswalkers (use N>pwM):", panel_w)), ResetColor);
                 r += 1;
+                // One row each, as `pw_rows` reserves them: clipped to the
+                // panel, not left to wrap over the LOG pane (#963's review).
                 for (i, &id) in defending_planeswalkers.iter().enumerate() {
+                    let idx = format!("  pw{i}");
+                    let row = Self::clip_closed_or_cut(
+                        &format!("{idx}: {}", Self::perm_name(view, id)), panel_w);
+                    // A panel narrower than the index cuts inside it,
+                    // and "…" is not a byte boundary to split at.
+                    let (head, tail) = if row.starts_with(idx.as_str()) {
+                        row.split_at(idx.len())
+                    } else { ("", row.as_str()) };
                     let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
-                        SetAttribute(Attribute::Bold), Print(format!("  pw{i}")),
-                        SetAttribute(Attribute::Reset),
-                        Print(format!(": {}", Self::perm_name(view, id))));
+                        SetAttribute(Attribute::Bold), Print(head),
+                        SetAttribute(Attribute::Reset), Print(tail));
                     r += 1;
                 }
             }
@@ -7195,7 +7267,7 @@ return",
                 .min(body.saturating_sub(blk_res).max(atk_floor));
             let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
-                Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
+                Print(clip_cols(" Attackers:", panel_w)), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             let (atk_off, atk_n, atk_paged) =
                 Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get(), atk_marker_h);
@@ -7216,7 +7288,7 @@ return",
             }
             let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
-                Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
+                Print(clip_cols(" Your blockers:", panel_w)), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             // Under the list: the hint at its wrapped height, then the
             // prompt and refusal rows. A flat three ran the list past the
@@ -8317,7 +8389,10 @@ impl CliPlayer {
         // What the pane says above the rows: the question and the count.
         let mut header: Vec<(bool, String)> = Self::wrap_indented(&format!("  {}", pick.question), panel_w)
             .into_iter().map(|l| (false, l)).collect();
-        header.push((true, Self::set_count_line(chosen, of)));
+        // Wrapped as the question above it is: "8 marked — 7 more than the
+        // 1 this takes" is 41 columns (#963's review).
+        header.extend(Self::wrap_indented(&Self::set_count_line(chosen, of), panel_w)
+            .into_iter().map(|l| (true, l)));
         // And below them: how to answer, then the input row.
         let how_to = Self::set_how_to(pick);
         let marker_h = Self::marker_lines(pick.rows.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
@@ -8581,6 +8656,10 @@ impl CliPlayer {
         let mut row: u16 = 0;
         let put = |out: &mut io::Stdout, row: &mut u16, style: Style, text: &str| {
             let _ = execute!(out, cursor::MoveTo(0, *row));
+            // Every line here is placed, and counted, as one row: one wider
+            // than the screen (the page marker, "… and N more") wrapped
+            // under the next row's MoveTo and read garbled (#963's review).
+            let text = &Self::clip_closed_or_cut(text, w.saturating_sub(1));
             match style {
                 Style::Title => Self::print_colored(out, Color::Cyan, text),
                 Style::Bold => { let _ = execute!(out, SetAttribute(Attribute::Bold), Print(text), SetAttribute(Attribute::Reset)); }
@@ -12255,7 +12334,7 @@ Wolves or Werewolves is prevented".into()];
 
         // At 40x12 the board does not fit, so it pages rather than scrolling.
         let heights: Vec<usize> = rows.iter()
-            .map(|(_, t)| CliPlayer::wrapped_height(str_cols(t), 40))
+            .map(|(_, t)| CliPlayer::pager_rows(t, 40).len())
             .collect();
         let avail = CliPlayer::viewer_avail(12, 5);
         let (start, shown, paged) = CliPlayer::menu_page_lines(&heights, avail, 0, 0);
@@ -12281,7 +12360,7 @@ Wolves or Werewolves is prevented".into()];
         let small = view(Step::PrecombatMain, 1, true);
         let rows = CliPlayer::inspect_rows(&small);
         let heights: Vec<usize> = rows.iter()
-            .map(|(_, t)| CliPlayer::wrapped_height(str_cols(t), 80))
+            .map(|(_, t)| CliPlayer::pager_rows(t, 80).len())
             .collect();
         let (_, _, paged) = CliPlayer::menu_page_lines(&heights, CliPlayer::viewer_avail(24, 5), 0, 0);
         assert!(!paged, "an empty board is three rows");
@@ -12292,14 +12371,15 @@ Wolves or Werewolves is prevented".into()];
     /// window and scroll its own "showing X-Y of Z" heading away.
     #[test]
     fn a_viewer_page_counts_wrapped_rows_not_entries() {
-        // A line wraps into ceil(cols / width) rows, and never zero.
-        assert_eq!(CliPlayer::wrapped_height(0, 34), 1);
-        assert_eq!(CliPlayer::wrapped_height(34, 34), 1);
-        assert_eq!(CliPlayer::wrapped_height(35, 34), 2);
-        assert_eq!(CliPlayer::wrapped_height(213, 80), 3);
-        // A zero width (no terminal) still counts one row, not a division
-        // by zero.
-        assert_eq!(CliPlayer::wrapped_height(10, 0), 1);
+        // A line is as many rows as the pager wraps it into (#963), one
+        // column short of the edge, and never zero.
+        assert_eq!(CliPlayer::pager_rows("", 34).len(), 1);
+        assert_eq!(CliPlayer::pager_rows(&"x".repeat(33), 34).len(), 1);
+        assert_eq!(CliPlayer::pager_rows(&"x".repeat(34), 34).len(), 2);
+        assert_eq!(CliPlayer::pager_rows("p0 declared attackers: Unruly Mob, Unruly Mob, Unruly Mob", 30).len(), 3);
+        // A zero width (no terminal) still counts rows, not a division by
+        // zero.
+        assert!(!CliPlayer::pager_rows("Unruly Mob", 0).is_empty());
 
         // The `l` case: sixteen entries, half of them two rows tall, in the
         // 16 rows a 20-row pane gives. Counted as entries all sixteen were
@@ -13452,6 +13532,18 @@ Wolves or Werewolves is prevented".into()];
             assert_eq!(row.matches('{').count(), row.matches('}').count(), "no open mana symbol at {room}: {row}");
         }
 
+        // A yes/no question keeps its hint and cuts the question (#963).
+        for room in [20, 30, 50, 63] {
+            for q in ["  Are you sure you want to concede? (y/n)> ",
+                      "  Please answer y or n. Are you sure you want to concede? (y/n)> "] {
+                let shown = CliPlayer::fit_yn_question(q, room);
+                assert!(str_cols(&shown) <= room, "{shown:?} at {room}");
+                assert!(shown.ends_with(" (y/n)> "), "the keys that answer it are kept at {room}: {shown:?}");
+            }
+        }
+        assert_eq!(CliPlayer::fit_yn_question("  Are you sure you want to concede? (y/n)> ", 80),
+            "  Are you sure you want to concede? (y/n)> ", "a question that fits is whole");
+
         // The prompt lines a person types after (#781's third review): the
         // concede reprompt at 80 columns, an X hint at 60.
         for (prompt, room) in [
@@ -13754,7 +13846,7 @@ Wolves or Werewolves is prevented".into()];
         ];
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_paged_page(
-            &mut buf, " GAME LOG (showing 1-4 of 4)", &lines, VIEWER_PAGED_FOOTER);
+            &mut buf, " GAME LOG (showing 1-4 of 4)", &lines, VIEWER_PAGED_FOOTER, 80);
         let text = String::from_utf8_lossy(&buf).to_string();
         // The page really was painted — a test that asserts about nothing
         // passes on an empty buffer.
@@ -13774,7 +13866,7 @@ Wolves or Werewolves is prevented".into()];
         ];
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_inspect_page(
-            &mut buf, " INSPECT BATTLEFIELD", &rows, &format!("\n{DECK_PAGED_FOOTER}"));
+            &mut buf, " INSPECT BATTLEFIELD", &rows, &format!("\n{DECK_PAGED_FOOTER}"), 80);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("INSPECT BATTLEFIELD"), "heading missing from {text}");
         assert!(text.contains("Elite Inquisitor 2/2"), "rows missing from {text}");
@@ -13911,6 +14003,71 @@ Wolves or Werewolves is prevented".into()];
         assert_crlf("permanent detail with a granted ability", &buf);
     }
 
+    /// The rows a painted pager put on screen, escapes stripped, between
+    /// its heading and its footer.
+    fn painted_rows(buf: &[u8]) -> Vec<String> {
+        let text = String::from_utf8_lossy(buf).to_string();
+        let mut plain = String::new();
+        let mut esc = false;
+        for c in text.chars() {
+            match (esc, c) {
+                (false, '\u{1b}') => esc = true,
+                (true, c) if c.is_ascii_alphabetic() => esc = false,
+                (true, _) => {}
+                (false, c) => plain.push(c),
+            }
+        }
+        plain.split("\r\n").map(str::to_string).collect()
+    }
+
+    #[test]
+    fn the_pagers_wrap_their_rows_at_a_word_not_at_the_terminal_edge() {
+        // #963: at 30-40 columns the `d`, `l`, `g`, `e` and `s` pages left
+        // long rows to the terminal, which broke them mid-token ("{1}{R" /
+        // "}", "(" / "1lib)") and into column 0.
+        let w = 30;
+        // Every row fits, and the words painted are the source's words: a
+        // row broken mid-token has two pieces where the source had one.
+        let ok = |what: &str, rows: &[String], source: &str| {
+            for r in rows {
+                assert!(str_cols(r) < w, "{what}: {r:?} is wider than {w} columns: {rows:#?}");
+            }
+            let painted: Vec<&str> = rows.iter().flat_map(|r| r.split_whitespace()).collect();
+            let want: Vec<&str> = source.split_whitespace().collect();
+            assert_eq!(painted, want, "{what}: a word was split: {rows:#?}");
+        };
+        let lines = vec![
+            InfoLine::Plain("p0 cast Brimstone Volley targeting Elite Inquisitor (#62)".to_string()),
+            InfoLine::Mana("Brimstone Volley {2}{R} Instant (3 damage, 5 if morbid)".to_string()),
+        ];
+        let mut buf = Vec::new();
+        let heading = " GAME LOG (showing 12-20 of 44)";
+        CliPlayer::paint_paged_page(&mut buf, heading, &lines, VIEWER_PAGED_FOOTER, w);
+        let rows = painted_rows(&buf);
+        // The heading and the footer are wrapped too (#963's review).
+        ok("log", &rows, &format!("{heading} {} {} {VIEWER_PAGED_FOOTER}",
+            CliPlayer::info_line_text(&lines[0]), CliPlayer::info_line_text(&lines[1])));
+        assert!(rows[0].starts_with(" GAME LOG") && rows[1].starts_with(' '), "{rows:#?}");
+        let want: usize = lines.iter().map(|l| CliPlayer::pager_rows(&CliPlayer::info_line_text(l), w).len()).sum();
+        let chrome = CliPlayer::pager_lines(heading, w) + 1 + CliPlayer::pager_lines(VIEWER_PAGED_FOOTER, w);
+        assert_eq!(rows.len(), chrome + want, "the page is as tall as the layout measured it: {rows:#?}");
+
+        let rows = vec![("   0:".to_string(), " 10x Doomed Traveler {W} 1/1 (3hand, 7lib)".to_string())];
+        let mut buf = Vec::new();
+        CliPlayer::paint_deck_page(&mut buf, " YOUR DECK", &rows, "", w);
+        let painted = painted_rows(&buf);
+        ok("deck", &painted, &format!("YOUR DECK {}{}", rows[0].0, rows[0].1));
+        assert!(painted[2].starts_with("   0: 10x"), "{painted:#?}");
+        assert!(painted[3].starts_with("   {W}"), "a continuation keeps the row's indent: {painted:#?}");
+
+        let rows = vec![(false, "   3: Village Bell-Ringer 1/4 (tapped, attacking you)".to_string())];
+        let mut buf = Vec::new();
+        CliPlayer::paint_inspect_page(&mut buf, " INSPECT", &rows, "", w);
+        let painted = painted_rows(&buf);
+        ok("inspect", &painted, &format!("INSPECT {}", rows[0].1));
+        assert!(painted[2].starts_with("   3: ") && painted[3].starts_with("   "), "{painted:#?}");
+    }
+
     #[test]
     fn the_deck_browser_ends_every_row_with_crlf() {
         let rows = vec![
@@ -13919,7 +14076,7 @@ Wolves or Werewolves is prevented".into()];
         ];
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_deck_page(
-            &mut buf, " YOUR DECK (40 cards)", &rows, &format!("\n{DECK_PAGED_FOOTER}"));
+            &mut buf, " YOUR DECK (40 cards)", &rows, &format!("\n{DECK_PAGED_FOOTER}"), 80);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("YOUR DECK (40 cards)"), "heading missing from {text}");
         assert!(text.contains("Doomed Traveler"), "rows missing from {text}");
