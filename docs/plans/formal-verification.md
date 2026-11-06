@@ -1596,8 +1596,14 @@ from the proof's own counter. A scan of one harness from each of the
 (the card library's `LISTINGS_HANDED` and `ACTED`, and the action
 proofs' own counters), four of them through `Vec::new()`, and those four
 had passed. So no result of that pass is kept: every harness is run
-again at f288a21, with the proofs' statics `Held` and the scan before
-each, and the counts above are replaced as that run finishes. Built so,
+again, with the proofs' statics `Held` and the scan before each, and the
+counts above are replaced as that run finishes. It was begun at f288a21,
+then at f00e4ef once master was merged in (its engine changes reach the
+proofs), and is made at 156d7ad: the scan first counted the memory Kani
+lays out for what a constant pointer points at as a static (41 harnesses
+recorded ERROR for nothing), and a `Held` laid out with its value eight
+bytes in lost what was written there, so that the offer proofs of who
+may attack and block failed (the value is now first, where it was). Built so,
 the first-strike step of a blocked attacker and its blocker passes (512
 s; 613 thousand steps of symbolic execution where the shared constant
 cost 1.5 million).
