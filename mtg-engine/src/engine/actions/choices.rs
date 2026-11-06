@@ -820,7 +820,11 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // been made.
                     let pending = state.pending_spell_cast.clone()
                         .expect("pending_spell_cast must be set for ChosenTargetSet");
-                    let mut targets = fixed.clone();
+                    // Room for both made once: a clone of the fixed ones has
+                    // room for those alone, and extended by the chosen it
+                    // grew, which the proofs of this answer forbid.
+                    let mut targets = Vec::with_capacity(fixed.len() + chosen.len());
+                    targets.extend(fixed.iter().cloned());
                     targets.extend(chosen.iter().cloned());
                     let cast = crate::actions::Action::CastSpell {
                         object_id: pending.object_id,
