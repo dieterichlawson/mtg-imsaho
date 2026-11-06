@@ -196,6 +196,7 @@ values. Each gets a spec written from the CR, proved for every input.
 | X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
 | autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **proved for every board**: every plan returned has been run and found to pay, each step of that run is proved to be what the engine's activation does for each kind of source in the pool, and a plan whose side effects change what later steps can do is rehearsed (see [the autotap planner](#the-autotap-planner-every-small-board)); two defects fixed. Also checked exhaustively on every board of up to three sources (29.6 million) |
 | autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
+| the auto-pass gate's count (`within_reach`): never rules out a cost some plan pays | 601.2g, 605.3 | **proved** for every pool, every board and every plan (`mtg-kernel/src/reach.rs`), one latent defect fixed; also checked exhaustively on every board of up to three sources |
 | power and toughness from counters and effects (layer 7) | 611.3a, 613.1f, 613.4 | **proved** on the engine with Kani for a setting, +1/+1 and -1/-1 counters and a change at once, each change until end of turn, and each change an Aura, Equipment or lord prints (`proofs::actions::power_and_toughness`, `until_end_of_turn`, `effects`, `scopes`), on two creatures; **checked** against the card-semantics reference on every cast, death and combat; not extracted into a kernel |
 | lethal damage, deathtouch, zero toughness, and counter pairs | 704.5f-h, 704.5q | **proved** (`sba::creature_fate`, `sba::annihilate`), called by the state-based actions; indestructible, regeneration and attachments stay in the engine, checked against the same reference |
 | the turn's step sequence and who gets priority | 500.1, 103.7a, 508.8, 510.4, 514.3a, 117.3-4 | **proved** (`turn::next_step`, `turn::after_pass`), called by `advance_step` and the game loop |
@@ -529,6 +530,23 @@ every board, by construction and a proof of each step:
 Completeness is still the exhaustive check's: a heuristic that misses a
 plan offers nothing, which is a missing row on the menu, not a refused
 payment.
+
+### The auto-pass gate's count
+
+Before passing a seat by, the auto-pass gate asks whether a spell's cost
+is within reach of the pool and the sources by counting alone
+(`mana::within_reach`): the pool and each source's best net (what its
+best ability adds less what it costs) cover the whole cost, and the pool
+and the most of each type any one ability of each source adds cover that
+type's pips. It may say yes where no plan pays; it must never say no
+where one does, or the seat is passed by a spell it could have cast.
+`mtg-kernel/src/reach.rs` states the count, computes it (proved to
+compute what it states), and proves `reach_is_necessary`: for every
+pool, every board of sources and every plan that taps no source twice
+and pays each ability's own cost as a payment may (`paid_exactly`), a
+cost the plan pays is within reach. The engine's `within_reach` hands it
+each ability's cost and what it adds by type. Counting by type is defect
+25 below.
 
 ### Cards against their Oracle text
 
@@ -1754,6 +1772,7 @@ so each night starts from everything the last one reached.
 | 22 | the check of a submitted cast's targets asked an "up to N" requirement's targets their requirement and the card's restriction and not whether the source may target them, the half defect 16 added to every other requirement's: a Feeling of Dread at a creature with protection from instants went onto the stack | writing the proof of that check, which `casting` and `activating` stood in for as any answer | as 16, for the pool's three "up to two target creatures" spells; latent but for a test, as every protection the pool grants is from creatures |
 | 23 | the autotap planner counted each Deranged Assistant's ability as it is before any of the plan runs, so two over a one-card library were both planned for `{2}`: a cast was offered and then refused, and a resolving "you may pay {2}" was asked, and paying it tapped the first, milled the card and then could not pay (CR 701.17b, 118.3) | proving the planner sound for every board: asking what a step can change that the next step reads | two Deranged Assistants and one card left in the library |
 | 24 | a greedy plan that did not pay was handed on as it was: with nothing in hand to keep payable it was never run, and with something it was run, found not to pay, and returned all the same | the same: reading every way out of `keep_the_hand_castable` | latent: no board of up to three sources reaches it |
+| 25 | the auto-pass gate's count took the most of any one of a source's produced entries for a type, so an ability listing a type twice (`{C}` and `{C}`) counted once, and a cost it pays was ruled out | proving the count necessary in Verus, which asks what an ability adds of each type | latent: every mana ability in the pool adds one kind (`proofs::cards::mana`) |
 
 Each has a regression test that fails without its fix.
 
