@@ -1088,6 +1088,9 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     assert!(between(&l, 0)["deck"]["main"].as_array().unwrap().iter().any(|c| c.as_str() == Some(swap_in.as_str())));
     l.sideboard_ready(0).unwrap();
     assert_eq!(l.sideboard(0, &played.maindeck, &played.lands).unwrap_err(), "you are ready for the next game");
+    // Ready commits the choice to play or draw as it does the deck (#998).
+    assert_eq!(l.play_draw(0, false).unwrap_err(), "you are ready for the next game");
+    assert!(between(&l, 0)["play_first"].is_null(), "the refused choice is not taken");
     assert!(l.take_between(1, 0, 1).is_none(), "seat 1 is sideboarding");
     // Seat 1 takes a card out and puts it back: no change.
     let theirs = l.match_deck(1, 0, 1, 1).unwrap();
