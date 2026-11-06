@@ -26,6 +26,7 @@ mod filters;
 mod fighting;
 mod leaving_combat;
 mod library;
+mod mana_abilities;
 mod mana_cost;
 mod may_pay;
 mod moving;
