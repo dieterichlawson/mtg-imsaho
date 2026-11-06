@@ -317,6 +317,13 @@ pub fn compute_autotap_around(
 /// (`mtg_kernel::reach::reach_is_necessary`), as most a player cannot
 /// afford are, so they are never searched.
 fn searched_plan(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) -> Option<Vec<(ObjectId, usize)>> {
+    // With nothing to tap the one plan is tapping nothing, which the
+    // greedy pass offers exactly when the pool can pay: there is nothing
+    // to search. (And a payment from the pool, as a resolving "you may
+    // pay" makes, does not follow the search at all.)
+    if sources.is_empty() {
+        return None;
+    }
     if cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X)) || !within_reach(cost, pool, sources) {
         return None;
     }
