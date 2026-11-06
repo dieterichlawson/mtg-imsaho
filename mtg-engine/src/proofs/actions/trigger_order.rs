@@ -35,7 +35,13 @@ fn pushed(_: &mut GameState, trigger: PendingTrigger, _: &CardRegistry) {
 /// and no details.
 #[allow(dead_code)]
 fn no_words(_: &GameState, _: &CardRegistry, _: &[PendingTrigger], indices: &[usize]) -> (Vec<String>, Vec<crate::state::TriggerOrderOption>) {
-    (vec![String::new(); indices.len()], Vec::new())
+    // Pushed, not `vec![String::new(); n]`, which clones each through the
+    // general path, a tenth of what the proof of a question cost.
+    let mut names = Vec::with_capacity(2);
+    for _ in indices {
+        names.push(String::new());
+    }
+    (names, Vec::new())
 }
 
 /// What each case queues: (source index 0-2, description, whether already
@@ -55,8 +61,6 @@ fn queues(case: &Queued) -> (CardRegistry, GameState, [ObjectId; 3]) {
         state.create_object(blank, PlayerId(0), Zone::Battlefield, Some(1), Some(1)),
         state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(1), Some(1)),
     ];
-    state.pending_trigger_pushes_ap.reserve(2);
-    state.pending_trigger_pushes_nap.reserve(2);
     let mut c = crate::triggers::collect::Collector::new(PlayerId(0));
     for &(source, description, _) in case.0.iter().chain(&case.1).flatten() {
         let controller = if source == 2 { PlayerId(1) } else { PlayerId(0) };
@@ -68,12 +72,10 @@ fn queues(case: &Queued) -> (CardRegistry, GameState, [ObjectId; 3]) {
     for (t, &(_, _, ordered)) in c.nap.iter_mut().zip(case.1.iter().flatten()) {
         t.ordered = ordered;
     }
-    for t in c.ap.drain(..) {
-        state.pending_trigger_pushes_ap.push(t);
-    }
-    for t in c.nap.drain(..) {
-        state.pending_trigger_pushes_nap.push(t);
-    }
+    // Each queue moved in whole, as the collector's lists are: drained a
+    // trigger at a time, every trigger was copied twice more.
+    state.pending_trigger_pushes_ap = std::mem::take(&mut c.ap);
+    state.pending_trigger_pushes_nap = std::mem::take(&mut c.nap);
     std::mem::forget(c);
     (registry, state, ids)
 }
@@ -83,11 +85,15 @@ fn queues(case: &Queued) -> (CardRegistry, GameState, [ObjectId; 3]) {
 /// player's and one of the other's; 3, two of the active player's already
 /// ordered; 4, the other player's two of different abilities of one
 /// source, with nothing of the active player's.
+///
+/// A description only where the case turns on it (4, two abilities of one
+/// source): a description to copy into each trigger was a quarter of what
+/// building a case cost.
 const CASES: [Queued; 5] = [
-    ([Some((0, "a", false)), Some((1, "b", false))], [None, None]),
-    ([Some((0, "a", false)), Some((0, "a", false))], [None, None]),
-    ([Some((0, "a", false)), None], [Some((2, "c", false)), None]),
-    ([Some((1, "b", true)), Some((0, "a", true))], [None, None]),
+    ([Some((0, "", false)), Some((1, "", false))], [None, None]),
+    ([Some((0, "", false)), Some((0, "", false))], [None, None]),
+    ([Some((0, "", false)), None], [Some((2, "", false)), None]),
+    ([Some((1, "", true)), Some((0, "", true))], [None, None]),
     ([None, None], [Some((2, "c", false)), Some((2, "d", false))]),
 ];
 
