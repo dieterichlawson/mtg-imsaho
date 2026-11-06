@@ -305,12 +305,22 @@ fn costs_paid(kind: u8) {
     std::mem::forget((registry, state, cost));
 }
 
+/// Stands in for `abilities::tapped_for_cost_line`, the log's line for
+/// the creatures a cost tapped, which is for people: none. Built here, the
+/// names joined over a list the proof leaves one or none long ran the
+/// costs out of 12 GB.
+#[allow(dead_code)] // named only by `kani::stub`
+fn no_tapped_line(_: &GameState, _: PlayerId, _: ObjectId, _: &[ObjectId]) -> String {
+    String::new()
+}
+
 /// The proofs of an ability's costs paid, one per kind of sacrifice.
 macro_rules! each_sacrifice {
     ($($name:ident: $kind:expr;)*) => {$(
         card_proof! {
             #[kani::stub(crate::engine::demand_reserve, no_reserve)]
             #[kani::stub(crate::state::GameState::effective_toughness, toughness)]
+            #[kani::stub(crate::engine::actions::abilities::tapped_for_cost_line, no_tapped_line)]
             /// [`costs_paid`] for the kind of sacrifice of its name.
             fn $name() {
                 costs_paid($kind);
