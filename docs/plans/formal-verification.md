@@ -85,20 +85,40 @@ and writes the result back small, with unit tests on it.
 
 ### Running the proofs
 
-    scripts/prove.sh                   # Verus, then Kani: about four minutes
-    scripts/prove.sh verus             # mtg-kernel only: seconds once vstd is built
+    scripts/prove.sh                   # Verus, then every Kani proof: some 85 hours of solver time
+    scripts/prove.sh verus             # mtg-kernel only: a minute or two once vstd is built
     scripts/prove.sh kani [NAME...]    # the Kani proofs, or the named ones or modules
+    scripts/prove.sh kani-pr           # the pull request's tier: under half an hour
+    scripts/prove.sh kani-shard K/N    # the Kth of N shares of every Kani proof
     scripts/prove.sh exhaustive        # the bounded exhaustive checks, in release
     scripts/kernel-mutants.py [ID...]  # what the proofs and the tests each catch
     scripts/fuzz-engine.sh [SECONDS]   # the whole engine under libFuzzer (tier 2)
 
-The `proofs` workflow runs both provers, and the exhaustive checks, on every
-push to master and every pull request; `nightly-fuzz` runs the coverage-guided
-target for 50 minutes a night. The Verus release (0.2026.10.04), its Rust toolchain and the
-Kani version (0.68.0) are pinned in `scripts/prove.sh`, and `vstd` in
-`mtg-kernel/Cargo.toml` must match the Verus release. Run the Kani proofs
-one at a time, as the script does: four at once ran a 15 GB machine out of
-memory.
+Every Kani proof is too many to run on each change, so they run in two
+tiers. The `proofs` workflow, on every push to master and every pull
+request, runs Verus over `mtg-kernel`, the exhaustive checks, and the
+pull request's tier of the Kani proofs (`kani-pr`, held to 30 minutes):
+`scripts/kani/pr.list`, the fastest proved harness of each proof module
+within a budget, and the proved harnesses of each proof module the change
+edits, fastest first, within a budget of their own. `proofs-full`, on the
+1st and the 15th of each month, runs every Kani proof in 30 jobs, shared
+out by how long each harness took last time (`scripts/kani/times.txt`),
+each cbmc held to 12 GB, and files an issue naming any harness that
+proved last time and does not now. Either tier fails on a harness that
+does not prove unless `scripts/kani/expected-open.txt` names it, and says
+so of one it names that now proves. `scripts/kani-tiers.py write`, run on
+the full run's merged results, refreshes all three lists. A change to the
+engine reaches proofs outside the modules it edits, which the pull
+request's tier samples rather than runs; the full run is what holds them.
+
+`nightly-fuzz` runs the coverage-guided target for 50 minutes a night.
+The Verus release (0.2026.10.04), its Rust toolchain and the Kani version
+(0.68.0) are pinned in `scripts/prove.sh`, and `vstd` in
+`mtg-kernel/Cargo.toml` must match the Verus release. `kani-bounded.py`
+runs one cbmc at a time unless told otherwise (`--jobs`, each held to
+`--mem-cap`): four at once ran a 15 GB machine out of memory. It records
+each harness's result as it goes and, run again on the same results file,
+picks up where it stopped, a harness whose build failed included.
 
 A harness can pass and prove nothing. If an assumption, a stub or an
 unwinding bound rules out every execution, no assertion is ever reached,
