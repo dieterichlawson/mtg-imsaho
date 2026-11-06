@@ -279,6 +279,12 @@ impl Demand {
 /// [`compute_autotap`] around everything in `demands`, not only spells in
 /// hand: the plan's colour preferences count their pips, and a plan that
 /// leaves one unpayable is repaired when another plan would not.
+///
+/// Every plan it returns is one [`pool_after`] has run and found to pay
+/// `cost`, on every board and not only the ones a test enumerates: the
+/// greedy pass is a heuristic, and a plan of it the payment could not
+/// execute was once offered and then silently refused (issue #252).
+/// [`keep_the_hand_castable`] returns no other kind.
 #[must_use]
 pub fn compute_autotap_around(
     cost: &ManaCost,
@@ -288,7 +294,7 @@ pub fn compute_autotap_around(
 ) -> Option<Vec<(ObjectId, usize)>> {
     let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
     let plan = greedy_autotap(cost, pool, sources, &costs)?;
-    Some(keep_the_hand_castable(plan, cost, pool, sources, demands))
+    keep_the_hand_castable(plan, cost, pool, sources, demands)
 }
 
 /// The pips of `hand_costs` that only one kind of mana pays — coloured and
@@ -320,13 +326,23 @@ fn pool_after(
         let ability = sources.iter()
             .find(|s| s.object_id == object_id)
             .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))?;
-        auto_pay_reserving(&mut pool, &ability.cost, cost).ok()?;
-        for &(mana_type, amount) in &ability.produced {
-            pool.add(mana_type, amount);
-        }
+        tap_step(&mut pool, ability, cost)?;
     }
     auto_pay_reserving(&mut pool, cost, reserve).ok()?;
     Some(pool)
+}
+
+/// One entry of a plan, as [`pool_after`] runs it on `pool`: the ability's
+/// own mana cost paid around `cost`, then what it adds; `None`, with the
+/// pool as it was, when the pool cannot pay the ability's cost. What the
+/// engine's activation does to the pool
+/// (`engine::activate_mana_source_reserving`, `proofs::actions::mana_abilities`).
+pub(crate) fn tap_step(pool: &mut ManaPool, ability: &ManaAbilityDef, cost: &ManaCost) -> Option<()> {
+    auto_pay_reserving(pool, &ability.cost, cost).ok()?;
+    for &(mana_type, amount) in &ability.produced {
+        pool.add(mana_type, amount);
+    }
+    Some(())
 }
 
 /// Repair a plan that leaves a spell in hand uncastable when another plan
@@ -355,19 +371,21 @@ fn pool_after(
 /// as Phase 3 already holds — milling a card to save a colour is not a win.
 /// A greedy plan that strands nothing is returned untouched, so the tiers
 /// keep deciding everything they decided before.
+///
+/// Nor is any plan returned that [`pool_after`] does not find to pay
+/// `cost`: a greedy plan that does not is searched around as one that
+/// strands everything would be, and with no plan found that pays, there
+/// is none.
 fn keep_the_hand_castable(
     plan: Vec<(ObjectId, usize)>,
     cost: &ManaCost,
     pool: &ManaPool,
     sources: &[ManaSource],
     demands: &[Demand],
-) -> Vec<(ObjectId, usize)> {
+) -> Option<Vec<(ObjectId, usize)>> {
     let castable_before: Vec<&Demand> = demands.iter()
         .filter(|d| d.payable(pool, sources, &[]))
         .collect();
-    if castable_before.is_empty() {
-        return plan;
-    }
     let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
     let reserve = hand_reserve(&costs);
     let tapped = |p: &[(ObjectId, usize)]| -> Vec<&ManaSource> {
@@ -387,9 +405,10 @@ fn keep_the_hand_castable(
             .filter(|d| !d.payable(&left, sources, p))
             .count())
     };
-    let Some(base) = stranded(&plan) else { return plan };
-    if base == 0 {
-        return plan;
+    // `None` when the greedy plan does not pay.
+    let base = stranded(&plan);
+    if base == Some(0) {
+        return Some(plan);
     }
     // A floor under what any plan strands: a hand spell the whole board
     // cannot pay together with `cost` is stranded by every plan. Counted
@@ -410,17 +429,19 @@ fn keep_the_hand_castable(
             !within_reach(&both, pool, &rest)
         })
         .count();
-    if base <= floor {
-        return plan;
+    if base.is_some_and(|base| base <= floor) {
+        return Some(plan);
     }
-    let mut best = ((side_effects(&plan), base, tier_sum(&plan), plan.len()), plan.clone());
-    let consider = |mut candidate: Vec<(ObjectId, usize)>,
-                        best: &mut ((usize, usize, u32, usize), Vec<(ObjectId, usize)>)| {
+    // The best plan found that pays, if any yet, and how it ranks.
+    type Ranked = Option<((usize, usize, u32, usize), Vec<(ObjectId, usize)>)>;
+    let mut best: Ranked = base.map(|base| ((side_effects(&plan), base, tier_sum(&plan), plan.len()), plan.clone()));
+    let above_floor = |best: &Ranked| best.as_ref().is_none_or(|(key, _)| key.1 > floor);
+    let consider = |mut candidate: Vec<(ObjectId, usize)>, best: &mut Ranked| {
         free_abilities_first(&mut candidate, sources);
         if let Some(n) = stranded(&candidate) {
             let key = (side_effects(&candidate), n, tier_sum(&candidate), candidate.len());
-            if key < best.0 {
-                *best = (key, candidate);
+            if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
+                *best = Some((key, candidate));
             }
         }
     };
@@ -437,7 +458,7 @@ fn keep_the_hand_castable(
             }
         }
     }
-    if best.0 .1 > floor {
+    if above_floor(&best) {
         for source in &untapped {
             for ability in &source.abilities {
                 let mut candidate = plan.clone();
@@ -453,7 +474,7 @@ fn keep_the_hand_castable(
     // tapped for any one of its abilities or left alone; a bigger one is
     // left with the one-move repair rather than charged a search that
     // grows with it.
-    if best.0 .1 > floor {
+    if above_floor(&best) {
         let plans: usize = sources.iter()
             .map(|s| s.abilities.len() + 1)
             .try_fold(1usize, usize::checked_mul)
@@ -465,7 +486,7 @@ fn keep_the_hand_castable(
             });
         }
     }
-    best.1
+    best.map(|(_, plan)| plan)
 }
 
 /// How many plans `keep_the_hand_castable` will try one by one when the
@@ -1659,6 +1680,25 @@ mod tests {
             .filter(|s| !plan.iter().any(|(id, _)| *id == s.object_id)).cloned().collect();
         assert!(greedy_autotap(&hand[0], &left, &untapped, &[]).is_some(),
             "{{W}}{{W}} is still castable after {plan:?}");
+    }
+
+    /// What the planner returns is a plan `pool_after` found to pay, on
+    /// every board: a greedy plan that does not pay is not handed on
+    /// (issue #252: one was offered, and the cast silently refused), but
+    /// searched around for one that does, and with none found there is no
+    /// plan. Given here as a greedy pass that taps nothing for `{G}`.
+    #[test]
+    fn a_plan_that_does_not_pay_is_never_returned() {
+        let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
+        let forest = vec![make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)])];
+        let mountain = vec![make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)])];
+        let hand = [Demand { cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]), keep: None }];
+        for demands in [&hand[..0], &hand[..]] {
+            let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), &forest, demands);
+            assert_eq!(plan, Some(vec![(ObjectId(1), 0)]), "the Forest pays {{G}}, around {demands:?}");
+            let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), &mountain, demands);
+            assert_eq!(plan, None, "nothing pays {{G}}, around {demands:?}");
+        }
     }
 
     /// Issue #684: a `{C}` pip paid with the free `{C}` of the only source
