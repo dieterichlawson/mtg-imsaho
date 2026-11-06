@@ -749,13 +749,13 @@ fn ludevics_abomination_offers_no_activated_ability() {
 /// which face is up, so activations held on the stack from before the flip
 /// land their counters on Ludevic's Abomination, and at five remove them. Their
 /// "transform it" does nothing: the permanent has transformed since they went
-/// on the stack (CR 701.27f).
+/// on the stack (CR 701.28f).
 ///
 /// The card used to open its resolution with `if is_transformed { return }`,
 /// reasoning that the back face has no activated abilities — which is true and
 /// beside the point, since the ability is no longer on the permanent. This test
 /// then said the fifth surplus activation flips it back, and simulated "held"
-/// activations by activating them after the flip, where 701.27f has nothing to
+/// activations by activating them after the flip, where 701.28f has nothing to
 /// say; all six are on the stack at once here.
 #[test]
 fn surplus_activations_keep_working_after_the_flip() {
@@ -788,7 +788,7 @@ fn surplus_activations_keep_working_after_the_flip() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert!(state.stack.is_empty());
     let obj = state.get_object(subject).unwrap();
-    assert!(obj.is_transformed, "\"transform it\" is ignored after a transform since it was activated (CR 701.27f)");
+    assert!(obj.is_transformed, "\"transform it\" is ignored after a transform since it was activated (CR 701.28f)");
     assert_eq!(state.name_of(subject, &reg), "Ludevic's Abomination");
     assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0, "\"remove all of them\" still happens");
 }
@@ -1609,7 +1609,7 @@ fn back_face_homicidal_brute_has_end_step_trigger() {
         "Back-face Homicidal Brute should fire its end-step transform-back trigger");
 }
 
-/// CR 113.7a, 701.27f: Homicidal Brute's end-step ability, answered by
+/// CR 113.7a, 701.28f: Homicidal Brute's end-step ability, answered by
 /// Moonmist turning the Brute (a Human) back into Civilized Scholar, is still
 /// the Brute's: it taps the Scholar, and its "then transform it" is ignored,
 /// the permanent having transformed since the ability went on the stack. The
@@ -1631,7 +1631,7 @@ fn homicidal_brutes_end_step_ability_taps_it_after_a_transform_in_response() {
 
     let obj = state.get_object(scholar).unwrap();
     assert!(obj.tapped, "the Brute's ability taps it, whichever face is up");
-    assert!(!obj.is_transformed, "and does not transform it back (CR 701.27f)");
+    assert!(!obj.is_transformed, "and does not transform it back (CR 701.28f)");
 }
 
 // -------------------------------------------------------------------------

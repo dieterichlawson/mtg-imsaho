@@ -372,7 +372,7 @@ enum Effect {
     /// (CR 514.2).
     CantBlockThisTurn { slot: usize },
     /// "Transform all Humans": each double-faced one; a single-faced one
-    /// does nothing (CR 701.27a, c).
+    /// does nothing (CR 701.28a, c).
     TransformAll { filter: Filter },
     /// "Prevent all combat damage that would be dealt this turn by creatures
     /// other than Werewolves and Wolves" (CR 615.1).
@@ -409,7 +409,7 @@ enum Effect {
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
     /// "Transform this creature": it turns to its other face, unless it has
-    /// transformed since the ability was put on the stack (CR 701.27a, f).
+    /// transformed since the ability was put on the stack (CR 701.28a, f).
     TransformThis { slot: usize },
     /// "Put a hatchling counter on this creature": one counter of a kind
     /// with no rules of its own, which its text counts (CR 122.1).
@@ -566,7 +566,7 @@ struct Spec {
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
     /// last turn, transform this creature", and on its back face, whose
     /// text is read too, "... if a player cast two or more spells last
-    /// turn, transform this creature" (CR 603.4, 701.27, 712).
+    /// turn, transform this creature" (CR 603.4, 701.28, 712).
     werewolf: bool,
 }
 
@@ -2769,7 +2769,7 @@ struct World {
     x: u32,
     /// Whether each double-faced permanent was transformed when the
     /// triggers resolving were put on the stack, which a transform of its
-    /// own asks (CR 701.27f); empty for an ability resolving as it was
+    /// own asks (CR 701.28f); empty for an ability resolving as it was
     /// activated, nothing between.
     faces_put: BTreeMap<ObjectId, bool>,
     /// "Prevent all combat damage that would be dealt this turn by creatures
@@ -2892,7 +2892,7 @@ impl World {
     }
 
     /// This world as triggers are put on the stack from it, each
-    /// double-faced permanent's face recorded (CR 701.27f).
+    /// double-faced permanent's face recorded (CR 701.28f).
     fn with_faces_put(&self) -> World {
         let faces_put = self.permanents.iter()
             .filter(|(_, m)| m.other_face.is_some())
@@ -5679,7 +5679,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 // Moonmist: the ability on the stack is the face's it was
                 // activated from, and resolves as that face's text says on
                 // the permanent as it now is (CR 113.7a, 112.7a); a
-                // transform of its own does nothing (701.27f).
+                // transform of its own does nothing (701.28f).
                 if world.permanents[&id].other_face.is_some() && !ability.sacrifice_self {
                     let answered: Vec<World> = ways.iter().cloned()
                         .map(|mut w| {

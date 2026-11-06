@@ -116,7 +116,7 @@ pub enum Act {
     /// `GameState::add_counters`: that many counters of that kind on that
     /// object (CR 122.1).
     Counters(ObjectId, CounterType, u32),
-    /// `helpers::apply_transform`: that permanent transformed (CR 701.27).
+    /// `helpers::apply_transform`: that permanent transformed (CR 701.28).
     Transform(ObjectId),
     /// `GameState::remove_counters`: up to that many counters of that kind
     /// removed from that object.

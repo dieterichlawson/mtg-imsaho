@@ -90,7 +90,7 @@ impl CardBehavior for LudevicsTestSubject {
     /// particular name. So surplus activations held on the stack really do
     /// stack hatchling counters onto Ludevic's Abomination, and at five remove
     /// them; their "transform it" is ignored, the permanent having transformed
-    /// since they went on the stack (CR 701.27f, in `transform_quietly`).
+    /// since they went on the stack (CR 701.28f, in `transform_quietly`).
     ///
     /// Pre-errata the line read "Put a hatchling counter on Ludevic's Test
     /// Subject", which is where the old contrary reading came from; the name

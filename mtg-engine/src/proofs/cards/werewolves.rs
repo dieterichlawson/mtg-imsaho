@@ -2,7 +2,7 @@
 //! beginning of each upkeep, if no spells were cast last turn, transform
 //! this creature." and whose back face reads "At the beginning of each
 //! upkeep, if a player cast two or more spells last turn, transform this
-//! creature." (CR 712, 701.27).
+//! creature." (CR 712, 701.28).
 //!
 //! Proved for each of the twelve: the trigger is each upkeep's, not only
 //! its controller's (CR 503.1a); it triggers exactly when its face's
@@ -10,7 +10,7 @@
 //! face being the one up as the upkeep begins; and as it resolves it asks
 //! to transform the werewolf exactly when it is still on the battlefield
 //! and the condition still holds, read from the face it triggered from
-//! (603.4, 701.27f), and nothing else changes. Each face's characteristics
+//! (603.4, 701.28f), and nothing else changes. Each face's characteristics
 //! are its Oracle record's, checked for every card; the transform itself is
 //! the engine's, proved in `proofs::actions`.
 //!
