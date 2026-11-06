@@ -1957,12 +1957,17 @@ for the seat from here, and its games are forfeit"), ""));
     /// A person's choice to play or draw the next game.
     ///
     /// # Errors
-    /// Not between games, or not this seat's choice.
+    /// Not between games, not this seat's choice, or already ready: the
+    /// choice is part of what `sideboard_ready` commits, as the deck is
+    /// (#998).
     pub fn play_draw(&mut self, seat: usize, play: bool) -> Result<(), String> {
-        let (m, _) = self.between_mut(seat)?;
+        let (m, side) = self.between_mut(seat)?;
         let between = m.between.as_mut().expect("between");
         if between.chooser != seat {
             return Err("the choice to play or draw is your opponent's".to_string());
+        }
+        if between.ready[side] {
+            return Err("you are ready for the next game".to_string());
         }
         between.play_first = Some(play);
         Ok(())

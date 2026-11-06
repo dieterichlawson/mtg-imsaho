@@ -964,8 +964,9 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   it with the decks as they stand. Then the runner: under the prompt stub
   (which sideboards half the time) read every `SIDEBOARD before game`
   line against the deck the next game's log plays. Tried 2026-11-06
-  (#998): every bad deck was refused, but `play_draw` is still taken
-  after `sideboard_ready`. Ask of every between-games message whether
+  (#998): every bad deck was refused, but `play_draw` was still taken
+  after `sideboard_ready` (fixed under #998: the server, the client and
+  the page all refuse it now). Ask of every between-games message whether
   "ready" locks it, on the page, the client and the server alike. To
   send what no page sends, copy `table_rehearsal.js` to scratch and open
   a raw `WebSocket` on the seat's join key from a hook in its between
