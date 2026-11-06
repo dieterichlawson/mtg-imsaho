@@ -110,7 +110,7 @@ fn transforming_turns_over_exactly_a_double_faced_permanent() {
 /// the stack before its last transform, when it is left as it was and
 /// the answer says why.
 fn a_permanents_own_trigger_does_not_transform_it_again() {
-    use crate::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+    use crate::triggers::{collect::Collector, TriggerEvent};
     let (registry, mut state, blank, two) = board(Box::new(TwoFaced));
     let owner = PlayerId(u8::from(kani::any::<bool>()));
     let id = state.create_object(two, owner, Zone::Battlefield, None, None);
@@ -127,10 +127,14 @@ fn a_permanents_own_trigger_does_not_transform_it_again() {
         1 => Some(transforms),
         _ => Some(transforms.wrapping_add(1)),
     };
-    let mut source = TriggerSource::new(if own { id } else { other }, two, owner, "");
-    source.source_transforms = stamp;
     let event = if delayed { TriggerEvent::DelayedTokenExile { target_id: id } } else { TriggerEvent::Upkeep };
-    state.resolving_ability = Some(StackEntry::Trigger(PendingTrigger::new(source, event)));
+    // Built where every trigger is (`tests/trigger_source_independence.rs`).
+    let mut c = Collector::new(owner);
+    c.emit(if own { id } else { other }, two, owner, String::new(), event);
+    let mut trigger = c.ap.pop().expect("just emitted");
+    std::mem::forget(c);
+    trigger.source.source_transforms = stamp;
+    state.resolving_ability = Some(StackEntry::Trigger(trigger));
     let before = Snapshot::of(&state);
 
     let result = helpers::apply_transform(&mut state, id, &registry);
