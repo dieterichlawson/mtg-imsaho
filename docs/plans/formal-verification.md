@@ -119,6 +119,37 @@ A proof is a proof relative to what it assumes. Here that is:
 - **Verus, Z3 and Kani/CBMC**, and `vstd`'s specifications of the `std`
   functions the kernels call (`min`, `clamp`, `saturating_sub`, `Vec::push`);
 - **rustc**, compiling the same source for the game that Verus checked;
+- **a defect in Kani 0.68 that the proofs keep clear of**, and a check
+  that they do. Kani shares one global between equal constants through a
+  table of the allocations it has laid out, and lays out a static's
+  initial value through the same table, under the static's own symbol
+  (`codegen_static` calls `codegen_alloc_in_memory`). A constant laid out
+  after it with the same bytes is then read from the static, and reads
+  whatever the program last stored there. The proofs' stubs talk to
+  their harnesses through `static mut`s, and a counter `MARKED_N: usize
+  = 0` shares its eight zero bytes with the standard library's
+  `ZERO_CAP`, the capacity of every `Vec::new()`: once a stub had counted
+  one creature dealing first-strike damage, every new list had a capacity
+  of 1 and no buffer, and the first-strike damage proofs failed on a
+  write through a dangling pointer. A constant read so is no longer the
+  program Rust compiled, in either direction, so a proof's result with
+  one is not a result about the engine. Every static of the proofs is
+  now a `Held` (`mtg-engine/src/proofs/held.rs`), its value beside its
+  own address: an allocation's provenance is part of what the table
+  compares, and no constant points at a static of the proofs, so none
+  has a `Held`'s bytes. `scripts/static-constants.py` reads each
+  harness's goto program for a constant read through any static, or a
+  pointer into one of the proofs' statics from code outside the proofs,
+  and `kani-bounded.py` records a harness with either as an ERROR rather
+  than run it. Before this, one harness from each of the proofs' 104
+  modules was scanned: 34 read a constant through a static. In 30 the
+  only such read is `raw_vec::new_cap`'s zero capacity for a zero-sized
+  element, a branch no list of a sized type takes; in four (an ability's
+  X answer, keeping a hand after mulligans, a state trigger's
+  resolution, the spells counted across a turn) `Vec::new()` read its
+  capacity from one of the proof's counters, and each of the four had
+  passed. Every result from before this was produced with the defect
+  present, so the full run after it (below) is the record;
 - **a known imprecision in CBMC 6.11's `memcpy`**, which Kani 0.68 uses
   for every copy of a list of plain values (a `Vec<ObjectId>`'s clone, a
   `String`'s). It copies the source's bytes as an array taken where the
@@ -1553,6 +1584,20 @@ resolution, out of memory even at 12 GB or out of time in symbolic
 execution; three blocked attackers' first-strike steps, stopped by Kani
 on a copy into a list allocated on one path and not another; and the two
 "up to N" answers run again at 43f4fe1.
+
+That pass was made with the Kani defect "What is trusted" describes
+present in it. The three first-strike steps were its failures: their
+"list allocated on one path" was a `Vec::new()` whose capacity was read
+from the proof's own counter. A scan of one harness from each of the
+104 modules of the proofs found 34 reading a constant through a static
+(the card library's `LISTINGS_HANDED` and `ACTED`, and the action
+proofs' own counters), four of them through `Vec::new()`, and those four
+had passed. So no result of that pass is kept: every harness is run
+again at f288a21, with the proofs' statics `Held` and the scan before
+each, and the counts above are replaced as that run finishes. Built so,
+the first-strike step of a blocked attacker and its blocker passes (512
+s; 613 thousand steps of symbolic execution where the shared constant
+cost 1.5 million).
 
 The engine paths a card proof stands in for or takes for granted were
 then walked function by function for any with no proof: the answers to
