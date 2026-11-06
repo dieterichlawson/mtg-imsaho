@@ -12,6 +12,7 @@
 //! protection) and whether it still meets what the card itself asks
 //! (`is_valid_target`). Each is its own function's proof, or the card's.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::events::GameEvent;
@@ -32,7 +33,7 @@ enum Asked {
 }
 
 /// The answers, by target (the board's objects 1 and 2) and question.
-static mut ANSWERS: [[Option<bool>; 3]; 2] = [[None; 3]; 2];
+static mut ANSWERS: Held<[[Option<bool>; 3]; 2]> = Held::new([[None; 3]; 2], (&raw const ANSWERS).cast());
 
 fn answer(id: ObjectId, asked: Asked) -> bool {
     let i = match id.0 {
@@ -41,14 +42,14 @@ fn answer(id: ObjectId, asked: Asked) -> bool {
         _ => panic!("a target this proof does not make"),
     };
     // SAFETY: a proof runs on one thread, and only this function names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     *answers[i][asked as usize].get_or_insert_with(kani::any::<bool>)
 }
 
 /// Which hook resolved, with which targets, and whether the spell was
 /// moved off the stack after (CR 608.2n).
-static mut RESOLVED: Option<(Hook, [Option<Target>; 2], usize)> = None;
-static mut MOVED: usize = 0;
+static mut RESOLVED: Held<Option<(Hook, [Option<Target>; 2], usize)>> = Held::new(None, (&raw const RESOLVED).cast());
+static mut MOVED: Held<usize> = Held::new(0, (&raw const MOVED).cast());
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hook {
@@ -61,7 +62,7 @@ fn resolved(hook: Hook, targets: &[Target]) {
     assert!(targets.len() <= 2, "no more targets than this proof gives");
     let held = [targets.first().cloned(), targets.get(1).cloned()];
     // SAFETY: as in `answer`.
-    let r = unsafe { &mut *std::ptr::addr_of_mut!(RESOLVED) };
+    let r = unsafe { &mut *std::ptr::addr_of_mut!(RESOLVED.value) };
     assert!(r.is_none(), "resolved once");
     *r = Some((hook, held, targets.len()));
 }
@@ -114,7 +115,7 @@ fn can_be_targeted_by(_: &GameState, id: ObjectId, _: PlayerId, _: Option<Object
 #[allow(dead_code)] // named only by `kani::stub`
 fn move_spell_after_resolve(_: &mut GameState, _: ObjectId, _: &CardRegistry) {
     // SAFETY: as in `answer`.
-    unsafe { *std::ptr::addr_of_mut!(MOVED) += 1 };
+    unsafe { *std::ptr::addr_of_mut!(MOVED.value) += 1 };
 }
 
 /// `n` creatures of the blank card, either player's, on the battlefield,
@@ -142,14 +143,14 @@ fn targets_of(state: &mut GameState, blank: crate::ids::CardId, n: usize) -> ([O
 /// `expected`.
 fn resolved_with(hook: Hook, expected: &[Option<Target>; 2], n: usize) -> bool {
     // SAFETY: as in `answer`.
-    let r = unsafe { &*std::ptr::addr_of!(RESOLVED) };
+    let r = unsafe { &*std::ptr::addr_of!(RESOLVED.value) };
     r.as_ref().is_some_and(|(h, held, m)| *h == hook && *m == n && held == expected)
 }
 
 /// What [`a_spell_on_top`] finds the engine hands the rest of a spell's
 /// resolution: the spell, its card, its targets (the first two, and how
 /// many) and its controller.
-static mut HANDED: Option<(ObjectId, crate::ids::CardId, [Option<Target>; 2], usize, PlayerId)> = None;
+static mut HANDED: Held<Option<(ObjectId, crate::ids::CardId, [Option<Target>; 2], usize, PlayerId)>> = Held::new(None, (&raw const HANDED).cast());
 
 /// Stands in for `stack::resolve_spell_as`: records what it is handed.
 #[allow(dead_code)] // named only by `kani::stub`
@@ -164,7 +165,7 @@ fn resolve_spell_as(
     assert!(targets.len() <= 2, "no more targets than this proof gives");
     let held = [targets.first().cloned(), targets.get(1).cloned()];
     // SAFETY: as in `answer`.
-    let handed = unsafe { &mut *std::ptr::addr_of_mut!(HANDED) };
+    let handed = unsafe { &mut *std::ptr::addr_of_mut!(HANDED.value) };
     assert!(handed.is_none(), "handed once");
     *handed = Some((object_id, card_id, held, targets.len(), caster));
     std::mem::forget(targets);
@@ -194,7 +195,7 @@ fn a_spell_on_top(n: usize) {
         *c = Some(Target::Object(id));
     }
     // SAFETY: as in `answer`.
-    let handed = unsafe { &*std::ptr::addr_of!(HANDED) };
+    let handed = unsafe { &*std::ptr::addr_of!(HANDED.value) };
     assert!(state.stack.is_empty());
     assert!(handed.as_ref().is_some_and(|(o, c, held, m, p)| *o == spell && *c == card && *held == chosen && *m == n && *p == controller));
     std::mem::forget((registry, state));
@@ -235,7 +236,7 @@ fn a_spell_resolving(n: usize) {
         *h = Some(if answer(id, Asked::Targetable) { Target::Object(id) } else { Target::Illegal });
     }
     // SAFETY: as in `answer`.
-    let (none, moved) = unsafe { ((*std::ptr::addr_of!(RESOLVED)).is_none(), *std::ptr::addr_of!(MOVED)) };
+    let (none, moved) = unsafe { ((*std::ptr::addr_of!(RESOLVED.value)).is_none(), *std::ptr::addr_of!(MOVED.value)) };
     assert!(moved == 1);
     if n == 0 || any_legal {
         assert!(resolved_with(Hook::Spell, &handed, n));
@@ -314,7 +315,7 @@ fn an_ability_resolving((n, required, loyalty): (usize, bool, bool)) {
         *h = Some(if legal { Target::Object(id) } else { Target::Illegal });
     }
     // SAFETY: as in `answer`.
-    let none = unsafe { (*std::ptr::addr_of!(RESOLVED)).is_none() };
+    let none = unsafe { (*std::ptr::addr_of!(RESOLVED.value)).is_none() };
     assert!(state.stack.is_empty());
     if n > 0 && !any_legal {
         assert!(none);
@@ -335,7 +336,7 @@ each_resolution! {
 /// What the game held of the resolving ability when its card's
 /// resolution was called: the X, the creature sacrificed, its toughness,
 /// and who activated it.
-static mut PAID: Option<(Option<u32>, Option<ObjectId>, Option<i32>, Option<PlayerId>)> = None;
+static mut PAID: Held<Option<(Option<u32>, Option<ObjectId>, Option<i32>, Option<PlayerId>)>> = Held::new(None, (&raw const PAID).cast());
 
 /// A card whose ability's resolution records what it would read of its
 /// costs (Kessig Wolf Run's X, Disciple of Griselbrand's sacrificed
@@ -349,7 +350,7 @@ impl CardBehavior for Paid {
     }
     fn resolve_activated_ability(&self, state: &mut GameState, _: ObjectId, _: usize, _: &[Target], _: &CardRegistry) {
         // SAFETY: as in `answer`, for PAID.
-        let paid = unsafe { &mut *std::ptr::addr_of_mut!(PAID) };
+        let paid = unsafe { &mut *std::ptr::addr_of_mut!(PAID.value) };
         assert!(paid.is_none(), "resolved once");
         *paid = Some((state.last_activated_x_value, state.last_activated_sacrifice,
             state.last_activated_sacrifice_toughness, state.resolving_ability_activator));
@@ -393,7 +394,7 @@ fn an_ability_resolving_with_its_costs(_: ()) {
     crate::stack::resolve_top_of_stack(&mut state, &registry);
 
     // SAFETY: as in `answer`.
-    let paid = unsafe { *std::ptr::addr_of!(PAID) };
+    let paid = unsafe { *std::ptr::addr_of!(PAID.value) };
     assert!(state.stack.is_empty() && paid == Some((x, sacrificed, toughness, Some(activator))));
     assert!(state.resolving_ability_activator.is_none() && state.resolving_ability.is_none());
     std::mem::forget((registry, state));
@@ -408,7 +409,7 @@ each_resolution! {
 /// planeswalker, land), whether it is legendary, its starting loyalty, and
 /// whether its cost has an X. Fixed before it is registered, so that each
 /// time its data is built it is the same card.
-static mut PRINTED: ([bool; 7], bool, Option<u32>, bool) = ([false; 7], false, None, false);
+static mut PRINTED: Held<([bool; 7], bool, Option<u32>, bool)> = Held::new(([false; 7], false, None, false), (&raw const PRINTED).cast());
 
 /// A card of no hooks of its own but its printed data and loyalty, as
 /// [`PRINTED`] says: its resolution is the default.
@@ -420,7 +421,7 @@ impl CardBehavior for Printed {
         const TYPES: [CardType; 7] = [CardType::Instant, CardType::Sorcery, CardType::Creature,
             CardType::Enchantment, CardType::Artifact, CardType::Planeswalker, CardType::Land];
         // SAFETY: as in `answer`, for PRINTED, only read here.
-        let (has, legendary, _, x) = unsafe { *std::ptr::addr_of!(PRINTED) };
+        let (has, legendary, _, x) = unsafe { *std::ptr::addr_of!(PRINTED.value) };
         let mut card_types = Vec::with_capacity(7);
         for (t, &h) in TYPES.iter().zip(&has) {
             if h {
@@ -437,21 +438,21 @@ impl CardBehavior for Printed {
     }
     fn starting_loyalty(&self) -> Option<u32> {
         // SAFETY: as in `card_data`.
-        unsafe { (*std::ptr::addr_of!(PRINTED)).2 }
+        unsafe { (*std::ptr::addr_of!(PRINTED.value)).2 }
     }
 }
 
 /// Where the spell was moved, and the loyalty counters put on it, with
 /// the zone it was in then.
-static mut ENTERED: Option<Zone> = None;
-static mut LOYALTY: Option<(crate::types::CounterType, u32, Zone)> = None;
+static mut ENTERED: Held<Option<Zone>> = Held::new(None, (&raw const ENTERED).cast());
+static mut LOYALTY: Held<Option<(crate::types::CounterType, u32, Zone)>> = Held::new(None, (&raw const LOYALTY).cast());
 
 /// Stands in for `GameState::move_object`, proved in `moving`: the move
 /// recorded, once, and the object put in that zone.
 #[allow(dead_code)] // named only by `kani::stub`
 fn entered(state: &mut GameState, id: ObjectId, to: Zone, _: &CardRegistry) -> bool {
     // SAFETY: as in `answer`, for ENTERED.
-    let e = unsafe { &mut *std::ptr::addr_of_mut!(ENTERED) };
+    let e = unsafe { &mut *std::ptr::addr_of_mut!(ENTERED.value) };
     assert!(e.is_none(), "moved once");
     *e = Some(to);
     state.get_object_mut(id).expect("on the board").zone = to;
@@ -463,7 +464,7 @@ fn entered(state: &mut GameState, id: ObjectId, to: Zone, _: &CardRegistry) -> b
 #[allow(dead_code)] // named only by `kani::stub`
 fn loyalty_counters(state: &mut GameState, id: ObjectId, kind: crate::types::CounterType, n: u32) -> bool {
     // SAFETY: as in `answer`, for LOYALTY.
-    let l = unsafe { &mut *std::ptr::addr_of_mut!(LOYALTY) };
+    let l = unsafe { &mut *std::ptr::addr_of_mut!(LOYALTY.value) };
     assert!(l.is_none(), "counters put on once");
     let zone = state.get_object(id).expect("on the board").zone;
     *l = Some((kind, n, zone));
@@ -495,7 +496,7 @@ fn a_spell_with_no_resolution_of_its_own_enters_the_battlefield_if_it_is_a_perma
     let (legendary, x): (bool, bool) = (kani::any(), kani::any());
     let loyalty: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
     // SAFETY: as in `answer`, before the card is registered.
-    unsafe { *std::ptr::addr_of_mut!(PRINTED) = (has, legendary, loyalty, x) };
+    unsafe { *std::ptr::addr_of_mut!(PRINTED.value) = (has, legendary, loyalty, x) };
     let mut registry = CardRegistry::new();
     let card = registry.register(Box::new(Printed));
     let mut state = crate::proofs::cards::new_game();
@@ -506,7 +507,7 @@ fn a_spell_with_no_resolution_of_its_own_enters_the_battlefield_if_it_is_a_perma
     Printed.on_resolve(&mut state, spell, &[], &registry);
 
     // SAFETY: as in `answer`.
-    let (moved, counters) = unsafe { (*std::ptr::addr_of!(ENTERED), *std::ptr::addr_of!(LOYALTY)) };
+    let (moved, counters) = unsafe { (*std::ptr::addr_of!(ENTERED.value), *std::ptr::addr_of!(LOYALTY.value)) };
     let permanent = has[2..].iter().any(|&h| h);
     let obj = state.get_object(spell).expect("on the board");
     if permanent {
@@ -553,7 +554,7 @@ crate::proofs::cards::card_proof! {
 
 /// What a spell's own resolution does before it is done with, by
 /// harness: nothing, puts it onto the battlefield, or asks a question.
-static mut ENDING: u8 = 0;
+static mut ENDING: Held<u8> = Held::new(0, (&raw const ENDING).cast());
 
 /// A card whose resolution does what [`ENDING`] says.
 struct Ending;
@@ -564,7 +565,7 @@ impl CardBehavior for Ending {
     }
     fn on_resolve(&self, state: &mut GameState, id: ObjectId, _: &[Target], _: &CardRegistry) {
         // SAFETY: as in `answer`, for ENDING.
-        match unsafe { *std::ptr::addr_of!(ENDING) } {
+        match unsafe { *std::ptr::addr_of!(ENDING.value) } {
             0 => {}
             1 => state.get_object_mut(id).expect("on the board").zone = Zone::Battlefield,
             _ => state.awaiting_action = Some(crate::state::AwaitingAction::DiscardToHandSize { player: PlayerId(0), discard_count: 1 }),
@@ -583,7 +584,7 @@ impl CardBehavior for Ending {
 /// card's resolution each of the three.
 fn a_spell_ending(ending: u8) {
     // SAFETY: as in `answer`, before the card resolves.
-    unsafe { *std::ptr::addr_of_mut!(ENDING) = ending };
+    unsafe { *std::ptr::addr_of_mut!(ENDING.value) = ending };
     let mut registry = CardRegistry::new();
     let card = registry.register(Box::new(Ending));
     let mut state = crate::proofs::cards::new_game();
@@ -593,7 +594,7 @@ fn a_spell_ending(ending: u8) {
     crate::stack::resolve_spell_as(&mut state, &registry, spell, card, Vec::new(), caster);
 
     // SAFETY: as in `answer`.
-    let moved = unsafe { *std::ptr::addr_of!(MOVED) };
+    let moved = unsafe { *std::ptr::addr_of!(MOVED.value) };
     let zone = state.get_object(spell).expect("on the board").zone;
     match ending {
         0 => { assert!(moved == 1 && state.resolving_spell.is_none() && state.awaiting_action.is_none()); }
@@ -637,7 +638,7 @@ fn a_spell_finishing(_: ()) {
     crate::engine::effects::finish_spell_resolution_if_idle(&mut state, &registry);
 
     // SAFETY: as in `answer`.
-    let moved = unsafe { *std::ptr::addr_of!(MOVED) };
+    let moved = unsafe { *std::ptr::addr_of!(MOVED.value) };
     if waiting {
         assert!(moved == 0 && state.resolving_spell == resolving.then_some(spell));
     } else {

@@ -17,6 +17,7 @@
 //! it is matched: read back from an effect printed on the heap, the solver
 //! cannot tell it from any other filter, and matched every one.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::blank_board;
@@ -38,11 +39,11 @@ enum Asked {
 
 /// The answers, by question: chosen the first time each is asked, the same
 /// after.
-static mut ANSWERS: [Option<bool>; Asked::Reach as usize + 1] = [None; Asked::Reach as usize + 1];
+static mut ANSWERS: Held<[Option<bool>; Asked::Reach as usize + 1]> = Held::new([None; Asked::Reach as usize + 1], (&raw const ANSWERS).cast());
 
 fn answer(asked: Asked) -> bool {
     // SAFETY: a proof runs on one thread, and only this function names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     *answers[asked as usize].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -138,17 +139,17 @@ each_filter! {
 }
 
 /// The filter [`stand_in`] checks it is handed.
-static mut ASKED_OF: *const F = std::ptr::null();
+static mut ASKED_OF: Held<*const F> = Held::new(std::ptr::null(), (&raw const ASKED_OF).cast());
 
 /// Whether each of the board's first four objects matches that filter, as
 /// [`stand_in`] answers: chosen once, the same after.
-static mut MATCHED: [Option<bool>; 4] = [None; 4];
+static mut MATCHED: Held<[Option<bool>; 4]> = Held::new([None; 4], (&raw const MATCHED).cast());
 
 /// Points [`stand_in`] at the one filter it may be asked of: the filter an
 /// effect on a proof's board prints.
 pub(super) fn asked_of(filter: &F) {
     // SAFETY: a proof runs on one thread, and only this function writes ASKED_OF.
-    unsafe { *std::ptr::addr_of_mut!(ASKED_OF) = filter };
+    unsafe { *std::ptr::addr_of_mut!(ASKED_OF.value) = filter };
 }
 
 /// Stands in for `GameState::matches_filter` in the proofs of what an
@@ -162,7 +163,7 @@ pub(super) fn asked_of(filter: &F) {
 #[allow(dead_code)] // named only by `kani::stub`
 pub(super) fn stand_in(_: &GameState, id: ObjectId, filter: &F, _: ObjectId, _: PlayerId, _: &CardRegistry) -> bool {
     // SAFETY: as in `asked_of`.
-    assert!(std::ptr::eq(filter, unsafe { *std::ptr::addr_of!(ASKED_OF) }), "the effect's own filter");
+    assert!(std::ptr::eq(filter, unsafe { *std::ptr::addr_of!(ASKED_OF.value) }), "the effect's own filter");
     matches(id)
 }
 
@@ -171,6 +172,6 @@ pub(super) fn matches(id: ObjectId) -> bool {
     let i = usize::try_from(id.0).expect("an id of the board");
     assert!((1..=4).contains(&i), "an object this proof does not make");
     // SAFETY: a proof runs on one thread, and only this function names MATCHED.
-    let matched = unsafe { &mut *std::ptr::addr_of_mut!(MATCHED) };
+    let matched = unsafe { &mut *std::ptr::addr_of_mut!(MATCHED.value) };
     *matched[i - 1].get_or_insert_with(kani::any::<bool>)
 }

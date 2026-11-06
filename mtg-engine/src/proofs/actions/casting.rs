@@ -5,6 +5,7 @@
 //! done (601.2c); that check (`targeting::targets_are_legal`) is any answer
 //! here, the same each time it is asked.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::events::GameEvent;
@@ -26,13 +27,13 @@ impl CardBehavior for Castable {
 }
 
 /// The check's answer: chosen the first time it is asked, the same after.
-static mut LEGAL: Option<bool> = None;
+static mut LEGAL: Held<Option<bool>> = Held::new(None, (&raw const LEGAL).cast());
 
 /// Stands in for `targeting::targets_are_legal`: any answer.
 #[allow(dead_code)] // named only by `kani::stub`
 fn targets_are_legal(_: &GameState, _: &TargetRequirement, _: &[Target], _: PlayerId, _: ObjectId, _: &dyn CardBehavior, _: &CardRegistry) -> bool {
     // SAFETY: a proof runs on one thread, and only this function writes LEGAL.
-    *unsafe { &mut *std::ptr::addr_of_mut!(LEGAL) }.get_or_insert_with(kani::any::<bool>)
+    *unsafe { &mut *std::ptr::addr_of_mut!(LEGAL.value) }.get_or_insert_with(kani::any::<bool>)
 }
 
 /// Stands in for `engine::demand_reserve`, the mana the rest of the
@@ -80,7 +81,7 @@ fn casting() {
         &mut state, spell, &[Target::Object(creature)], None, None, &[], None, &[], &registry);
 
     // SAFETY: as in `targets_are_legal`.
-    let legal = unsafe { *std::ptr::addr_of!(LEGAL) } == Some(true);
+    let legal = unsafe { *std::ptr::addr_of!(LEGAL.value) } == Some(true);
     let obj = state.get_object(spell).expect("still on the board");
     if legal {
         assert!(matches!(applied, crate::engine::Applied::Continue));

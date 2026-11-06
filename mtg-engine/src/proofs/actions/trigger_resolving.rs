@@ -16,6 +16,7 @@
 //! trigger in the pool has one target; each kind of event a targeted one
 //! is on is proved with no target and with one.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{AttackInfo, CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -36,12 +37,12 @@ enum Asked {
 }
 
 /// The answers for the target (the board's object 1), by question.
-static mut ANSWERS: [Option<bool>; 3] = [None; 3];
+static mut ANSWERS: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const ANSWERS).cast());
 
 fn answer(id: ObjectId, asked: Asked) -> bool {
     assert!(id == ObjectId(1), "a target this proof does not make");
     // SAFETY: a proof runs on one thread, and only this function names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     *answers[asked as usize].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -101,13 +102,13 @@ enum Hook {
 /// from, and whether the ability was the one resolving.
 type Handed = (Hook, ObjectId, [u64; 5], Option<Target>, usize, Option<bool>, bool);
 
-static mut HOOKED: Option<Handed> = None;
+static mut HOOKED: Held<Option<Handed>> = Held::new(None, (&raw const HOOKED).cast());
 
 fn hooked(state: &GameState, hook: Hook, self_id: ObjectId, data: [u64; 5], targets: &[Target]) {
     assert!(targets.len() <= 1, "no more targets than this proof gives");
     let resolving = matches!(state.resolving_ability, Some(StackEntry::Trigger(_)));
     // SAFETY: as in `answer`.
-    let h = unsafe { &mut *std::ptr::addr_of_mut!(HOOKED) };
+    let h = unsafe { &mut *std::ptr::addr_of_mut!(HOOKED.value) };
     assert!(h.is_none(), "one hook, called once");
     *h = Some((hook, self_id, data, targets.first().cloned(), targets.len(), state.resolving_trigger_from_back_face, resolving));
 }
@@ -116,7 +117,7 @@ fn hooked(state: &GameState, hook: Hook, self_id: ObjectId, data: [u64; 5], targ
 /// made: the hook is handed the event's own list (the same one, not one
 /// like it). Its contents, read back through the trigger's trip onto the
 /// stack and off, ran the solver out of memory.
-static mut DAMAGED_BY: *const ObjectId = std::ptr::null();
+static mut DAMAGED_BY: Held<*const ObjectId> = Held::new(std::ptr::null(), (&raw const DAMAGED_BY).cast());
 
 fn id(o: ObjectId) -> u64 {
     o.0
@@ -148,7 +149,7 @@ impl CardBehavior for Hooked {
     fn on_any_creature_dies(&self, state: &mut GameState, s: ObjectId, dead: ObjectId, controller: PlayerId,
         damaged_by: &[ObjectId], toughness: i32, is_token: bool, targets: &[Target], _: &CardRegistry) {
         // SAFETY: as in `answer`.
-        let list = unsafe { *std::ptr::addr_of!(DAMAGED_BY) };
+        let list = unsafe { *std::ptr::addr_of!(DAMAGED_BY.value) };
         assert!(damaged_by.len() == 1 && std::ptr::eq(damaged_by.as_ptr(), list), "the dead creature's own list of what damaged it");
         let t = u64::from(toughness.cast_unsigned());
         hooked(state, Hook::AnyDies, s, [id(dead), player(controller), t, u64::from(is_token), 0], targets);
@@ -241,7 +242,7 @@ fn event_of(kind: Kind) -> (TriggerEvent, Hook, [u64; 5], bool) {
             let (toughness, is_token, by): (i32, bool, u64) = (kani::any(), kani::any(), kani::any());
             let damaged_by = vec![ObjectId(by)];
             // SAFETY: as in `answer`.
-            unsafe { *std::ptr::addr_of_mut!(DAMAGED_BY) = damaged_by.as_ptr() };
+            unsafe { *std::ptr::addr_of_mut!(DAMAGED_BY.value) = damaged_by.as_ptr() };
             let dead = DeadCreature {
                 id: ObjectId(a), name: String::new(), controller: PlayerId(b), damaged_by,
                 toughness, is_token, subtypes: Vec::new(),
@@ -324,7 +325,7 @@ fn resolving(kind: Kind) {
 
     let legal = !targeted || (answer(target, Asked::Legal) && answer(target, Asked::Targetable) && answer(target, Asked::Valid));
     // SAFETY: as in `answer`.
-    let h = unsafe { &*std::ptr::addr_of!(HOOKED) };
+    let h = unsafe { &*std::ptr::addr_of!(HOOKED.value) };
     assert!(state.stack.is_empty());
     if legal {
         let Some((called, on, handed, chosen, n, face, while_resolving)) = h else { panic!("a hook called") };

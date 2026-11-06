@@ -6,6 +6,7 @@
 //! `combat::combat_damage_step`'s (`declaring_blocks`, `combat_damage`),
 //! each counted here.
 
+use crate::proofs::held::Held;
 use crate::actions::ResolvedChoice;
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
@@ -15,20 +16,20 @@ use crate::types::Zone;
 
 /// How many times the next question was asked for: 0 the next damage
 /// assignment order, 1 the step's damage (and whether first strike only).
-static mut ASKED_NEXT: [usize; 2] = [0; 2];
-static mut FIRST_STRIKE: Option<bool> = None;
+static mut ASKED_NEXT: Held<[usize; 2]> = Held::new([0; 2], (&raw const ASKED_NEXT).cast());
+static mut FIRST_STRIKE: Held<Option<bool>> = Held::new(None, (&raw const FIRST_STRIKE).cast());
 
 #[allow(dead_code)] // each named only by `kani::stub`
 fn next_order(_: &mut GameState, _: &CardRegistry) {
     // SAFETY: a proof runs on one thread, and only these functions write ASKED_NEXT and FIRST_STRIKE.
-    unsafe { (*std::ptr::addr_of_mut!(ASKED_NEXT))[0] += 1 };
+    unsafe { (*std::ptr::addr_of_mut!(ASKED_NEXT.value))[0] += 1 };
 }
 #[allow(dead_code)]
 fn next_damage(_: &mut GameState, _: &CardRegistry, first_strike_only: bool) {
     // SAFETY: as in `next_order`.
     unsafe {
-        (*std::ptr::addr_of_mut!(ASKED_NEXT))[1] += 1;
-        *std::ptr::addr_of_mut!(FIRST_STRIKE) = Some(first_strike_only);
+        (*std::ptr::addr_of_mut!(ASKED_NEXT.value))[1] += 1;
+        *std::ptr::addr_of_mut!(FIRST_STRIKE.value) = Some(first_strike_only);
     }
 }
 
@@ -91,7 +92,7 @@ fn ordered(reply: u8) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &answer, &registry);
 
     // SAFETY: as in `next_order`.
-    let asked = unsafe { *std::ptr::addr_of!(ASKED_NEXT) };
+    let asked = unsafe { *std::ptr::addr_of!(ASKED_NEXT.value) };
     let (n, first) = placed(&state, attacker);
     match reply {
         0 | 1 => {
@@ -168,7 +169,7 @@ fn assigned(reply: u8) {
         &mut state, &ResolvedChoice::ChosenIndex(usize::from(reply), String::new()), &registry);
 
     // SAFETY: as in `next_order`.
-    let (asked, strike) = unsafe { (*std::ptr::addr_of!(ASKED_NEXT), *std::ptr::addr_of!(FIRST_STRIKE)) };
+    let (asked, strike) = unsafe { (*std::ptr::addr_of!(ASKED_NEXT.value), *std::ptr::addr_of!(FIRST_STRIKE.value)) };
     let chosen = state.combat.as_ref().and_then(|c| c.chosen_damage.get(&attacker));
     if reply < 3 {
         assert!(matches!(applied, crate::engine::Applied::Continue));

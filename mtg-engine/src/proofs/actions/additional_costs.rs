@@ -4,6 +4,7 @@
 //! and the X cards Harvest Pyre exiles. Sacrificing and moving are their
 //! own proofs, recorded here.
 
+use crate::proofs::held::Held;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::{acted, asked_for, card_proof, were, Act, Blank};
@@ -12,7 +13,7 @@ use crate::types::Zone;
 
 /// The cost of each harness's spell: 0 none, 1 a sacrifice, 2 two
 /// creature cards exiled, 3 X cards exiled.
-static mut COST: u8 = 0;
+static mut COST: Held<u8> = Held::new(0, (&raw const COST).cast());
 
 /// A spell whose additional cost is the one [`COST`] names.
 struct Costly;
@@ -20,7 +21,7 @@ struct Costly;
 impl CardBehavior for Costly {
     fn card_data(&self) -> CardData {
         // SAFETY: a proof runs on one thread, and COST is set before the card is registered.
-        let additional_cost = match unsafe { *std::ptr::addr_of!(COST) } {
+        let additional_cost = match unsafe { *std::ptr::addr_of!(COST.value) } {
             0 => None,
             1 => Some(AdditionalCost::SacrificeCreature),
             2 => Some(AdditionalCost::ExileCreaturesFromGraveyard(2)),
@@ -35,7 +36,7 @@ impl CardBehavior for Costly {
 /// and a creature on the battlefield (4).
 fn board(cost: u8) -> (CardRegistry, GameState, crate::ids::CardId, [ObjectId; 4]) {
     // SAFETY: as in `Costly::card_data`, before the card is registered.
-    unsafe { *std::ptr::addr_of_mut!(COST) = cost };
+    unsafe { *std::ptr::addr_of_mut!(COST.value) = cost };
     let mut registry = CardRegistry::new();
     let card = registry.register(Box::new(Costly));
     let blank = registry.register(Box::new(Blank));

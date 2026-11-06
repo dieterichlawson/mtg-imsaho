@@ -10,6 +10,7 @@
 //! out of memory. And for each player in a harness of its own, as
 //! `each_size_and_player` says.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -19,7 +20,7 @@ use crate::state::{GameState, LibraryPosition};
 use crate::types::Zone;
 
 /// Who was asked about drawing from an empty library, and how often.
-static mut EMPTY_DRAWS: (Option<PlayerId>, usize) = (None, 0);
+static mut EMPTY_DRAWS: Held<(Option<PlayerId>, usize)> = Held::new((None, 0), (&raw const EMPTY_DRAWS).cast());
 
 /// Stands in for `replacement::apply`: drawing asks it one question, about
 /// a draw from an empty library, which is recorded. What a replacement
@@ -31,7 +32,7 @@ fn record_empty_draw(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistr
     };
     // SAFETY: a proof runs on one thread, and only this module names it.
     unsafe {
-        let asked = &mut *std::ptr::addr_of_mut!(EMPTY_DRAWS);
+        let asked = &mut *std::ptr::addr_of_mut!(EMPTY_DRAWS.value);
         *asked = (Some(player), asked.1 + 1);
     }
     Some(event)
@@ -97,7 +98,7 @@ fn drawing<const SIZE: usize>(who: PlayerId) {
         assert!(state.get_player(p).has_drawn_from_empty == (p == who && n > SIZE));
     }
     // SAFETY: as in `record_empty_draw`.
-    let asked = unsafe { *std::ptr::addr_of!(EMPTY_DRAWS) };
+    let asked = unsafe { *std::ptr::addr_of!(EMPTY_DRAWS.value) };
     assert!(asked == if n > SIZE { (Some(who), 1) } else { (None, 0) });
     assert!(Snapshot::of(&state).without_events() == before.with_library(who, &cards[k..]).without_events());
     kani::cover!(n > SIZE, "the library runs out");

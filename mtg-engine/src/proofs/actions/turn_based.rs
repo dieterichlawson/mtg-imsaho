@@ -6,6 +6,7 @@
 //! drawing, discarding and the parts of the cleanup each stand in as
 //! recorded, each its own proof.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::{acted, asked_each, asked_for, card_proof, Act, Blank};
@@ -13,7 +14,7 @@ use crate::state::{AwaitingAction, CombatState, GameState};
 use crate::types::{Step, Zone};
 
 /// Whether each object (1 to 3) is kept from untapping: any answer.
-static mut LOCKED: [Option<bool>; 3] = [None; 3];
+static mut LOCKED: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const LOCKED).cast());
 
 fn index(id: ObjectId) -> usize {
     let i = usize::try_from(id.0).expect("an id of the board");
@@ -25,7 +26,7 @@ fn index(id: ObjectId) -> usize {
 #[allow(dead_code)] // named only by `kani::stub`
 fn untaps_normally(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: a proof runs on one thread, and only this function names LOCKED.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(LOCKED) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(LOCKED.value) };
     !*answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -145,15 +146,15 @@ card_proof! {
 
 /// The combat damage steps taken, and whether each was of first strikers
 /// only.
-static mut DAMAGE_STEPS: [bool; 2] = [false; 2];
-static mut DAMAGE_STEPS_N: usize = 0;
-static mut FIRST_STRIKE: Option<bool> = None;
+static mut DAMAGE_STEPS: Held<[bool; 2]> = Held::new([false; 2], (&raw const DAMAGE_STEPS).cast());
+static mut DAMAGE_STEPS_N: Held<usize> = Held::new(0, (&raw const DAMAGE_STEPS_N).cast());
+static mut FIRST_STRIKE: Held<Option<bool>> = Held::new(None, (&raw const FIRST_STRIKE).cast());
 
 /// Stands in for `combat::combat_damage_step`: recorded.
 #[allow(dead_code)] // named only by `kani::stub`
 fn damage_step(_: &mut GameState, _: &CardRegistry, first_strike_only: bool) {
     // SAFETY: as in `untaps_normally`, for DAMAGE_STEPS and DAMAGE_STEPS_N.
-    let (steps, n) = unsafe { (&mut *std::ptr::addr_of_mut!(DAMAGE_STEPS), &mut *std::ptr::addr_of_mut!(DAMAGE_STEPS_N)) };
+    let (steps, n) = unsafe { (&mut *std::ptr::addr_of_mut!(DAMAGE_STEPS.value), &mut *std::ptr::addr_of_mut!(DAMAGE_STEPS_N.value)) };
     steps[*n] = first_strike_only;
     *n += 1;
 }
@@ -162,7 +163,7 @@ fn damage_step(_: &mut GameState, _: &CardRegistry, first_strike_only: bool) {
 #[allow(dead_code)] // named only by `kani::stub`
 fn any_first_strike(_: &GameState, _: &CardRegistry) -> bool {
     // SAFETY: as in `untaps_normally`, for FIRST_STRIKE.
-    *unsafe { &mut *std::ptr::addr_of_mut!(FIRST_STRIKE) }.get_or_insert_with(kani::any::<bool>)
+    *unsafe { &mut *std::ptr::addr_of_mut!(FIRST_STRIKE.value) }.get_or_insert_with(kani::any::<bool>)
 }
 
 card_proof! {
@@ -191,7 +192,7 @@ card_proof! {
         crate::engine::perform_turn_based_actions(&mut state, &registry);
 
         // SAFETY: as in `untaps_normally`.
-        let (steps, n) = unsafe { (*std::ptr::addr_of!(DAMAGE_STEPS), *std::ptr::addr_of!(DAMAGE_STEPS_N)) };
+        let (steps, n) = unsafe { (*std::ptr::addr_of!(DAMAGE_STEPS.value), *std::ptr::addr_of!(DAMAGE_STEPS_N.value)) };
         let first_strikers = fighting && !second && any_first_strike(&state, &registry);
         if fighting {
             assert!(n == 1 && steps[0] == first_strikers);
@@ -205,12 +206,12 @@ card_proof! {
 }
 
 /// Whether combat was ended, and the rest of the cleanup step taken.
-static mut ENDED: usize = 0;
+static mut ENDED: Held<usize> = Held::new(0, (&raw const ENDED).cast());
 
 #[allow(dead_code)] // named only by `kani::stub`
 fn combat_ended(_: &mut GameState, _: &CardRegistry) {
     // SAFETY: as in `untaps_normally`, for ENDED.
-    unsafe { *std::ptr::addr_of_mut!(ENDED) += 1 };
+    unsafe { *std::ptr::addr_of_mut!(ENDED.value) += 1 };
 }
 
 card_proof! {
@@ -222,7 +223,7 @@ card_proof! {
         let (registry, _, mut state, active) = game(Step::EndCombat);
         crate::engine::perform_turn_based_actions(&mut state, &registry);
         // SAFETY: as in `untaps_normally`.
-        assert!(unsafe { *std::ptr::addr_of!(ENDED) } == 0);
+        assert!(unsafe { *std::ptr::addr_of!(ENDED.value) } == 0);
         assert!(state.priority_player == Some(active) && state.awaiting_action.is_none() && acted() == 0);
         std::mem::forget((registry, state));
     }
@@ -250,7 +251,7 @@ card_proof! {
 #[allow(dead_code)] // named only by `kani::stub`
 fn cleanup_finished(_: &mut GameState, _: &CardRegistry) {
     // SAFETY: as in `untaps_normally`, for ENDED.
-    unsafe { *std::ptr::addr_of_mut!(ENDED) += 1 };
+    unsafe { *std::ptr::addr_of_mut!(ENDED.value) += 1 };
 }
 
 // Eight cards made, and the hand counted, unwound past them.
@@ -275,7 +276,7 @@ card_proof! {
         crate::engine::perform_turn_based_actions(&mut state, &registry);
 
         // SAFETY: as in `untaps_normally`.
-        let finished = unsafe { *std::ptr::addr_of!(ENDED) };
+        let finished = unsafe { *std::ptr::addr_of!(ENDED.value) };
         if in_hand > 7 {
             assert!(matches!(state.awaiting_action, Some(AwaitingAction::DiscardToHandSize { player, discard_count })
                 if player == active && discard_count == in_hand - 7));
@@ -291,13 +292,13 @@ card_proof! {
 /// The parts of the rest of the cleanup step, in the order taken: 1 the
 /// turn's effects ended, 2 the mana pools emptied, 3 state-based actions
 /// checked.
-static mut PARTS: [u8; 3] = [0; 3];
-static mut PARTS_N: usize = 0;
-static mut SBA: Option<bool> = None;
+static mut PARTS: Held<[u8; 3]> = Held::new([0; 3], (&raw const PARTS).cast());
+static mut PARTS_N: Held<usize> = Held::new(0, (&raw const PARTS_N).cast());
+static mut SBA: Held<Option<bool>> = Held::new(None, (&raw const SBA).cast());
 
 fn part(n: u8) {
     // SAFETY: as in `untaps_normally`, for PARTS and PARTS_N.
-    let (parts, k) = unsafe { (&mut *std::ptr::addr_of_mut!(PARTS), &mut *std::ptr::addr_of_mut!(PARTS_N)) };
+    let (parts, k) = unsafe { (&mut *std::ptr::addr_of_mut!(PARTS.value), &mut *std::ptr::addr_of_mut!(PARTS_N.value)) };
     parts[*k] = n;
     *k += 1;
 }
@@ -314,7 +315,7 @@ fn pools_emptied(_: &mut GameState) {
 fn sba_checked(_: &mut GameState, _: &CardRegistry) -> bool {
     part(3);
     // SAFETY: as in `untaps_normally`, for SBA.
-    *unsafe { &mut *std::ptr::addr_of_mut!(SBA) }.get_or_insert_with(kani::any::<bool>)
+    *unsafe { &mut *std::ptr::addr_of_mut!(SBA.value) }.get_or_insert_with(kani::any::<bool>)
 }
 
 card_proof! {
@@ -362,7 +363,7 @@ card_proof! {
             }
         }
         // SAFETY: as in `untaps_normally`.
-        let (parts, n, sba) = unsafe { (*std::ptr::addr_of!(PARTS), *std::ptr::addr_of!(PARTS_N), *std::ptr::addr_of!(SBA)) };
+        let (parts, n, sba) = unsafe { (*std::ptr::addr_of!(PARTS.value), *std::ptr::addr_of!(PARTS_N.value), *std::ptr::addr_of!(SBA.value)) };
         assert!(n == 3 && parts == [1, 2, 3]);
         if sba == Some(true) {
             assert!(state.priority_player == Some(active) && state.cleanup_repeat);
@@ -396,19 +397,19 @@ card_proof! {
         assert!(matches!(applied, crate::engine::Applied::Continue));
         assert!(asked_for(&[Act::Discard(cards[0]), Act::Discard(cards[1])]) && state.awaiting_action.is_none());
         // SAFETY: as in `untaps_normally`.
-        assert!(unsafe { *std::ptr::addr_of!(ENDED) } == usize::from(cleanup));
+        assert!(unsafe { *std::ptr::addr_of!(ENDED.value) } == usize::from(cleanup));
         std::mem::forget((registry, state));
     }
 }
 
 /// What stepping on did, in order: 1 the mana pools emptied, 2 combat
 /// ended, 3 the new step's turn-based actions.
-static mut STEPPED: [u8; 3] = [0; 3];
-static mut STEPPED_N: usize = 0;
+static mut STEPPED: Held<[u8; 3]> = Held::new([0; 3], (&raw const STEPPED).cast());
+static mut STEPPED_N: Held<usize> = Held::new(0, (&raw const STEPPED_N).cast());
 
 fn stepped(n: u8) {
     // SAFETY: as in `untaps_normally`, for STEPPED and STEPPED_N.
-    let (s, k) = unsafe { (&mut *std::ptr::addr_of_mut!(STEPPED), &mut *std::ptr::addr_of_mut!(STEPPED_N)) };
+    let (s, k) = unsafe { (&mut *std::ptr::addr_of_mut!(STEPPED.value), &mut *std::ptr::addr_of_mut!(STEPPED_N.value)) };
     s[*k] = n;
     *k += 1;
 }
@@ -478,7 +479,7 @@ card_proof! {
         crate::engine::advance_step(&mut state, &registry);
 
         // SAFETY: as in `untaps_normally`.
-        let (parts, n) = unsafe { (*std::ptr::addr_of!(STEPPED), *std::ptr::addr_of!(STEPPED_N)) };
+        let (parts, n) = unsafe { (*std::ptr::addr_of!(STEPPED.value), *std::ptr::addr_of!(STEPPED_N.value)) };
         if from == Step::EndCombat {
             assert!(n == 3 && parts == [1, 2, 3]);
         } else {

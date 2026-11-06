@@ -4,6 +4,7 @@
 //! card into a library, shuffling and drawing stand in as recorded, each
 //! its own proof (`library`, `simple_actions`).
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
 use crate::proofs::cards::{asked_for, card_proof, Act, Blank};
@@ -11,12 +12,12 @@ use crate::state::{AwaitingAction, GameState, LibraryPosition};
 use crate::types::Zone;
 
 /// How many times the mulligan phase was driven on.
-static mut ADVANCED: usize = 0;
+static mut ADVANCED: Held<usize> = Held::new(0, (&raw const ADVANCED).cast());
 
 #[allow(dead_code)] // named only by `kani::stub`
 fn advanced(_: &mut GameState, _: &CardRegistry) {
     // SAFETY: a proof runs on one thread, and only this function writes ADVANCED.
-    unsafe { *std::ptr::addr_of_mut!(ADVANCED) += 1 };
+    unsafe { *std::ptr::addr_of_mut!(ADVANCED.value) += 1 };
 }
 
 card_proof! {
@@ -43,7 +44,7 @@ card_proof! {
         assert!(state.get_player(player).mulligan_kept && state.get_player(player).mulligan_count == taken);
         assert!(state.pending_mulligan_bottoms.as_slice() == [(player, (taken as usize).min(7))]);
         // SAFETY: as in `advanced`.
-        assert!(state.mulligan_round_position == 1 && unsafe { *std::ptr::addr_of!(ADVANCED) } == 1);
+        assert!(state.mulligan_round_position == 1 && unsafe { *std::ptr::addr_of!(ADVANCED.value) } == 1);
         assert!(state.consecutive_passes == 0);
         std::mem::forget((registry, state));
     }
@@ -85,7 +86,7 @@ card_proof! {
         assert!(state.get_player(player).mulligan_count == taken + 1 && !state.get_player(player).mulligan_kept);
         assert!(state.mulligan_round_mulled && state.mulligan_round_position == 1);
         // SAFETY: as in `advanced`.
-        assert!(unsafe { *std::ptr::addr_of!(ADVANCED) } == 1);
+        assert!(unsafe { *std::ptr::addr_of!(ADVANCED.value) } == 1);
         std::mem::forget((registry, state, hand));
     }
 }

@@ -9,6 +9,7 @@
 //! (Parallel Lives'). The board's cards print no replacement for entering,
 //! so a token enters as it was made.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -18,11 +19,11 @@ use crate::state::{GameState, TokenFace};
 use crate::types::{CardType, Color, Keyword, Zone};
 
 /// What creating tokens asked the replacement layer, and its answer.
-static mut ASKED: Option<(PlayerId, u32, Option<u32>)> = None;
+static mut ASKED: Held<Option<(PlayerId, u32, Option<u32>)>> = Held::new(None, (&raw const ASKED).cast());
 
 /// What the replacement layer answers in this proof, set by its harness
 /// before any token is made: a count, or that the event is replaced.
-static mut ANSWER: Option<u32> = None;
+static mut ANSWER: Held<Option<u32>> = Held::new(None, (&raw const ANSWER).cast());
 
 /// Stands in for `replacement::apply`: creating tokens asks it how many are
 /// made, and the answer is the harness's, a count up to two or that the
@@ -33,9 +34,9 @@ fn the_answer(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> O
         panic!("creating tokens asks about creating tokens");
     };
     // SAFETY: a proof runs on one thread, and only this module names these.
-    let answer = unsafe { *std::ptr::addr_of!(ANSWER) };
+    let answer = unsafe { *std::ptr::addr_of!(ANSWER.value) };
     unsafe {
-        *std::ptr::addr_of_mut!(ASKED) = Some((controller, count, answer));
+        *std::ptr::addr_of_mut!(ASKED.value) = Some((controller, count, answer));
     }
     answer.map(|count| ReplaceableEvent::CreatesTokens { controller, count })
 }
@@ -68,7 +69,7 @@ fn creating_tokens(n: u32, zombie: bool, named: bool, flying: bool) {
         vec![Color::Black], vec![CardType::Creature], keywords.clone(), subtypes.clone(), &registry);
 
     // SAFETY: as in `the_answer`.
-    let Some((controller, count, answer)) = (unsafe { *std::ptr::addr_of!(ASKED) }) else { panic!("asked how many") };
+    let Some((controller, count, answer)) = (unsafe { *std::ptr::addr_of!(ASKED.value) }) else { panic!("asked how many") };
     assert!(controller == owner && count == n);
     let made = answer.unwrap_or(0) as usize;
     assert!(ids.len() == made && (0..made).all(|i| ids[i] == ObjectId(there.0 + 1 + i as u64)));
@@ -122,7 +123,7 @@ fn creating_no_tokens_asks_and_makes_nothing() {
         vec![Color::Black], vec![CardType::Creature], keywords, subtypes, &registry);
 
     // SAFETY: as in `the_answer`.
-    let asked = unsafe { *std::ptr::addr_of!(ASKED) };
+    let asked = unsafe { *std::ptr::addr_of!(ASKED.value) };
     assert!(asked.is_none() && ids.is_empty() && Snapshot::of(&state) == before);
     std::mem::forget((registry, state, ids));
 }
@@ -186,7 +187,7 @@ fn copying(token: bool) {
     let first = state.create_token_copy(from, owner, &registry);
 
     // SAFETY: as in `the_answer`.
-    let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED) }) else { panic!("asked about one token") };
+    let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED.value) }) else { panic!("asked about one token") };
     assert!(controller == owner);
     let made = answer.unwrap_or(0) as usize;
     let ids: [ObjectId; 2] = [ObjectId(from.0 + 1), ObjectId(from.0 + 2)];
@@ -220,7 +221,7 @@ fn defining_its_size() {
     let ids = state.create_token_with_defined_pt(source, "", owner, vec![Color::Green], vec![CardType::Creature], vec![], vec!["Ooze".into()], &registry);
 
     // SAFETY: as in `the_answer`.
-    let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED) }) else { panic!("asked about one token") };
+    let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED.value) }) else { panic!("asked about one token") };
     assert!(controller == owner);
     let made = answer.unwrap_or(0) as usize;
     assert!(ids.len() == made && (0..made).all(|i| ids[i] == ObjectId(source.0 + 1 + i as u64)));
@@ -270,7 +271,7 @@ macro_rules! of_each_answer {
         /// The proof named above it, for one answer.
         fn $fn() {
             // SAFETY: as in `the_answer`.
-            unsafe { *std::ptr::addr_of_mut!(super::ANSWER) = $answer };
+            unsafe { *std::ptr::addr_of_mut!(super::ANSWER.value) = $answer };
             super::$proof $args;
         }
     )*};

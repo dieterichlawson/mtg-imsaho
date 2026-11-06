@@ -14,6 +14,7 @@
 //! a card's own condition is, is its proof. The other objects are of the
 //! blank card, which prints no ability.
 
+use crate::proofs::held::Held;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggerScope, TriggeredAbilityDef};
 use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -25,14 +26,14 @@ use crate::types::{Step, Zone};
 
 /// The answers [`Watching`]'s conditions give, by object (ids 1 to 4):
 /// chosen the first time each is asked, the same after.
-static mut SAID: [Option<bool>; 5] = [None; 5];
+static mut SAID: Held<[Option<bool>; 5]> = Held::new([None; 5], (&raw const SAID).cast());
 
 /// Whether `id`'s condition on the event holds.
 fn said(id: ObjectId) -> bool {
     let i = usize::try_from(id.0).expect("an id of this board");
     assert!((1..=4).contains(&i), "an object this proof does not make");
     // SAFETY: a proof runs on one thread, and only this function names SAID.
-    let said = unsafe { &mut *std::ptr::addr_of_mut!(SAID) };
+    let said = unsafe { &mut *std::ptr::addr_of_mut!(SAID.value) };
     *said[i].get_or_insert_with(kani::any::<bool>)
 }
 

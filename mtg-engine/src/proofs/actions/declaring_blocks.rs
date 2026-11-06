@@ -16,6 +16,7 @@
 // loop bound: combat::announce_damage_assignment_order 5
 // loop bound: combat::next_unordered_attacker 3
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
@@ -26,8 +27,8 @@ use crate::types::Zone;
 /// Whether each of the two blockers (3 and 4) may block each of the two
 /// attackers (1 and 2), and the fewest creatures that may block each
 /// attacker: any answer, the same each time.
-static mut MAY_BLOCK: [[Option<bool>; 2]; 2] = [[None; 2]; 2];
-static mut MINIMUM: [Option<u32>; 2] = [None; 2];
+static mut MAY_BLOCK: Held<[[Option<bool>; 2]; 2]> = Held::new([[None; 2]; 2], (&raw const MAY_BLOCK).cast());
+static mut MINIMUM: Held<[Option<u32>; 2]> = Held::new([None; 2], (&raw const MINIMUM).cast());
 
 fn attacker(id: ObjectId) -> usize {
     match id.0 {
@@ -49,7 +50,7 @@ fn blocker(id: ObjectId) -> usize {
 #[allow(dead_code)] // named only by `kani::stub`
 fn can_block_attacker(_: &GameState, b: ObjectId, a: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: a proof runs on one thread, and only this function names MAY_BLOCK.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(MAY_BLOCK) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(MAY_BLOCK.value) };
     *answers[blocker(b)][attacker(a)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -57,7 +58,7 @@ fn can_block_attacker(_: &GameState, b: ObjectId, a: ObjectId, _: &CardRegistry)
 #[allow(dead_code)] // named only by `kani::stub`
 fn minimum_blockers(_: &GameState, a: ObjectId, _: &CardRegistry) -> u32 {
     // SAFETY: as in `can_block_attacker`, for MINIMUM.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(MINIMUM) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(MINIMUM.value) };
     *answers[attacker(a)].get_or_insert_with(|| 1 + u32::from(kani::any::<bool>()))
 }
 
@@ -91,14 +92,14 @@ fn board(attacking: [bool; 2]) -> (CardRegistry, GameState, PlayerId, [bool; 2],
 }
 
 /// The blocks handed on to be recorded.
-static mut RECORDED: [(ObjectId, ObjectId); 4] = [(ObjectId(0), ObjectId(0)); 4];
-static mut RECORDED_N: Option<usize> = None;
+static mut RECORDED: Held<[(ObjectId, ObjectId); 4]> = Held::new([(ObjectId(0), ObjectId(0)); 4], (&raw const RECORDED).cast());
+static mut RECORDED_N: Held<Option<usize>> = Held::new(None, (&raw const RECORDED_N).cast());
 
 /// Stands in for `combat::declare_blockers`: records what it is handed.
 #[allow(dead_code)] // named only by `kani::stub`
 fn record_blocks(_: &mut GameState, blocks: &[(ObjectId, ObjectId)]) {
     // SAFETY: as in `can_block_attacker`, for RECORDED and RECORDED_N.
-    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(RECORDED), &mut *std::ptr::addr_of_mut!(RECORDED_N)) };
+    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(RECORDED.value), &mut *std::ptr::addr_of_mut!(RECORDED_N.value)) };
     assert!(n.is_none(), "blocks recorded twice");
     // Element by element: `copy_from_slice` is a byte copy, and CBMC's,
     // through a pointer that may be to more than one buffer, kept none of
@@ -143,7 +144,7 @@ fn deciding<const N: usize>(blocks: [(u64, u64); N], attacking: [bool; 2]) {
     let verdicts = mtg_kernel::blocks::judge_blocks(&pairs, &legal, &minimum);
     let mut n = 0;
     // SAFETY: as in `can_block_attacker`.
-    let (list, m) = unsafe { (&*std::ptr::addr_of!(RECORDED), *std::ptr::addr_of!(RECORDED_N)) };
+    let (list, m) = unsafe { (&*std::ptr::addr_of!(RECORDED.value), *std::ptr::addr_of!(RECORDED_N.value)) };
     for (k, &pair) in submitted.iter().enumerate() {
         if matches!(verdicts[k], mtg_kernel::blocks::Verdict::Accepted) {
             assert!(list[n] == pair);
@@ -238,13 +239,13 @@ each_block_recorded! {
 /// What the declaration did, in order: 1 for the blocks judged, with the
 /// blocks submitted handed on; 2 for the damage assignment order
 /// announced.
-static mut STEPS: [u8; 2] = [0; 2];
-static mut STEPS_N: usize = 0;
-static mut HANDED: bool = false;
+static mut STEPS: Held<[u8; 2]> = Held::new([0; 2], (&raw const STEPS).cast());
+static mut STEPS_N: Held<usize> = Held::new(0, (&raw const STEPS_N).cast());
+static mut HANDED: Held<bool> = Held::new(false, (&raw const HANDED).cast());
 
 fn step(n: u8) {
     // SAFETY: as in `can_block_attacker`, for STEPS and STEPS_N.
-    let (steps, k) = unsafe { (&mut *std::ptr::addr_of_mut!(STEPS), &mut *std::ptr::addr_of_mut!(STEPS_N)) };
+    let (steps, k) = unsafe { (&mut *std::ptr::addr_of_mut!(STEPS.value), &mut *std::ptr::addr_of_mut!(STEPS_N.value)) };
     steps[*k] = n;
     *k += 1;
 }
@@ -254,7 +255,7 @@ fn step(n: u8) {
 #[allow(dead_code)] // named only by `kani::stub`
 fn judged(_: &mut GameState, blocks: &[(ObjectId, ObjectId)], _: &CardRegistry) {
     // SAFETY: as in `can_block_attacker`, for HANDED.
-    unsafe { *std::ptr::addr_of_mut!(HANDED) = blocks == [(ObjectId(3), ObjectId(1)), (ObjectId(4), ObjectId(2))] };
+    unsafe { *std::ptr::addr_of_mut!(HANDED.value) = blocks == [(ObjectId(3), ObjectId(1)), (ObjectId(4), ObjectId(2))] };
     step(1);
 }
 
@@ -294,7 +295,7 @@ card_proof! {
 
         assert!(matches!(applied, crate::engine::Applied::Continue));
         // SAFETY: as in `can_block_attacker`.
-        let (steps, n, handed) = unsafe { (*std::ptr::addr_of!(STEPS), *std::ptr::addr_of!(STEPS_N), *std::ptr::addr_of!(HANDED)) };
+        let (steps, n, handed) = unsafe { (*std::ptr::addr_of!(STEPS.value), *std::ptr::addr_of!(STEPS_N.value), *std::ptr::addr_of!(HANDED.value)) };
         assert!(n == 2 && steps == [1, 2] && handed);
         assert!(state.awaiting_action.is_none() && state.consecutive_passes == 0);
         std::mem::forget((registry, state));

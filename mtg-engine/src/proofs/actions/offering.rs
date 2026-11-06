@@ -4,6 +4,7 @@
 //! and land plays offered (`legal::abilities::loyalty`). Whether a target
 //! is legal for an ability is `targeting`'s proofs', any list here.
 
+use crate::proofs::held::Held;
 use crate::actions::{Action, Target};
 use crate::cards::{CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -70,7 +71,7 @@ impl CardBehavior for Land {
 
 /// How many of the two targets the list offers: chosen the first time it
 /// is asked, the same after.
-static mut TARGETS: Option<usize> = None;
+static mut TARGETS: Held<Option<usize>> = Held::new(None, (&raw const TARGETS).cast());
 
 /// Stands in for `targeting::valid_targets_for_req`: the first none, one
 /// or two of two targets.
@@ -78,7 +79,7 @@ static mut TARGETS: Option<usize> = None;
 fn valid_targets(_: &GameState, _: PlayerId, _: ObjectId, _: &TargetRequirement, _: &dyn CardBehavior, _: &CardRegistry) -> Vec<Target> {
     // SAFETY: a proof runs on one thread, and only this function and
     // `loyalty_offered`, before it is called, write TARGETS.
-    let n = *unsafe { &mut *std::ptr::addr_of_mut!(TARGETS) }.get_or_insert_with(|| {
+    let n = *unsafe { &mut *std::ptr::addr_of_mut!(TARGETS.value) }.get_or_insert_with(|| {
         let n: usize = kani::any();
         kani::assume(n <= 2);
         n
@@ -116,7 +117,7 @@ fn ctx<'a>(state: &'a GameState, registry: &'a CardRegistry, player: PlayerId, s
 /// offered was written into the list at a place it left open.
 fn loyalty_offered(player: PlayerId, speed: bool, used: bool, loyalty: u32, targets: usize) {
     // SAFETY: as in `valid_targets`, before it is asked.
-    unsafe { *std::ptr::addr_of_mut!(TARGETS) = Some(targets) };
+    unsafe { *std::ptr::addr_of_mut!(TARGETS.value) = Some(targets) };
     let mut registry = CardRegistry::new();
     let walker = registry.register(Box::new(Walker));
     let mut state = crate::proofs::cards::new_game();
@@ -221,13 +222,13 @@ card_proof! {
 
 /// Whether the permanent is new to its controller's control, and how many
 /// other untapped creatures they control: any answer.
-static mut SICK: Option<bool> = None;
-static mut UNTAPPED: Option<usize> = None;
+static mut SICK: Held<Option<bool>> = Held::new(None, (&raw const SICK).cast());
+static mut UNTAPPED: Held<Option<usize>> = Held::new(None, (&raw const UNTAPPED).cast());
 
 #[allow(dead_code)] // named only by `kani::stub`
 fn has_summoning_sickness(_: &GameState, _: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: as in `valid_targets`, for SICK.
-    *unsafe { &mut *std::ptr::addr_of_mut!(SICK) }.get_or_insert_with(kani::any::<bool>)
+    *unsafe { &mut *std::ptr::addr_of_mut!(SICK.value) }.get_or_insert_with(kani::any::<bool>)
 }
 
 /// Stands in for `actions::abilities::tap_cost_candidates`: none to two
@@ -235,7 +236,7 @@ fn has_summoning_sickness(_: &GameState, _: ObjectId, _: &CardRegistry) -> bool 
 #[allow(dead_code)] // named only by `kani::stub`
 fn tap_cost_candidates(_: &GameState, _: PlayerId, _: ObjectId, _: &CardRegistry) -> Vec<ObjectId> {
     // SAFETY: as in `valid_targets`, for UNTAPPED.
-    let n = *unsafe { &mut *std::ptr::addr_of_mut!(UNTAPPED) }.get_or_insert_with(|| {
+    let n = *unsafe { &mut *std::ptr::addr_of_mut!(UNTAPPED.value) }.get_or_insert_with(|| {
         let n: usize = kani::any();
         kani::assume(n <= 2);
         n
@@ -303,13 +304,13 @@ card_proof! {
 /// What each of the board's objects (1 to 3) answers: whether it is a
 /// creature, new to its controller, has defender, may attack, and may
 /// block at all.
-static mut OFFERED: [[Option<bool>; 5]; 3] = [[None; 5]; 3];
+static mut OFFERED: Held<[[Option<bool>; 5]; 3]> = Held::new([[None; 5]; 3], (&raw const OFFERED).cast());
 
 fn offered(id: ObjectId, k: usize) -> bool {
     let i = usize::try_from(id.0).expect("an id of the board");
     assert!((1..=3).contains(&i), "an object this proof does not make");
     // SAFETY: as in `valid_targets`, for OFFERED.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(OFFERED) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(OFFERED.value) };
     *answers[i - 1][k].get_or_insert_with(kani::any::<bool>)
 }
 

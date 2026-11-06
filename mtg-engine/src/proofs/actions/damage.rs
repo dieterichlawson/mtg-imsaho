@@ -11,6 +11,7 @@
 //! it is settled, is proved on its own, and recorded in the proofs of the
 //! queue around it.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::damage::{self, DamageEffect, DamageKind, PendingDamage};
 use crate::events::{DamageTarget, GameEvent};
@@ -40,7 +41,7 @@ fn has_keyword(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegistry) 
 /// What `perform` was asked to deal: how often, and the last event, as its
 /// source, target, amount and kind.
 type Performed = (usize, Option<(ObjectId, DamageTarget, u32, DamageKind)>);
-static mut PERFORMED: Performed = (0, None);
+static mut PERFORMED: Held<Performed> = Held::new((0, None), (&raw const PERFORMED).cast());
 
 /// Stands in for `damage::perform`, which deals an event's damage once
 /// every effect on it is settled (`performing`, below, proves what it
@@ -49,7 +50,7 @@ static mut PERFORMED: Performed = (0, None);
 fn record_perform(_: &mut GameState, pd: PendingDamage, _: &CardRegistry) {
     // SAFETY: a proof runs on one thread, and only this module names it.
     unsafe {
-        let p = &mut *std::ptr::addr_of_mut!(PERFORMED);
+        let p = &mut *std::ptr::addr_of_mut!(PERFORMED.value);
         *p = (p.0 + 1, Some((pd.source, pd.target, pd.amount, pd.kind)));
     }
     std::mem::forget(pd);
@@ -95,7 +96,7 @@ fn queueing(queued: bool, to: Option<PlayerId>) {
     };
     let expected = (amount > 0 && reaches).then_some((source, target, amount, kind));
     // SAFETY: as in `record_perform`.
-    let performed = unsafe { *std::ptr::addr_of!(PERFORMED) };
+    let performed = unsafe { *std::ptr::addr_of!(PERFORMED.value) };
     assert!(performed == (usize::from(expected.is_some()), expected));
     assert!(state.pending_damage.is_empty() && Snapshot::of(&state) == before);
     kani::cover!(expected.is_some(), "performed");
@@ -329,7 +330,7 @@ fn on_a_board_printing_none_only_protection_applies() {
 
 /// Which of protection, a shield that removes a counter and a doubler
 /// apply to the damage in this proof: set once, before it is dealt.
-static mut WHICH: [bool; 3] = [false; 3];
+static mut WHICH: Held<[bool; 3]> = Held::new([false; 3], (&raw const WHICH).cast());
 
 /// Stands in for `damage::applicable_effects`: the same choice among
 /// protection's prevention, `shield`'s, and `flail`'s doubling, each time
@@ -338,7 +339,7 @@ static mut WHICH: [bool; 3] = [false; 3];
 #[allow(dead_code)] // named only by `kani::stub`
 fn some_effects(_: &GameState, pd: &PendingDamage, _: &CardRegistry) -> Vec<DamageEffect> {
     // SAFETY: a proof runs on one thread, and only this module names it.
-    let which = unsafe { *std::ptr::addr_of!(WHICH) };
+    let which = unsafe { *std::ptr::addr_of!(WHICH.value) };
     let all = [
         DamageEffect::PreventAll(damage::Prevention::Protection),
         DamageEffect::PreventAndRemoveCounter { by: SHIELD },
@@ -373,7 +374,7 @@ const FLAIL: ObjectId = ObjectId(2);
 /// `queueing` says.
 fn preventing_and_doubling(which: [bool; 3], p: PlayerId, amount: u32) {
     // SAFETY: a proof runs on one thread, and only this module names it.
-    unsafe { *std::ptr::addr_of_mut!(WHICH) = which };
+    unsafe { *std::ptr::addr_of_mut!(WHICH.value) = which };
     let (registry, mut state, blank) = blank_board();
     let shield = state.create_object(blank, PlayerId(0), Zone::Battlefield, Some(1), Some(1));
     let flail = state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None);
@@ -389,7 +390,7 @@ fn preventing_and_doubling(which: [bool; 3], p: PlayerId, amount: u32) {
 
     let [protection, shielded, doubled] = which;
     // SAFETY: as in `record_perform`.
-    let performed = unsafe { *std::ptr::addr_of!(PERFORMED) };
+    let performed = unsafe { *std::ptr::addr_of!(PERFORMED.value) };
     if protection && shielded {
         // Protection first leaves the shield's counter; the shield first
         // takes it, if there is one to take (and with none, the player is

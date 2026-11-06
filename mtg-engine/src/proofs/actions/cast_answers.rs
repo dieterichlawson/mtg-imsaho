@@ -5,6 +5,7 @@
 //! which is submitted again as a whole (`casting` proves a cast); one that
 //! may not cancels the cast, and nothing has been paid.
 
+use crate::proofs::held::Held;
 use crate::actions::{Action, ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
@@ -24,7 +25,7 @@ impl CardBehavior for Cast {
 /// The cast submitted again: the spell, its first three targets and
 /// cards to exile, how many of each, and the exile count it names.
 type Resubmitted = (ObjectId, [Option<Target>; 3], usize, [Option<ObjectId>; 3], usize, Option<u32>);
-static mut RESUBMITTED: Option<Resubmitted> = None;
+static mut RESUBMITTED: Held<Option<Resubmitted>> = Held::new(None, (&raw const RESUBMITTED).cast());
 
 /// Stands in for `engine::submit_action_inner`: the action recorded, once,
 /// and a game of nothing handed back in place of the cast made.
@@ -37,7 +38,7 @@ fn resubmitted(_: &GameState, action: &Action, _: &CardRegistry) -> GameState {
     let held = |i: usize| targets.get(i).cloned();
     let exiled = |i: usize| exile_ids.get(i).copied();
     // SAFETY: a proof runs on one thread, and only this function writes RESUBMITTED.
-    let r = unsafe { &mut *std::ptr::addr_of_mut!(RESUBMITTED) };
+    let r = unsafe { &mut *std::ptr::addr_of_mut!(RESUBMITTED.value) };
     assert!(r.is_none(), "submitted once");
     *r = Some((*object_id, [held(0), held(1), held(2)], targets.len(), [exiled(0), exiled(1), exiled(2)], exile_ids.len(), *exile_count));
     crate::proofs::cards::new_game()
@@ -110,7 +111,7 @@ fn exiled(reply: u8) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenExileSet(chosen), &registry);
 
     // SAFETY: as in `resubmitted`.
-    let r = unsafe { &*std::ptr::addr_of!(RESUBMITTED) };
+    let r = unsafe { &*std::ptr::addr_of!(RESUBMITTED.value) };
     if reply <= 1 {
         assert!(matches!(applied, crate::engine::Applied::Replace(_)));
         let count = u32::try_from(n).ok();
@@ -161,7 +162,7 @@ fn targeted(reply: u8) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenTargetSet(chosen), &registry);
 
     // SAFETY: as in `resubmitted`.
-    let r = unsafe { &*std::ptr::addr_of!(RESUBMITTED) };
+    let r = unsafe { &*std::ptr::addr_of!(RESUBMITTED.value) };
     if reply <= 2 {
         assert!(matches!(applied, crate::engine::Applied::Replace(_)));
         assert!(matches!(r, Some((s, held, k, [None, None, None], 0, None)) if *s == spell && *k == 1 + n && *held == expected));

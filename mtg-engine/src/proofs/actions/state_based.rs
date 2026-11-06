@@ -13,6 +13,7 @@
 //! creature, its toughness, whether an attachment is illegal, a name) is
 //! any answer here, each its own proof elsewhere.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::events::{GameEvent, LossReason};
@@ -23,8 +24,8 @@ use crate::types::{CardType, CounterType, Keyword, Zone};
 
 /// Whether each of the board's objects 1 to 3 is a creature, and each's
 /// toughness: chosen once, the same after.
-static mut CREATURE: [Option<bool>; 3] = [None; 3];
-static mut TOUGHNESS: [Option<Option<i32>>; 3] = [None; 3];
+static mut CREATURE: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const CREATURE).cast());
+static mut TOUGHNESS: Held<[Option<Option<i32>>; 3]> = Held::new([None; 3], (&raw const TOUGHNESS).cast());
 
 fn index(id: ObjectId) -> usize {
     let i = usize::try_from(id.0).expect("an id of the board");
@@ -36,7 +37,7 @@ fn index(id: ObjectId) -> usize {
 #[allow(dead_code)] // named only by `kani::stub`
 fn is_creature(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: a proof runs on one thread, and only this function names CREATURE.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -46,7 +47,7 @@ fn is_creature(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
 #[allow(dead_code)] // named only by `kani::stub`
 fn effective_toughness(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32> {
     // SAFETY: as in `is_creature`, for TOUGHNESS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(TOUGHNESS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(TOUGHNESS.value) };
     *answers[index(id)].get_or_insert_with(|| {
         let t: i32 = kani::any();
         kani::assume((-1..=3).contains(&t));
@@ -119,12 +120,12 @@ card_proof! {
 
 /// What the pass did to a destroyed creature: regenerated it, or
 /// destroyed it, in order.
-static mut DONE: [Option<(bool, ObjectId)>; 3] = [None; 3];
-static mut DONE_N: usize = 0;
+static mut DONE: Held<[Option<(bool, ObjectId)>; 3]> = Held::new([None; 3], (&raw const DONE).cast());
+static mut DONE_N: Held<usize> = Held::new(0, (&raw const DONE_N).cast());
 
 fn done(regenerated: bool, id: ObjectId) {
     // SAFETY: as in `is_creature`, for DONE and DONE_N.
-    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(DONE), &mut *std::ptr::addr_of_mut!(DONE_N)) };
+    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(DONE.value), &mut *std::ptr::addr_of_mut!(DONE_N.value)) };
     list[*n] = Some((regenerated, id));
     *n += 1;
 }
@@ -151,13 +152,13 @@ fn death_event(_: &GameState, id: ObjectId, _: Option<&CardRegistry>) -> Option<
 }
 
 /// Whether each of the board's creatures has indestructible: any answer.
-static mut INDESTRUCTIBLE: [Option<bool>; 3] = [None; 3];
+static mut INDESTRUCTIBLE: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const INDESTRUCTIBLE).cast());
 
 #[allow(dead_code)] // named only by `kani::stub`
 fn has_keyword(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegistry) -> bool {
     assert!(keyword == Keyword::Indestructible, "a keyword the pass does not ask");
     // SAFETY: as in `is_creature`, for INDESTRUCTIBLE.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(INDESTRUCTIBLE) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(INDESTRUCTIBLE.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -202,7 +203,7 @@ fn removing(zero: &[u64], destroyed: &[u64]) {
         n += 1;
     }
     // SAFETY: as in `is_creature`.
-    let (list, m) = unsafe { (&*std::ptr::addr_of!(DONE), *std::ptr::addr_of!(DONE_N)) };
+    let (list, m) = unsafe { (&*std::ptr::addr_of!(DONE.value), *std::ptr::addr_of!(DONE_N.value)) };
     assert!(m == n && (0..n).all(|k| list[k] == expected[k]));
     assert!(acted == (!zero.is_empty() || n > 0));
     std::mem::forget((registry, state));
@@ -406,14 +407,14 @@ fn a_player_of_no_life_or_who_drew_from_an_empty_library_loses() {
 
 /// Whether each of the board's objects is attached illegally, and whether
 /// it is an Equipment: any answer.
-static mut ILLEGAL: [Option<bool>; 3] = [None; 3];
-static mut EQUIPMENT: [Option<bool>; 3] = [None; 3];
+static mut ILLEGAL: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const ILLEGAL).cast());
+static mut EQUIPMENT: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const EQUIPMENT).cast());
 
 /// Stands in for `attachment::illegality`: any answer.
 #[allow(dead_code)] // named only by `kani::stub`
 fn illegality(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<crate::attachment::Illegality> {
     // SAFETY: as in `is_creature`, for ILLEGAL.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ILLEGAL) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ILLEGAL.value) };
     (*answers[index(id)].get_or_insert_with(kani::any::<bool>)).then_some(crate::attachment::Illegality::HostGone)
 }
 
@@ -421,7 +422,7 @@ fn illegality(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<crate::at
 #[allow(dead_code)] // named only by `kani::stub`
 fn is_equipment(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: as in `is_creature`, for EQUIPMENT.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(EQUIPMENT) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(EQUIPMENT.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -519,7 +520,7 @@ card_proof! {
             }
         }
         // SAFETY: as in `is_creature`.
-        let (list, m) = unsafe { (&*std::ptr::addr_of!(DONE), *std::ptr::addr_of!(DONE_N)) };
+        let (list, m) = unsafe { (&*std::ptr::addr_of!(DONE.value), *std::ptr::addr_of!(DONE_N.value)) };
         assert!(m == ne && (0..ne).all(|k| list[k] == equipment[k]));
         assert!(asked_each(na, |k| Act::Move(auras[k], Zone::Graveyard)));
         assert!(did == (ne + na > 0));
@@ -531,17 +532,17 @@ card_proof! {
 /// whether the host has protection from the attachment and the player may
 /// be enchanted by it, and whether the host passes the enchant's filter:
 /// any answer.
-static mut AURA: [Option<bool>; 3] = [None; 3];
-static mut EQUIPPING: [Option<bool>; 3] = [None; 3];
-static mut CREATURE_HOST: [Option<bool>; 3] = [None; 3];
-static mut PROTECTED: Option<bool> = None;
-static mut ENCHANTABLE: Option<bool> = None;
-static mut FILTERED: Option<bool> = None;
+static mut AURA: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const AURA).cast());
+static mut EQUIPPING: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const EQUIPPING).cast());
+static mut CREATURE_HOST: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const CREATURE_HOST).cast());
+static mut PROTECTED: Held<Option<bool>> = Held::new(None, (&raw const PROTECTED).cast());
+static mut ENCHANTABLE: Held<Option<bool>> = Held::new(None, (&raw const ENCHANTABLE).cast());
+static mut FILTERED: Held<Option<bool>> = Held::new(None, (&raw const FILTERED).cast());
 
-fn once(answer: *mut Option<bool>) -> bool {
+fn once(answer: *mut Held<Option<bool>>) -> bool {
     // SAFETY: a proof runs on one thread, and each answer is named only
     // through here.
-    *unsafe { &mut *answer }.get_or_insert_with(kani::any::<bool>)
+    *unsafe { &mut (*answer).value }.get_or_insert_with(kani::any::<bool>)
 }
 
 /// Stands in for `GameState::has_subtype`, asked only "Aura" and
@@ -551,8 +552,8 @@ fn has_subtype(_: &GameState, id: ObjectId, subtype: &str, _: &CardRegistry) -> 
     // SAFETY: as in `is_creature`, for AURA and EQUIPPING.
     let answers = unsafe {
         match subtype {
-            "Aura" => &mut *std::ptr::addr_of_mut!(AURA),
-            "Equipment" => &mut *std::ptr::addr_of_mut!(EQUIPPING),
+            "Aura" => &mut *std::ptr::addr_of_mut!(AURA.value),
+            "Equipment" => &mut *std::ptr::addr_of_mut!(EQUIPPING.value),
             _ => panic!("a subtype the question does not ask"),
         }
     };
@@ -563,7 +564,7 @@ fn has_subtype(_: &GameState, id: ObjectId, subtype: &str, _: &CardRegistry) -> 
 #[allow(dead_code)] // named only by `kani::stub`
 fn host_is_creature(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: as in `is_creature`, for CREATURE_HOST.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE_HOST) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE_HOST.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -746,7 +747,7 @@ card_proof! {
 }
 
 /// Whether each object's state trigger condition holds: any answer.
-static mut CONDITION: [Option<bool>; 3] = [None; 3];
+static mut CONDITION: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const CONDITION).cast());
 
 /// A permanent with a state-triggered ability (CR 603.8) whose condition
 /// is any answer.
@@ -758,7 +759,7 @@ impl CardBehavior for StateTriggered {
     }
     fn state_trigger_condition(&self, _: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
         // SAFETY: as in `is_creature`, for CONDITION.
-        let answers = unsafe { &mut *std::ptr::addr_of_mut!(CONDITION) };
+        let answers = unsafe { &mut *std::ptr::addr_of_mut!(CONDITION.value) };
         *answers[index(id)].get_or_insert_with(kani::any::<bool>)
     }
     fn state_trigger_description(&self) -> String {
@@ -819,7 +820,7 @@ card_proof! {
 }
 
 /// Whether each object is a planeswalker: any answer.
-static mut WALKER: [Option<bool>; 3] = [None; 3];
+static mut WALKER: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const WALKER).cast());
 
 /// Stands in for `GameState::has_card_type`, asked only whether an object
 /// is a planeswalker: any answer.
@@ -827,7 +828,7 @@ static mut WALKER: [Option<bool>; 3] = [None; 3];
 fn has_card_type(_: &GameState, id: ObjectId, card_type: CardType, _: &CardRegistry) -> bool {
     assert!(card_type == CardType::Planeswalker, "a type the pass does not ask");
     // SAFETY: as in `is_creature`, for WALKER.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(WALKER) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(WALKER.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -874,20 +875,20 @@ card_proof! {
 
 /// Whether each object is legendary, and whether it is named "B" (else
 /// "A"): any answer.
-static mut LEGENDARY: [Option<bool>; 3] = [None; 3];
-static mut NAMED_B: [Option<bool>; 3] = [None; 3];
+static mut LEGENDARY: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const LEGENDARY).cast());
+static mut NAMED_B: Held<[Option<bool>; 3]> = Held::new([None; 3], (&raw const NAMED_B).cast());
 
 /// Stands in for `GameState::is_legendary`: any answer.
 #[allow(dead_code)] // named only by `kani::stub`
 fn is_legendary(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
     // SAFETY: as in `is_creature`, for LEGENDARY.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(LEGENDARY) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(LEGENDARY.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
 fn named_b(id: ObjectId) -> bool {
     // SAFETY: as in `is_creature`, for NAMED_B.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(NAMED_B) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(NAMED_B.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -925,7 +926,7 @@ fn legends(waiting: bool) {
 
     if waiting {
         // SAFETY: as in `is_creature`.
-        let (legendary, named) = unsafe { (&*std::ptr::addr_of!(LEGENDARY), &*std::ptr::addr_of!(NAMED_B)) };
+        let (legendary, named) = unsafe { (&*std::ptr::addr_of!(LEGENDARY.value), &*std::ptr::addr_of!(NAMED_B.value)) };
         assert!(!did && acted() == 0 && legendary.iter().chain(named).all(Option::is_none));
         std::mem::forget((registry, state));
         return;
@@ -981,15 +982,15 @@ card_proof! {
 }
 
 /// The objects that ceased to exist, in order.
-static mut CEASED: [ObjectId; 3] = [ObjectId(0); 3];
-static mut CEASED_N: usize = 0;
+static mut CEASED: Held<[ObjectId; 3]> = Held::new([ObjectId(0); 3], (&raw const CEASED).cast());
+static mut CEASED_N: Held<usize> = Held::new(0, (&raw const CEASED_N).cast());
 
 /// Stands in for `GameState::cease_to_exist` (its own proof below):
 /// recorded.
 #[allow(dead_code)] // named only by `kani::stub`
 fn cease_to_exist(_: &mut GameState, id: ObjectId) {
     // SAFETY: as in `is_creature`, for CEASED and CEASED_N.
-    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(CEASED), &mut *std::ptr::addr_of_mut!(CEASED_N)) };
+    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(CEASED.value), &mut *std::ptr::addr_of_mut!(CEASED_N.value)) };
     list[*n] = id;
     *n += 1;
 }
@@ -1024,7 +1025,7 @@ card_proof! {
         let did = crate::sba::remove_tokens_elsewhere(&mut state);
 
         // SAFETY: as in `is_creature`.
-        let (list, m) = unsafe { (&*std::ptr::addr_of!(CEASED), *std::ptr::addr_of!(CEASED_N)) };
+        let (list, m) = unsafe { (&*std::ptr::addr_of!(CEASED.value), *std::ptr::addr_of!(CEASED_N.value)) };
         assert!(m == n && (0..n).all(|k| list[k] == gone[k]));
         assert!(did == (n > 0));
         std::mem::forget((registry, state));
@@ -1124,17 +1125,17 @@ card_proof! {
 
 /// The parts of a pass called, in order, by number (as in [`part`]), and
 /// what each answered.
-static mut CALLED: [u8; 11] = [u8::MAX; 11];
-static mut CALLED_N: usize = 0;
-static mut ANSWERED: [bool; 11] = [false; 11];
+static mut CALLED: Held<[u8; 11]> = Held::new([u8::MAX; 11], (&raw const CALLED).cast());
+static mut CALLED_N: Held<usize> = Held::new(0, (&raw const CALLED_N).cast());
+static mut ANSWERED: Held<[bool; 11]> = Held::new([false; 11], (&raw const ANSWERED).cast());
 /// Whether the creatures removed were the ones decided.
-static mut HANDED_ON: bool = false;
+static mut HANDED_ON: Held<bool> = Held::new(false, (&raw const HANDED_ON).cast());
 
 /// A part of a pass called: recorded, and any answer.
 fn part(n: u8) -> bool {
     // SAFETY: as in `is_creature`, for CALLED, CALLED_N and ANSWERED.
     let (called, k, answered) = unsafe {
-        (&mut *std::ptr::addr_of_mut!(CALLED), &mut *std::ptr::addr_of_mut!(CALLED_N), &mut *std::ptr::addr_of_mut!(ANSWERED))
+        (&mut *std::ptr::addr_of_mut!(CALLED.value), &mut *std::ptr::addr_of_mut!(CALLED_N.value), &mut *std::ptr::addr_of_mut!(ANSWERED.value))
     };
     called[*k] = n;
     *k += 1;
@@ -1158,7 +1159,7 @@ fn part_fates(_: &GameState, _: &CardRegistry) -> (Vec<ObjectId>, Vec<ObjectId>)
 #[allow(dead_code)]
 fn part_remove(_: &mut GameState, zero: Vec<ObjectId>, destroyed: Vec<ObjectId>, _: &CardRegistry) -> bool {
     // SAFETY: as in `is_creature`, for HANDED_ON.
-    unsafe { *std::ptr::addr_of_mut!(HANDED_ON) = zero == [ObjectId(1)] && destroyed == [ObjectId(2), ObjectId(3)] };
+    unsafe { *std::ptr::addr_of_mut!(HANDED_ON.value) = zero == [ObjectId(1)] && destroyed == [ObjectId(2), ObjectId(3)] };
     std::mem::forget((zero, destroyed));
     part(3)
 }
@@ -1222,7 +1223,7 @@ card_proof! {
 
         // SAFETY: as in `is_creature`.
         let (called, n, answered, handed_on) = unsafe {
-            (&*std::ptr::addr_of!(CALLED), *std::ptr::addr_of!(CALLED_N), &*std::ptr::addr_of!(ANSWERED), *std::ptr::addr_of!(HANDED_ON))
+            (&*std::ptr::addr_of!(CALLED.value), *std::ptr::addr_of!(CALLED_N.value), &*std::ptr::addr_of!(ANSWERED.value), *std::ptr::addr_of!(HANDED_ON.value))
         };
         let last = if answered[6] { 6 } else if answered[8] { 8 } else { 10 };
         assert!(n == last + 1 && (0..n).all(|k| usize::from(called[k]) == k) && handed_on);
@@ -1239,15 +1240,15 @@ card_proof! {
 }
 
 /// The passes taken, and what each came to.
-static mut PASSES: [Option<crate::sba::Pass>; 3] = [None; 3];
-static mut PASSES_N: usize = 0;
+static mut PASSES: Held<[Option<crate::sba::Pass>; 3]> = Held::new([None; 3], (&raw const PASSES).cast());
+static mut PASSES_N: Held<usize> = Held::new(0, (&raw const PASSES_N).cast());
 
 /// Stands in for `one_pass`: any outcome, but settled the third time.
 #[allow(dead_code)] // named only by `kani::stub`
 fn a_pass(_: &mut GameState, _: &CardRegistry) -> crate::sba::Pass {
     use crate::sba::Pass;
     // SAFETY: as in `is_creature`, for PASSES and PASSES_N.
-    let (passes, n) = unsafe { (&mut *std::ptr::addr_of_mut!(PASSES), &mut *std::ptr::addr_of_mut!(PASSES_N)) };
+    let (passes, n) = unsafe { (&mut *std::ptr::addr_of_mut!(PASSES.value), &mut *std::ptr::addr_of_mut!(PASSES_N.value)) };
     let pass = match kani::any::<u8>() {
         _ if *n == 2 => Pass::Settled,
         0 => Pass::Settled,
@@ -1299,7 +1300,7 @@ card_proof! {
         let any = crate::sba::check_state_based_actions(&mut state, &registry);
 
         // SAFETY: as in `is_creature`.
-        let (passes, n) = unsafe { (&*std::ptr::addr_of!(PASSES), *std::ptr::addr_of!(PASSES_N)) };
+        let (passes, n) = unsafe { (&*std::ptr::addr_of!(PASSES.value), *std::ptr::addr_of!(PASSES_N.value)) };
         if waiting == 2 {
             assert!(!any && n == 0);
         } else {

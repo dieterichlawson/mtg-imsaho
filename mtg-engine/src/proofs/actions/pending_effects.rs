@@ -4,6 +4,7 @@
 //! owner's hand, give it -N/-N or stop it blocking this turn, finish a
 //! search with it, or carry out the card's own effect on it.
 
+use crate::proofs::held::Held;
 use super::action_proof;
 use crate::actions::Target;
 use crate::damage::DamageKind;
@@ -319,7 +320,7 @@ each_pruning! {
 
 /// What a card's own effect was asked to do: its source, whether its key
 /// was the one given, and its target.
-static mut ASKED: Option<(crate::ids::ObjectId, bool, Target)> = None;
+static mut ASKED: Held<Option<(crate::ids::ObjectId, bool, Target)>> = Held::new(None, (&raw const ASKED).cast());
 
 /// A card whose own effect records that it was asked.
 struct OwnEffect;
@@ -332,7 +333,7 @@ impl crate::cards::CardBehavior for OwnEffect {
     fn resolve_card_effect(&self, _: &mut crate::state::GameState, source_id: crate::ids::ObjectId, key: &str, target: &Target, _: &crate::cards::CardRegistry) {
         // SAFETY: a proof runs on one thread, and only this module names it.
         unsafe {
-            *std::ptr::addr_of_mut!(ASKED) = Some((source_id, key == "the key", target.clone()));
+            *std::ptr::addr_of_mut!(ASKED.value) = Some((source_id, key == "the key", target.clone()));
         }
     }
 }
@@ -361,7 +362,7 @@ fn a_card_effect_is_the_cards_own_to_carry_out() {
     crate::engine::apply_pending_effect(&mut state, &target, &PendingEffect::CardEffect { source_id, key: "the key".into() }, &registry);
 
     // SAFETY: as in `OwnEffect`.
-    let asked = unsafe { (*std::ptr::addr_of!(ASKED)).clone() };
+    let asked = unsafe { (*std::ptr::addr_of!(ASKED.value)).clone() };
     if gone {
         assert!(asked.is_none());
     } else {
@@ -373,7 +374,7 @@ fn a_card_effect_is_the_cards_own_to_carry_out() {
 
 /// What finishing a search was asked: who searched, the card found, where
 /// it goes, and whether tapped.
-static mut FINISHED: Option<(PlayerId, crate::ids::ObjectId, Zone, bool)> = None;
+static mut FINISHED: Held<Option<(PlayerId, crate::ids::ObjectId, Zone, bool)>> = Held::new(None, (&raw const FINISHED).cast());
 
 /// Stands in for `helpers::finish_library_search`, whose own proof says
 /// what it does.
@@ -381,7 +382,7 @@ static mut FINISHED: Option<(PlayerId, crate::ids::ObjectId, Zone, bool)> = None
 fn record_finish(_: &mut crate::state::GameState, searcher: PlayerId, found: crate::ids::ObjectId, destination: Zone, tapped: bool, _: &crate::cards::CardRegistry) {
     // SAFETY: as in `OwnEffect`.
     unsafe {
-        *std::ptr::addr_of_mut!(FINISHED) = Some((searcher, found, destination, tapped));
+        *std::ptr::addr_of_mut!(FINISHED.value) = Some((searcher, found, destination, tapped));
     }
 }
 
@@ -408,7 +409,7 @@ fn a_searchs_answer_finishes_the_search_with_that_card() {
     crate::engine::apply_pending_effect(&mut state, &target, &PendingEffect::FinishLibrarySearch { searcher, destination, tapped }, &registry);
 
     // SAFETY: as in `OwnEffect`.
-    let finished = unsafe { *std::ptr::addr_of!(FINISHED) };
+    let finished = unsafe { *std::ptr::addr_of!(FINISHED.value) };
     match target {
         Target::Object(_) => {
             assert!(finished == Some((searcher, found, destination, tapped)));

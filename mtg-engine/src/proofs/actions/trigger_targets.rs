@@ -9,6 +9,7 @@
 //! stand in here: none, or "a creature" with exactly the board's first `n`
 //! objects allowed.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{CardRegistry, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -18,14 +19,14 @@ use crate::triggers::{PendingTrigger, TriggerEvent};
 use crate::types::Zone;
 
 /// Whether the trigger targets, and how many targets it is allowed.
-static mut ALLOWED: Option<usize> = None;
+static mut ALLOWED: Held<Option<usize>> = Held::new(None, (&raw const ALLOWED).cast());
 
 /// Stands in for `triggers::target_requirement`: a creature, if the
 /// trigger targets.
 #[allow(dead_code)] // named only by `kani::stub`
 fn requirement(_: &CardRegistry, _: crate::ids::CardId, _: Option<crate::cards::TriggerKind>) -> Option<TargetRequirement> {
     // SAFETY: a proof runs on one thread; the harness writes ALLOWED first.
-    unsafe { *std::ptr::addr_of!(ALLOWED) }.map(|_| TargetRequirement::Creature)
+    unsafe { *std::ptr::addr_of!(ALLOWED.value) }.map(|_| TargetRequirement::Creature)
 }
 
 /// Stands in for `targeting::valid_targets_for_req`: the board's first
@@ -33,7 +34,7 @@ fn requirement(_: &CardRegistry, _: crate::ids::CardId, _: Option<crate::cards::
 #[allow(dead_code)] // named only by `kani::stub`
 fn allowed(_: &GameState, _: PlayerId, _: ObjectId, _: &TargetRequirement, _: &dyn crate::cards::CardBehavior, _: &CardRegistry) -> Vec<Target> {
     // SAFETY: as in `requirement`.
-    let n = unsafe { *std::ptr::addr_of!(ALLOWED) }.expect("asked only of a trigger that targets");
+    let n = unsafe { *std::ptr::addr_of!(ALLOWED.value) }.expect("asked only of a trigger that targets");
     let mut targets = Vec::with_capacity(2);
     for i in 1..=n {
         targets.push(Target::Object(ObjectId(i as u64)));
@@ -73,7 +74,7 @@ fn board(controller: PlayerId, active: PlayerId) -> (CardRegistry, GameState, Pe
 /// player's turn, `targets` of `None` for one that does not target.
 fn pushing((targets, controller, active): (Option<usize>, PlayerId, PlayerId)) {
     // SAFETY: as in `requirement`.
-    unsafe { *std::ptr::addr_of_mut!(ALLOWED) = targets };
+    unsafe { *std::ptr::addr_of_mut!(ALLOWED.value) = targets };
     let (registry, mut state, trigger, source) = board(controller, active);
 
     crate::triggers::push_one_pending_trigger(&mut state, trigger, &registry);
@@ -112,7 +113,7 @@ fn pushing((targets, controller, active): (Option<usize>, PlayerId, PlayerId)) {
 /// the two creatures chosen.
 fn attach((controller, active): (PlayerId, PlayerId)) {
     // SAFETY: as in `requirement`.
-    unsafe { *std::ptr::addr_of_mut!(ALLOWED) = None };
+    unsafe { *std::ptr::addr_of_mut!(ALLOWED.value) = None };
     let (registry, mut state, trigger, source) = board(controller, active);
     if controller == active {
         state.pending_trigger_pushes_ap.push(trigger);

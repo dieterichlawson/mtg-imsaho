@@ -17,6 +17,7 @@
 // loop bound: <std::iter::Copied<std::slice::Iter<'_, ids::ObjectId>> as std::iter::Iterator>::try_fold::* 3
 // loop bound: <std::slice::Iter<'_, ids::ObjectId> as std::iter::Iterator>::try_fold::* 3
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
@@ -36,7 +37,7 @@ enum Asked {
 }
 
 /// The answers, by creature (the board's objects 1 and 2) and question.
-static mut ANSWERS: [[Option<bool>; 6]; 2] = [[None; 6]; 2];
+static mut ANSWERS: Held<[[Option<bool>; 6]; 2]> = Held::new([[None; 6]; 2], (&raw const ANSWERS).cast());
 
 fn answer(id: ObjectId, asked: Asked) -> bool {
     let i = match id.0 {
@@ -45,7 +46,7 @@ fn answer(id: ObjectId, asked: Asked) -> bool {
         _ => panic!("a creature this proof does not make"),
     };
     // SAFETY: a proof runs on one thread, and only this function names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     *answers[i][asked as usize].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -250,7 +251,7 @@ each_recording! {
 
 /// What [`composing`] finds recorded: the attackers and the planeswalker
 /// attacks handed to `combat::declare_attackers`.
-static mut RECORDED: Option<(Vec<(ObjectId, PlayerId)>, usize)> = None;
+static mut RECORDED: Held<Option<(Vec<(ObjectId, PlayerId)>, usize)>> = Held::new(None, (&raw const RECORDED).cast());
 
 /// Stands in for `who_attacks`: one creature named, none at a
 /// planeswalker, and the other forced.
@@ -264,7 +265,7 @@ fn decided(state: &GameState, _: &[(ObjectId, PlayerId)], _: &[(ObjectId, Object
 #[allow(dead_code)] // named only by `kani::stub`
 fn record_declared(_: &mut GameState, attackers: &[(ObjectId, PlayerId)], walkers: &[(ObjectId, ObjectId)], _: &CardRegistry) {
     // SAFETY: as in `answer`.
-    unsafe { *std::ptr::addr_of_mut!(RECORDED) = Some((attackers.to_vec(), walkers.len())) };
+    unsafe { *std::ptr::addr_of_mut!(RECORDED.value) = Some((attackers.to_vec(), walkers.len())) };
 }
 
 card_proof! {
@@ -279,7 +280,7 @@ card_proof! {
         let defending = state.opponent(active);
         crate::engine::actions::combat::declare_attackers(&mut state, &[], &[], &registry);
         // SAFETY: as in `answer`.
-        let recorded = unsafe { &*std::ptr::addr_of!(RECORDED) };
+        let recorded = unsafe { &*std::ptr::addr_of!(RECORDED.value) };
         assert!(matches!(recorded, Some((a, 0)) if a.as_slice() == [(ObjectId(2), defending), (ObjectId(1), defending)]));
         assert!(state.awaiting_action.is_none());
         std::mem::forget((registry, state));

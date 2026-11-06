@@ -38,6 +38,7 @@
 //! Kani checks that no loop runs longer, and an unwinding assertion fails
 //! otherwise.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::damage::DamageKind;
@@ -219,13 +220,13 @@ pub enum Act {
 /// The actions asked for so far, in order: a fixed array and a count
 /// rather than a `Vec`, for the reason `proofs::decide` gives.
 const MAX_ACTS: usize = 8;
-static mut ACTS: [Option<Act>; MAX_ACTS] = [const { None }; MAX_ACTS];
-static mut ACTED: usize = 0;
+static mut ACTS: Held<[Option<Act>; MAX_ACTS]> = Held::new([const { None }; MAX_ACTS], (&raw const ACTS).cast());
+static mut ACTED: Held<usize> = Held::new(0, (&raw const ACTED).cast());
 
 /// Whether the card asked for exactly `expected`, in order.
 pub fn asked_for(expected: &[Act]) -> bool {
     // SAFETY: a proof runs on one thread, and only this module names ACTS.
-    let (acts, n) = unsafe { (&*std::ptr::addr_of!(ACTS), *std::ptr::addr_of!(ACTED)) };
+    let (acts, n) = unsafe { (&*std::ptr::addr_of!(ACTS.value), *std::ptr::addr_of!(ACTED.value)) };
     // The expected action on the left: a derived `==` branches on its left
     // operand's variant, and an action recorded at a place the solver
     // leaves open is of a variant it leaves open, so on the left it is
@@ -263,7 +264,7 @@ pub fn were(from: usize, n: usize, expected: impl Fn(usize) -> Act) -> bool {
 pub fn act(i: usize) -> Option<&'static Act> {
     // SAFETY: as in `acts`; the log is only written by the recorders, and
     // a proof reads it once the card is done asking.
-    unsafe { (*std::ptr::addr_of!(ACTS)).get(i).and_then(Option::as_ref) }
+    unsafe { (*std::ptr::addr_of!(ACTS.value)).get(i).and_then(Option::as_ref) }
 }
 
 /// The most objects a list a recorder keeps holds.
@@ -308,13 +309,13 @@ pub fn picked<T, U>(items: &[T], pick: impl Fn(&T) -> Option<U>) -> Vec<U> {
 /// How many actions were asked for.
 pub fn acted() -> usize {
     // SAFETY: as in `acts`.
-    unsafe { *std::ptr::addr_of!(ACTED) }
+    unsafe { *std::ptr::addr_of!(ACTED.value) }
 }
 
 fn record(act: Act) {
     // SAFETY: as in `acts`.
     unsafe {
-        let n = *std::ptr::addr_of!(ACTED);
+        let n = *std::ptr::addr_of!(ACTED.value);
         assert!(n < MAX_ACTS, "more actions than a proof here records");
         // Written without dropping what the slot held, and into a slot of
         // a known place on each path. Nothing writes past `ACTED`, so the
@@ -326,7 +327,7 @@ fn record(act: Act) {
         // for proofs that record several such actions: Divine Reckoning's
         // took eleven times as long, past half an hour. A write to each
         // slot by its own index is cheap for both.
-        let acts = &mut *std::ptr::addr_of_mut!(ACTS);
+        let acts = &mut *std::ptr::addr_of_mut!(ACTS.value);
         const _: () = assert!(MAX_ACTS == 8, "one arm below for each slot");
         match n {
             0 => std::ptr::write(&mut acts[0], Some(act)),
@@ -338,7 +339,7 @@ fn record(act: Act) {
             6 => std::ptr::write(&mut acts[6], Some(act)),
             _ => std::ptr::write(&mut acts[7], Some(act)),
         }
-        *std::ptr::addr_of_mut!(ACTED) = n + 1;
+        *std::ptr::addr_of_mut!(ACTED.value) = n + 1;
     }
 }
 
@@ -472,9 +473,9 @@ pub fn new_ids(state: &GameState, n: u32) -> Vec<ObjectId> {
 pub fn record_arrives_tapped(_: &mut GameState, id: ObjectId) {
     // SAFETY: as in `acts`.
     unsafe {
-        let n = *std::ptr::addr_of!(ACTED);
+        let n = *std::ptr::addr_of!(ACTED.value);
         if n > 0 {
-            if let Some(Act::ArrivesTapped { first, count }) = &mut (*std::ptr::addr_of_mut!(ACTS))[n - 1] {
+            if let Some(Act::ArrivesTapped { first, count }) = &mut (*std::ptr::addr_of_mut!(ACTS.value))[n - 1] {
                 if first.0 + u64::from(*count) == id.0 {
                     *count += 1;
                     return;
@@ -812,12 +813,12 @@ struct KeptList {
     ids: [ObjectId; KEPT_IDS],
 }
 
-static mut KEPT: [Option<KeptList>; KEPT_LISTS] = [None; KEPT_LISTS];
+static mut KEPT: Held<[Option<KeptList>; KEPT_LISTS]> = Held::new([None; KEPT_LISTS], (&raw const KEPT).cast());
 
 /// Where the list `owner` keeps under `prefix` is, if it keeps one.
 fn kept_at(owner: *const crate::state::CardState, prefix: &str) -> Option<usize> {
     // SAFETY: a proof runs on one thread, and only these stand-ins name KEPT.
-    let kept = unsafe { &*std::ptr::addr_of!(KEPT) };
+    let kept = unsafe { &*std::ptr::addr_of!(KEPT.value) };
     (0..KEPT_LISTS).find(|&i| matches!(&kept[i], Some(k) if std::ptr::eq(k.owner, owner) && k.prefix == prefix))
 }
 
@@ -836,7 +837,7 @@ pub fn record_store_ids(card_state: &mut crate::state::CardState, prefix: &str, 
     let owner: *const crate::state::CardState = card_state;
     let at = kept_at(owner, prefix);
     // SAFETY: as in `kept_at`.
-    let kept = unsafe { &mut *std::ptr::addr_of_mut!(KEPT) };
+    let kept = unsafe { &mut *std::ptr::addr_of_mut!(KEPT.value) };
     let at = at.or_else(|| kept.iter().position(Option::is_none)).expect("more kept lists than a proof here holds");
     let mut list = [ObjectId(0); KEPT_IDS];
     for (slot, id) in list.iter_mut().zip(ids) {
@@ -855,7 +856,7 @@ pub fn record_load_ids(card_state: &crate::state::CardState, prefix: &str) -> Ve
     let mut ids = Vec::with_capacity(KEPT_IDS);
     if let Some(at) = kept_at(card_state, prefix) {
         // SAFETY: as in `kept_at`.
-        let k = unsafe { (*std::ptr::addr_of!(KEPT))[at] }.expect("kept");
+        let k = unsafe { (*std::ptr::addr_of!(KEPT.value))[at] }.expect("kept");
         for id in &k.ids[..k.len] {
             ids.push(*id);
         }
@@ -869,7 +870,7 @@ pub fn record_load_ids(card_state: &crate::state::CardState, prefix: &str) -> Ve
 pub fn record_clear_ids(card_state: &mut crate::state::CardState, prefix: &str) {
     if let Some(at) = kept_at(card_state, prefix) {
         // SAFETY: as in `kept_at`.
-        unsafe { (*std::ptr::addr_of_mut!(KEPT))[at] = None };
+        unsafe { (*std::ptr::addr_of_mut!(KEPT.value))[at] = None };
     }
 }
 
@@ -877,7 +878,7 @@ pub fn record_clear_ids(card_state: &mut crate::state::CardState, prefix: &str) 
 /// cleared it.
 pub fn no_ids_kept() -> bool {
     // SAFETY: as in `kept_at`.
-    unsafe { (*std::ptr::addr_of!(KEPT)).iter().all(Option::is_none) }
+    unsafe { (*std::ptr::addr_of!(KEPT.value)).iter().all(Option::is_none) }
 }
 
 /// Stands in for `helpers::shuffle_library`.
@@ -974,10 +975,10 @@ fn any_destroy_result() -> DestroyResult {
 pub fn objects_in_zone_in_id_order(state: &GameState, zone: Zone, player: PlayerId) -> Vec<&crate::state::GameObject> {
     // SAFETY: a proof runs on one thread, and only this function names the
     // pool.
-    let slot = unsafe { *std::ptr::addr_of!(LISTINGS_HANDED) };
+    let slot = unsafe { *std::ptr::addr_of!(LISTINGS_HANDED.value) };
     assert!(slot < LISTINGS, "more zone listings than a proof here holds");
-    unsafe { *std::ptr::addr_of_mut!(LISTINGS_HANDED) = slot + 1 };
-    let list = unsafe { &mut (*std::ptr::addr_of_mut!(LISTING_POOL))[slot] };
+    unsafe { *std::ptr::addr_of_mut!(LISTINGS_HANDED.value) = slot + 1 };
+    let list = unsafe { &mut (*std::ptr::addr_of_mut!(LISTING_POOL.value))[slot] };
     let mut len = 0;
     // The map's own order is id order (`ObjectMap`).
     for o in state.objects.values() {
@@ -1004,8 +1005,8 @@ pub fn objects_in_zone_in_id_order(state: &GameState, zone: Zone, player: Player
 /// of either fails the proof, naming which.
 const LISTINGS: usize = 4;
 const LISTED: usize = 8;
-static mut LISTING_POOL: [[*const crate::state::GameObject; LISTED]; LISTINGS] = [[std::ptr::null(); LISTED]; LISTINGS];
-static mut LISTINGS_HANDED: usize = 0;
+static mut LISTING_POOL: Held<[[*const crate::state::GameObject; LISTED]; LISTINGS]> = Held::new([[std::ptr::null(); LISTED]; LISTINGS], (&raw const LISTING_POOL).cast());
+static mut LISTINGS_HANDED: Held<usize> = Held::new(0, (&raw const LISTINGS_HANDED).cast());
 
 /// Take the prompt down without dropping it, as a proof does that has
 /// checked what was asked and goes on as if it were answered. Assigning

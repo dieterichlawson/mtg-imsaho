@@ -8,6 +8,7 @@
 //! hexproof again), and whether it meets what the card itself asks
 //! (`is_valid_target`). Each is its own proof.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -15,13 +16,13 @@ use crate::proofs::cards::card_proof;
 use crate::state::GameState;
 
 /// The answers, by target (objects 1 to 3) and question.
-static mut ANSWERS: [[Option<bool>; 3]; 3] = [[None; 3]; 3];
+static mut ANSWERS: Held<[[Option<bool>; 3]; 3]> = Held::new([[None; 3]; 3], (&raw const ANSWERS).cast());
 
 fn answer(id: ObjectId, k: usize) -> bool {
     let i = usize::try_from(id.0).expect("an id of the board");
     assert!((1..=3).contains(&i), "a target this proof does not name");
     // SAFETY: a proof runs on one thread, and only this function names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     *answers[i - 1][k].get_or_insert_with(kani::any::<bool>)
 }
 

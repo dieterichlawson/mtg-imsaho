@@ -11,6 +11,7 @@
 //! proof (`predicates`, `effects`, `scopes`, `until_end_of_turn`); this
 //! one is of how the rule puts the answers together.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::blank_board;
@@ -35,7 +36,7 @@ enum Asked {
 
 /// The answers, by creature (the board's first two objects, ids 1 and 2)
 /// and question: chosen the first time each is asked, the same after.
-static mut ANSWERS: [[Option<bool>; Asked::Protects as usize + 1]; 2] = [[None; Asked::Protects as usize + 1]; 2];
+static mut ANSWERS: Held<[[Option<bool>; Asked::Protects as usize + 1]; 2]> = Held::new([[None; Asked::Protects as usize + 1]; 2], (&raw const ANSWERS).cast());
 
 fn answer(id: ObjectId, asked: Asked) -> bool {
     let i = match id.0 {
@@ -44,7 +45,7 @@ fn answer(id: ObjectId, asked: Asked) -> bool {
         _ => panic!("a question about an object this proof does not make"),
     };
     // SAFETY: a proof runs on one thread, and only this function names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     *answers[i][asked as usize].get_or_insert_with(kani::any::<bool>)
 }
 

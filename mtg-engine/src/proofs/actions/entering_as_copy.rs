@@ -7,6 +7,7 @@
 //! entered as a copy is Evil Twin's own proof; the answer itself is
 //! `answering`'s.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
@@ -70,7 +71,7 @@ card_proof! {
 }
 
 /// Whether each of the board's objects 2 and 3 is a creature: any answer.
-static mut CREATURE: [Option<bool>; 2] = [None; 2];
+static mut CREATURE: Held<[Option<bool>; 2]> = Held::new([None; 2], (&raw const CREATURE).cast());
 
 /// Stands in for `GameState::is_creature` (`predicates`): any answer for
 /// objects 2 and 3, the same each time.
@@ -82,18 +83,18 @@ fn creature(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
         _ => panic!("an object this proof does not ask about"),
     };
     // SAFETY: a proof runs on one thread, and only this function names CREATURE.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE.value) };
     *answers[i].get_or_insert_with(kani::any::<bool>)
 }
 
 /// What the entry was told, once: declined (none to copy), or asked of
 /// whom, among which (up to two), and about which permanent.
-static mut TOLD: Option<(Option<EnterAsCopyChoice>, Option<(ObjectId, PlayerId, [Option<ObjectId>; 2], usize, bool)>)> = None;
+static mut TOLD: Held<Option<(Option<EnterAsCopyChoice>, Option<(ObjectId, PlayerId, [Option<ObjectId>; 2], usize, bool)>)>> = Held::new(None, (&raw const TOLD).cast());
 
 #[allow(dead_code)]
 fn entry_recorded(state: &mut GameState, object: ObjectId, choice: EnterAsCopyChoice, _: &CardRegistry) {
     // SAFETY: as in `creature`, for TOLD.
-    let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD) };
+    let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD.value) };
     assert!(t.is_none(), "told once");
     *t = Some((Some(choice), None));
     state.pending_entry_choices.retain(|&id| id != object);
@@ -109,7 +110,7 @@ fn asked(
     };
     let about = matches!(effect, PendingEffect::EnterAsCopy { object } if object == source);
     // SAFETY: as in `entry_recorded`.
-    let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD) };
+    let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD.value) };
     assert!(t.is_none(), "told once");
     *t = Some((None, Some((source, player, [id(0), id(1)], options.len(), about))));
     // What asking leaves: a question waiting.
@@ -165,7 +166,7 @@ fn a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there() {
         }
     }
     // SAFETY: as in `entry_recorded`.
-    let t = unsafe { *std::ptr::addr_of!(TOLD) };
+    let t = unsafe { *std::ptr::addr_of!(TOLD.value) };
     if n == 0 {
         assert!(t == Some((Some(EnterAsCopyChoice::Declined), None)) && state.pending_entry_choices.is_empty());
     } else {
@@ -210,7 +211,7 @@ card_proof! {
 
         let live = [on[0] && creature(&state, ObjectId(2), &registry), on[1] && creature(&state, ObjectId(3), &registry)];
         // SAFETY: as in `entry_recorded`.
-        let t = unsafe { *std::ptr::addr_of!(TOLD) };
+        let t = unsafe { *std::ptr::addr_of!(TOLD.value) };
         if live == [false, false] {
             assert!(state.awaiting_action.is_none() && t == Some((Some(EnterAsCopyChoice::Declined), None)));
         } else {

@@ -6,6 +6,7 @@
 //! here; what an ordering question says of each trigger (its name, its
 //! source's power and toughness) is display, stood in for as nothing.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::{card_proof, Blank};
@@ -15,14 +16,14 @@ use crate::types::Zone;
 
 /// The triggers put on the stack, in order: each one's source and whether
 /// it had been ordered by its controller already.
-static mut PUSHED: [Option<(ObjectId, bool)>; 3] = [None; 3];
-static mut PUSHED_N: usize = 0;
+static mut PUSHED: Held<[Option<(ObjectId, bool)>; 3]> = Held::new([None; 3], (&raw const PUSHED).cast());
+static mut PUSHED_N: Held<usize> = Held::new(0, (&raw const PUSHED_N).cast());
 
 /// Stands in for `triggers::push_one_pending_trigger`: recorded.
 #[allow(dead_code)] // each named only by `kani::stub`
 fn pushed(_: &mut GameState, trigger: PendingTrigger, _: &CardRegistry) {
     // SAFETY: a proof runs on one thread, and only this function writes PUSHED and PUSHED_N.
-    let (p, n) = unsafe { (&mut *std::ptr::addr_of_mut!(PUSHED), &mut *std::ptr::addr_of_mut!(PUSHED_N)) };
+    let (p, n) = unsafe { (&mut *std::ptr::addr_of_mut!(PUSHED.value), &mut *std::ptr::addr_of_mut!(PUSHED_N.value)) };
     assert!(*n < 3, "no more triggers than this proof queues");
     p[*n] = Some((trigger.source.id, trigger.ordered));
     *n += 1;
@@ -112,7 +113,7 @@ fn processed(k: usize) {
     crate::triggers::process_pending_trigger_pushes(&mut state, &registry);
 
     // SAFETY: as in `pushed`.
-    let (p, n) = unsafe { (*std::ptr::addr_of!(PUSHED), *std::ptr::addr_of!(PUSHED_N)) };
+    let (p, n) = unsafe { (*std::ptr::addr_of!(PUSHED.value), *std::ptr::addr_of!(PUSHED_N.value)) };
     match k {
         0 | 4 => {
             let (player, ap) = if k == 0 { (PlayerId(0), true) } else { (PlayerId(1), false) };
@@ -163,8 +164,8 @@ each_queue! {
 /// The active player's queue as `process_pending_trigger_pushes` found it
 /// after an ordering answer, each trigger's source and whether it had been
 /// ordered, and how many times it was called.
-static mut QUEUED: [Option<(ObjectId, bool)>; 2] = [None; 2];
-static mut PROCESSED: usize = 0;
+static mut QUEUED: Held<[Option<(ObjectId, bool)>; 2]> = Held::new([None; 2], (&raw const QUEUED).cast());
+static mut PROCESSED: Held<usize> = Held::new(0, (&raw const PROCESSED).cast());
 
 /// Stands in for `triggers::process_pending_trigger_pushes`, proved above:
 /// the queue recorded.
@@ -174,8 +175,8 @@ fn processed_after(state: &mut GameState, _: &CardRegistry) {
     assert!(q.len() <= 2, "no more triggers than this proof queues");
     // SAFETY: as in `pushed`, for QUEUED and PROCESSED.
     unsafe {
-        *std::ptr::addr_of_mut!(QUEUED) = [q.first().map(|t| (t.source.id, t.ordered)), q.get(1).map(|t| (t.source.id, t.ordered))];
-        *std::ptr::addr_of_mut!(PROCESSED) += 1;
+        *std::ptr::addr_of_mut!(QUEUED.value) = [q.first().map(|t| (t.source.id, t.ordered)), q.get(1).map(|t| (t.source.id, t.ordered))];
+        *std::ptr::addr_of_mut!(PROCESSED.value) += 1;
     }
 }
 #[allow(dead_code)]
@@ -219,8 +220,8 @@ fn order_answered(reply: u8) {
 
     // SAFETY: as in `pushed`.
     let (queued, processed, p, n) = unsafe { (
-        *std::ptr::addr_of!(QUEUED), *std::ptr::addr_of!(PROCESSED),
-        *std::ptr::addr_of!(PUSHED), *std::ptr::addr_of!(PUSHED_N),
+        *std::ptr::addr_of!(QUEUED.value), *std::ptr::addr_of!(PROCESSED.value),
+        *std::ptr::addr_of!(PUSHED.value), *std::ptr::addr_of!(PUSHED_N.value),
     ) };
     match reply {
         0 | 1 => {

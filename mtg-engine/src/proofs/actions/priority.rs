@@ -4,6 +4,7 @@
 //! `turn_based`'s, and what resolving the top of the stack does is
 //! `resolving`'s; each stands in here as recorded.
 
+use crate::proofs::held::Held;
 use crate::actions::{Action, ResolvedChoice};
 use crate::cards::CardRegistry;
 use crate::ids::{ObjectId, PlayerId};
@@ -11,12 +12,12 @@ use crate::state::{GameState, StackEntry};
 
 /// What the priority step did besides handing priority: 1 ended the step,
 /// 2 resolved the top of the stack.
-static mut DID: [u8; 2] = [0; 2];
-static mut DID_N: usize = 0;
+static mut DID: Held<[u8; 2]> = Held::new([0; 2], (&raw const DID).cast());
+static mut DID_N: Held<usize> = Held::new(0, (&raw const DID_N).cast());
 
 fn did(n: u8) {
     // SAFETY: a proof runs on one thread, and only this function writes DID and DID_N.
-    let (d, k) = unsafe { (&mut *std::ptr::addr_of_mut!(DID), &mut *std::ptr::addr_of_mut!(DID_N)) };
+    let (d, k) = unsafe { (&mut *std::ptr::addr_of_mut!(DID.value), &mut *std::ptr::addr_of_mut!(DID_N.value)) };
     d[*k] = n;
     *k += 1;
 }
@@ -61,7 +62,7 @@ crate::proofs::cards::card_proof! {
         crate::engine::hand_on_priority(&mut state, &Action::PassPriority, None, 2, &registry);
 
         // SAFETY: as in `did`.
-        let (d, n) = unsafe { (*std::ptr::addr_of!(DID), *std::ptr::addr_of!(DID_N)) };
+        let (d, n) = unsafe { (*std::ptr::addr_of!(DID.value), *std::ptr::addr_of!(DID_N.value)) };
         if passes < 2 {
             let current = holder.unwrap_or(active);
             assert!(n == 0 && state.consecutive_passes == passes);
@@ -110,7 +111,7 @@ crate::proofs::cards::card_proof! {
         crate::engine::hand_on_priority(&mut state, &action, caster, 2, &registry);
 
         // SAFETY: as in `did`.
-        let n = unsafe { *std::ptr::addr_of!(DID_N) };
+        let n = unsafe { *std::ptr::addr_of!(DID_N.value) };
         let expected = match kind {
             0 | 1 => Some(active),
             2 => Some(caster.unwrap_or(active)),
@@ -125,13 +126,13 @@ crate::proofs::cards::card_proof! {
 /// as, 2 and 3 checked state-based actions (none performed, some), 4 and 5
 /// put triggered abilities on the stack (none, some), 6 read again what a
 /// waiting choice may copy.
-static mut TRACE: [u8; 16] = [0; 16];
-static mut TRACE_N: usize = 0;
-static mut CHECKS: [usize; 2] = [0; 2];
+static mut TRACE: Held<[u8; 16]> = Held::new([0; 16], (&raw const TRACE).cast());
+static mut TRACE_N: Held<usize> = Held::new(0, (&raw const TRACE_N).cast());
+static mut CHECKS: Held<[usize; 2]> = Held::new([0; 2], (&raw const CHECKS).cast());
 
 fn traced(step: u8) {
     // SAFETY: as in `did`, for TRACE and TRACE_N.
-    let (t, n) = unsafe { (&mut *std::ptr::addr_of_mut!(TRACE), &mut *std::ptr::addr_of_mut!(TRACE_N)) };
+    let (t, n) = unsafe { (&mut *std::ptr::addr_of_mut!(TRACE.value), &mut *std::ptr::addr_of_mut!(TRACE_N.value)) };
     assert!(*n < 16, "no longer a trace than this proof bounds");
     t[*n] = step;
     *n += 1;
@@ -149,7 +150,7 @@ fn entry_choices(_: &mut GameState, _: &CardRegistry) {
 #[allow(dead_code)]
 fn checked(_: &mut GameState, _: &CardRegistry) -> bool {
     // SAFETY: as in `did`, for CHECKS.
-    let c = unsafe { &mut (*std::ptr::addr_of_mut!(CHECKS))[0] };
+    let c = unsafe { &mut (*std::ptr::addr_of_mut!(CHECKS.value))[0] };
     *c += 1;
     let acted = *c <= 2 && kani::any::<bool>();
     traced(if acted { 3 } else { 2 });
@@ -160,7 +161,7 @@ fn checked(_: &mut GameState, _: &CardRegistry) -> bool {
 #[allow(dead_code)]
 fn collected(_: &mut GameState, _: &CardRegistry) -> bool {
     // SAFETY: as in `checked`.
-    let c = unsafe { &mut (*std::ptr::addr_of_mut!(CHECKS))[1] };
+    let c = unsafe { &mut (*std::ptr::addr_of_mut!(CHECKS.value))[1] };
     *c += 1;
     let put = *c <= 2 && kani::any::<bool>();
     traced(if put { 5 } else { 4 });
@@ -195,7 +196,7 @@ crate::proofs::cards::card_proof! {
         crate::engine::before_priority(&mut state, &registry);
 
         // SAFETY: as in `did`.
-        let (t, n) = unsafe { (*std::ptr::addr_of!(TRACE), *std::ptr::addr_of!(TRACE_N)) };
+        let (t, n) = unsafe { (*std::ptr::addr_of!(TRACE.value), *std::ptr::addr_of!(TRACE_N.value)) };
         assert!(n >= 4 && t[0] == 1 && t[n - 1] == 6);
         // The rounds between, read one at a time: checks until one finds
         // nothing, then a collection; a round that did something is

@@ -11,6 +11,7 @@
 //! below; whether a creature has trample or deathtouch, and its power and
 //! toughness, are any answer.
 
+use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
@@ -21,9 +22,9 @@ use crate::types::{Keyword, Zone};
 
 /// Each object's keywords asked (first strike, double strike, trample,
 /// deathtouch), power and toughness: any answer, the same each time.
-static mut KEYWORDS: [[Option<bool>; 4]; 5] = [[None; 4]; 5];
-static mut POWER: [Option<i32>; 5] = [None; 5];
-static mut TOUGHNESS: [Option<i32>; 5] = [None; 5];
+static mut KEYWORDS: Held<[[Option<bool>; 4]; 5]> = Held::new([[None; 4]; 5], (&raw const KEYWORDS).cast());
+static mut POWER: Held<[Option<i32>; 5]> = Held::new([None; 5], (&raw const POWER).cast());
+static mut TOUGHNESS: Held<[Option<i32>; 5]> = Held::new([None; 5], (&raw const TOUGHNESS).cast());
 
 fn index(id: ObjectId) -> usize {
     let i = usize::try_from(id.0).expect("an id of the board");
@@ -41,7 +42,7 @@ fn has_keyword(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegistry) 
         _ => panic!("a keyword the step does not ask"),
     };
     // SAFETY: a proof runs on one thread, and only this function names KEYWORDS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(KEYWORDS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(KEYWORDS.value) };
     *answers[index(id)][k].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -49,7 +50,7 @@ fn has_keyword(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegistry) 
 #[allow(dead_code)] // named only by `kani::stub`
 fn effective_power(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32> {
     // SAFETY: as in `has_keyword`, for POWER.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(POWER) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(POWER.value) };
     Some(*answers[index(id)].get_or_insert_with(|| {
         let p: i32 = kani::any();
         kani::assume((-1..=3).contains(&p));
@@ -62,7 +63,7 @@ fn effective_power(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32>
 #[allow(dead_code)] // named only by `kani::stub`
 fn effective_toughness(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32> {
     // SAFETY: as in `has_keyword`, for TOUGHNESS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(TOUGHNESS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(TOUGHNESS.value) };
     Some(*answers[index(id)].get_or_insert_with(|| {
         let t: i32 = kani::any();
         kani::assume((0..=3).contains(&t));
@@ -82,7 +83,7 @@ struct Asked {
     overflow: u32,
     open: Option<(ObjectId, u32, u32)>,
 }
-static mut DIVISIONS: [Option<Asked>; 2] = [None; 2];
+static mut DIVISIONS: Held<[Option<Asked>; 2]> = Held::new([None; 2], (&raw const DIVISIONS).cast());
 
 /// Stands in for `combat::divide_combat_damage`: any division the kernel
 /// is proved to give (`mtg_kernel::combat::legal_division`): the amounts
@@ -111,7 +112,7 @@ fn divide(power: u32, blockers: &[(ObjectId, u32)], trample: bool, _: &[(ObjectI
     kani::assume(asked.overflow == 0 || (trample && (0..blockers.len()).all(lethal)));
     // SAFETY: as in `has_keyword`, for DIVISIONS. Asked once per attacker
     // of the board, in the caller's order, which the proof follows.
-    let divisions = unsafe { &mut *std::ptr::addr_of_mut!(DIVISIONS) };
+    let divisions = unsafe { &mut *std::ptr::addr_of_mut!(DIVISIONS.value) };
     let slot = divisions.iter_mut().find(|d| d.is_none()).expect("a division per attacker");
     *slot = Some(asked);
     crate::combat::DamageDivision { to_blockers, overflow: asked.overflow, open: None }
@@ -135,7 +136,7 @@ fn divide_open(power: u32, blockers: &[(ObjectId, u32)], trample: bool, _: &[(Ob
         asked.open = Some((blockers[k].0, lo, hi));
     }
     // SAFETY: as in `divide`.
-    let divisions = unsafe { &mut *std::ptr::addr_of_mut!(DIVISIONS) };
+    let divisions = unsafe { &mut *std::ptr::addr_of_mut!(DIVISIONS.value) };
     let slot = divisions.iter_mut().find(|d| d.is_none()).expect("a division per attacker");
     *slot = Some(asked);
     crate::combat::DamageDivision { to_blockers: Vec::new(), overflow: 0, open: asked.open }
@@ -144,15 +145,15 @@ fn divide_open(power: u32, blockers: &[(ObjectId, u32)], trample: bool, _: &[(Ob
 /// Whether each object deals combat damage in this step: any answer (the
 /// rule is `deals_in_step`'s, proved below); and the objects marked as
 /// having dealt first-strike damage, in order.
-static mut DEALS: [Option<bool>; 5] = [None; 5];
-static mut MARKED: [ObjectId; 4] = [ObjectId(0); 4];
-static mut MARKED_N: usize = 0;
+static mut DEALS: Held<[Option<bool>; 5]> = Held::new([None; 5], (&raw const DEALS).cast());
+static mut MARKED: Held<[ObjectId; 4]> = Held::new([ObjectId(0); 4], (&raw const MARKED).cast());
+static mut MARKED_N: Held<usize> = Held::new(0, (&raw const MARKED_N).cast());
 
 /// Stands in for `combat::deals_in_step`: any answer, the same each time.
 #[allow(dead_code)] // named only by `kani::stub`
 fn deals(_: &GameState, id: ObjectId, _: bool, _: &CardRegistry) -> bool {
     // SAFETY: as in `has_keyword`, for DEALS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(DEALS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(DEALS.value) };
     *answers[index(id)].get_or_insert_with(kani::any::<bool>)
 }
 
@@ -161,7 +162,7 @@ fn deals(_: &GameState, id: ObjectId, _: bool, _: &CardRegistry) -> bool {
 #[allow(dead_code)] // named only by `kani::stub`
 fn mark(_: &mut GameState, id: ObjectId) {
     // SAFETY: as in `has_keyword`, for MARKED and MARKED_N.
-    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(MARKED), &mut *std::ptr::addr_of_mut!(MARKED_N)) };
+    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(MARKED.value), &mut *std::ptr::addr_of_mut!(MARKED_N.value)) };
     list[*n] = id;
     *n += 1;
 }
@@ -275,7 +276,7 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
     let deals = |id: u64| deals(&state, ObjectId(id), first_strike_step, &registry);
     let power = |id: u64| power(&state, &registry, id);
     // SAFETY: as in `has_keyword`.
-    let divisions = unsafe { *std::ptr::addr_of!(DIVISIONS) };
+    let divisions = unsafe { *std::ptr::addr_of!(DIVISIONS.value) };
     let mut expected = [(ObjectId(0), DamageTarget::Player(PlayerId(0)), 0u32); 8];
     let mut n = 0;
     let mut push = |source: u64, target: DamageTarget, amount: u32| {
@@ -334,7 +335,7 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
     assert!((0..divisions.len()).all(|i| i < divided || divisions[i].is_none()));
     assert!(asked_each(n, |k| Act::Queue { source: expected[k].0, target: expected[k].1, amount: expected[k].2, kind: DamageKind::Combat }));
     // SAFETY: as in `has_keyword`.
-    let (recorded, k) = unsafe { (*std::ptr::addr_of!(MARKED), *std::ptr::addr_of!(MARKED_N)) };
+    let (recorded, k) = unsafe { (*std::ptr::addr_of!(MARKED.value), *std::ptr::addr_of!(MARKED_N.value)) };
     // Each place checked on its own, not the two lists of open length
     // compared, which the solver follows through every length at once.
     assert!(k == m && (0..marked.len()).all(|i| i >= m || recorded[i] == marked[i]));
@@ -390,7 +391,7 @@ fn asking(attacking: &[u64], blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) 
     let raised = crate::combat::ask_next_damage_division(&mut state, &registry, first_strike_step);
 
     // SAFETY: as in `has_keyword`.
-    let divisions = unsafe { *std::ptr::addr_of!(DIVISIONS) };
+    let divisions = unsafe { *std::ptr::addr_of!(DIVISIONS.value) };
     let mut divided = 0;
     let mut question = None;
     for &a in attacking {

@@ -6,6 +6,7 @@
 //! recorded here (`pending_effects` proves it), and what declining does is
 //! the card's (`on_declined_choice`, each card's proof).
 
+use crate::proofs::held::Held;
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
@@ -14,7 +15,7 @@ use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKin
 use crate::types::Zone;
 
 /// The object whose card was told its question was declined.
-static mut DECLINED: Option<ObjectId> = None;
+static mut DECLINED: Held<Option<ObjectId>> = Held::new(None, (&raw const DECLINED).cast());
 
 /// A card that asks a question and is told when it is declined.
 struct Asking;
@@ -25,7 +26,7 @@ impl CardBehavior for Asking {
     }
     fn on_declined_choice(&self, _: &mut GameState, id: ObjectId, _: &CardRegistry) {
         // SAFETY: a proof runs on one thread, and only this function writes DECLINED.
-        unsafe { *std::ptr::addr_of_mut!(DECLINED) = Some(id) };
+        unsafe { *std::ptr::addr_of_mut!(DECLINED.value) = Some(id) };
     }
 }
 
@@ -75,7 +76,7 @@ fn answered(reply: u8, optional: bool) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenTarget(answer.clone()), &registry);
 
     // SAFETY: as in `Asking::on_declined_choice`.
-    let declined = unsafe { *std::ptr::addr_of!(DECLINED) };
+    let declined = unsafe { *std::ptr::addr_of!(DECLINED.value) };
     let refused = answer == Some(Target::Object(ObjectId(8))) || (answer.is_none() && !optional);
     if refused {
         assert!(matches!(applied, crate::engine::Applied::ReturnNow));
@@ -183,14 +184,14 @@ fn a_token_entering_attacking_attacks_what_its_controller_chose() {
 }
 
 /// The answer recorded for the permanent entering.
-static mut ENTRY: Option<(ObjectId, crate::state::EnterAsCopyChoice)> = None;
+static mut ENTRY: Held<Option<(ObjectId, crate::state::EnterAsCopyChoice)>> = Held::new(None, (&raw const ENTRY).cast());
 
 /// Stands in for `replacement::record_entry_choice` (what entering does
 /// with the answer is `entering_as_copy`'s proof): recorded.
 #[allow(dead_code)] // named only by `kani::stub`
 fn entry_recorded(_: &mut GameState, object: ObjectId, choice: crate::state::EnterAsCopyChoice, _: &CardRegistry) {
     // SAFETY: as in `Asking::on_declined_choice`, for ENTRY.
-    unsafe { *std::ptr::addr_of_mut!(ENTRY) = Some((object, choice)) };
+    unsafe { *std::ptr::addr_of_mut!(ENTRY.value) = Some((object, choice)) };
 }
 
 #[kani::proof]
@@ -217,7 +218,7 @@ fn a_permanent_entering_as_a_copy_copies_the_creature_chosen_if_it_is_still_ther
     crate::engine::apply_pending_effect(&mut state, &Target::Object(chosen), &PendingEffect::EnterAsCopy { object: entering }, &registry);
 
     // SAFETY: as in `entry_recorded`.
-    let recorded = unsafe { *std::ptr::addr_of!(ENTRY) };
+    let recorded = unsafe { *std::ptr::addr_of!(ENTRY.value) };
     let expected = if there { crate::state::EnterAsCopyChoice::Copy(chosen) } else { crate::state::EnterAsCopyChoice::Declined };
     assert!(recorded == Some((entering, expected)));
     std::mem::forget((registry, state));
@@ -225,7 +226,7 @@ fn a_permanent_entering_as_a_copy_copies_the_creature_chosen_if_it_is_still_ther
 
 /// The activation `finish_activation` was handed: by whom, of what, and
 /// the creatures its cost taps (up to two), once.
-static mut FINISHED: Option<(PlayerId, ObjectId, [Option<ObjectId>; 2], usize)> = None;
+static mut FINISHED: Held<Option<(PlayerId, ObjectId, [Option<ObjectId>; 2], usize)>> = Held::new(None, (&raw const FINISHED).cast());
 
 /// Stands in for `actions::abilities::finish_activation`, which goes on as
 /// an activation with nothing left to choose does (`activating`): recorded.
@@ -239,7 +240,7 @@ fn finish_activation(
     let tapped = &cost.tapped_creatures;
     assert!(tapped.len() <= 2, "no more creatures than this proof's cost taps");
     // SAFETY: as in `Asking::on_declined_choice`, for FINISHED.
-    let f = unsafe { &mut *std::ptr::addr_of_mut!(FINISHED) };
+    let f = unsafe { &mut *std::ptr::addr_of_mut!(FINISHED.value) };
     assert!(f.is_none(), "finished once");
     *f = Some((a.player, a.object_id, [tapped.first().copied(), tapped.get(1).copied()], tapped.len()));
     std::mem::forget(cost);
@@ -310,7 +311,7 @@ fn taps_chosen(reply: u8) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenObjectSet(chosen), &registry);
 
     // SAFETY: as in `Asking::on_declined_choice`.
-    let finished = unsafe { *std::ptr::addr_of!(FINISHED) };
+    let finished = unsafe { *std::ptr::addr_of!(FINISHED.value) };
     if reply <= 1 {
         let (first, second) = if reply == 0 { (mine[0], mine[1]) } else { (mine[1], mine[0]) };
         assert!(matches!(applied, crate::engine::Applied::Continue));
@@ -362,10 +363,10 @@ each_tap_reply! {
 /// funding paid (any), the costs paid (how many times, and whether the
 /// cost paid was the one stashed), and the ability put on the stack (with
 /// the X the game held then and how many times the costs had been paid).
-static mut FUNDED: Option<u32> = None;
-static mut COSTS_PAID: usize = 0;
-static mut STASHED_COST: bool = false;
-static mut PUSHED: Option<(ObjectId, usize, crate::ids::CardId, PlayerId, Option<u32>, usize)> = None;
+static mut FUNDED: Held<Option<u32>> = Held::new(None, (&raw const FUNDED).cast());
+static mut COSTS_PAID: Held<usize> = Held::new(0, (&raw const COSTS_PAID).cast());
+static mut STASHED_COST: Held<bool> = Held::new(false, (&raw const STASHED_COST).cast());
+static mut PUSHED: Held<Option<(ObjectId, usize, crate::ids::CardId, PlayerId, Option<u32>, usize)>> = Held::new(None, (&raw const PUSHED).cast());
 
 /// Stands in for `funding::validate`: every response valid, as a seat
 /// that answers from the prompt's own options gives.
@@ -382,7 +383,7 @@ fn funded(_: &mut GameState, _: PlayerId, options: &crate::funding::FundingOptio
     let paid: u32 = kani::any();
     kani::assume(paid <= options.max_x);
     // SAFETY: as in `Asking::on_declined_choice`, for FUNDED.
-    let f = unsafe { &mut *std::ptr::addr_of_mut!(FUNDED) };
+    let f = unsafe { &mut *std::ptr::addr_of_mut!(FUNDED.value) };
     assert!(f.is_none(), "funded once");
     *f = Some(paid);
     paid
@@ -394,8 +395,8 @@ fn funded(_: &mut GameState, _: PlayerId, options: &crate::funding::FundingOptio
 fn costs_paid(_: &mut GameState, _: PlayerId, _: ObjectId, _: usize, cost: &crate::state::DeferredActivationCost, _: &CardRegistry) {
     // SAFETY: as in `funded`, for COSTS_PAID and STASHED_COST.
     unsafe {
-        *std::ptr::addr_of_mut!(COSTS_PAID) += 1;
-        *std::ptr::addr_of_mut!(STASHED_COST) = cost.requires_tap && cost.once_per_turn;
+        *std::ptr::addr_of_mut!(COSTS_PAID.value) += 1;
+        *std::ptr::addr_of_mut!(STASHED_COST.value) = cost.requires_tap && cost.once_per_turn;
     }
 }
 
@@ -409,7 +410,7 @@ fn pushed(
 ) {
     assert!(targets.is_empty(), "the ability of this proof targets nothing");
     // SAFETY: as in `funded`, for PUSHED.
-    let (p, paid) = unsafe { (&mut *std::ptr::addr_of_mut!(PUSHED), *std::ptr::addr_of!(COSTS_PAID)) };
+    let (p, paid) = unsafe { (&mut *std::ptr::addr_of_mut!(PUSHED.value), *std::ptr::addr_of!(COSTS_PAID.value)) };
     assert!(p.is_none(), "pushed once");
     *p = Some((source, index, card, activator, state.last_activated_x_value, paid));
 }
@@ -478,8 +479,8 @@ card_proof! {
 
         // SAFETY: as in `funded`.
         let (paid, costs, stashed, pushed) = unsafe { (
-            *std::ptr::addr_of!(FUNDED), *std::ptr::addr_of!(COSTS_PAID),
-            *std::ptr::addr_of!(STASHED_COST), *std::ptr::addr_of!(PUSHED),
+            *std::ptr::addr_of!(FUNDED.value), *std::ptr::addr_of!(COSTS_PAID.value),
+            *std::ptr::addr_of!(STASHED_COST.value), *std::ptr::addr_of!(PUSHED.value),
         ) };
         let paid = paid.expect("funded");
         assert!(matches!(applied, crate::engine::Applied::Continue));
@@ -491,7 +492,7 @@ card_proof! {
 }
 
 /// How many times a spell's additional costs were paid (any it has).
-static mut ADDITIONAL_PAID: usize = 0;
+static mut ADDITIONAL_PAID: Held<usize> = Held::new(0, (&raw const ADDITIONAL_PAID).cast());
 
 /// Stands in for `costs::pay_additional_cost`, proved in
 /// `additional_costs`: counted.
@@ -499,7 +500,7 @@ static mut ADDITIONAL_PAID: usize = 0;
 #[allow(clippy::too_many_arguments)]
 fn additional_paid(_: &mut GameState, _: &CardRegistry, _: crate::ids::CardId, _: ObjectId, _: PlayerId, _: Option<ObjectId>, _: Option<u32>, _: &[ObjectId]) {
     // SAFETY: as in `funded`, for ADDITIONAL_PAID.
-    unsafe { *std::ptr::addr_of_mut!(ADDITIONAL_PAID) += 1 };
+    unsafe { *std::ptr::addr_of_mut!(ADDITIONAL_PAID.value) += 1 };
 }
 
 /// Stands in for `engine::demand_reserve`: none, as in `casting`; the
@@ -564,7 +565,7 @@ fn spell_x_funded(flashback: bool) {
         &mut state, &ResolvedChoice::XFunding(crate::funding::FundingResponse::default()), &registry);
 
     // SAFETY: as in `funded`.
-    let (paid, additional) = unsafe { (*std::ptr::addr_of!(FUNDED), *std::ptr::addr_of!(ADDITIONAL_PAID)) };
+    let (paid, additional) = unsafe { (*std::ptr::addr_of!(FUNDED.value), *std::ptr::addr_of!(ADDITIONAL_PAID.value)) };
     let paid = paid.expect("funded");
     assert!(matches!(applied, crate::engine::Applied::Continue));
     assert!(additional == 1 && asked_for(&[Act::Move(spell, Zone::Stack)]));
@@ -791,7 +792,7 @@ each_search_reply! {
 /// the card type chosen (the types offered are of lengths one to three,
 /// each its own, so the length says which was handed on without comparing
 /// a string read back off the heap).
-static mut TOLD: Option<(ObjectId, Option<bool>, Option<usize>)> = None;
+static mut TOLD: Held<Option<(ObjectId, Option<bool>, Option<usize>)>> = Held::new(None, (&raw const TOLD).cast());
 
 /// A card that asks a yes-or-no question and to name a card type, and is
 /// told the answers.
@@ -803,13 +804,13 @@ impl CardBehavior for Told {
     }
     fn on_yes_no_choice(&self, _: &mut GameState, id: ObjectId, yes: bool, _: &CardRegistry) {
         // SAFETY: as in `Asking::on_declined_choice`, for TOLD.
-        let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD) };
+        let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD.value) };
         assert!(t.is_none(), "told once");
         *t = Some((id, Some(yes), None));
     }
     fn on_card_type_choice(&self, _: &mut GameState, id: ObjectId, chosen: &str, _: &CardRegistry) {
         // SAFETY: as in `on_yes_no_choice`.
-        let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD) };
+        let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD.value) };
         assert!(t.is_none(), "told once");
         *t = Some((id, None, Some(chosen.len())));
     }
@@ -854,7 +855,7 @@ fn told(reply: u8) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &answer, &registry);
 
     // SAFETY: as in `Asking::on_declined_choice`.
-    let t = unsafe { *std::ptr::addr_of!(TOLD) };
+    let t = unsafe { *std::ptr::addr_of!(TOLD.value) };
     match reply {
         0 | 1 => {
             assert!(matches!(applied, crate::engine::Applied::Continue));
@@ -906,7 +907,7 @@ each_told_reply! {
 /// What `damage::apply_chosen_effect` was handed: who chose, the damage
 /// (its source, the object it is to, how much, of which kind), and which
 /// effect (0 a doubling, 1 a prevention and removal, each by its object).
-static mut APPLIED_FIRST: Option<(PlayerId, ObjectId, Option<ObjectId>, u32, crate::damage::DamageKind, u8, ObjectId)> = None;
+static mut APPLIED_FIRST: Held<Option<(PlayerId, ObjectId, Option<ObjectId>, u32, crate::damage::DamageKind, u8, ObjectId)>> = Held::new(None, (&raw const APPLIED_FIRST).cast());
 
 /// Stands in for `damage::apply_chosen_effect`, whose effects are proved
 /// in `effects` and `damage`: recorded.
@@ -924,7 +925,7 @@ fn applied_first(_: &mut GameState, chooser: PlayerId, event: &crate::damage::Pe
     };
     assert!(event.applied.is_empty() && !event.settled, "the damage as it was asked about");
     // SAFETY: as in `Asking::on_declined_choice`, for APPLIED_FIRST.
-    let a = unsafe { &mut *std::ptr::addr_of_mut!(APPLIED_FIRST) };
+    let a = unsafe { &mut *std::ptr::addr_of_mut!(APPLIED_FIRST.value) };
     assert!(a.is_none(), "applied once");
     *a = Some((chooser, event.source, to, event.amount, event.kind, which, by));
 }
@@ -968,7 +969,7 @@ fn damage_effect_chosen(reply: u8) {
         &mut state, &ResolvedChoice::ChosenIndex(usize::from(reply), String::new()), &registry);
 
     // SAFETY: as in `Asking::on_declined_choice`.
-    let a = unsafe { *std::ptr::addr_of!(APPLIED_FIRST) };
+    let a = unsafe { *std::ptr::addr_of!(APPLIED_FIRST.value) };
     if reply < 2 {
         let by = if reply == 0 { flail } else { horde };
         assert!(matches!(applied, crate::engine::Applied::Continue));

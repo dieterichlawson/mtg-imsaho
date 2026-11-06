@@ -16,6 +16,7 @@
 //! `prune_effects_on_departed_objects`'s proof), and what stays to be
 //! shown is that one reaches nothing off the battlefield.
 
+use crate::proofs::held::Held;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::proofs::cards::{card_proof, case_by_case, Blank};
@@ -381,7 +382,7 @@ each_count! {
 
 /// The effects [`granted_as_given`] answers from: the harness's own list,
 /// each effect on the card or not, and how many there are.
-static mut GIVEN: (*const (bool, crate::types::ManaCost), usize) = (std::ptr::null(), 0);
+static mut GIVEN: Held<(*const (bool, crate::types::ManaCost), usize)> = Held::new((std::ptr::null(), 0), (&raw const GIVEN).cast());
 
 /// Stands in for `engine::granted_flashback_costs`, as its proof
 /// ([`reading_the_grants`]) shows it answers: the costs of the effects on
@@ -395,7 +396,7 @@ fn granted_as_given(_: &GameState, id: ObjectId) -> Vec<&crate::types::ManaCost>
     assert!(id == ObjectId(1), "asked of the card");
     // SAFETY: a proof runs on one thread; GIVEN points at the harness's
     // list, which outlives the call.
-    let (effects, n) = unsafe { *std::ptr::addr_of!(GIVEN) };
+    let (effects, n) = unsafe { *std::ptr::addr_of!(GIVEN.value) };
     let mut costs = Vec::with_capacity(2);
     for i in 0..n {
         // SAFETY: as above, `i` within the list.
@@ -428,7 +429,7 @@ fn granting_flashback<const N: usize>(effects: [(bool, crate::types::ManaCost); 
     assert!(card == ObjectId(1));
     // SAFETY: a proof runs on one thread, and `effects` outlives every
     // call made below.
-    unsafe { *std::ptr::addr_of_mut!(GIVEN) = (effects.as_ptr(), N) };
+    unsafe { *std::ptr::addr_of_mut!(GIVEN.value) = (effects.as_ptr(), N) };
     let mut expected: Vec<&crate::types::ManaCost> = Vec::with_capacity(N);
     for (on_it, cost) in &effects {
         if *on_it && !expected.contains(&cost) {

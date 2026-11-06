@@ -9,6 +9,7 @@
 //! whatever the answers are, so it holds for the real answers; that the
 //! answering function gives the right ones is that function's own proof.
 
+use crate::proofs::held::Held;
 use crate::ids::ObjectId;
 
 /// A question about an object.
@@ -39,7 +40,7 @@ const QUESTIONS: usize = Question::HasLifelink as usize + 1;
 /// the answers, so a list of them is a different list down each path, and
 /// where the paths meet every question after was compared with every entry
 /// of every list (the proofs of targeting ran out of memory doing it).
-static mut ANSWERS: [[Option<bool>; IDS]; QUESTIONS] = [[None; IDS]; QUESTIONS];
+static mut ANSWERS: Held<[[Option<bool>; IDS]; QUESTIONS]> = Held::new([[None; IDS]; QUESTIONS], (&raw const ANSWERS).cast());
 
 /// Where the answers about `id` are kept.
 fn place(id: ObjectId) -> usize {
@@ -54,7 +55,7 @@ fn place(id: ObjectId) -> usize {
 /// asked, the same after.
 pub fn decided(question: Question, id: ObjectId) -> bool {
     // SAFETY: a proof runs on one thread, and only this module names ANSWERS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(ANSWERS.value) };
     let answer = &mut answers[question as usize][place(id)];
     match *answer {
         Some(a) => a,

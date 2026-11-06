@@ -18,6 +18,7 @@
 //! apart, its scope read back as every scope, and each of these proofs ran
 //! out of memory.
 
+use crate::proofs::held::Held;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::{card_proof, Blank};
@@ -301,7 +302,7 @@ each_restriction! {
 
 /// Whether each of the two creatures has flying and reach, as
 /// [`flying_or_reach`] answers: chosen once, the same after.
-static mut WINGS: [[Option<bool>; 2]; 2] = [[None; 2]; 2];
+static mut WINGS: Held<[[Option<bool>; 2]; 2]> = Held::new([[None; 2]; 2], (&raw const WINGS).cast());
 
 /// Stands in for `GameState::has_keyword` on the board of
 /// [`blocked_only_by_flying_or_reach`]: flying and reach any answer for
@@ -321,7 +322,7 @@ fn flying_or_reach(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegist
         _ => return false,
     };
     // SAFETY: a proof runs on one thread, and only this function names WINGS.
-    let wings = unsafe { &mut *std::ptr::addr_of_mut!(WINGS) };
+    let wings = unsafe { &mut *std::ptr::addr_of_mut!(WINGS.value) };
     *wings[i][k].get_or_insert_with(kani::any::<bool>)
 }
 

@@ -6,6 +6,7 @@
 //! (602.2b via 601.2c), and that check (`targeting::targets_are_legal`) is
 //! any answer here.
 
+use crate::proofs::held::Held;
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, SacrificeCost, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -37,13 +38,13 @@ impl CardBehavior for Activatable {
 }
 
 /// The check's answer: chosen the first time it is asked, the same after.
-static mut LEGAL: Option<bool> = None;
+static mut LEGAL: Held<Option<bool>> = Held::new(None, (&raw const LEGAL).cast());
 
 /// Stands in for `targeting::targets_are_legal`: any answer.
 #[allow(dead_code)] // named only by `kani::stub`
 fn targets_are_legal(_: &GameState, _: &TargetRequirement, _: &[Target], _: PlayerId, _: ObjectId, _: &dyn CardBehavior, _: &CardRegistry) -> bool {
     // SAFETY: a proof runs on one thread, and only this function writes LEGAL.
-    *unsafe { &mut *std::ptr::addr_of_mut!(LEGAL) }.get_or_insert_with(kani::any::<bool>)
+    *unsafe { &mut *std::ptr::addr_of_mut!(LEGAL.value) }.get_or_insert_with(kani::any::<bool>)
 }
 
 /// Stands in for `engine::demand_reserve`: none, as in `casting`; this
@@ -75,7 +76,7 @@ fn activating() {
         &mut state, source, 0, &[Target::Object(creature)], &[], None, None, &registry);
 
     // SAFETY: as in `targets_are_legal`.
-    let legal = unsafe { *std::ptr::addr_of!(LEGAL) } == Some(true);
+    let legal = unsafe { *std::ptr::addr_of!(LEGAL.value) } == Some(true);
     if legal {
         assert!(matches!(applied, crate::engine::Applied::Continue));
         assert!(asked_for(&[Act::Tap(source)]));
@@ -141,7 +142,7 @@ fn activating_loyalty(change: i32) {
         &mut state, source, 0, &[Target::Object(creature)], &registry);
 
     // SAFETY: as in `targets_are_legal`.
-    let legal = unsafe { *std::ptr::addr_of!(LEGAL) } == Some(true);
+    let legal = unsafe { *std::ptr::addr_of!(LEGAL.value) } == Some(true);
     let marked = state.get_object(source).expect("on the board").abilities_activated_this_turn.contains(&999);
     if legal {
         assert!(matches!(applied, crate::engine::Applied::Continue));
@@ -189,7 +190,7 @@ card_proof! {
 
 /// What `GameState::effective_toughness` answered for each object (1 and
 /// 2), and how many actions had been asked for when it was first read.
-static mut TOUGHNESS: [Option<(Option<i32>, usize)>; 2] = [None; 2];
+static mut TOUGHNESS: Held<[Option<(Option<i32>, usize)>; 2]> = Held::new([None; 2], (&raw const TOUGHNESS).cast());
 
 /// Stands in for `GameState::effective_toughness`, proved in
 /// `power_and_toughness`: any answer, the same for an object each time.
@@ -198,7 +199,7 @@ fn toughness(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32> {
     let i = usize::try_from(id.0).expect("an id of the board");
     assert!((1..=2).contains(&i), "an object this proof does not make");
     // SAFETY: a proof runs on one thread, and only this function writes TOUGHNESS.
-    let answers = unsafe { &mut *std::ptr::addr_of_mut!(TOUGHNESS) };
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(TOUGHNESS.value) };
     answers[i - 1].get_or_insert_with(|| (kani::any(), acted())).0
 }
 
@@ -290,7 +291,7 @@ fn costs_paid(kind: u8) {
     assert!(paid && acted() == k);
     assert!(state.last_activated_sacrifice == sacrificed);
     // SAFETY: as in `toughness`.
-    let read = unsafe { *std::ptr::addr_of!(TOUGHNESS) };
+    let read = unsafe { *std::ptr::addr_of!(TOUGHNESS.value) };
     match sacrificed {
         None => { assert!(state.last_activated_sacrifice_toughness.is_none() && read == [None, None]); }
         Some(id) => {
