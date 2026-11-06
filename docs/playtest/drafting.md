@@ -963,7 +963,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   decklist), that the chooser is the game-1 loser, and that the clock ends
   it with the decks as they stand. Then the runner: under the prompt stub
   (which sideboards half the time) read every `SIDEBOARD before game`
-  line against the deck the next game's log plays
+  line against the deck the next game's log plays. Tried 2026-11-06
+  (#998): every bad deck was refused, but `play_draw` is still taken
+  after `sideboard_ready`. Ask of every between-games message whether
+  "ready" locks it, on the page, the client and the server alike. To
+  send what no page sends, copy `table_rehearsal.js` to scratch and open
+  a raw `WebSocket` on the seat's join key from a hook in its between
+  branch. Mind `page.click`'s 30 s auto-wait: a hook that holds the loop
+  lets the stale `#sideboard-ready` click land on the next game's
+  between. To rehearse a `--resume`, pass it through and wait for "the
+  table carries on:" as well as "the draft starts when"
 - D44 [proposed 2026-10-21, same source, MTR 2.2] who plays first. Over a
   dozen stub matches at `--best-of 3`, read each game's first turn against
   the log's `chose to play first`/`draws first`: game 1 the coin flip's
