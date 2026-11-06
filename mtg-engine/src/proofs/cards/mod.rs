@@ -306,6 +306,21 @@ pub fn picked<T, U>(items: &[T], pick: impl Fn(&T) -> Option<U>) -> Vec<U> {
     list
 }
 
+/// `list` in an array of room `R`, the rest `fill`, for a slice of its
+/// first `list.len()` to be handed to the engine. An empty array handed
+/// over as a slice points at an object of no size, which CBMC follows as
+/// a pointer to anything: the proof of no blocks declared ran out of 12 GB
+/// on `[(ObjectId, ObjectId); 0]` and passes in 36 s with its slice taken
+/// of an array of room. Element by element, as `record_blocks` says why.
+pub fn in_room<T: Copy, const R: usize>(list: &[T], fill: T) -> [T; R] {
+    assert!(list.len() <= R, "a list longer than its room");
+    let mut room = [fill; R];
+    for (k, &x) in list.iter().enumerate() {
+        room[k] = x;
+    }
+    room
+}
+
 /// How many actions were asked for.
 pub fn acted() -> usize {
     // SAFETY: as in `acts`.

@@ -20,7 +20,7 @@ use crate::proofs::held::Held;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
-use crate::proofs::cards::{card_proof, Blank};
+use crate::proofs::cards::{card_proof, in_room, Blank};
 use crate::state::{CombatState, GameState};
 use crate::types::Zone;
 
@@ -118,12 +118,15 @@ fn record_blocks(_: &mut GameState, blocks: &[(ObjectId, ObjectId)]) {
 /// each attacker's fewest blockers `minimum_blockers`; the blocks recorded
 /// are exactly those the kernel accepts, in the order submitted. For each
 /// blocker either player's, each question any answer, and `blocks` and
-/// which attackers attack constants of each harness.
+/// which attackers attack constants of each harness. The declaration is
+/// handed over in an array of room (`cards::in_room`): as an array of its
+/// own length, none declared ran out of 12 GB.
 fn deciding<const N: usize>(blocks: [(u64, u64); N], attacking: [bool; 2]) {
     let (registry, mut state, defending, attacking, controllers) = board(attacking);
-    let submitted: [(ObjectId, ObjectId); N] = blocks.map(|(b, a)| (ObjectId(b), ObjectId(a)));
+    let room: [(ObjectId, ObjectId); 4] = in_room(&blocks.map(|(b, a)| (ObjectId(b), ObjectId(a))), (ObjectId(0), ObjectId(0)));
+    let submitted = &room[..N];
 
-    crate::combat::declare_blockers_with_registry(&mut state, &submitted, &registry);
+    crate::combat::declare_blockers_with_registry(&mut state, submitted, &registry);
 
     // The terms, each numbered in the order first named.
     let (mut bs, mut as_) = (Vec::with_capacity(N), Vec::with_capacity(N));
@@ -327,6 +330,10 @@ fn no_power(_: &GameState, _: ObjectId, _: &CardRegistry) -> Option<i32> {
 /// and 2, in the order they block, and `placed` those of the first's
 /// already placed.
 fn announcing(first: &[u64], second: &[u64], placed: &[u64]) {
+    // Each list in an array of room (`cards::in_room`): an empty one, as
+    // an array of no length, ran every one of these out of 12 GB.
+    let (f, s, p): ([u64; 3], [u64; 3], [u64; 3]) = (in_room(first, 0), in_room(second, 0), in_room(placed, 0));
+    let (first, second, placed) = (&f[..first.len()], &s[..second.len()], &p[..placed.len()]);
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut state = crate::proofs::cards::new_game();
@@ -335,14 +342,21 @@ fn announcing(first: &[u64], second: &[u64], placed: &[u64]) {
     let defending = state.opponent(active);
     let mut combat = CombatState::default();
     let ids = |list: &[u64]| -> Vec<ObjectId> { list.iter().map(|&i| ObjectId(i)).collect() };
-    for blockers in [first, second] {
+    // Each attacker by itself, not in a loop over `[first, second]`: the
+    // slices read back out of the array iterator's storage were ones the
+    // solver could not follow, and every object made after went in as one
+    // that might replace another (every one of these ran out of 12 GB; the
+    // same board made so passes in 29 s).
+    let attacker = |state: &mut GameState, combat: &mut CombatState, blockers: &[u64]| {
         let id = state.create_object(blank, active, Zone::Battlefield, Some(1), Some(1));
         combat.attackers.insert(id, defending);
         if !blockers.is_empty() {
             combat.blocked_attackers.insert(id);
         }
         combat.blocker_assignments.insert(id, ids(blockers));
-    }
+    };
+    attacker(&mut state, &mut combat, first);
+    attacker(&mut state, &mut combat, second);
     for _ in 0..3 {
         state.create_object(blank, defending, Zone::Battlefield, Some(1), Some(1));
     }
@@ -357,7 +371,8 @@ fn announcing(first: &[u64], second: &[u64], placed: &[u64]) {
 
     let left = |blockers: &[u64], placed: &[u64]| -> usize { blockers.iter().filter(|b| !placed.contains(b)).count() };
     let combat = state.combat.as_ref().expect("a combat");
-    let order = |a: u64| combat.damage_assignment_order.get(&ObjectId(a)).map_or(&[][..], Vec::as_slice);
+    let none = [ObjectId(0); 1];
+    let order = |a: u64| combat.damage_assignment_order.get(&ObjectId(a)).map_or(&none[..0], Vec::as_slice);
     // The first attacker: asked about, or its one blocker left placed last.
     let asked_first = left(first, placed) >= 2;
     let mut first_order: Vec<ObjectId> = Vec::with_capacity(3);
@@ -365,7 +380,7 @@ fn announcing(first: &[u64], second: &[u64], placed: &[u64]) {
     if left(first, placed) == 1 {
         first_order.extend(first.iter().filter(|b| !placed.contains(b)).map(|&i| ObjectId(i)));
     }
-    let asked_second = !asked_first && left(second, &[]) >= 2;
+    let asked_second = !asked_first && left(second, &p[..0]) >= 2;
     let second_order: Vec<ObjectId> = if !asked_first && second.len() == 1 { ids(second) } else { Vec::new() };
     assert!(order(1) == first_order.as_slice() && order(2) == second_order.as_slice());
     let asked = |a: u64, expected: Vec<ObjectId>| matches!(&state.awaiting_action,
