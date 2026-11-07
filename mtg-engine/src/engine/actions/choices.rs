@@ -305,42 +305,55 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
-                    // Named before anything moves, in the order chosen.
-                    let (controller, names): (PlayerId, Vec<String>) = {
-                        let queue = if *ap_queue {
-                            &state.pending_trigger_pushes_ap
-                        } else {
-                            &state.pending_trigger_pushes_nap
-                        };
-                        (queue[indices[0]].source.controller,
-                         order.iter().map(|&k| queue[indices[k]].log_name(registry, state)).collect())
-                    };
+                    if (1..n).any(|k| indices[..k].contains(&indices[k])) {
+                        state.log(LogLevel::Debug,
+                            "choice refused, the prompt names a queued trigger twice".into());
+                        state.awaiting_action = awaiting;
+                        return Applied::ReturnNow;
+                    }
                     {
                         let queue = if *ap_queue {
                             &mut state.pending_trigger_pushes_ap
                         } else {
                             &mut state.pending_trigger_pushes_nap
                         };
-                        // Lift the group out, highest position first so the
-                        // lower positions stay valid, keyed by prompt index.
-                        let mut group: Vec<Option<crate::triggers::PendingTrigger>> = vec![None; n];
-                        let mut by_position: Vec<(usize, usize)> = indices.iter().copied().enumerate()
-                            .map(|(k, q)| (q, k)).collect();
-                        by_position.sort_by(|a, b| b.0.cmp(&a.0));
-                        for (q, k) in by_position {
-                            group[k] = Some(queue.remove(q));
+                        // The group lifted out, keyed by prompt index, and put
+                        // back at the front in the order chosen, the rest of
+                        // the queue after it as it was: one pass over the
+                        // queue, where a sort of the group's positions, a
+                        // removal and an insertion at the front for each
+                        // trigger were each a pass of their own.
+                        let old = std::mem::take(queue);
+                        let mut group: Vec<Option<crate::triggers::PendingTrigger>> = Vec::with_capacity(n);
+                        group.resize_with(n, || None);
+                        let mut rest = Vec::with_capacity(old.len());
+                        for (position, trigger) in old.into_iter().enumerate() {
+                            match indices.iter().position(|&q| q == position) {
+                                Some(k) => group[k] = Some(trigger),
+                                None => rest.push(trigger),
+                            }
                         }
-                        // Back in at the front, so that the first chosen is
-                        // the front: inserted last to first.
-                        for &k in order.iter().rev() {
+                        let mut ordered = Vec::with_capacity(n + rest.len());
+                        for &k in order {
                             let mut trigger = group[k].take().expect("a permutation names each once");
                             trigger.ordered = true;
-                            queue.insert(0, trigger);
+                            ordered.push(trigger);
                         }
+                        ordered.extend(rest);
+                        *queue = ordered;
                     }
-                    state.log(LogLevel::Event, format!(
-                        "p{}: ordered {n} triggers — {} (the first goes on the stack first and resolves last)",
-                        controller.0, names.join(", ")));
+                    // Named as the line is written, from the front of the
+                    // queue, where they now are in the order chosen.
+                    let line = {
+                        let queue = if *ap_queue {
+                            &state.pending_trigger_pushes_ap
+                        } else {
+                            &state.pending_trigger_pushes_nap
+                        };
+                        format!("p{}: ordered {n} triggers — {} (the first goes on the stack first and resolves last)",
+                            queue[0].source.controller.0, OrderedNames { triggers: &queue[..n], registry, state })
+                    };
+                    state.log(LogLevel::Event, line);
                     crate::triggers::process_pending_trigger_pushes(&mut *state, registry);
                     if state.awaiting_action.is_some() {
                         return Applied::ReturnNow;
@@ -971,6 +984,27 @@ impl std::fmt::Display for PileNames<'_> {
 
 /// Whether `order` lists each of `0..n` exactly once — what a whole-order
 /// answer (`ResolvedChoice::ChosenOrder`) has to be.
+/// The triggers a player has just ordered, as the log line saying so names
+/// them, worked out only as the line is written: collected and joined as
+/// `format!`'s argument, they were built whether or not a line was.
+struct OrderedNames<'a> {
+    triggers: &'a [crate::triggers::PendingTrigger],
+    registry: &'a CardRegistry,
+    state: &'a GameState,
+}
+
+impl std::fmt::Display for OrderedNames<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, trigger) in self.triggers.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str(&trigger.log_name(self.registry, self.state))?;
+        }
+        Ok(())
+    }
+}
+
 fn is_permutation(order: &[usize], n: usize) -> bool {
     if order.len() != n {
         return false;
