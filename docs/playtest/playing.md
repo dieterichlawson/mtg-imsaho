@@ -79,7 +79,10 @@ contradict the CR.
 - C4 tribal synergy: humans/vampires/zombies/spirits deck vs another tribe
 - C5 [tried 2026-10-31, with C24] planeswalker-centric: protect and ultimate a walker; attack one down
 - C6 equipment voltron vs token swarm
-- C7 curses: stack multiple curses on one player and play through them
+- C7 curses: stack multiple curses on one player and play through them.
+  [tried 2026-11-07 → #1001, #1002; ordering, Nightly Hunt, Death's Hold and
+  Stalked Prey held] Next: Curse of Oblivion with exactly 1 or 2 cards (no
+  prompt), and curses on a player whose opponent controls the curse's source.
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
 - C9 aristocrats/sacrifice value vs go-wide tokens: trade into sac outlets
   for value, race a token swarm on the other side of the table
@@ -449,7 +452,16 @@ illegal or dubious resolutions do.
 - L7 zone identity: reanimate, bounce, and re-cast the same card;
   verify new-object rules (counters/attachments/damage gone)
 - L8 SBA order: simultaneous deaths, Angelic-Overseer-style dependency,
-  both players to 0 life
+  both players to 0 life. [tried 2026-11-07 → #1000] The SBA loop runs
+  several checks in one action, and they are separate events (CR 704.3). A
+  death that only a first check's death causes is a *second* event that a
+  first-check death-watcher must not see (CR 603.10a). The board: a lord
+  (Mayor of Avabruck) and a watcher (Falkenrath Noble) die together, and a
+  Dead Weight creature that lived on the lord's bonus dies one check later.
+  Count the watcher's triggers. Next: the same question for the damage
+  collectors, which share `was_on_the_battlefield` (`triggers/collect/damage.rs`).
+  Also a watcher that *enters* later in the same action than a death it should
+  not see.
 - L9 replacement effects: stack multiple replacement effects on the same
   event (damage prevention/redirection, enters-with-counters vs a static
   buff); verify the affected player/object's controller chooses the order
