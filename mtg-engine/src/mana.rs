@@ -401,8 +401,18 @@ fn run_plan(
     sources: &[ManaSource],
     cost: &ManaCost,
 ) -> Option<ManaPool> {
+    // A plan taps each source once at most, so one longer than the list of
+    // sources taps one twice, which no payment can. Walked by the sources'
+    // count and not by the plan's: where the plan is a choice between
+    // tapping nothing and tapping a source, as it is for a cost the pool
+    // may pay alone, a proof's solver leaves its length open, and walked
+    // by it each step ran to the loop's bound, a payment in each.
+    if plan.len() > sources.len() {
+        return None;
+    }
     let mut pool = pool.clone();
-    for &(object_id, ability_index) in plan {
+    for k in 0..sources.len() {
+        let Some(&(object_id, ability_index)) = plan.get(k) else { break };
         let ability = sources.iter()
             .find(|s| s.object_id == object_id)
             .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))?;
