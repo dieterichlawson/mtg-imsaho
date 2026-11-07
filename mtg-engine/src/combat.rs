@@ -376,10 +376,9 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
     };
 
     // Check if any creature has first/double strike to determine damage steps.
-    let any_first_strike = combat.attackers.keys().copied().chain(combat.blocking()).any(|id| {
-        state.has_keyword(id, Keyword::FirstStrike, registry)
-            || state.has_keyword(id, Keyword::DoubleStrike, registry)
-    });
+    let strikes_first = |id: ObjectId| state.has_keyword(id, Keyword::FirstStrike, registry)
+        || state.has_keyword(id, Keyword::DoubleStrike, registry);
+    let any_first_strike = combat.attackers.keys().any(|&id| strikes_first(id)) || combat.any_blocking(strikes_first);
 
     if any_first_strike {
         // First strike damage step: only first/double strikers deal damage.
@@ -414,12 +413,9 @@ pub fn any_first_strike_in_combat(state: &GameState, registry: &CardRegistry) ->
     let Some(combat) = &state.combat else { return false };
     // CR 510.4 asks about every attacking or blocking creature, and a
     // blocker whose attacker left combat is still one (CR 510.1d, #983).
-    combat.attackers.keys().copied()
-        .chain(combat.blocking())
-        .any(|id| {
-            state.has_keyword(id, Keyword::FirstStrike, registry)
-                || state.has_keyword(id, Keyword::DoubleStrike, registry)
-        })
+    let strikes_first = |id: ObjectId| state.has_keyword(id, Keyword::FirstStrike, registry)
+        || state.has_keyword(id, Keyword::DoubleStrike, registry);
+    combat.attackers.keys().any(|&id| strikes_first(id)) || combat.any_blocking(strikes_first)
 }
 
 /// Run one combat damage step for the turn machinery (CR 510.1-510.2,

@@ -1104,7 +1104,7 @@ pub(crate) fn perform_turn_based_actions(state: &mut GameState, registry: &CardR
             // first-strike step (CR 510.4) though no attacker is left
             // (#983).
             let has_combatants = state.combat.as_ref()
-                .is_some_and(|c| !c.attackers.is_empty() || !c.blocking().is_empty());
+                .is_some_and(|c| !c.attackers.is_empty() || c.any_blocking(|_| true));
 
             if has_combatants {
                 if second_damage_step {

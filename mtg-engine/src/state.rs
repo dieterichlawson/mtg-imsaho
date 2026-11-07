@@ -4787,12 +4787,26 @@ impl CombatState {
             || self.blocker_assignments.values().any(|bs| bs.contains(&id))
     }
 
-    /// Every blocking creature (see `is_blocking`), in id order.
-    #[must_use]
-    pub fn blocking(&self) -> std::collections::BTreeSet<ObjectId> {
-        self.blocking_creatures.iter().copied()
-            .chain(self.blocker_assignments.values().flatten().copied())
-            .collect()
+    /// Whether `f` holds of some blocking creature (see `is_blocking`).
+    ///
+    /// Two loops, not a set gathered through `flatten`: Kani follows a
+    /// `Flatten` it is asked for the next item of through every round its
+    /// loop is unwound to, and one blocker so gathered cost the combat
+    /// damage proofs half a million steps where these cost ten thousand.
+    pub fn any_blocking(&self, mut f: impl FnMut(ObjectId) -> bool) -> bool {
+        for &id in self.blocking_creatures.iter() {
+            if f(id) {
+                return true;
+            }
+        }
+        for blockers in self.blocker_assignments.values() {
+            for &id in blockers {
+                if f(id) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
