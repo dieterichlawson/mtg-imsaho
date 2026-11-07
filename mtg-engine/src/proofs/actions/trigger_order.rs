@@ -44,14 +44,19 @@ fn no_words(_: &GameState, _: &CardRegistry, _: &[PendingTrigger], indices: &[us
     (names, Vec::new())
 }
 
-/// What each case queues: (source index 0-2, description, whether already
-/// ordered) for the active player's queue and for the other's. Sources 0
-/// and 1 are the active player's (objects 1 and 2), 2 the other's (3).
-type Queued = ([Option<(usize, &'static str, bool)>; 2], [Option<(usize, &'static str, bool)>; 2]);
-
-/// A board of three permanents and the queues `case` names, built as the
-/// collector files them, the first player active.
-fn queues(case: &Queued) -> (CardRegistry, GameState, [ObjectId; 3]) {
+/// A board of three permanents, and the triggers `sources` names queued
+/// as the collector files them, the first player active: each one's
+/// source (0 and 1 the active player's, objects 1 and 2; 2 the other's,
+/// 3), all ordered already if `ordered`, and of abilities told apart by
+/// their descriptions if `described` (the first trigger's `c`, the
+/// second's `d`), or all of one undescribed ability.
+///
+/// A slice of sources walked with a plain loop, not a table of optional
+/// rows walked with `flatten`: Kani follows a `Flatten` it is asked for
+/// the next item of through every round its loop is unwound to, and
+/// building the queues from the table so was most of what each proof of
+/// them cost (655,000 steps, and out of memory at 3 GB; 226,000 so).
+fn queues(sources: &[usize], ordered: bool, described: bool) -> (CardRegistry, GameState, [ObjectId; 3]) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut state = crate::proofs::cards::new_game();
@@ -62,14 +67,16 @@ fn queues(case: &Queued) -> (CardRegistry, GameState, [ObjectId; 3]) {
         state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(1), Some(1)),
     ];
     let mut c = crate::triggers::collect::Collector::new(PlayerId(0));
-    for &(source, description, _) in case.0.iter().chain(&case.1).flatten() {
+    for (k, &source) in sources.iter().enumerate() {
         let controller = if source == 2 { PlayerId(1) } else { PlayerId(0) };
-        c.emit(ids[source], blank, controller, description.into(), TriggerEvent::Upkeep);
+        let description = match (described, k) {
+            (false, _) => String::new(),
+            (true, 0) => "c".into(),
+            (true, _) => "d".into(),
+        };
+        c.emit(ids[source], blank, controller, description, TriggerEvent::Upkeep);
     }
-    for (t, &(_, _, ordered)) in c.ap.iter_mut().zip(case.0.iter().flatten()) {
-        t.ordered = ordered;
-    }
-    for (t, &(_, _, ordered)) in c.nap.iter_mut().zip(case.1.iter().flatten()) {
+    for t in c.ap.iter_mut().chain(c.nap.iter_mut()) {
         t.ordered = ordered;
     }
     // Each queue moved in whole, as the collector's lists are: drained a
@@ -80,22 +87,20 @@ fn queues(case: &Queued) -> (CardRegistry, GameState, [ObjectId; 3]) {
     (registry, state, ids)
 }
 
-/// The cases, by number: 0, the active player's two triggers of different
-/// sources; 1, two of one source and one ability; 2, one of the active
-/// player's and one of the other's; 3, two of the active player's already
-/// ordered; 4, the other player's two of different abilities of one
-/// source, with nothing of the active player's.
-///
-/// A description only where the case turns on it (4, two abilities of one
-/// source): a description to copy into each trigger was a quarter of what
-/// building a case cost.
-const CASES: [Queued; 5] = [
-    ([Some((0, "", false)), Some((1, "", false))], [None, None]),
-    ([Some((0, "", false)), Some((0, "", false))], [None, None]),
-    ([Some((0, "", false)), None], [Some((2, "", false)), None]),
-    ([Some((1, "", true)), Some((0, "", true))], [None, None]),
-    ([None, None], [Some((2, "c", false)), Some((2, "d", false))]),
-];
+/// The board of case `k`: 0, the active player's two triggers of
+/// different sources; 1, two of one source and one ability; 2, one of the
+/// active player's and one of the other's; 3, two of the active player's
+/// already ordered; 4, the other player's two of different abilities of
+/// one source, with nothing of the active player's.
+fn case(k: usize) -> (CardRegistry, GameState, [ObjectId; 3]) {
+    match k {
+        0 => queues(&[0, 1], false, false),
+        1 => queues(&[0, 0], false, false),
+        2 => queues(&[0, 2], false, false),
+        3 => queues(&[1, 0], true, false),
+        _ => queues(&[2, 2], false, true),
+    }
+}
 
 /// Abilities that triggered together put on the stack (CR 603.3b, 101.4):
 /// the active player's first, then the other player's; a player's own
@@ -104,10 +109,9 @@ const CASES: [Queued; 5] = [
 /// not yet ordered, they are asked the order, of exactly those, nothing
 /// going on the stack until they answer; with only interchangeable ones,
 /// or ones they have ordered already, each goes on front first, unasked.
-/// For each of the cases [`CASES`] names.
+/// For each of the cases [`case`] builds.
 fn processed(k: usize) {
-    let case = &CASES[k];
-    let (registry, mut state, ids) = queues(case);
+    let (registry, mut state, ids) = case(k);
 
     crate::triggers::process_pending_trigger_pushes(&mut state, &registry);
 
@@ -193,7 +197,7 @@ fn no_log_name(_: &PendingTrigger, _: &CardRegistry, _: &GameState) -> String {
 /// either way round, 2 one twice, 3 one left out, 4 and 5 one of them, 6
 /// one past them.
 fn order_answered(reply: u8) {
-    let (registry, mut state, ids) = queues(&CASES[0]);
+    let (registry, mut state, ids) = case(0);
     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
         player: PlayerId(0),
         source: ids[0],
