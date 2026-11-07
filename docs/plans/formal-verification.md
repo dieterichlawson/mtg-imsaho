@@ -93,6 +93,26 @@ codebase:
   proofs' cases (655,000 steps to 226,000), the first-strike check of
   every combat damage step (`CombatState::any_blocking`), the log line of
   declared blocks and a modal spell's targets.
+- **A branch the code never takes, on a test symbolic execution cannot
+  fold, is followed all the same, and what it returns spreads.** CBMC
+  does not narrow a value by the branch it is on: a `Vec` returned
+  `Some` on one path and `None` on another is, after the join, of a
+  length it leaves open, and every loop over it runs to its bound even
+  where the `Some` is known. `a.min(b)` with `b` zero and `a` the solver's
+  is such a test (`min` is an `if`), and so is anything whose answer is
+  settled only by arithmetic. Measured on a crate of the shape alone: a
+  plan built after a deduction of `min(pool, 0)` and walked, 33,500
+  steps, both loops at their bound; with the deduction asked only when
+  something is owed, 4,400. The autotap planner deducted the pool's `{C}`
+  so for every cost (now only for a cost with a `{C}` pip), and the
+  check that its plan pays then ran each step of a one-source plan four
+  times.
+- **A list of large structs lifted out into `Option`s and put back runs
+  the solver out of memory.** Two triggers moved into a
+  `Vec<Option<_>>`, taken out in a chosen order and pushed back: out of
+  memory in the solver at 7 GB, 130,000 steps. The same reordering by
+  swaps in place: 28,000 steps, proved. The ordering answer of
+  triggers (`ChooseTriggerOrder`) now swaps.
 - **CBMC's SMT backend** (`--z3`) crashes on Kani's output (`map::at`) as
   of Kani 0.68.
 
