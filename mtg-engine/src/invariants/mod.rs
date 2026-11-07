@@ -157,6 +157,18 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
             state.trigger_event_index, state.events.len()
         ));
     }
+    // Trigger collection reads these as where each state-based check began
+    // in `events` (#1000): a start past the end, or out of order, is left
+    // over from an event list that has since been cleared, and would cut a
+    // death-watcher off from an event it saw.
+    if state.sba_check_starts.windows(2).any(|w| w[0] >= w[1])
+        || state.sba_check_starts.last().is_some_and(|&b| b > state.events.len())
+    {
+        v.push(format!(
+            "sba_check_starts {:?} not increasing within the {} events that exist",
+            state.sba_check_starts, state.events.len()
+        ));
+    }
     for obj in state.objects_in_id_order() {
         if let Some(t) = obj.attacked_on_turn {
             if t > state.turn_number {

@@ -337,3 +337,20 @@ fn a_watcher_that_died_in_one_sba_check_does_not_see_a_death_in_the_next() {
     assert_eq!(drains, 2, "the Noble drains for itself and the Mayor only");
     assert_eq!(state.get_player(P0).life, p0_life_before + 2);
 }
+
+/// The oracle holds the check starts to the event list they index: a start
+/// left over from a cleared list would cut a watcher off from its event.
+#[test]
+fn the_oracle_refuses_sba_check_starts_past_the_events() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(creature).unwrap().damage_marked = 1;
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    assert!(state.sba_check_starts.len() >= 2, "a check that acted, then one that did not");
+    let core = |s: &mtg_engine::state::GameState| mtg_engine::invariants::check_core(s, &registry)
+        .into_iter().filter(|v| v.contains("sba_check_starts")).count();
+    assert_eq!(core(&state), 0);
+    state.events.clear();
+    assert_eq!(core(&state), 1, "starts past a cleared event list are a violation");
+}
