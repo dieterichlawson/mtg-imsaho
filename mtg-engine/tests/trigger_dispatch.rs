@@ -1291,6 +1291,47 @@ fn a_whole_order_puts_the_triggers_on_the_stack_in_that_order() {
         state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
+/// A whole order places the group it was asked about at the front of the
+/// queue in the order chosen, and leaves every other trigger of the queue
+/// after it in the order it was, wherever in the queue the group's
+/// triggers lay: here the first and the third of three, the second asked
+/// about on its own once they are on the stack.
+#[test]
+fn a_whole_order_of_a_group_with_a_gap_keeps_the_rest_after_it() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind, StackEntry};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for _ in 0..3 { named_permanent(&mut state, &registry, "Unruly Mob", P0); }
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    kill_by_damage(&mut state, &registry, victim);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    let queued: Vec<_> = state.pending_trigger_pushes_ap.iter().map(|t| t.source.id).collect();
+    assert_eq!(queued.len(), 3);
+    // The prompt narrowed to the first and the third.
+    match &mut state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTriggerOrder { options, indices, details, .. }, ..
+        }) => {
+            options.remove(1);
+            details.remove(1);
+            *indices = vec![0, 2];
+        }
+        other => panic!("expected an ordering prompt: {other:?}"),
+    }
+    let state = mtg_engine::engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenOrder(vec![1, 0]),
+    }, &registry);
+    assert!(state.awaiting_action.is_none(), "{:?}", state.awaiting_action);
+    let on_stack: Vec<_> = state.stack.iter().map(|e| match e {
+        StackEntry::Trigger(t) => t.source_object(),
+        other => panic!("only triggers were pushed: {other:?}"),
+    }).collect();
+    assert_eq!(on_stack, vec![queued[2], queued[0], queued[1]],
+        "the group in the order chosen, then the one left out");
+}
+
 /// A whole-order answer has to be exactly that: every offered index once.
 /// Anything else is refused and the prompt stands, as with every other
 /// malformed answer.

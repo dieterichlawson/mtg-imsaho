@@ -305,9 +305,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
-                    if (1..n).any(|k| indices[..k].contains(&indices[k])) {
+                    // The group's positions in queue order, as the prompt
+                    // lists them (`process_pending_trigger_pushes`): none
+                    // named twice, each past the one before.
+                    if indices.windows(2).any(|w| w[0] >= w[1]) {
                         state.log(LogLevel::Debug,
-                            "choice refused, the prompt names a queued trigger twice".into());
+                            "choice refused, the prompt does not list its triggers in queue order".into());
                         state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
@@ -317,30 +320,36 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         } else {
                             &mut state.pending_trigger_pushes_nap
                         };
-                        // The group lifted out, keyed by prompt index, and put
-                        // back at the front in the order chosen, the rest of
-                        // the queue after it as it was: one pass over the
-                        // queue, where a sort of the group's positions, a
-                        // removal and an insertion at the front for each
-                        // trigger were each a pass of their own.
-                        let old = std::mem::take(queue);
-                        let mut group: Vec<Option<crate::triggers::PendingTrigger>> = Vec::with_capacity(n);
-                        group.resize_with(n, || None);
-                        let mut rest = Vec::with_capacity(old.len());
-                        for (position, trigger) in old.into_iter().enumerate() {
-                            match indices.iter().position(|&q| q == position) {
-                                Some(k) => group[k] = Some(trigger),
-                                None => rest.push(trigger),
+                        // In place, by swaps: the group brought to the front,
+                        // prompt index k's trigger at position k and the rest
+                        // after it in the order they were, then the front put
+                        // in the order chosen. Lifted out into a list of
+                        // optional triggers and put back, the triggers ran
+                        // the proofs' solver out of memory where these swaps
+                        // cost it a fifth of the steps.
+                        for (k, &q) in indices.iter().enumerate() {
+                            let mut j = q;
+                            while j > k {
+                                queue.swap(j - 1, j);
+                                j -= 1;
                             }
                         }
-                        let mut ordered = Vec::with_capacity(n + rest.len());
-                        for &k in order {
-                            let mut trigger = group[k].take().expect("a permutation names each once");
-                            trigger.ordered = true;
-                            ordered.push(trigger);
+                        // `holds[slot]`: the prompt index of the trigger at
+                        // `slot` of the front.
+                        let mut holds: Vec<usize> = (0..n).collect();
+                        for (slot, &k) in order.iter().enumerate() {
+                            let mut at = slot;
+                            while holds[at] != k {
+                                at += 1;
+                            }
+                            if at != slot {
+                                queue.swap(slot, at);
+                                holds.swap(slot, at);
+                            }
                         }
-                        ordered.extend(rest);
-                        *queue = ordered;
+                        for trigger in &mut queue[..n] {
+                            trigger.ordered = true;
+                        }
                     }
                     // Named as the line is written, from the front of the
                     // queue, where they now are in the order chosen.
