@@ -1,0 +1,366 @@
+{
+ "night": "2026-11-07",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Seat 0's WU went 2-1 (5-2 in games) on 11 Plains and 6 Islands with two Chapel Geist, two Rebuke, Sensory Deprivation and Invisible Stalker, which contradicts the guide's 0-3 WU anecdote: white removal plus fliers works without Delver.",
+    "The 1-2 loss to BR, including a 37-turn game, followed cutting Fortress Crab and the second One-Eyed Scarecrow, so keep cheap blockers and a flier clock over a marginal fourth flier.",
+    "Blue was thin: Invisible Stalker, Spectral Flight and Sensory Deprivation were my only real blue playables, so in mid pack 2 take a second on-colour blue flier over filler."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8208,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3192,
+    "output_tokens_details": {
+     "thinking_tokens": 2928
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8208
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3192,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8208,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8208,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Taking Tormented Pariah, Pitchburn Devils, Vampire Interloper and Markov Patrician alongside removal like Brimstone Volley, Victim of Night and Harvest Pyre went 3-0 in matches.",
+    "Ancient Grudge was taken twice and cut from the final deck, so don't spend mid-pack picks on it.",
+    "Matches ran long (up to 37 turns) and the deck lost three games, so prioritize evasive threats and removal over vanilla filler bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3323,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2254,
+    "output_tokens_details": {
+     "thinking_tokens": 2075
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3323
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2254,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3323,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3323,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WG",
+   "record": "0-3-0",
+   "lessons": [
+    "Don't cut black removal for filler: my WG deck kept only Prey Upon and Urgent Exorcism after dropping Dead Weight and Corpse Lunge, and went 1-6 in games; the guide's five-removal target was right.",
+    "Evasion alone did not carry my WG deck: two losses in 15 and 16 turns to WU came with too few answers, so keep Prey Upon and Urgent Exorcism for their fliers.",
+    "Spend picks on cheap removal such as Dead Weight and Corpse Lunge before Silverchase Fox and Abbey Griffin, which I took first and then could not support."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8286,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4235,
+    "output_tokens_details": {
+     "thinking_tokens": 4020
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8286
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4235,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8286,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8286,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "Cheap white removal was contested: the WU deck that beat me 2-0 ran two Rebuke, while my WB deck relied on Rebuke, Smite the Monstrous and Victim of Night.",
+    "Count playables in each colour before committing: my WB deck ran only 8 Swamps behind a white core and went 3-5 in games.",
+    "Expect shared commons in rivals' decks: the BR deck that beat me 1-2 also ran Victim of Night, Walking Corpse and Stromkirk Patrol, which I was drafting too."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3277,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2878,
+    "output_tokens_details": {
+     "thinking_tokens": 2688
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3277
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2878,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3277,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3277,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "UR",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight's UR went 2-1 in matches on Claustrophobia, Sensory Deprivation and two Curse of the Pierced Heart, contradicting the guide's weak-UR line, though games were only 5-4, so take the blue removal.",
+    "Seat 1's BR went 3-0 with three Tormented Pariah and Victim of Night, confirming the guide's BR ranking; it beat my UR 2-1, with the decider lasting 27 turns.",
+    "I cut Traitorous Blood (57%, taken at pick 10) and ran only about four removal spells, the thin count the guide warns about, so take and play on-colour removal."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8213,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4035,
+    "output_tokens_details": {
+     "thinking_tokens": 3813
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8213
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4035,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8213,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8213,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "RG",
+   "record": "2-1-0",
+   "lessons": [
+    "I drafted without a guide, so nothing tonight contradicted one; these lessons come from my own RG deck's results.",
+    "Prioritize Brimstone Volley and keep both copies, since my removal core of two Volleys, Geistflame and Harvest Pyre carried the red-green midrange plan.",
+    "Plan answers for fliers: my 1-2 loss to UR's two Moon Herons, Murder of Crows and Stitched Drake suggests a green-red deck needs more ways to reach them."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3319,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1557,
+    "output_tokens_details": {
+     "thinking_tokens": 1382
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3319
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1557,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3319,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3319,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "My WB deck had five fliers and eight removal spells yet went 2-4 in games, so the guide's 'WB needs fliers' rule is incomplete; add cheap early blockers against RG burn and UB stalls.",
+    "Two Wooden Stakes and Ghoulcaller's Bell took picks I never played; the guide's skip list held, so take a playable creature instead.",
+    "Round 3's 2-0 win over WG, with Somberwald Spiders on their side, came from removal backing evasive threats, so the guide's plan holds in 18 to 28 turn games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8233,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3668,
+    "output_tokens_details": {
+     "thinking_tokens": 3470
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8233
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3668,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8233,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8233,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "My two lost matches ran 12 to 25 turns, and my blue-black skaabs were too slow to close, so take faster threats and removal over filler like Delver of Secrets, which I took three times.",
+    "I took Hysterical Blindness in pack 3 but left it out, and Claustrophobia was my only hard removal, so prioritise answers to threats like Galvanic Juggernaut and Scourge of Geier Reach earlier.",
+    "Armored Skaab and Skaab Goliath carried my early games, so draft the blue core early and stop spending mid-pack picks on Delver of Secrets // Insectile Aberration."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3224,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1973,
+    "output_tokens_details": {
+     "thinking_tokens": 1757
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3224
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1973,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3224,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3224,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
