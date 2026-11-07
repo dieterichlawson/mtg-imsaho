@@ -647,8 +647,13 @@ fn greedy_autotap(
         }
     });
 
-    // Deduct floating mana: colorless-specific.
-    {
+    // Deduct floating mana: colorless-specific, for a cost with a `{C}`
+    // pip. Asked of every cost, `min` of the pool's `{C}` and nothing is an
+    // `if` over the pool that a proof's solver leaves open where the pool
+    // is its choice: every pass after it was followed as though `{C}` were
+    // still owed, out to a plan of none, and every proof of a payment with
+    // a source to tap paid for each step of the plan four times over.
+    if remaining.colorless > 0 {
         let available = sim_pool.get(ManaType::Colorless);
         let deduct = available.min(remaining.colorless);
         if deduct > 0 {
