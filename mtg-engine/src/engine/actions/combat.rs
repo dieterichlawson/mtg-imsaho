@@ -141,23 +141,48 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
     Applied::Continue
 }
 
+/// The blocks of a combat, as the log line of their declaration names
+/// them: "A blocks B", attacker by attacker, joined by commas.
+///
+/// Written out only as the line is, and walked with loops: the proofs
+/// stand in for writing a line as nothing, and a list of the blocks
+/// gathered through `flat_map` first was one Kani follows through every
+/// round its loop is unwound to.
+struct Blocks<'a> {
+    state: &'a GameState,
+    registry: &'a CardRegistry,
+}
+
+impl std::fmt::Display for Blocks<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Some(combat) = self.state.combat.as_ref() else { return Ok(()) };
+        let mut first = true;
+        for (&attacker, blockers) in combat.blocker_assignments.iter() {
+            for &blocker in blockers {
+                if !first {
+                    f.write_str(", ")?;
+                }
+                first = false;
+                write!(f, "{} blocks {}", card_name(self.state, self.registry, blocker),
+                    card_name(self.state, self.registry, attacker))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn declare_blockers(state: &mut GameState, assignments: &[(ObjectId, ObjectId)], registry: &CardRegistry) -> Applied {
         // The defending player is the opponent of the active player.
         let defender = state.opponent(state.active_player);
         combat::declare_blockers_with_registry(&mut *state, assignments, registry);
         // Log after validation so only legal blocks appear in the log.
-        let actual_blockers: Vec<(ObjectId, ObjectId)> = state.combat.as_ref()
-            .map(|c| c.blocker_assignments.iter()
-                .flat_map(|(&att, blockers)| blockers.iter().map(move |&b| (b, att)))
-                .collect())
-            .unwrap_or_default();
-        if actual_blockers.is_empty() {
-            state.log(LogLevel::Info, format!("p{} declared no blockers", defender.0));
+        let any_blocks = state.combat.as_ref()
+            .is_some_and(|c| c.blocker_assignments.values().any(|blockers| !blockers.is_empty()));
+        if any_blocks {
+            let line = format!("p{} declared blockers: {}", defender.0, Blocks { state, registry });
+            state.log(LogLevel::Event, line);
         } else {
-            let descs: Vec<String> = actual_blockers.iter()
-                .map(|(b, a)| format!("{} blocks {}", card_name(state, registry, *b), card_name(state, registry, *a)))
-                .collect();
-            state.log(LogLevel::Event, format!("p{} declared blockers: {}", defender.0, descs.join(", ")));
+            state.log(LogLevel::Info, format!("p{} declared no blockers", defender.0));
         }
         state.awaiting_action = None;
         state.consecutive_passes = 0;
