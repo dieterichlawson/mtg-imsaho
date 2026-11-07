@@ -75,6 +75,24 @@ codebase:
   state (`GameState`, `ManaPool`, `CombatState`) is `BTreeMap`s; a Kani
   build keeps the objects in a `VecMap` and the counters and mana pools in
   a `KindMap` instead, each proved an ordered map (below).
+- **`flatten` and `flat_map` asked for their items one at a time: out of
+  proportion.** Kani follows `Flatten::next` through every round its loop
+  is unwound to, for every item asked for, so a `for` loop, a `zip` or a
+  `collect` over one costs what the unwind bound allows, not what the
+  input holds. Measured on a crate of the shapes alone, at unwind 9:
+  two `Option`s walked by a `for` over `flatten`, 102,000 steps (8,600 at
+  unwind 3); the same as an `if let` in a plain loop, 2,200; two sources'
+  three abilities collected through `flat_map`, 399,000, against 12,000 for
+  `any` over the same `flat_map`; one blocker gathered by
+  `chain(.. .flatten()).collect()`, 482,000, against 10,000 for two loops.
+  An adapter that drives it by `try_fold` (`any`, `all`, `sum`, `max`,
+  `find`, a `filter` after it) is cheap; every other adapter measured
+  (`chain`, `zip`, `enumerate`, `rev`, `skip`, `take`, `peekable`,
+  `filter`, `map`) stays within five times the plain loop. So code the
+  proofs follow walks nested lists with nested loops: the trigger order
+  proofs' cases (655,000 steps to 226,000), the first-strike check of
+  every combat damage step (`CombatState::any_blocking`), the log line of
+  declared blocks and a modal spell's targets.
 - **CBMC's SMT backend** (`--z3`) crashes on Kani's output (`map::at`) as
   of Kani 0.68.
 
