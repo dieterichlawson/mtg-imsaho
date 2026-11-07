@@ -57,6 +57,11 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
 
     loop {
         let mut took_action = false;
+        // CR 704.3: this check is one event, separate from whatever came
+        // before it in the action — including the previous check.
+        if state.sba_check_starts.last() != Some(&state.events.len()) {
+            state.sba_check_starts.push(state.events.len());
+        }
 
         // CR 611.2b: a "for as long as" duration ends the moment its condition
         // stops being true. The engine has no continuous re-evaluation, so the

@@ -578,6 +578,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 pub(crate) fn submit_action_inner(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = state.clone();
     new_state.events.clear();
+    new_state.sba_check_starts.clear();
     new_state.trigger_event_index = 0;
 
     let applied = match action {

@@ -286,3 +286,54 @@ fn falkenrath_noble_triggers_for_every_creature_that_died_with_it() {
         "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
         p0_life, p0_life_before + 3);
 }
+
+/// CR 704.3: each state-based check is one event, and the check is then
+/// repeated. CR 603.10a: a leaves-the-battlefield ability looks back only to
+/// the event its source left in.
+///
+/// Falkenrath Noble and Mayor of Avabruck die in the first check. Only then
+/// is Village Cannibals (2/2, Dead Weight, +1/+1 from the Mayor) 0/0, so it
+/// dies in the second check — when the Noble is already in the graveyard.
+/// The Noble triggers for itself and the Mayor, not for the Cannibals
+/// (#1000: it triggered three times, because any departure anywhere in the
+/// action counted as "was on the battlefield").
+#[test]
+fn a_watcher_that_died_in_one_sba_check_does_not_see_a_death_in_the_next() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let p0_life_before = state.get_player(P0).life;
+
+    let noble = named_permanent(&mut state, &registry, "Falkenrath Noble", P0);
+    let mayor = named_permanent(&mut state, &registry, "Mayor of Avabruck", P1);
+    let cannibals = named_permanent(&mut state, &registry, "Village Cannibals", P1);
+    let aura = named_permanent(&mut state, &registry, "Dead Weight", P1);
+    state.get_object_mut(aura).unwrap().attached_to = Some(cannibals);
+    assert_eq!(state.effective_toughness(cannibals, &registry), Some(1),
+        "the Cannibals live on the Mayor's +1/+1");
+    for id in [noble, mayor] {
+        state.get_object_mut(id).unwrap().damage_marked = 99;
+    }
+
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    for id in [noble, mayor, cannibals] {
+        assert_eq!(state.get_object(id).unwrap().zone, Zone::Graveyard);
+    }
+
+    let mut drains = 0;
+    for _ in 0..10 {
+        mtg_engine::triggers::process_triggers(&mut state, &registry);
+        if state.awaiting_action.is_none() {
+            break;
+        }
+        state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))),
+            },
+            &registry,
+        );
+        drains += 1;
+    }
+    assert_eq!(drains, 2, "the Noble drains for itself and the Mayor only");
+    assert_eq!(state.get_player(P0).life, p0_life_before + 2);
+}

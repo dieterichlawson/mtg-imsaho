@@ -542,8 +542,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
 
     let mut c = collect::Collector::new(active_player);
 
-    for event in events.iter().skip(start) {
-        collect::for_event(state, &events, event, registry, &mut c);
+    for (i, event) in events.iter().enumerate().skip(start) {
+        // A collector is shown the events from the start of the one this
+        // event belongs to (CR 704.3: each state-based check is its own
+        // event), so a permanent that left in an earlier check does not
+        // count as present for this one (CR 603.10a, #1000).
+        let from = state.sba_check_starts.iter().rev()
+            .find(|&&b| b <= i).copied().unwrap_or(0);
+        collect::for_event(state, &events[from..], event, registry, &mut c);
     }
 
     // Drain any pending triggers (e.g., state-triggered abilities added during SBA)
