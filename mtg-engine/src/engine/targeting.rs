@@ -140,10 +140,14 @@ fn modal_set(
     let per_mode: Vec<Vec<crate::actions::Target>> = modes.iter()
         .map(|m| valid_targets_for_req(state, caster, spell_id, m, behavior, registry))
         .collect();
+    // Mode by mode, not through `flatten`, which Kani follows through
+    // every round its loop is unwound to for each target it is asked for.
     let mut options: Vec<crate::actions::Target> = Vec::new();
-    for t in per_mode.iter().flatten() {
-        if !options.contains(t) {
-            options.push(t.clone());
+    for mode in &per_mode {
+        for t in mode {
+            if !options.contains(t) {
+                options.push(t.clone());
+            }
         }
     }
     // A mode with too few candidates to fill it is a mode not on offer, and
