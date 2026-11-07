@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """What a draft guide changes about one night's picks.
 
-    scripts/decision-eval/guide-effect.py DIR
+    scripts/decision-eval/guide-effect.py DIR [NAME...]
 
 `DIR` holds `positions.jsonl` (a night's kept picks), `guide-current.md`,
-and four `draft-replay.py` results asked over those picks: `none-a` and
-`none-b` under `--guide none`, `first` and `current` under two guides.
+and `draft-replay.py` results asked over those picks: `none-a` and
+`none-b` under `--guide none`, and one per guide named (default `first`
+and `current`).
 Two runs with no guide measure how often the model disagrees with itself;
 a guide's effect is how much more often it changes a pick than that,
 counted on the *settled* picks (where both no-guide runs agreed).
@@ -26,7 +27,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 D = sys.argv[1]
-CONFIGS = ["none-a", "none-b", "first", "current"]
+GUIDES = sys.argv[2:] or ["first", "current"]
+CONFIGS = ["none-a", "none-b", *GUIDES]
 pos = [json.loads(l) for l in open(f"{D}/positions.jsonl")]
 stats = {c["card"]: c for c in json.load(open(os.path.join(ROOT, "reports/draft-loop/stats.json")))["cards"]}
 guide = open(f"{D}/guide-current.md").read()
@@ -51,9 +53,9 @@ for c in CONFIGS:
 
 ids = sorted(set.intersection(*(set(a) for a in ans.values())))
 settled = [i for i in ids if ans["none-a"][i] == ans["none-b"][i]]
-print(f"positions answered by all four: {len(ids)} of {len(pos)}; settled without a guide (a == b): {len(settled)}")
+print(f"positions answered by all {len(CONFIGS)}: {len(ids)} of {len(pos)}; settled without a guide (a == b): {len(settled)}")
 print(f"no guide vs no guide (noise): {sum(ans['none-a'][i] != ans['none-b'][i] for i in ids) / len(ids):.0%} of picks differ")
-for c in ("first", "current"):
+for c in GUIDES:
     d_all = sum(ans[c][i] != ans["none-a"][i] for i in ids) / len(ids)
     d_set = sum(ans[c][i] != ans["none-a"][i] for i in settled) / len(settled)
     print(f"{c} guide vs no guide: {d_all:.0%} of all picks differ, {d_set:.0%} of settled picks")
@@ -67,7 +69,7 @@ def stage(i):
 print("\nchanged picks (of settled) by stage:")
 for st in ("picks 1-4", "picks 5-9", "picks 10-14"):
     s = [i for i in settled if stage(i) == st]
-    row = ", ".join(f"{c} {sum(ans[c][i] != ans['none-a'][i] for i in s) / max(len(s), 1):.0%}" for c in ("first", "current"))
+    row = ", ".join(f"{c} {sum(ans[c][i] != ans['none-a'][i] for i in s) / max(len(s), 1):.0%}" for c in GUIDES)
     print(f"  {st} (n={len(s)}): {row}")
 
 
@@ -85,7 +87,7 @@ for c in CONFIGS:
     w = [wr(p) for p in picks if wr(p) is not None]
     print(f"  {c:8} {rem:8} {sk:9} {sum(w) / len(w):40.1%}")
 
-for c in ("current", "first"):
+for c in GUIDES:
     gained, lost = collections.Counter(), collections.Counter()
     for i in settled:
         if ans[c][i] != ans["none-a"][i]:
@@ -98,15 +100,17 @@ for c in ("current", "first"):
     print(f"{c}: cards it takes less: "
           + ", ".join(f"{k} {v}" for k, v in sorted(net.items(), key=lambda kv: kv[1])[:10] if v < 0))
 
-changed = [i for i in settled if ans["current"][i] != ans["none-a"][i]]
-both = [(wr(ans["current"][i]), wr(ans["none-a"][i])) for i in changed]
-both = [(a, b) for a, b in both if a is not None and b is not None]
-if both:
-    up = sum(a > b for a, b in both)
-    print(f"\nwhere the current guide changed a settled pick and both cards have 30+ games ({len(both)}): "
-          f"its card has the higher deck win rate {up} times, lower {len(both) - up - sum(a == b for a, b in both)}")
+for c in GUIDES:
+    changed = [i for i in settled if ans[c][i] != ans["none-a"][i]]
+    both = [(wr(ans[c][i]), wr(ans["none-a"][i])) for i in changed]
+    both = [(a, b) for a, b in both if a is not None and b is not None]
+    if both:
+        up, same = sum(a > b for a, b in both), sum(a == b for a, b in both)
+        print(f"\n{c}: where it changed a settled pick and both cards have 30+ games ({len(both)}): "
+              f"its card has the higher deck win rate {up} times, lower {len(both) - up - same}")
 
 json.dump({"changed": [{"position": i, "pack": pos[i]["pack_number"], "pick": pos[i]["pick_index"],
-                        "seat": pos[i]["seat"], "no_guide": ans["none-a"][i], "current": ans["current"][i],
-                        "first": ans["first"][i]} for i in changed]},
+                        "seat": pos[i]["seat"], "no_guide": ans["none-a"][i],
+                        **{c: ans[c][i] for c in GUIDES}}
+                       for i in settled if any(ans[c][i] != ans["none-a"][i] for c in GUIDES)]},
           open(f"{D}/changed.json", "w"), indent=1)
