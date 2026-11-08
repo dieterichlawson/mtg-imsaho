@@ -2038,6 +2038,9 @@ fn garruks_ability_keeps_the_veil_cursed_name_after_his_cost_kills_him() {
     assert!(state.awaiting_action.is_some(), "the search asks which creature card");
     let ask = engine::legal_actions(&state, &reg).context.unwrap_or_default();
     assert!(ask.contains("Garruk, the Veil-Cursed (#"), "the prompt: {ask}");
+    // Only the ability's own source takes its stack name: any other object
+    // named while it resolves is itself, not "Garruk, the Veil-Cursed (#n)".
+    assert_eq!(state.resolving_source_name(wolf), state.obj_name(wolf));
 }
 
 /// #980, the same search with nothing to find: its log line names the
