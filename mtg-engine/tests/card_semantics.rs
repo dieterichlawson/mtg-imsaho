@@ -744,6 +744,12 @@ struct CombatText {
     /// coin. If you win the flip, destroy that creature." (CR 705, 701.8):
     /// each creature it damages, destroyed or not, at random.
     flips_to_destroy_what_it_damages: bool,
+    /// "Whenever a creature dealt damage by this creature this turn dies,
+    /// you gain life equal to that creature's toughness" (CR 603.2,
+    /// 603.10a): each creature it deals damage, dying this turn while it is
+    /// there or as it leaves, gains its controller that creature's last
+    /// toughness (608.2h).
+    gains_life_when_what_it_damaged_dies: bool,
     /// "This creature can't be blocked."
     cant_be_blocked: bool,
     /// "This creature can't be blocked except by creatures with flying or
@@ -831,6 +837,7 @@ impl CombatText {
         match line {
             "This creature can't block." => self.cant_block = true,
             "Whenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature." => self.flips_to_destroy_what_it_damages = true,
+            "Whenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness." => self.gains_life_when_what_it_damaged_dies = true,
             "This creature can't be blocked." => self.cant_be_blocked = true,
             "This creature can't be blocked except by creatures with flying or reach." => self.only_by_flying_or_reach = true,
             "This creature attacks each combat if able." => self.attacks_each_combat = true,
@@ -3276,6 +3283,10 @@ struct World {
     /// "Prevent all combat damage that would be dealt this turn by creatures
     /// other than <filter>": the filters, ending in the cleanup step.
     prevent_combat_damage_except: Vec<Filter>,
+    /// The creatures dealt damage this turn by a permanent whose text gains
+    /// its controller life when they die (Abattoir Ghoul), and by which:
+    /// what [`World::state_based_actions`] reads as they die.
+    damaged_by_life_gainers: Vec<(ObjectId, ObjectId)>,
     /// The triggered abilities put on the stack (CR 603.3), which the turn
     /// tests compare with what the engine puts there: one whose
     /// intervening "if" is false does not trigger at all (603.4). One with
@@ -3732,6 +3743,11 @@ impl World {
     /// none applies (CR 704.3), the static abilities applied afresh each
     /// time.
     fn state_based_actions(&mut self) {
+        // What Abattoir Ghoul's triggers gain, by the creatures that die
+        // as each last existed, while it is there or as it leaves with them
+        // (CR 603.10a): resolved once the actions are done, and not at all
+        // once a player has lost and the game is over (704.5a, 104.2a).
+        let mut gains: Vec<(PlayerId, i32)> = Vec::new();
         loop {
             self.refresh();
             let dies = |m: &Model| m.is_creature() && self.pt_of(m).1.is_some_and(|t| t <= 0
@@ -3745,8 +3761,14 @@ impl World {
             let falls = self.permanents.values()
                 .any(|m| matches!(m.attached, Some(Target::Object(a)) if !self.permanents.contains_key(&a)));
             if dying.is_empty() && !tokens_dying.contains(&true) && !falls {
+                if self.life.iter().all(|l| *l > 0) {
+                    for (p, n) in gains {
+                        self.life[p.0 as usize] += n;
+                    }
+                }
                 return;
             }
+            let before = self.clone();
             // A token dies too (CR 700.4), and then ceases to exist (704.5d).
             self.a_creature_died |= tokens_dying.contains(&true);
             let mut flags = tokens_dying.into_iter();
@@ -3759,6 +3781,11 @@ impl World {
                     self.a_creature_died = true;
                 } else {
                     self.destroy(id);
+                }
+            }
+            for (victim, gainer) in &before.damaged_by_life_gainers {
+                if let (Some(v), Some(g), false) = (before.permanents.get(victim), before.permanents.get(gainer), self.permanents.contains_key(victim)) {
+                    gains.push((g.controller, before.pt_of(v).1.unwrap_or(0).max(0)));
                 }
             }
             // An Aura attached to nothing goes to its owner's graveyard
@@ -3808,6 +3835,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         faces_put: BTreeMap::new(),
         triggered: 0,
         prevent_combat_damage_except: Vec::new(),
+        damaged_by_life_gainers: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
@@ -5387,6 +5415,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
     // Mana empties as each step ends (CR 500.4).
     w.pool = [BTreeMap::new(), BTreeMap::new()];
     w.prevent_combat_damage_except.clear();
+    w.damaged_by_life_gainers.clear();
     w.a_creature_died = false;
     w.source = Some(id);
     let me = w.permanents.get(&id);
@@ -6155,7 +6184,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// and names it, so coverage is never lost without someone deciding to
 /// lose it.
 const READ: &[&str] = &[
-    "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
+    "Abattoir Ghoul", "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
     "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Back from the Brink", "Balefire Dragon",
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
@@ -7335,6 +7364,9 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                                 if source.combat.flips_to_destroy_what_it_damages {
                                     flipped_for.push(*id);
                                 }
+                                if let (true, Src::Permanent(s)) = (source.combat.gains_life_when_what_it_damaged_dies, from) {
+                                    w2.damaged_by_life_gainers.push((*id, *s));
+                                }
                             }
                         }
                         // A Zombie of a player whose permanent mills instead
@@ -7565,6 +7597,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         faces_put: BTreeMap::new(),
         triggered: 0,
         prevent_combat_damage_except: Vec::new(),
+        damaged_by_life_gainers: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
@@ -9778,6 +9811,9 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read_creature(&alchemist).unwrap().statics, vec![Static::MillsInsteadOfCombatDamage("Zombie".to_string()), Static::OpponentsMilledCreaturesBecomeZombies]);
     let doll = Printed { oracle_text: "Indestructible\nWhenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.".to_string(), ..viper.clone() };
     assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
+    let ghoul = Printed { oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".to_string(), ..viper.clone() };
+    let ghoul = read_creature(&ghoul).unwrap();
+    assert!(ghoul.combat.gains_life_when_what_it_damaged_dies && ghoul.watch.is_none(), "a combat line, not a watcher of deaths the grammar reads");
     let hunter = Printed { oracle_text: "When this creature enters, you may exile another target creature.\nWhen this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.".to_string(), ..viper.clone() };
     let hunter = read_creature(&hunter).unwrap();
     assert!(hunter.etb.is_some_and(|t| t.optional) && hunter.dies.is_some_and(|t| t.spec.effects == vec![Effect::ReturnTheExiledCard]));

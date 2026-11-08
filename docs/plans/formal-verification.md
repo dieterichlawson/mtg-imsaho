@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-263 of the pool's 268 instants, sorceries, creatures, enchantments,
+264 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -874,9 +874,23 @@ two at once, and each nontoken creature of its controller's that does
 puts a slime counter on it and makes an Ooze whose size is the count of
 those counters, read each time (604.3), so that two deaths at once make
 two 2/2s. Five mutants (tokens counted, the Ooze unsized or sized as it
-was made, anyone's creatures counted, no counter put) each fail. Not yet read:
-counters other than +1/+1 and -1/-1, hexproof granted to creatures, and
-attack triggers with targets. Each is a
+was made, anyone's creatures counted, no counter put) each fail.
+Abattoir Ghoul fights every kind: each creature it deals combat damage
+to that dies while it is there, or as it dies too (603.10a), gains its
+controller that creature's toughness as it last was (608.2h); its
+every-fight run found defect 27, three combats of 621,526 under Wreath of
+Geists where the engine read that toughness after the Ghoul itself had
+reached the graveyard. Four
+mutants (nothing gained, the printed toughness, the dead creature's
+controller gaining, any creature's damage counted) fail 96, 1, 95 and
+5,355 of the 13,556 default combats; a fifth, the gain resolved after a
+player has lost, survives, since no fight kills the Ghoul's creature in
+the step a player loses. Not yet read: Bitterheart Witch's search for
+a Curse put onto the battlefield attached to a target player as it dies,
+Grimgrin's attack trigger with a target, Grimoire of the Dead's study
+counters and its return of every creature card under one player, and
+Mirror-Mad Phantasm's shuffle and reveal until it is found; and, of
+templates, hexproof granted to creatures. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change
 that stops reading any of them fails and names it.
 
