@@ -467,10 +467,16 @@ fn activate(state: &GameState, acting: PlayerId, id: ObjectId, index: usize, tar
         None => obj.card_id,
         Some(cid) => {
             let via_copy = crate::cards::ability_granting_grantor(state, id, registry) == Some(cid);
+            // An ability an Aura or Equipment grants is the creature's (CR
+            // 113.3b, 702.5): its controller activates it, whoever controls
+            // what is attached to it, which the check above already holds the
+            // creature's controller to. Asking the attachment's controller to
+            // be the one acting was defect 11 written into the oracle:
+            // Skeletal Grimace on an opponent's creature.
             let via_attachment = state.objects_in_id_order().iter().any(|a|
-                a.zone == Zone::Battlefield && a.attached_to == Some(id) && a.controller == acting && a.card_id == cid);
+                a.zone == Zone::Battlefield && a.attached_to == Some(id) && a.card_id == cid);
             if !via_copy && !via_attachment {
-                v.push(format!("{what} through card {} which neither grants it as a copy nor is attached under p{}", cid.0, acting.0));
+                v.push(format!("{what} through card {} which neither grants it as a copy nor is attached to it", cid.0));
             }
             cid
         }
