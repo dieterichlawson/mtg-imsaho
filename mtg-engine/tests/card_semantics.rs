@@ -390,6 +390,11 @@ enum Effect {
     /// is random, so `every_shuffle_and_reveal_is_what_its_text_says`
     /// plays every place it can land.
     ShuffleIntoLibraryRevealUntilNamed,
+    /// "Put all creature cards from all graveyards onto the battlefield
+    /// under your control. They're black Zombies in addition to their other
+    /// colors and types" (CR 110.2a, 613.1d-e): every creature card in every
+    /// graveyard, at once, each black and a Zombie as it is.
+    ReturnAllCreatureCardsAsBlackZombies,
     /// "Create a green Ooze creature token with \"This token's power and
     /// toughness are each equal to the number of slime counters on ~.\"":
     /// a creature token of those colours and subtypes whose size is that
@@ -1003,6 +1008,12 @@ struct Activated {
     /// activated, and its mana cost is the ability's, X being 0 (CR
     /// 602.2b, 107.3); [`Activated::mana`] is then nothing of its own.
     pays_the_exiled_cards_cost: bool,
+    /// "Discard a card" in the cost: any card of its controller's hand,
+    /// chosen as it is activated (CR 602.2b, 701.9a).
+    discard: bool,
+    /// "Remove three study counters from ~" in the cost: that many of that
+    /// kind, payable only with them there (CR 118.3).
+    remove_named: Option<(String, u32)>,
     spec: Spec,
 }
 
@@ -1021,8 +1032,23 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
         sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false,
-        pays_the_exiled_cards_cost: false, spec: Spec::default(),
+        pays_the_exiled_cards_cost: false, discard: false, remove_named: None, spec: Spec::default(),
     };
+    if effect == "Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types." {
+        for part in cost.split(", ") {
+            match part {
+                "{T}" => ability.tap = true,
+                _ if part.starts_with("Remove ") && part.ends_with(" counters from ~ and sacrifice it") => {
+                    let (n, kind) = part.strip_prefix("Remove ")?.strip_suffix(" counters from ~ and sacrifice it")?.split_once(' ')?;
+                    ability.remove_named = Some((kind.to_string(), number(n)?));
+                    ability.sacrifice_self = true;
+                }
+                _ => return None,
+            }
+        }
+        ability.spec.effects.push(Effect::ReturnAllCreatureCardsAsBlackZombies);
+        return Some(ability);
+    }
     if effect == "This creature's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named ~ is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard." {
         ability.mana = mana_cost(cost)?;
         ability.spec.effects.push(Effect::ShuffleIntoLibraryRevealUntilNamed);
@@ -1041,6 +1067,12 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             }
             "Remove a +1/+1 counter from this creature" => ability.remove_counter = true,
             "Sacrifice ~" => ability.sacrifice_granter = true,
+            "Discard a card" => ability.discard = true,
+            _ if part.starts_with("Remove ") && part.ends_with(" counters from ~ and sacrifice it") => {
+                let (n, kind) = part.strip_prefix("Remove ")?.strip_suffix(" counters from ~ and sacrifice it")?.split_once(' ')?;
+                ability.remove_named = Some((kind.to_string(), number(n)?));
+                ability.sacrifice_self = true;
+            }
             _ if part.starts_with("Tap ") && part.ends_with(" untapped creatures you control") => {
                 ability.tap_others = number(part.strip_prefix("Tap ")?.strip_suffix(" untapped creatures you control")?)? as usize;
             }
@@ -1846,7 +1878,8 @@ impl Spec {
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
             return Some(());
         }
-        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature").or_else(|| r.strip_suffix(" counter on this enchantment")))
+        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature").or_else(|| r.strip_suffix(" counter on this enchantment"))
+            .or_else(|| r.strip_suffix(" counter on this artifact")).or_else(|| r.strip_suffix(" counter on ~")))
             .filter(|k| k.chars().all(char::is_alphabetic))
         {
             let slot = self.slot(Slot::This);
@@ -2655,7 +2688,7 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
                 sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false,
-                pays_the_exiled_cards_cost: false, spec: equip,
+                pays_the_exiled_cards_cost: false, discard: false, remove_named: None, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -4437,6 +4470,23 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::GrantFlashback { .. } => {}
             // It may enter more than one way, which one world cannot hold.
             Effect::TokenCopyOfTheExiledCard => unreachable!("entered each way it can by every_copy_of_an_exiled_card_is_what_its_text_says"),
+            Effect::ReturnAllCreatureCardsAsBlackZombies => {
+                let returned: Vec<ObjectId> = w.yard.iter().filter(|(_, m)| m.is_creature()).map(|(id, _)| *id).collect();
+                for id in returned {
+                    let card = w.leave_yard(id).expect("in a graveyard");
+                    let printed = &cached_oracle()[card.name.as_deref().expect("a card")];
+                    let mut m = read_creature(printed).map_or_else(|_| Model::printed(printed, caster), |spec| model_of(&spec, printed, caster));
+                    m.controller = caster;
+                    if !m.colors.contains(&Color::Black) {
+                        m.colors.push(Color::Black);
+                    }
+                    if !m.subtypes.iter().any(|t| t == "Zombie") {
+                        m.subtypes.push("Zombie".to_string());
+                    }
+                    let m = w.entering(m);
+                    w.permanents.insert(id, m);
+                }
+            }
             Effect::ShuffleIntoLibraryRevealUntilNamed => unreachable!("each place it lands played by every_shuffle_and_reveal_is_what_its_text_says"),
             Effect::TokenCopy { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get(&id)).cloned() {
@@ -6285,7 +6335,7 @@ const READ: &[&str] = &[
     "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
     "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Chant",
     "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
-    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
+    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel", "Grimoire of the Dead",
     "Grimgrin, Corpse-Born", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Gutter Grime", "Hamlet Captain",
     "Hanweir Watchkeep", "Harvest Pyre", "Heartless Summoning", "Heretic's Punishment", "Hinterland Harbor",
     "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
@@ -6710,10 +6760,12 @@ fn every_readable_activated_ability_does_what_its_text_says() {
         // one that counts the counters it puts on its source, with none
         // there, with two too few and with one too few.
         let short = |a: &Activated| a.if_you_control.iter().flat_map(move |(n, _)| [n - 1, *n].map(Some)).collect::<Vec<_>>();
+        // One that removes counters of a kind as its cost, with one too
+        // few and with enough.
         let counted = |a: &Activated| a.spec.effects.iter().find_map(|e| match e {
             Effect::AtCountersRemoveAllAndTransform { kind, n, .. } => Some([n - 2, n - 1].map(|k| (kind.clone(), k))),
             _ => None,
-        });
+        }).or_else(|| a.remove_named.as_ref().map(|(kind, n)| [n - 1, *n].map(|k| (kind.clone(), k))));
         // A morbid ability, on the board and after a death (CR 602.5b).
         // One whose result is a shuffle's order is
         // `every_shuffle_and_reveal_is_what_its_text_says`'s.
@@ -6756,6 +6808,8 @@ fn every_readable_activated_ability_does_what_its_text_says() {
             let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n)
                 && (!ability.morbid || world.a_creature_died)
                 && (!ability.remove_counter || world.permanents[&id].counters.0 > 0)
+                && ability.remove_named.as_ref().is_none_or(|(k, n)| world.permanents[&id].named_counters.get(k).copied().unwrap_or(0) >= *n)
+                && (!ability.discard || !world.hand[0].is_empty())
                 && others.len() >= ability.tap_others;
             world.refresh();
             world.source = Some(id);
@@ -6827,6 +6881,10 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     m.counters.0 -= 1;
                     change(m, -1, -1);
                 }
+                if let Some((kind, n)) = &ability.remove_named {
+                    let m = paid.permanents.get_mut(&id).expect("the source");
+                    *m.named_counters.get_mut(kind).expect("enough, as allowed") -= n;
+                }
                 if ability.sacrifice_self {
                     paid.leave(id, Dest::Graveyard);
                 }
@@ -6857,6 +6915,23 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                             w.exile[0].push(card.name.expect("a card"));
                             w
                         }).collect::<Vec<_>>())
+                        .collect();
+                }
+                // A discard of any card in hand, by name (CR 701.9a).
+                if ability.discard {
+                    ways = ways.iter()
+                        .flat_map(|w| {
+                            let mut names = w.hand[0].clone();
+                            names.sort();
+                            names.dedup();
+                            names.into_iter().map(|n| {
+                                let mut w = w.clone();
+                                let at = w.hand[0].iter().position(|h| *h == n).expect("in hand");
+                                w.hand[0].remove(at);
+                                w.graveyard[0].push(n);
+                                w
+                            }).collect::<Vec<_>>()
+                        })
                         .collect();
                 }
                 if ability.mana.symbols.contains(&ManaSymbol::X) {
@@ -10053,6 +10128,11 @@ fn the_grammar_reads_its_templates() {
     assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
     let ghoul = Printed { oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".to_string(), ..viper.clone() };
     let ghoul = read_creature(&ghoul).unwrap();
+    let study = read_activated("{1}, {T}, Discard a card: Put a study counter on ~.", 0).unwrap();
+    assert!(study.discard && study.tap && study.spec.effects == vec![Effect::NamedCounter { slot: 0, kind: "study".to_string() }]);
+    let grimoire = read_activated("{T}, Remove three study counters from ~ and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.", 1).unwrap();
+    assert!(grimoire.tap && grimoire.sacrifice_self && grimoire.remove_named == Some(("study".to_string(), 3)));
+    assert_eq!(grimoire.spec.effects, vec![Effect::ReturnAllCreatureCardsAsBlackZombies]);
     let phantasm = read_activated("{1}{U}: This creature's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named ~ is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard.", 1).unwrap();
     assert!(phantasm.spec.effects == vec![Effect::ShuffleIntoLibraryRevealUntilNamed] && phantasm.mana == mana_cost("{1}{U}").unwrap());
     let witch = Printed { oracle_text: "Deathtouch\nWhen this creature dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.".to_string(), ..viper.clone() };

@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-267 of the pool's 268 instants, sorceries, creatures, enchantments,
+All 268 of the pool's instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -909,9 +909,14 @@ over 32 shuffles: it lands in each of the three places, the cards above
 it put into the graveyard and it put back onto the battlefield, a new
 object (701.20a, 400.7), and no other ending; four mutants (the revealed
 cards kept, the Phantasm not returned, always on top, returned tapped)
-each fail. Not yet read: Grimoire of the Dead's study counters and its
-return of every creature card under one player; and, of templates,
-hexproof granted to creatures. Each is a
+each fail. Grimoire of the Dead, the last card read, is the activated
+test's: its discard paid with each card of the hand, its study counter
+put; its other ability offered with three study counters and not with
+two, and every creature card of every graveyard returned under its
+controller as a black Zombie (110.2a, 613.1d-e). Seven mutants (not
+black, not Zombies, only its controller's graveyard, under their owners,
+no discard, two counters enough, no study counter) each fail. Not yet
+read, of templates: hexproof granted to creatures. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change
 that stops reading any of them fails and names it.
 
