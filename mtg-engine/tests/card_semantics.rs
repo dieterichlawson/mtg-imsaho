@@ -8837,6 +8837,62 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every spell the grammar reads that gives a creature hexproof until end
+/// of turn (Ranger's Guile), cast on the caster's Grizzly Bears: then each
+/// instant the grammar reads that targets a permanent, in the opponent's
+/// hand with its cost floating and priority theirs, is offered exactly the
+/// targets its text allows, the Bears not among them (CR 702.11b), and in
+/// the caster's own hand the Bears still among them.
+#[test]
+fn every_hexproof_granted_keeps_the_opponents_spells_off() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let grants = |s: &Spec| s.effects.iter().any(|e| matches!(e, Effect::Pump { gains, .. } if gains.contains(&Keyword::Hexproof)));
+    let instants: Vec<&(Printed, Spec)> = cards.iter()
+        .filter(|(c, s)| c.has_type("Instant") && s.additional.is_none() && s.flashback.is_none() && s.modes.is_empty()
+            && matches!(s.slots.first(), Some(Slot::Permanent(_))) && s.slots.len() == 1)
+        .collect();
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (card, spec) in cards.iter().filter(|(c, s)| (c.has_type("Instant") || c.has_type("Sorcery")) && grants(s)) {
+        let (mut state, world) = board(&registry, &cache);
+        let bears = world.permanents.iter()
+            .find(|(_, m)| m.name.as_deref() == Some("Grizzly Bears") && m.controller == P0)
+            .map(|(id, _)| *id)
+            .expect("on the board");
+        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+        let targets = vec![Target::Object(bears)];
+        let after_world = resolve(spec, &world, &targets, P0, card, spell);
+        let Ok(endings) = every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, targets))) else {
+            failures.push(format!("{}: did not resolve", card.name));
+            continue;
+        };
+        let [after] = &endings[..] else {
+            failures.push(format!("{}: {} endings, not one", card.name, endings.len()));
+            continue;
+        };
+        for (instant, ispec) in &instants {
+            for caster in [P1, P0] {
+                checked += 1;
+                let mut s = after.clone();
+                let id = spell_in_hand(&mut s, &registry, &instant.name, caster);
+                fund(&mut s, caster, &mana_cost(&instant.mana_cost).expect("a cost"), 0);
+                s.priority_player = Some(caster);
+                let expected = target_sets(ispec, &after_world, caster);
+                match offered(&s, &registry, id) {
+                    Ok(got) if got == expected => {}
+                    Ok(got) => failures.push(format!("{} after {}, cast by player {}: offers {got:?}, the text allows {expected:?}", instant.name, card.name, caster.0)),
+                    Err(why) => failures.push(format!("{} after {}, cast by player {}: {why}", instant.name, card.name, caster.0)),
+                }
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every artifact the grammar reads that returns every creature card of
 /// every graveyard (Grimoire of the Dead), with three study counters and an
 /// Evil Twin card in its controller's graveyard beside the board's: the

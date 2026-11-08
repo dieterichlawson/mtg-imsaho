@@ -915,8 +915,14 @@ put; its other ability offered with three study counters and not with
 two, and every creature card of every graveyard returned under its
 controller as a black Zombie (110.2a, 613.1d-e). Seven mutants (not
 black, not Zombies, only its controller's graveyard, under their owners,
-no discard, two counters enough, no study counter) each fail. Not yet
-read, of templates: hexproof granted to creatures. Each is a
+no discard, two counters enough, no study counter) each fail; with an
+Evil Twin card among those it returns, the Twin enters as itself or a
+copy of a creature already there, and a black Zombie either way, which
+found defects 28 and 29. Hexproof granted until end of turn (Ranger's
+Guile on the caster's Grizzly Bears) keeps each targeted instant the
+grammar reads, cast by the opponent, off the Bears, and the caster's own
+on (702.11b): the reference's targeting ignoring hexproof fails 6 of
+those 22 casts. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change
 that stops reading any of them fails and names it.
 
