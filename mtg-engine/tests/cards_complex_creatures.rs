@@ -3865,3 +3865,31 @@ fn grimoires_evil_twin_copies_only_what_was_there_and_is_a_black_zombie() {
     assert!(state.has_subtype(twin, "Zombie", &reg), "a Zombie in addition to its other types");
     assert!(state.colors_of(twin, &reg).contains(&Color::Black), "and black in addition to its other colors");
 }
+
+/// Defect 28 for Moldgraf Monstrosity, which returns two creature cards
+/// at once: an Evil Twin card one of them may copy only a creature already
+/// on the battlefield (its ruling), not the one returning with it. With
+/// exactly two creature cards in the graveyard, both return.
+#[test]
+fn moldgrafs_evil_twin_copies_only_what_was_there() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let returning = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
+
+    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+    let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, monstrosity, &[], &reg);
+    assert_eq!(state.get_object(returning).map(|o| o.zone), Some(Zone::Battlefield), "the Walking Corpse came back");
+
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.clone(),
+        other => panic!("the Twin should be asked what to copy, got {other:?}"),
+    };
+    assert_eq!(options, vec![Target::Object(there)], "only the Moon Heron was there before the return");
+}
