@@ -720,6 +720,10 @@ impl ManaAbility {
 struct CombatText {
     /// "This creature can't block." (CR 509.1a)
     cant_block: bool,
+    /// "Whenever this creature deals combat damage to a creature, flip a
+    /// coin. If you win the flip, destroy that creature." (CR 705, 701.8):
+    /// each creature it damages, destroyed or not, at random.
+    flips_to_destroy_what_it_damages: bool,
     /// "This creature can't be blocked."
     cant_be_blocked: bool,
     /// "This creature can't be blocked except by creatures with flying or
@@ -806,6 +810,7 @@ impl CombatText {
     fn read(&mut self, line: &str) -> Option<()> {
         match line {
             "This creature can't block." => self.cant_block = true,
+            "Whenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature." => self.flips_to_destroy_what_it_damages = true,
             "This creature can't be blocked." => self.cant_be_blocked = true,
             "This creature can't be blocked except by creatures with flying or reach." => self.only_by_flying_or_reach = true,
             "This creature attacks each combat if able." => self.attacks_each_combat = true,
@@ -6023,7 +6028,7 @@ const READ: &[&str] = &[
     "Cackling Counterpart", "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
     "Charmbreaker Devils", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
     "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
-    "Creeping Renaissance", "Crossway Vampire", "Curiosity", "Curse of Death's Hold",
+    "Creeping Renaissance", "Creepy Doll", "Crossway Vampire", "Curiosity", "Curse of Death's Hold",
     "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
     "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
     "Daybreak Ranger", "Dead Weight", "Dearly Departed", "Delver of Secrets", "Demonmail Hauberk",
@@ -7149,6 +7154,8 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             for (branch, mill_first) in branches {
                 let mut w2 = w.clone();
                 let mut to_players: Vec<(Src, u32)> = Vec::new();
+                // The creatures a coin-flipper dealt damage, for its trigger.
+                let mut flipped_for: Vec<ObjectId> = Vec::new();
                 for (to, n, from) in &branch {
                     let source = from.model(&w).clone();
                     if let (Target::Player(p), true, true) = (to, mill_first, mills(&w2, &source)) {
@@ -7176,6 +7183,9 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                             let m = w2.permanents.get_mut(id).expect("in combat");
                             if deal(m, n) {
                                 m.deathtouched |= has(&source, Keyword::Deathtouch);
+                                if source.combat.flips_to_destroy_what_it_damages {
+                                    flipped_for.push(*id);
+                                }
                             }
                         }
                         // A Zombie of a player whose permanent mills instead
@@ -7234,6 +7244,24 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                             let card = took.library[p.0 as usize].remove(0);
                             took.hand[p.0 as usize].push(card);
                             [w, took]
+                        })
+                        .collect();
+                }
+                // Each flip won or lost (CR 705.2): the creature destroyed,
+                // if it is still there, or not; none once a player has lost,
+                // the game over before the trigger resolves (704.5a, 104.2a).
+                for id in flipped_for {
+                    drawn = drawn.into_iter()
+                        .flat_map(|w| {
+                            if w.life.iter().any(|l| *l <= 0) {
+                                return vec![w];
+                            }
+                            let mut won = w.clone();
+                            if won.permanents.contains_key(&id) {
+                                won.destroy(id);
+                                won.state_based_actions();
+                            }
+                            vec![w, won]
                         })
                         .collect();
                 }
@@ -7476,6 +7504,18 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
     asked
 }
 
+/// [`every_combat_ending`], over 32 seeds when a combatant flips a coin
+/// (CR 705), so that each flip goes both ways.
+fn combat_endings(state: &GameState, registry: &CardRegistry, world: &World, combat: &Combat) -> Result<Vec<GameState>, String> {
+    let random = combat.0.iter().map(|(a, _)| *a).chain(combat.1.iter().map(|(b, _)| *b))
+        .any(|id| world.permanents.get(&id).is_some_and(|m| m.combat.flips_to_destroy_what_it_damages));
+    if random {
+        over_seeds(state, |s| every_combat_ending(s, registry, combat))
+    } else {
+        every_combat_ending(state, registry, combat)
+    }
+}
+
 /// Every game a combat can end in: each damage assignment it asks for
 /// answered every way, replayed from the start for each.
 fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Combat) -> Result<Vec<GameState>, String> {
@@ -7597,7 +7637,7 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         // (Balefire Dragon's) reach the board as well.
         combats += 1;
         let want = combat_outcomes(world, a, None);
-        let endings = every_combat_ending(state, registry, &(vec![(a, P1)], Vec::new()));
+        let endings = combat_endings(state, registry, world, &(vec![(a, P1)], Vec::new()));
         if let Some(why) = disagreement(&want, &endings, registry) {
             failures.push(format!("{name} declining to block: {why}"));
         }
@@ -7608,7 +7648,7 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
     }
     combats += 1;
     let want = combat_outcomes(world, a, b.filter(|_| !block.is_empty()));
-    let endings = every_combat_ending(state, registry, &(vec![(a, P1)], block));
+    let endings = combat_endings(state, registry, world, &(vec![(a, P1)], block));
     if let Some(why) = disagreement(&want, &endings, registry) {
         failures.push(format!("{name}: {why}"));
     }
@@ -9388,6 +9428,8 @@ fn the_grammar_reads_its_templates() {
     assert!(torch.grants[0].tap && torch.grants[0].sacrifice_granter && torch.grants[0].index == 1);
     let alchemist = Printed { oracle_text: "If a Zombie you control would deal combat damage to a player, instead that player mills that many cards.\nWhenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token.".to_string(), ..viper.clone() };
     assert_eq!(read_creature(&alchemist).unwrap().statics, vec![Static::MillsInsteadOfCombatDamage("Zombie".to_string()), Static::OpponentsMilledCreaturesBecomeZombies]);
+    let doll = Printed { oracle_text: "Indestructible\nWhenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.".to_string(), ..viper.clone() };
+    assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
