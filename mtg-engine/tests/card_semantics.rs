@@ -515,6 +515,10 @@ struct Spec {
     /// "This spell costs {1} less to cast for each creature on the
     /// battlefield" (CR 601.2f).
     cheaper_per_creature: bool,
+    /// "Creature spells you cast cost {N} less to cast": N, taken from the
+    /// generic part of its controller's creature spells' costs while it
+    /// is on the battlefield (CR 601.2f, 118.7d).
+    creature_spells_cost_less: Option<u32>,
     /// "Morbid — ~ deals N damage instead if a creature died this turn":
     /// which effect's amount, and what it becomes (CR 207.2c: an ability
     /// word has no rules meaning; the condition is the text after it).
@@ -2387,6 +2391,11 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         }
         if let Some(statics) = restriction_static(body) {
             spec.statics.extend(statics);
+            continue;
+        }
+        if let Some(n) = body.strip_prefix("Creature spells you cast cost ").and_then(|r| r.strip_suffix(" less to cast")) {
+            let [ManaSymbol::Generic(n)] = mana_cost(n).ok_or_else(unread)?.symbols[..] else { return Err(unread()) };
+            spec.creature_spells_cost_less = Some(n);
             continue;
         }
         if line.contains(": ") && !line.contains(" has \"") {
@@ -5408,7 +5417,7 @@ const READ: &[&str] = &[
     "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
     "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
     "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hamlet Captain",
-    "Hanweir Watchkeep", "Harvest Pyre", "Heretic's Punishment", "Hinterland Harbor",
+    "Hanweir Watchkeep", "Harvest Pyre", "Heartless Summoning", "Heretic's Punishment", "Hinterland Harbor",
     "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
     "Inquisitor's Flail", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
     "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
@@ -7184,6 +7193,77 @@ fn every_enter_watcher_sees_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// `cost` less `n` of its generic mana (CR 601.2f, 118.7d: a reduction
+/// takes no coloured mana and leaves no less than none).
+fn less_generic(cost: &ManaCost, n: u32) -> ManaCost {
+    let mut left = n;
+    let symbols = cost.symbols.iter()
+        .filter_map(|s| match s {
+            ManaSymbol::Generic(g) => {
+                let take = left.min(*g);
+                left -= take;
+                (*g > take).then_some(ManaSymbol::Generic(g - take))
+            }
+            other => Some(other.clone()),
+        })
+        .collect();
+    ManaCost::new(symbols)
+}
+
+/// Every permanent the grammar reads that makes its controller's creature
+/// spells cost less ("Creature spells you cast cost {2} less to cast"),
+/// on the caster's side with every mana source tapped: each of a few
+/// creature cards is offered with exactly its cost less the reduction
+/// floating, and not with one mana fewer; the opponent's, cast in their
+/// own turn, cost what they print (CR 601.2f, 118.7d).
+#[test]
+fn every_cost_reduction_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.creature_spells_cost_less.is_some()) {
+        let n = spec.creature_spells_cost_less.expect("filtered");
+        for creature in ["Savannah Lions", "Grizzly Bears", "Kalonian Tusker", "Moon Heron", "Makeshift Mauler"] {
+            for caster in [P0, P1] {
+                let cost = mana_cost(&cache[creature].mana_cost).expect("a cost");
+                let pays = if caster == P0 { less_generic(&cost, n) } else { cost.clone() };
+                // Exactly that much, and one mana fewer when it is any.
+                let short = (!pays.symbols.is_empty()).then(|| match pays.symbols.iter().position(|s| matches!(s, ManaSymbol::Generic(_))) {
+                    Some(_) => less_generic(&pays, 1),
+                    None => ManaCost::new(pays.symbols[1..].to_vec()),
+                });
+                for (floating, offered) in std::iter::once((pays.clone(), true)).chain(short.map(|s| (s, false))) {
+                    casts += 1;
+                    let (mut state, mut world) = board(&registry, &cache);
+                    place_face(&mut state, &mut world, &registry, card, spec, P0);
+                    for (id, m) in world.permanents.iter_mut().filter(|(_, m)| !m.is_creature()) {
+                        m.tapped = true;
+                        state.get_object_mut(*id).expect("on the battlefield").tapped = true;
+                    }
+                    // A copy already in that hand is the one offered: the
+                    // engine offers one cast for copies of a spell.
+                    let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
+                        Some(o) => o.id,
+                        None => spell_in_hand(&mut state, &registry, creature, caster),
+                    };
+                    fund(&mut state, caster, &floating, 0);
+                    state.active_player = caster;
+                    state.priority_player = Some(caster);
+                    let got = engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == spell);
+                    if got != offered {
+                        failures.push(format!("{} on player 0's side, player {} with {floating:?} floating: {creature} offered {got}, its cost {}",
+                            card.name, caster.0, if offered { "paid" } else { "not paid" }));
+                    }
+                }
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every activated ability an Aura the grammar reads grants, on the
 /// caster's Grizzly Bears with the Aura attached: offered on the Bears as
 /// the Aura's (CR 113.2c, 604.1) at exactly the targets its text allows,
@@ -7939,6 +8019,9 @@ fn the_grammar_reads_its_templates() {
     let priest = Printed { oracle_text: "Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying. Activate only if a creature died this turn.".to_string(), ..viper.clone() };
     let priest = &read_creature(&priest).unwrap().activated[0];
     assert!(priest.tap && priest.tap_others == 2 && priest.morbid);
+    let summoning = Printed { type_line: "Enchantment".to_string(), oracle_text: "Creature spells you cast cost {2} less to cast.\nCreatures you control get -1/-1.".to_string(), ..viper.clone() };
+    assert_eq!(read_enchantment(&summoning).unwrap().creature_spells_cost_less, Some(2));
+    assert_eq!(less_generic(&mana_cost("{1}{G}").unwrap(), 2).symbols, vec![ManaSymbol::Colored(Color::Green)]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

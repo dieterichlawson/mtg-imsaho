@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-237 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+238 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. The latest is Frightful Delusion's
 "unless its controller pays {1}": the spell's controller paying, by
 tapping their Forest, and Giant Growth resolving after; declining, and
@@ -780,9 +780,12 @@ the equipped creature and to it by another each doubled as it is dealt,
 after any prevention (CR 614.1a, 616.1). Skirsdag High Priest's cost of
 tapping two other creatures is read, each pair of the caster's untapped
 creatures a way to pay it, and its morbid restriction on the board and
-after a death. Not yet read: copies, other replacement effects (token
-doubling, a draw from an empty library, mill instead of damage), counters
-other than +1/+1 and -1/-1, rule modifiers (cost reductions, "can't be
+after a death. Heartless Summoning's cost reduction is read and checked
+on its own: each of five creature cards offered with its cost less {2}
+of generic floating and not with one mana fewer, the opponent's at full
+price (CR 601.2f, 118.7d). Not yet read: copies, other replacement
+effects (token doubling, a draw from an empty library, mill instead of
+damage), counters other than +1/+1 and -1/-1, rule modifiers ("can't be
 activated", "can't be cast"), modal spells, protection and hexproof
 granted, attack triggers with targets, links between abilities ("the
 exiled card"), and costs of removing counters. Each is a template, or a
