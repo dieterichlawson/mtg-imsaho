@@ -522,6 +522,10 @@ struct Spec {
     /// generic part of its controller's creature spells' costs while it
     /// is on the battlefield (CR 601.2f, 118.7d).
     creature_spells_cost_less: Option<u32>,
+    /// "You may pay {0} rather than pay the mana cost for Zombie creature
+    /// spells you cast": the subtype whose creature spells its controller
+    /// may cast for nothing instead (CR 118.9, 601.2b).
+    zero_instead_for: Option<String>,
     /// "Morbid — ~ deals N damage instead if a creature died this turn":
     /// which effect's amount, and what it becomes (CR 207.2c: an ability
     /// word has no rules meaning; the condition is the text after it).
@@ -2426,6 +2430,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.extend(statics);
             continue;
         }
+        if let Some(subtype) = body.strip_prefix("You may pay {0} rather than pay the mana cost for ").and_then(|r| r.strip_suffix(" creature spells you cast")) {
+            spec.zero_instead_for = Some(subtype.to_string());
+            continue;
+        }
         if body == "Activated abilities of artifacts can't be activated" {
             spec.statics.push(Static::ArtifactAbilitiesCantBeActivated);
             continue;
@@ -2472,7 +2480,8 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         spec.statics.push(group_static(body).ok_or_else(unread)?);
     }
     if spec.enchants != spec.slots.first().is_some()
-        || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default() && spec.on_cast.is_none())
+        || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default() && spec.on_cast.is_none()
+            && spec.zero_instead_for.is_none() && spec.creature_spells_cost_less.is_none())
     {
         return Err("not an enchantment the grammar reads".to_string());
     }
@@ -5495,7 +5504,7 @@ const READ: &[&str] = &[
     "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Parallel Lives", "Paraselene", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
     "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Riot Devils", "Rolling Temblor", "Rooftop Storm", "Rotting Fensnake", "Runechanter's Pike",
     "Savannah Lions", "Scourge of Geier Reach", "Screeching Bat", "Selfless Cathar",
     "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
     "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
@@ -7327,6 +7336,53 @@ fn every_cost_reduction_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every permanent the grammar reads that lets its controller cast
+/// creature spells of a subtype for {0} rather than their mana cost
+/// (Rooftop Storm's Zombies), on the caster's side with every mana source
+/// tapped and nothing floating: each of a few creature cards of that
+/// subtype is offered for no mana, and a few others are not offered at
+/// all; and the opponent's, cast in their own turn, are not (CR 118.9,
+/// 601.2b).
+#[test]
+fn every_alternative_cost_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.zero_instead_for.is_some()) {
+        let subtype = spec.zero_instead_for.as_deref().expect("filtered");
+        for creature in ["Walking Corpse", "Rotting Fensnake", "Armored Skaab", "Grizzly Bears", "Moon Heron"] {
+            for caster in [P0, P1] {
+                casts += 1;
+                let (mut state, mut world) = board(&registry, &cache);
+                place_face(&mut state, &mut world, &registry, card, spec, P0);
+                for (id, m) in world.permanents.iter_mut().filter(|(_, m)| !m.is_creature()) {
+                    m.tapped = true;
+                    state.get_object_mut(*id).expect("on the battlefield").tapped = true;
+                }
+                let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
+                    Some(o) => o.id,
+                    None => spell_in_hand(&mut state, &registry, creature, caster),
+                };
+                state.active_player = caster;
+                state.priority_player = Some(caster);
+                let free = caster == P0 && cache[creature].types().1.iter().any(|t| t == subtype);
+                let rows: Vec<Option<ManaCost>> = engine::legal_actions(&state, &registry).castable_spells.into_iter()
+                    .filter(|c| c.object_id == spell)
+                    .map(|c| c.alternative_cost)
+                    .collect();
+                let want = if free { vec![Some(ManaCost::free())] } else { Vec::new() };
+                if rows != want {
+                    failures.push(format!("{} on player 0's side, player {} with nothing floating: {creature} offered as {rows:?}, the text allows {want:?}", card.name, caster.0));
+                }
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every permanent the grammar reads that stops artifacts' activated
 /// abilities ("Activated abilities of artifacts can't be activated"), on
 /// either side: each artifact the grammar reads with an activated or mana
@@ -8306,6 +8362,8 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read_enchantment(&lives).unwrap().statics, vec![Static::DoublesYourTokens]);
     let silence = Printed { type_line: "Enchantment".to_string(), oracle_text: "Activated abilities of artifacts can't be activated.".to_string(), ..viper.clone() };
     assert_eq!(read_enchantment(&silence).unwrap().statics, vec![Static::ArtifactAbilitiesCantBeActivated]);
+    let storm = Printed { type_line: "Enchantment".to_string(), oracle_text: "You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.".to_string(), ..viper.clone() };
+    assert_eq!(read_enchantment(&storm).unwrap().zero_instead_for.as_deref(), Some("Zombie"));
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
