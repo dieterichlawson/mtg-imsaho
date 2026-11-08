@@ -750,6 +750,11 @@ struct CombatText {
     /// there or as it leaves, gains its controller that creature's last
     /// toughness (608.2h).
     gains_life_when_what_it_damaged_dies: bool,
+    /// "Whenever this creature attacks, destroy target creature defending
+    /// player controls, then put a +1/+1 counter on this creature" (CR
+    /// 508.2, 603.3d): a trigger with a target, resolved before blockers
+    /// are declared, and removed with no target to choose.
+    on_attack: Option<Box<Trigger>>,
     /// "This creature can't be blocked."
     cant_be_blocked: bool,
     /// "This creature can't be blocked except by creatures with flying or
@@ -858,6 +863,10 @@ impl CombatText {
                         }
                     };
                     self.on_damage_to_player.push(e);
+                } else if let Some(rest) = line.strip_prefix("Whenever this creature attacks, ").filter(|r| r.starts_with("destroy target ")) {
+                    let mut trigger = Trigger::default();
+                    trigger.spec.sentence(&capitalized(rest))?;
+                    self.on_attack = Some(Box::new(trigger));
                 } else if let Some(rest) = line.strip_prefix("Whenever this creature attacks, create ").or_else(|| line.strip_prefix("Whenever ~ attacks, create ")) {
                     let (rest, exile_at_end_of_combat) = match rest.strip_suffix(" Exile that token at end of combat.") {
                         Some(r) => (r, true),
@@ -1432,7 +1441,9 @@ fn filter(text: &str) -> Option<Filter> {
             clause.max_power = Some(n.strip_suffix(" or_less")?.parse().ok()?);
             rest = r;
         }
-        for (suffix, yours) in [(" you control", Some(true)), (" you don't control", Some(false)), (" your opponents control", Some(false))] {
+        // "defending player controls": in a game of two, the opponent of
+        // the attacker's controller (CR 506.2).
+        for (suffix, yours) in [(" you control", Some(true)), (" you don't control", Some(false)), (" your opponents control", Some(false)), (" defending player controls", Some(false))] {
             if let Some(r) = rest.strip_suffix(suffix) {
                 rest = r;
                 clause.yours = yours;
@@ -1598,6 +1609,14 @@ impl Spec {
         if s == "Tap this creature" || s == "Untap this creature" {
             let slot = self.slot(Slot::This);
             self.effects.push(Effect::Tap { slot, tapped: s.starts_with("Tap") });
+            return Some(());
+        }
+        // "Untap this creature and put a +1/+1 counter on it": two
+        // instructions to the one permanent, in order (CR 608.2c).
+        if s == "Untap this creature and put a +1/+1 counter on it" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::Tap { slot, tapped: false });
+            self.effects.push(Effect::PlusCounters { slot, n: 1 });
             return Some(());
         }
         if let Some(n) = s.strip_prefix("You lose ").and_then(|r| r.strip_suffix(" life")) {
@@ -2359,6 +2378,11 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         let unread = || format!("cannot read {line:?}");
         if line == "This creature enters tapped." {
             spec.enters_tapped = true;
+            continue;
+        }
+        if line == "This creature enters tapped and doesn't untap during your untap step." {
+            spec.enters_tapped = true;
+            spec.statics.push(Static::RestrictsItself { what: vec![Restriction::DoesntUntap] });
             continue;
         }
         if let Some(subtype) = line.strip_prefix("This creature enters with a +1/+1 counter on it for each other ")
@@ -4028,8 +4052,11 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         Slot::Any => [creatures(), players(&|_| true)].concat(),
         Slot::PlayerOrPlaneswalker | Slot::Player => players(&|_| true),
         Slot::Opponent => players(&|p| p != caster),
+        // Hexproof: not a target of what its controller's opponents
+        // control (CR 702.11b).
         Slot::Permanent(f) | Slot::UpTo { filter: f, .. } => world.permanents.iter()
             .filter(|(id, m)| m.matches(f, caster)
+                && !(has(m, Keyword::Hexproof) && m.controller != caster)
                 && !(f.0.iter().all(|c| c.other) && world.source == Some(**id)))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
@@ -6207,7 +6234,7 @@ const READ: &[&str] = &[
     "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Chant",
     "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
     "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Gutter Grime", "Hamlet Captain",
+    "Grimgrin, Corpse-Born", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Gutter Grime", "Hamlet Captain",
     "Hanweir Watchkeep", "Harvest Pyre", "Heartless Summoning", "Heretic's Punishment", "Hinterland Harbor",
     "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
     "Inquisitor's Flail", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
@@ -7186,6 +7213,27 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
     }
     w.permanents.get_mut(&a).expect("the attacker").attacking = true;
     w.refresh();
+    // Its attack trigger with a target (Grimgrin's), put on the stack as it
+    // attacks and resolved before blockers are declared (CR 508.2, 509.1):
+    // each way it can, and the rest of the combat from each.
+    match w.permanents[&a].combat.on_attack.clone() {
+        Some(trigger) => {
+            let mut put = w.clone();
+            put.source = Some(a);
+            trigger_outcomes(&trigger, &put, P0).into_iter()
+                .flat_map(|mut after| {
+                    after.source = w.source;
+                    combat_after_attacking(after, a, blocker)
+                })
+                .collect()
+        }
+        None => combat_after_attacking(w, a, blocker),
+    }
+}
+
+/// [`combat_outcomes`] from `a` attacking, its targeted attack trigger
+/// resolved.
+fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) -> Vec<World> {
     // Its attack trigger: tokens that enter tapped and attacking, never
     // having been declared attackers (CR 508.4).
     if let Some(t) = w.permanents[&a].combat.on_attack_tokens.clone() {
@@ -8631,6 +8679,45 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature the grammar reads whose attack trigger has a target
+/// (Grimgrin's "destroy target creature defending player controls, then
+/// put a +1/+1 counter on this creature"): it attacks, unblocked, into a
+/// defender with no creatures, with a Grizzly Bears, with a Bears and a
+/// Walking Corpse, and with an Invisible Stalker, which hexproof keeps from
+/// being targeted (CR 702.11b). With a target, each is chosen in turn and
+/// the ability resolves before blockers are declared (508.2, 509.1); with
+/// none, the ability is removed and does nothing, its counter included
+/// (603.3d).
+#[test]
+fn every_attack_trigger_with_a_target_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let read = |name: &str| (&cache[name], read_creature(&cache[name]).expect("reads"));
+    let (bears, corpse, stalker) = (read("Grizzly Bears"), read("Walking Corpse"), read("Invisible Stalker"));
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.combat.on_attack.is_some()) {
+        let defenders: [(Option<(&Printed, &Spec)>, Option<(&Printed, &Spec)>, &str); 4] = [
+            (None, None, "no creature"),
+            (Some((bears.0, &bears.1)), None, "a Grizzly Bears"),
+            (Some((bears.0, &bears.1)), Some((corpse.0, &corpse.1)), "a Grizzly Bears and a Walking Corpse"),
+            (Some((stalker.0, &stalker.1)), None, "an Invisible Stalker"),
+        ];
+        for (first, second, which) in defenders {
+            combats += 1;
+            let (state, world, a, _, _) = arena_with(&registry, (card, spec), first, second.map(|c| (c, P1)));
+            let want = combat_outcomes(&world, a, None);
+            let endings = combat_endings(&state, &registry, &world, &(vec![(a, P1)], Vec::new()));
+            if let Some(why) = disagreement(&want, &endings, &registry) {
+                failures.push(format!("{} attacking a defender with {which}: {why}", card.name));
+            }
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every enchantment the grammar reads that watches creatures die (Gutter
 /// Grime), on the board under the caster beside a 1/1 Spirit token of
 /// theirs: each creature on the board dies, and each two at once, by
@@ -9813,6 +9900,14 @@ fn the_grammar_reads_its_templates() {
     assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
     let ghoul = Printed { oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".to_string(), ..viper.clone() };
     let ghoul = read_creature(&ghoul).unwrap();
+    let grimgrin = Printed { name: "Grimgrin, Corpse-Born".to_string(), oracle_text: "Grimgrin enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.".to_string(), ..viper.clone() };
+    let grimgrin = read_creature(&grimgrin).unwrap();
+    assert!(grimgrin.enters_tapped && grimgrin.statics == vec![Static::RestrictsItself { what: vec![Restriction::DoesntUntap] }]);
+    assert!(grimgrin.activated[0].sacrifice == Some(Sacrifice::AnotherCreature));
+    assert_eq!(grimgrin.activated[0].spec.effects, vec![Effect::Tap { slot: 0, tapped: false }, Effect::PlusCounters { slot: 0, n: 1 }]);
+    let attack = grimgrin.combat.on_attack.as_deref().expect("an attack trigger");
+    assert_eq!(attack.spec.effects, vec![Effect::Destroy { slot: 0 }, Effect::PlusCounters { slot: 1, n: 1 }]);
+    assert!(matches!(&attack.spec.slots[..], [Slot::Permanent(Filter(c)), Slot::This] if c[0].yours == Some(false)));
     assert!(ghoul.combat.gains_life_when_what_it_damaged_dies && ghoul.watch.is_none(), "a combat line, not a watcher of deaths the grammar reads");
     let hunter = Printed { oracle_text: "When this creature enters, you may exile another target creature.\nWhen this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.".to_string(), ..viper.clone() };
     let hunter = read_creature(&hunter).unwrap();

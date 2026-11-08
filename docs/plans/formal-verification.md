@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-264 of the pool's 268 instants, sorceries, creatures, enchantments,
+265 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -885,9 +885,20 @@ mutants (nothing gained, the printed toughness, the dead creature's
 controller gaining, any creature's damage counted) fail 96, 1, 95 and
 5,355 of the 13,556 default combats; a fifth, the gain resolved after a
 player has lost, survives, since no fight kills the Ghoul's creature in
-the step a player loses. Not yet read: Bitterheart Witch's search for
+the step a player loses. Grimgrin is the first attack trigger read with
+a target, resolved before blockers are declared (508.2, 509.1): it
+attacks a defender with no creature, a Grizzly Bears, a Bears and a
+Walking Corpse, each the target in turn, and an Invisible Stalker,
+which hexproof keeps from being targeted (702.11b, now in the
+reference's targeting), so the trigger is removed and its counter not
+put (603.3d). Its sacrifice of another creature to untap and grow is the
+activated test's, its entering tapped the cast's, and its staying tapped
+the turn's. Eight mutants (no counter, the counter with no target,
+hexproof ignored, its own creatures targeted, no destruction, the
+sacrifice's counter dropped, entering untapped, untapping) each fail.
+Not yet read: Bitterheart Witch's search for
 a Curse put onto the battlefield attached to a target player as it dies,
-Grimgrin's attack trigger with a target, Grimoire of the Dead's study
+Grimoire of the Dead's study
 counters and its return of every creature card under one player, and
 Mirror-Mad Phantasm's shuffle and reveal until it is found; and, of
 templates, hexproof granted to creatures. Each is a
