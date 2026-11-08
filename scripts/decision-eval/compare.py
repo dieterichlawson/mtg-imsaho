@@ -10,7 +10,9 @@ scoring a candidate on (where the reference itself is split, a candidate
 that differs has not been shown to play worse). For each configuration it
 prints how often its action matches the reference — on settled positions
 and on all of them — and what a decision cost it: model calls, output and
-thinking tokens, system prompt and first-prompt bytes. With
+thinking tokens, system prompt and first-prompt bytes. A row the harness
+answered in the seat's place (`fallback`) is counted in its own column and
+in the cost, never scored as an answer, nor in the reference. With
 `--positions` the disagreements are listed with object ids named from
 the saves, for reading by hand.
 
@@ -24,6 +26,8 @@ import argparse
 import collections
 import json
 import os
+
+from answered import answered
 
 SET_LISTS = {"DeclareAttackers": "attackers", "DeclareBlockers": "assignments",
              "DiscardCards": "cards", "BottomCards": "cards"}
@@ -88,15 +92,16 @@ def main():
     ref = load(args.out, args.ref)
     modal, settled = {}, set()
     for pos, rs in ref.items():
-        acts = [norm(r["action"]) for r in rs if r["action"] is not None]
+        acts = [norm(r["action"]) for r in rs if answered(r)]
         if not acts:
             continue
         top, n = collections.Counter(acts).most_common(1)[0]
         modal[pos] = top
         if n == len(acts) and len(acts) >= 1:
             settled.add(pos)
-    # A row without an action is a call that failed, not a sample.
-    ref_samples = max((sum(r["action"] is not None for r in v) for v in ref.values()), default=0)
+    # A row without an action is a call that failed, and a fallback row an
+    # answer the harness chose: neither is a sample.
+    ref_samples = max((sum(answered(r) for r in v) for v in ref.values()), default=0)
     print(f"reference {args.ref}: {len(modal)} positions, {ref_samples} sample(s) each, "
           f"{len(settled)} settled (every sample agreed)")
     print()
@@ -118,6 +123,10 @@ def main():
                 fb += r["fallback"]
                 if r["system_bytes"]: sysb.append(r["system_bytes"])
                 if r["prompt_bytes"]: pb.append(r["prompt_bytes"])
+                # Its cost was spent and it is counted under "fallback", but
+                # the harness's answer is not scored as the seat's (#1010).
+                if r["fallback"]:
+                    continue
                 if pos in modal:
                     same = norm(r["action"]) == modal[pos]
                     n_a += 1; agree_a += same

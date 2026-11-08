@@ -13,8 +13,9 @@ build's own prompt for the same pack and pool otherwise. One JSON line per
 position and sample goes to `<out>/<name>.jsonl`, in the rows
 `compare.py` reads: the card chosen as the action, the tokens the pick
 cost, and the bytes of the system prompt and the prompt. A position
-already in the file is skipped, so an interrupted run picks up where it
-stopped.
+already answered in the file is skipped, so an interrupted run picks up
+where it stopped; one that failed or whose pick the runner substituted
+(`"fallback": true`) is asked again.
 
 Each position is asked under the guide its seat drafted with, as the
 position records it. `--guide FILE` asks every position under that file
@@ -33,6 +34,7 @@ import sys
 import tempfile
 
 import runstamp
+from answered import answered
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -72,6 +74,8 @@ def run_one(args, pid, position, sample):
     return {
         "position": pid, "sample": sample, "config": args.name, "exit": rc,
         "action": r.get("chosen"), "live": r.get("live"),
+        # The live pick was the runner's substitution, not the seat's (#1010's review).
+        "live_fallback": bool(r.get("live_substituted")),
         "usage": {"calls": u.get("calls", 0), "in": u.get("input", 0), "out": u.get("output", 0),
                   "thinking": 0, "cache_read": u.get("cache_read", 0), "cache_write": u.get("cache_write", 0)},
         "system_bytes": r.get("system_bytes"), "prompt_bytes": r.get("prompt_bytes"),
@@ -123,7 +127,8 @@ def main():
     if os.path.exists(result_path):
         for line in open(result_path):
             r = json.loads(line)
-            if r.get("action") is not None:
+            # A substituted answer is asked again, as a failed call is (#1010).
+            if answered(r):
                 done.add((r["position"], r["sample"]))
     todo = [(f"{i:04d}", l, s) for i, l in enumerate(lines) for s in range(args.samples)
             if (f"{i:04d}", s) not in done]

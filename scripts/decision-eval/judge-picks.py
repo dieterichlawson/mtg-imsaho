@@ -10,7 +10,8 @@ drafter agrees with itself without a guide) where `--config` chose another
 card, the judge is shown the pack, the drafter's pool and the two cards as
 A and B, in an order fixed by a hash of the position, and asked which is
 the better pick. It never sees the guide or which card a guide chose, so
-the yardstick is not the guide's own. Rows go to `DIR/judge-<config>.jsonl`
+the yardstick is not the guide's own. A pick the runner substituted
+(`"fallback": true`) is no answer: its position is left out and named. Rows go to `DIR/judge-<config>.jsonl`
 (a pick already judged is skipped) and the tally is printed: how often the
 guide's card was judged better, worse or even, with a 95% interval on the
 share of decided picks that went the guide's way, and how often the judge
@@ -29,6 +30,8 @@ import re
 import subprocess
 import sys
 import uuid
+
+from answered import answered
 
 SYSTEM = """You are an expert Magic: The Gathering limited player judging booster-draft picks in
 Innistrad (2011, set code ISD): eight drafters, three packs of 14 cards, decks of 40, best-of-three matches.
@@ -56,12 +59,16 @@ def claude(message, model, timeout=600):
 
 
 def answers(path):
-    out = {}
+    """The seat's own answers by position, and the positions where the
+    runner substituted a pick and no row answered it."""
+    out, substituted = {}, set()
     for line in open(path):
         r = json.loads(line)
-        if r.get("action"):
+        if answered(r):
             out[int(r["position"])] = r["action"]
-    return out
+        elif r.get("fallback"):
+            substituted.add(int(r["position"]))
+    return out, substituted - set(out)
 
 
 def prompt(p, a, b):
@@ -99,15 +106,26 @@ def main():
     ap.add_argument("--jobs", type=int, default=4)
     args = ap.parse_args()
     pos = [json.loads(l) for l in open(os.path.join(args.dir, "positions.jsonl")) if l.strip()]
-    ref, ref2, cfg = (answers(os.path.join(args.dir, f"{n}.jsonl")) for n in (args.ref, args.ref2, args.config))
+    names = (args.ref, args.ref2, args.config)
+    got = [answers(os.path.join(args.dir, f"{n}.jsonl")) for n in names]
+    (ref, _), (ref2, _), (cfg, _) = got
+    # A substituted pick is never sent to the judge as anyone's card (#1010).
+    for n, (_, sub) in zip(names, got):
+        if sub:
+            print(f"judge {args.config}: {n}: {len(sub)} substituted {'pick' if len(sub) == 1 else 'picks'} left out "
+                  f"({', '.join(f'{i:04d}' for i in sorted(sub))})", file=sys.stderr)
     todo = [i for i in sorted(cfg) if i in ref and ref.get(i) == ref2.get(i) and cfg[i] != ref[i]]
     path = os.path.join(args.dir, f"judge-{args.config}.jsonl")
     done = {}
     if os.path.exists(path):
         for line in open(path):
             r = json.loads(line)
-            if r.get("verdict"):
-                done[r["position"]] = r
+            # A verdict is on two cards, and stands only while those are
+            # still the answers: one judged before a substituted pick was
+            # asked again (#1010's review) is on a card nobody chose.
+            i = r["position"]
+            if r.get("verdict") and cfg.get(i) == r.get("guide_card") and ref.get(i) == r.get("ref_card"):
+                done[i] = r
     rest = [i for i in todo if i not in done]
     print(f"judge {args.config}: {len(todo)} changed settled picks, {len(rest)} to judge", file=sys.stderr)
     with cf.ThreadPoolExecutor(args.jobs) as pool, open(path, "a") as out:
