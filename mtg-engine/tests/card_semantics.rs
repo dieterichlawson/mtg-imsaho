@@ -365,6 +365,11 @@ enum Effect {
     /// graveyard into their library": the cards still there go to that
     /// library, and the player shuffles it, cards or none (CR 701.20a).
     ShuffleIntoLibrary { player: usize },
+    /// "Target instant or sorcery card in your graveyard gains flashback
+    /// until end of turn. The flashback cost is equal to its mana cost"
+    /// (CR 702.34a): nothing on the board shows it, which
+    /// `every_flashback_grant_is_what_its_text_says` checks.
+    GrantFlashback { slot: usize },
     /// "Destroy all Curses attached to you" (CR 701.8c): at once, each
     /// Curse attached to its controller, whoever controls the Curse.
     DestroyCursesAttachedToYou,
@@ -1776,6 +1781,11 @@ impl Spec {
             let player = self.slot(Slot::Player);
             self.slot(Slot::UpToFromThatPlayersGraveyard { n: number(n)? as usize });
             self.effects.push(Effect::ShuffleIntoLibrary { player });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Target ").and_then(|r| r.strip_suffix(" card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost")) {
+            let slot = self.slot(Slot::GraveyardCard { filter: Some(filter(f)?), yours: true });
+            self.effects.push(Effect::GrantFlashback { slot });
             return Some(());
         }
         if s == "Destroy all Curses attached to you" {
@@ -3990,6 +4000,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.shuffled[p] = true;
                 }
             }
+            Effect::GrantFlashback { .. } => {}
             Effect::DestroyCursesAttachedToYou => {
                 let doomed: Vec<ObjectId> = w.permanents.iter()
                     .filter(|(_, m)| m.subtypes.iter().any(|t| t == "Curse") && m.attached == Some(Target::Player(caster)))
@@ -5743,7 +5754,7 @@ const READ: &[&str] = &[
     "Savannah Lions", "Scourge of Geier Reach", "Screeching Bat", "Selfless Cathar",
     "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
     "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked",
+    "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked", "Snapcaster Mage",
     "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
     "Spare from Evil", "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
     "Stitcher's Apprentice", "Stony Silence", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
@@ -7763,6 +7774,46 @@ fn every_flashback_grant_is_what_its_text_says() {
             }
         }
     }
+    // A creature whose enters trigger gives one target card flashback
+    // (Snapcaster Mage): offered the caster's instant and sorcery cards,
+    // and the one chosen, Lightning Bolt, gains it alone.
+    for (card, _) in cards.iter().filter(|(_, s)| s.etb.as_ref().is_some_and(|t| t.spec.effects.iter().any(|e| matches!(e, Effect::GrantFlashback { .. })))) {
+        checked += 1;
+        let (mut state, world) = board(&registry, &cache);
+        let bolt = card_in_graveyard(&mut state, &registry, "Lightning Bolt", P0);
+        let twice = *world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some("Think Twice")).expect("in the graveyard").0;
+        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+        let mut cast = Some(cast_action(spell, Vec::new()));
+        let mut offered: Option<Vec<Target>> = None;
+        engine::run_game_loop(&mut state, &registry, |s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
+            if let Some(c) = cast.take() {
+                return c;
+            }
+            if let Some(ResolutionChoiceKind::ChooseTarget { options, .. }) = &legal.resolution_prompt {
+                offered = Some(options.clone());
+                return Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(bolt))) };
+            }
+            if s.stack.is_empty() { Action::AbandonGame } else { Action::PassPriority }
+        });
+        let mut want_offered = vec![Target::Object(bolt), Target::Object(twice)];
+        want_offered.sort_by_key(target_key);
+        let mut got_offered = offered.clone().unwrap_or_default();
+        got_offered.sort_by_key(target_key);
+        if got_offered != want_offered {
+            failures.push(format!("{}: its trigger offered {offered:?}, the text allows {want_offered:?}", card.name));
+            continue;
+        }
+        fund(&mut state, P0, &mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost"), 0);
+        let own = read(&cache["Think Twice"]).ok().and_then(|s| s.flashback);
+        for (id, name, want) in [(bolt, "Lightning Bolt", vec![mana_cost("{R}").expect("a cost")]), (twice, "Think Twice", own.into_iter().collect())] {
+            checked += 1;
+            let got = flashback_costs(&state, id);
+            if got != sorted(want.clone()) {
+                failures.push(format!("after {} targeting Lightning Bolt: {name} offered by flashback for {got:?}, the text gives {want:?}", card.name));
+            }
+        }
+    }
     assert!(checked > 0);
     assert!(failures.is_empty(), "{} of {checked} checks disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
@@ -8808,6 +8859,8 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read(&card("X", "Target player shuffles up to three target cards from their graveyard into their library.")).unwrap().slots,
         vec![Slot::Player, Slot::UpToFromThatPlayersGraveyard { n: 3 }]);
     assert!(read(&card("X", "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R}")).unwrap().grants_flashback_to_your_graveyard);
+    let snapcaster = Printed { oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".to_string(), ..viper.clone() };
+    assert!(read_creature(&snapcaster).unwrap().etb.is_some_and(|t| matches!(t.spec.effects[..], [Effect::GrantFlashback { slot: 0 }])));
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

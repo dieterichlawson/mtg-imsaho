@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-249 of the pool's 268 instants, sorceries, creatures, enchantments,
+250 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -820,13 +820,14 @@ hand and by flashback, each set is offered and resolves as the text says
 (701.20a). After Past in Flames resolves, Lightning Bolt and Think Twice
 in the caster's graveyard are offered by flashback for their mana costs,
 Think Twice for its own as well, and Past in Flames, put there as it
-resolves, for its own alone (702.34a, 611.2c). Not yet read: copies,
-other replacement effects (mill instead of damage), counters other than
-+1/+1 and -1/-1, hexproof granted to creatures, attack triggers with
-targets, links between abilities ("the exiled card"), and costs of
-removing counters. Each is a template, or a board, to add; `READ` lists
-the cards read, and a change that stops reading any of them fails and
-names it.
+resolves, for its own alone (702.34a, 611.2c); Snapcaster Mage's trigger
+is offered those two cards, and gives the one chosen flashback alone.
+Not yet read: copies, other replacement effects (mill instead of
+damage), counters other than +1/+1 and -1/-1, hexproof granted to
+creatures, attack triggers with targets, links between abilities ("the
+exiled card"), and costs of removing counters. Each is a template, or a
+board, to add; `READ` lists the cards read, and a change that stops
+reading any of them fails and names it.
 
 ### Cards proved with Kani
 
