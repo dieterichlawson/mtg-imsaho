@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-257 of the pool's 268 instants, sorceries, creatures, enchantments,
+258 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -842,12 +842,17 @@ named as it and untapped, or declines and dies a 0/0 (614.12b). Blazing
 Torch's creature can't be blocked by Vampires or Zombies in every
 Equipment fight, a plain Vampire and Zombie now among the default
 opponents, and the ability it grants sacrifices the Torch, not the
-creature (509.1b, 701.21a). Not yet read: a copy made from a card (Back
-from the Brink), other replacement effects (mill instead of damage),
-counters other than +1/+1 and -1/-1, hexproof granted to creatures,
-attack triggers with targets, and links between abilities ("the exiled
-card"). Each is a template, or a board, to add; `READ` lists the cards
-read, and a change that stops reading any of them fails and names it.
+creature (509.1b, 701.21a). Undead Alchemist's Zombies make the player
+they would deal combat damage to mill that many instead, each creature
+card milled exiled for a 2/2 Zombie; with Inquisitor's Flail's doubling
+or Ghostly Possession's prevention also applying, the player's choice of
+which applies first is played both ways (616.1); and a card milled
+counts in its graveyard, as Runechanter's Pike's bonus reads it. Not yet
+read: a copy made from a card (Back from the Brink), counters other than
++1/+1 and -1/-1, hexproof granted to creatures, attack triggers with
+targets, and links between abilities ("the exiled card"). Each is a
+template, or a board, to add; `READ` lists the cards read, and a change
+that stops reading any of them fails and names it.
 
 ### Cards proved with Kani
 

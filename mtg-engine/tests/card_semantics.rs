@@ -1044,6 +1044,14 @@ enum Static {
     /// 509.1b): the subtypes whose creatures can't block the creature it is
     /// attached to.
     AttachedNotBlockedBy(Vec<String>),
+    /// "If a Zombie you control would deal combat damage to a player,
+    /// instead that player mills that many cards" (CR 614.1a, 701.17a):
+    /// the subtype; no damage is dealt, so nothing that damage would do.
+    MillsInsteadOfCombatDamage(String),
+    /// "Whenever a creature card is put into an opponent's graveyard from
+    /// their library, exile that card and create a 2/2 black Zombie creature
+    /// token" (CR 603.2, 406): for each such card, milled anyhow.
+    OpponentsMilledCreaturesBecomeZombies,
     /// "You have hexproof": its controller can't be the target of spells
     /// or abilities their opponents control (CR 702.11d).
     YouHaveHexproof,
@@ -2268,6 +2276,14 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.may_enter_as_a_copy = true;
             continue;
         }
+        if let Some(t) = line.strip_prefix("If a ").and_then(|r| r.strip_suffix(" you control would deal combat damage to a player, instead that player mills that many cards.")) {
+            spec.statics.push(Static::MillsInsteadOfCombatDamage(t.to_string()));
+            continue;
+        }
+        if line == "Whenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token." {
+            spec.statics.push(Static::OpponentsMilledCreaturesBecomeZombies);
+            continue;
+        }
         if line == "Creatures you control enter as a copy of this creature." {
             spec.statics.push(Static::CreaturesYouControlEnterAsACopy);
             continue;
@@ -3318,6 +3334,38 @@ impl World {
         }
     }
 
+    /// Player `p` mills `n` cards, as many as their library holds (CR
+    /// 701.17a); for each creature card milled, each permanent of an
+    /// opponent's that turns those into Zombies exiles it and makes its
+    /// controller a 2/2 black Zombie (Undead Alchemist's trigger).
+    fn mill(&mut self, p: usize, n: usize) {
+        for _ in 0..n {
+            if self.library[p].is_empty() {
+                break;
+            }
+            let card = self.library[p].remove(0);
+            self.graveyard[p].push(card.clone());
+            if !cached_oracle().get(&card).is_some_and(|c| c.has_type("Creature")) {
+                continue;
+            }
+            let watchers: Vec<PlayerId> = self.permanents.values()
+                .filter(|e| e.controller.0 as usize != p && e.statics.contains(&Static::OpponentsMilledCreaturesBecomeZombies))
+                .map(|e| e.controller)
+                .collect();
+            for who in watchers {
+                self.triggered += 1;
+                if let Some(at) = self.graveyard[p].iter().position(|c| *c == card) {
+                    self.graveyard[p].remove(at);
+                    self.exile[p].push(card.clone());
+                }
+                for _ in 0..self.tokens_per_token(who) {
+                    let t = self.entering(creature_token((2, 2), &[Color::Black], &["Zombie".to_string()], &[], who));
+                    self.tokens.push(t);
+                }
+            }
+        }
+    }
+
     /// How many tokens an effect makes under `player`'s control for each it
     /// says: twice as many for each permanent of theirs that doubles them
     /// (CR 614.1a, 616.1).
@@ -3443,7 +3491,13 @@ impl World {
     }
 
     fn creature_cards_in_graveyard(&self, p: PlayerId) -> u32 {
-        u32::try_from(self.yard.values().filter(|m| m.owner == p && m.is_creature()).count()).expect("a few")
+        u32::try_from(self.graveyard_cards(p, |c| c.has_type("Creature"))).expect("a few")
+    }
+
+    /// How many cards in `p`'s graveyard `of` holds for, by name: every
+    /// card there, milled ones too, which `yard` does not hold by id.
+    fn graveyard_cards(&self, p: PlayerId, of: impl Fn(&Printed) -> bool) -> usize {
+        self.graveyard[p.0 as usize].iter().filter(|n| cached_oracle().get(*n).is_some_and(&of)).count()
     }
 
     /// Apply the static abilities on the battlefield as the board stands
@@ -3516,9 +3570,7 @@ impl World {
                 let k = match per {
                     None => 1,
                     Some(Per::CreatureCards) => count(self.creature_cards_in_graveyard(src.controller) as usize),
-                    Some(Per::InstantAndSorceryCards) => count(self.yard.values()
-                        .filter(|c| c.owner == src.controller && c.types.iter().any(|t| t == "instant" || t == "sorcery"))
-                        .count()),
+                    Some(Per::InstantAndSorceryCards) => count(self.graveyard_cards(src.controller, |c| c.has_type("Instant") || c.has_type("Sorcery"))),
                 };
                 let holds = if_subtype.as_ref().is_none_or(|t| m.subtypes.contains(t));
                 (holds && on_it).then(|| change((power * k, toughness * k), has))
@@ -3544,7 +3596,8 @@ impl World {
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
             Static::YouHaveHexproof | Static::DoublesYourTokens | Static::ArtifactAbilitiesCantBeActivated
             | Static::DamageRemovesACounterInstead | Static::CreaturesYouControlEnterAsACopy
-            | Static::AttachedNotBlockedBy(_) => None,
+            | Static::AttachedNotBlockedBy(_) | Static::MillsInsteadOfCombatDamage(_)
+            | Static::OpponentsMilledCreaturesBecomeZombies => None,
         }
     }
 
@@ -4533,10 +4586,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::MillEach { n } => {
                 for p in 0..2 {
-                    for _ in 0..*n {
-                        let card = w.library[p].remove(0);
-                        w.graveyard[p].push(card);
-                    }
+                    w.mill(p, *n);
                 }
             }
             Effect::PlusCountersEach { filter } => {
@@ -4551,10 +4601,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::MillYou { n } => {
-                for _ in 0..*n {
-                    let card = w.library[c].remove(0);
-                    w.graveyard[c].push(card);
-                }
+                w.mill(c, *n);
             }
             Effect::UntapAll { filter } => {
                 for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
@@ -4678,10 +4725,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::Mill { slot, n } => {
                 if let Some(p) = player(*slot) {
-                    for _ in 0..*n {
-                        let card = w.library[p].remove(0);
-                        w.graveyard[p].push(card);
-                    }
+                    w.mill(p, *n);
                 }
             }
             Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card, half_of } => {
@@ -5782,7 +5826,8 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
-            Some(ResolutionChoiceKind::AssignCombatDamage { options, .. }) | Some(ResolutionChoiceKind::ChooseCardType { options, .. }) => {
+            Some(ResolutionChoiceKind::AssignCombatDamage { options, .. }) | Some(ResolutionChoiceKind::ChooseCardType { options, .. })
+            | Some(ResolutionChoiceKind::ChooseDamageEffect { options, .. }) => {
                 return match script.next() {
                     Some(Answer::Index(i, label)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(*i, label.clone()) },
                     Some(other) => {
@@ -6018,7 +6063,7 @@ const READ: &[&str] = &[
     "Stitcher's Apprentice", "Stony Silence", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
     "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
     "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
-    "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats", "Unbreathing Horde",
+    "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats", "Unbreathing Horde", "Undead Alchemist",
     "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
     "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
     "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
@@ -7083,11 +7128,33 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                     branch.push((Target::Player(P1), power(t), Src::Token(i)));
                 }
             }
-            for branch in branches {
+            // A Zombie's damage to a player that a permanent mills instead
+            // (Undead Alchemist), when its prevention or doubling also
+            // applies: the player chooses which first (CR 616.1), the mill
+            // first leaving nothing for the other, the other first changing
+            // what is milled.
+            let mills = |w: &World, source: &Model| w.permanents.values().any(|e| e.controller == source.controller
+                && e.statics.iter().any(|st| matches!(st, Static::MillsInsteadOfCombatDamage(t) if source.subtypes.contains(t))));
+            let branches: Vec<(Vec<(Target, u32, Src)>, bool)> = branches.into_iter()
+                .flat_map(|branch| {
+                    let ordered = branch.iter().any(|(to, _, from)| {
+                        let source = from.model(&w);
+                        matches!(to, Target::Player(_)) && mills(&w, source)
+                            && (w.combat_damage_prevented(source) || restricted(source, Restriction::DoublesCombatDamage))
+                    });
+                    let orders: &[bool] = if ordered { &[true, false] } else { &[false] };
+                    orders.iter().map(move |&first| (branch.clone(), first)).collect::<Vec<_>>()
+                })
+                .collect();
+            for (branch, mill_first) in branches {
                 let mut w2 = w.clone();
                 let mut to_players: Vec<(Src, u32)> = Vec::new();
                 for (to, n, from) in &branch {
                     let source = from.model(&w).clone();
+                    if let (Target::Player(p), true, true) = (to, mill_first, mills(&w2, &source)) {
+                        w2.mill(p.0 as usize, *n as usize);
+                        continue;
+                    }
                     // Protection and "prevent all combat damage that would
                     // be dealt to and dealt by" it (CR 702.16e, 615.1).
                     let n = match to {
@@ -7110,6 +7177,12 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                             if deal(m, n) {
                                 m.deathtouched |= has(&source, Keyword::Deathtouch);
                             }
+                        }
+                        // A Zombie of a player whose permanent mills instead
+                        // (Undead Alchemist): no damage, so no lifelink.
+                        Target::Player(p) if mills(&w2, &source) => {
+                            w2.mill(p.0 as usize, n as usize);
+                            continue;
                         }
                         Target::Player(p) => {
                             w2.life[p.0 as usize] -= n as i32;
@@ -8745,6 +8818,7 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
                     // type, standing by for the attacker, or a Curse on the
                     // defending player.
                     let watches = (side == P0 && by.1.combat.counters_on_yours.as_ref().is_some_and(|t| attacker.0.types().1.contains(t)))
+                        || (side == P0 && by.1.statics.iter().any(|st| matches!(st, Static::MillsInsteadOfCombatDamage(t) if attacker.0.types().1.contains(t))))
                         || (side == P1 && by.1.combat.counters_on_damage_to_enchanted)
                         // An Aura's or Equipment's combat text on a combatant.
                         || (by.1.combat != CombatText::default()
@@ -9312,6 +9386,8 @@ fn the_grammar_reads_its_templates() {
     let torch = read_artifact(&torch).unwrap();
     assert_eq!(torch.statics, vec![Static::AttachedNotBlockedBy(vec!["Vampire".to_string(), "Zombie".to_string()])]);
     assert!(torch.grants[0].tap && torch.grants[0].sacrifice_granter && torch.grants[0].index == 1);
+    let alchemist = Printed { oracle_text: "If a Zombie you control would deal combat damage to a player, instead that player mills that many cards.\nWhenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token.".to_string(), ..viper.clone() };
+    assert_eq!(read_creature(&alchemist).unwrap().statics, vec![Static::MillsInsteadOfCombatDamage("Zombie".to_string()), Static::OpponentsMilledCreaturesBecomeZombies]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
