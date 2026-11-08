@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-244 of the pool's 268 instants, sorceries, creatures, enchantments,
+245 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -802,13 +802,16 @@ Zombies is offered for each of its controller's Zombie creature cards
 with nothing floating, and for no other creature card and none of the
 opponent's (CR 118.9, 601.2b). Nevermore offers every nonland card's
 name in the pool and nothing else, and with Grizzly Bears named neither
-player may cast it while Lightning Bolt still may be (201.3, 101.2). Not
+player may cast it while Lightning Bolt still may be (201.3, 101.2).
+Spare from Evil's protection from non-Human creatures reaches the combat
+after it: the caster's Grizzly Bears may be blocked by the opponent's
+Human alone, and by all five that may block without it (702.16f). Not
 yet read: copies, other replacement effects (mill instead of damage),
-counters other than +1/+1 and -1/-1, modal spells, protection and
-hexproof granted to creatures, attack triggers with targets, links
-between abilities ("the exiled card"), and costs of removing counters.
-Each is a template, or a board, to add; `READ` lists the cards read, and
-a change that stops reading any of them fails and names it.
+counters other than +1/+1 and -1/-1, modal spells, hexproof granted to
+creatures, attack triggers with targets, links between abilities ("the
+exiled card"), and costs of removing counters. Each is a template, or a
+board, to add; `READ` lists the cards read, and a change that stops
+reading any of them fails and names it.
 
 ### Cards proved with Kani
 

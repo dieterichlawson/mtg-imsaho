@@ -349,6 +349,11 @@ enum Effect {
     /// "Counter target spell" (CR 701.6a): it leaves the stack for its
     /// owner's graveyard, or exile when the text says "exile it instead".
     Counter { slot: usize, exile: bool },
+    /// "<creatures> gain protection from non-<subtype> creatures until end
+    /// of turn" (CR 702.16a, 611.2a): from every creature not of that
+    /// subtype, which can't block them (702.16f) and whose damage to them
+    /// is prevented (702.16e), until the cleanup step.
+    ProtectionFromNonUntilEndOfTurn { filter: Filter, subtype: String },
     /// "Destroy all Curses attached to you" (CR 701.8c): at once, each
     /// Curse attached to its controller, whoever controls the Curse.
     DestroyCursesAttachedToYou,
@@ -1742,6 +1747,12 @@ impl Spec {
             self.effects.push(Effect::LoseAndGain { slot, loses, gains });
             return Some(());
         }
+        if let Some((who, subtype)) = s.split_once(" gain protection from non-")
+            .and_then(|(who, r)| Some((who, r.strip_suffix(" creatures until end of turn")?)))
+        {
+            self.effects.push(Effect::ProtectionFromNonUntilEndOfTurn { filter: filter(who)?, subtype: subtype.to_string() });
+            return Some(());
+        }
         if s == "Destroy all Curses attached to you" {
             self.effects.push(Effect::DestroyCursesAttachedToYou);
             return Some(());
@@ -2739,6 +2750,9 @@ struct Model {
     temp_keywords: Vec<Keyword>,
     /// Keywords lost until end of turn, after every gain (CR 613.1f).
     temp_lost: Vec<Keyword>,
+    /// "Protection from non-<subtype> creatures" until end of turn: the
+    /// subtypes (CR 702.16a).
+    temp_protection_from_non: Vec<String>,
     /// ... and rules: "can't block this turn".
     temp_restricted: Vec<Restriction>,
     /// Who controlled it before an effect that gives it back in the
@@ -2783,6 +2797,7 @@ impl Model {
             temp: (0, 0),
             temp_keywords: Vec::new(),
             temp_lost: Vec::new(),
+            temp_protection_from_non: Vec::new(),
             temp_restricted: Vec::new(),
             stolen_from: None,
             attacking: false,
@@ -3177,7 +3192,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_lost: Vec::new(), temp_restricted: Vec::new(), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_lost: Vec::new(), temp_protection_from_non: Vec::new(), temp_restricted: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -3703,6 +3718,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         temp: (0, 0),
         temp_keywords: Vec::new(),
         temp_lost: Vec::new(),
+        temp_protection_from_non: Vec::new(),
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
@@ -3810,6 +3826,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Destroy { slot } => {
                 if let Some(id) = object(*slot) {
                     w.destroy(id);
+                }
+            }
+            Effect::ProtectionFromNonUntilEndOfTurn { filter, subtype } => {
+                for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
+                    if m.is_creature() && m.matches(filter, caster) {
+                        m.temp_protection_from_non.push(subtype.clone());
+                    }
                 }
             }
             Effect::DestroyCursesAttachedToYou => {
@@ -4737,6 +4760,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
         m.temp = (0, 0);
         m.temp_keywords.clear();
         m.temp_lost.clear();
+        m.temp_protection_from_non.clear();
         m.temp_restricted.clear();
         m.shields = 0;
         if let Some(owner) = m.stolen_from.take() {
@@ -5523,7 +5547,7 @@ const READ: &[&str] = &[
     "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
     "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked",
     "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
-    "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
+    "Spare from Evil", "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
     "Stitcher's Apprentice", "Stony Silence", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
     "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
     "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
@@ -6407,12 +6431,14 @@ fn evasion_allows(attacker: &Model, blocker: &Model) -> bool {
         && !(has(attacker, Keyword::Intimidate)
             && !(blocker.types.iter().any(|t| t == "artifact") || attacker.colors.iter().any(|c| blocker.colors.contains(c))))
         && !a.not_blocked_by.iter().chain(&a.protection_from).any(|t| blocker.subtypes.contains(t))
+        && !attacker.temp_protection_from_non.iter().any(|t| !blocker.subtypes.contains(t))
 }
 
 /// Whether damage `source` would deal `to` is prevented by protection
 /// (CR 702.16e).
 fn protected(to: &Model, source: &Model) -> bool {
     to.combat.protection_from.iter().any(|t| source.subtypes.contains(t))
+        || (source.is_creature() && to.temp_protection_from_non.iter().any(|t| !source.subtypes.contains(t)))
 }
 
 /// Every way a combat in which `a` attacks the opponent, blocked by
@@ -7349,6 +7375,58 @@ fn every_cost_reduction_is_what_its_text_says() {
     }
     assert!(casts > 0);
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// Every instant and sorcery the grammar reads that gives the caster's
+/// creatures protection from creatures not of a subtype until end of turn
+/// (Spare from Evil), cast and resolved, and the caster's Grizzly Bears
+/// then attacking: the opponent's creatures offered to block it are
+/// exactly those the reference lets block it, the ones of that subtype
+/// (CR 702.16f); and without the spell, every one that may block at all.
+#[test]
+fn every_protection_until_end_of_turn_reaches_the_combat_after_it() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.effects.iter().any(|e| matches!(e, Effect::ProtectionFromNonUntilEndOfTurn { .. }))) {
+        for cast in [false, true] {
+            combats += 1;
+            let (mut state, world) = board(&registry, &cache);
+            let bears = world.permanents.iter().find(|(_, m)| m.controller == P0 && m.name.as_deref() == Some("Grizzly Bears")).map(|(id, _)| *id).expect("on the board");
+            let (state, world) = if cast {
+                let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+                fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+                match cast_and_let_resolve(&state, &registry, spell, Vec::new()) {
+                    Ok(after) => (after, resolve(spec, &world, &[], P0, card, spell)),
+                    Err(why) => {
+                        failures.push(format!("{}: {why}", card.name));
+                        continue;
+                    }
+                }
+            } else {
+                (state, world)
+            };
+            let mut want: Vec<ObjectId> = world.permanents.iter()
+                .filter(|(_, m)| m.controller == P1 && m.is_creature() && !m.tapped && evasion_allows(&world.permanents[&bears], m))
+                .map(|(id, _)| *id)
+                .collect();
+            want.sort();
+            let asked = combat_questions(&state, &registry, bears);
+            let Some((legal, _)) = asked.blocks else {
+                failures.push(format!("{}{}: no blockers asked for", if cast { "" } else { "without " }, card.name));
+                continue;
+            };
+            let mut got: Vec<ObjectId> = legal.iter().filter(|(_, attackers)| attackers.contains(&bears)).map(|(b, _)| *b).collect();
+            got.sort();
+            if got != want {
+                failures.push(format!("{}{}: Grizzly Bears may be blocked by {got:?}, the text allows {want:?}", if cast { "" } else { "without " }, card.name));
+            }
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every enchantment the grammar reads that bans a name chosen as it
@@ -8451,6 +8529,8 @@ fn the_grammar_reads_its_templates() {
     let nevermore = Printed { type_line: "Enchantment".to_string(), oracle_text: "As this enchantment enters, choose a nonland card name.\nSpells with the chosen name can't be cast.".to_string(), ..viper.clone() };
     assert!(read_enchantment(&nevermore).unwrap().bans_a_chosen_name);
     assert!(read_enchantment(&Printed { oracle_text: "Spells with the chosen name can't be cast.".to_string(), ..nevermore.clone() }).is_err(), "a name never chosen");
+    assert_eq!(read(&card("X", "Creatures you control gain protection from non-Human creatures until end of turn.")).unwrap().effects,
+        vec![Effect::ProtectionFromNonUntilEndOfTurn { filter: filter("creatures you control").unwrap(), subtype: "Human".to_string() }]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
