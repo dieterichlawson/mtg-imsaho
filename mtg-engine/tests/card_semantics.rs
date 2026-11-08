@@ -643,6 +643,11 @@ struct Spec {
     /// "This creature enters with X +1/+1 counters on it" (CR 614.1c,
     /// 107.3a): the X its spell was cast with.
     enters_with_x_counters: bool,
+    /// "You may have this creature enter as a copy of any creature on the
+    /// battlefield, except it has ..." (CR 614.12b, 707.9): a choice, not a
+    /// target, among the creatures there before it, or none and itself.
+    /// What the exception gives the copy is not observed here.
+    may_enter_as_a_copy: bool,
     /// What it says about attacking, blocking and combat damage.
     combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
@@ -2249,6 +2254,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             .and_then(|(a, b)| (a == b).then(|| a.to_string()))
         {
             spec.enters_with_a_counter_for_each = Some(subtype);
+            continue;
+        }
+        if line.starts_with("You may have this creature enter as a copy of any creature on the battlefield, except it has \"") {
+            spec.may_enter_as_a_copy = true;
             continue;
         }
         if line == "Creatures you control enter as a copy of this creature." {
@@ -5050,6 +5059,19 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
     let mut m = Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) };
     // A permanent of its caster's that has their creatures enter as a copy
     // of it (Essence of the Wild): the creature enters as that, name and all.
+    // A copy of a creature there before it, or of none: its choice as it
+    // enters (CR 614.12b), never itself.
+    if spec.may_enter_as_a_copy {
+        let mut ways = Vec::new();
+        for entering in std::iter::once(m.clone()).chain(world.permanents.values().filter(|c| c.is_creature()).map(|c| Model { name: c.name.clone(), ..copy_of(c, caster) })) {
+            let mut w = world.clone();
+            w.permanents.insert(id, entering);
+            w.source = Some(id);
+            w.state_based_actions();
+            ways.push(w);
+        }
+        return ways;
+    }
     // Its own counters and enters trigger are not the copy's.
     if world.permanents.values().any(|e| e.controller == caster && e.statics.contains(&Static::CreaturesYouControlEnterAsACopy)) {
         let entering = world.entering(m);
@@ -5926,7 +5948,7 @@ const READ: &[&str] = &[
     "Daybreak Ranger", "Dead Weight", "Dearly Departed", "Delver of Secrets", "Demonmail Hauberk",
     "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
     "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor", "Essence of the Wild",
+    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor", "Essence of the Wild", "Evil Twin",
     "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
     "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest", "Fortress Crab",
     "Frightful Delusion", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
@@ -7409,7 +7431,7 @@ fn number_after_the_front(front: &Spec, back: &mut Spec) {
 fn fighters<'a>(cards: &'a [(Printed, Spec)], backs: &'a [(Printed, Spec)]) -> Vec<(&'a Printed, &'a Spec)> {
     cards.iter().chain(backs)
         .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.activated.is_empty()
-            && s.enters_with_a_counter_for_each.is_none() && !s.enters_with_x_counters
+            && s.enters_with_a_counter_for_each.is_none() && !s.enters_with_x_counters && !s.may_enter_as_a_copy
             && s.mana.is_empty() && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
             && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
         .map(|(c, s)| (c, s))
@@ -8548,7 +8570,7 @@ fn every_creature_is_declared_as_its_text_says() {
         let (mut state, mut world, a, _) = arena(&registry, (card, spec), None);
         // A 0/0 but for the counters it enters with (Unbreathing Horde) is
         // declared with one, as placing it gives it none.
-        if spec.enters_with_a_counter_for_each.is_some() || spec.enters_with_x_counters {
+        if spec.enters_with_a_counter_for_each.is_some() || spec.enters_with_x_counters || spec.may_enter_as_a_copy {
             state.get_object_mut(a).expect("placed").counters.insert(CounterType::PlusOnePlusOne, 1);
             let m = world.permanents.get_mut(&a).expect("placed");
             change(m, 1, 1);
@@ -9235,6 +9257,8 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read(&card("X", "Create a token that's a copy of target creature you control.")).unwrap().effects, vec![Effect::TokenCopy { slot: 0 }]);
     let essence = Printed { oracle_text: "Creatures you control enter as a copy of this creature.".to_string(), ..viper.clone() };
     assert_eq!(read_creature(&essence).unwrap().statics, vec![Static::CreaturesYouControlEnterAsACopy]);
+    let twin = Printed { oracle_text: "You may have this creature enter as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\"".to_string(), ..viper.clone() };
+    assert!(read_creature(&twin).unwrap().may_enter_as_a_copy);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

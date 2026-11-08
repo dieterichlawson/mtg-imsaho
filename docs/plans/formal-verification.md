@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-255 of the pool's 268 instants, sorceries, creatures, enchantments,
+256 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -837,13 +837,14 @@ where a creature enters as one (707.2): Cackling Counterpart's token
 takes a creature's copiable values and none of its state, and with
 Essence of the Wild on its side every creature entering there, Grizzly
 Bears cast or Geist of Saint Traft's Angel in combat, is a 6/6 Avatar.
-Not yet read: a copy chosen as a creature enters (Evil Twin) or made
-from a card (Back from the Brink), other replacement effects (mill
-instead of damage), counters other than +1/+1 and -1/-1, hexproof
-granted to creatures, attack triggers with targets, and links between
-abilities ("the exiled card"). Each is a template, or a board, to add;
-`READ` lists the cards read, and a change that stops reading any of them
-fails and names it.
+Evil Twin enters as a copy of each of the eleven creatures on the board,
+named as it and untapped, or declines and dies a 0/0 (614.12b). Not yet
+read: a copy made from a card (Back from the Brink), other replacement
+effects (mill instead of damage), counters other than +1/+1 and -1/-1,
+hexproof granted to creatures, attack triggers with targets, and links
+between abilities ("the exiled card"). Each is a template, or a board,
+to add; `READ` lists the cards read, and a change that stops reading any
+of them fails and names it.
 
 ### Cards proved with Kani
 
