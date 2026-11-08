@@ -123,8 +123,13 @@ def seat_story(night, s):
     """What happened to one seat, in the words the debrief is asked about."""
     seats = night["seats"]
     picks = collections.defaultdict(list)
-    for pack, _, card in s["picks"]:
-        picks[pack].append(card)
+    # A pick the runner substituted is in the pool but was not the seat's
+    # choice: said so, or the debrief draws lessons from a pick nobody made
+    # (#1010's review). Nights before the record kept it say nothing.
+    subbed = {tuple(x) for x in s.get("substituted", [])}
+    for pack, pick, card in s["picks"]:
+        picks[pack].append(f"{card} (taken for you: your answer could not be used)"
+                           if (pack, pick) in subbed else card)
     lines = [f"You were seat {s['seat']} of {night['players']}. Packs 1 and 3 passed left, pack 2 right.",
              "Your picks, in order:"]
     lines += [f"  Pack {p}: " + "; ".join(cards) for p, cards in sorted(picks.items())]

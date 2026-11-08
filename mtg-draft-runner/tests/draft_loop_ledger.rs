@@ -442,3 +442,56 @@ fn the_conventional_guide_is_a_third_group_in_the_ledger_and_the_report() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #1010's review: a pick the runner substituted (the pack's first card,
+/// when the seat's answer could not be used) was counted in `stats` as the
+/// seat taking that card at that pick: it moved `picked` and `avg_pick`,
+/// which the guide-replay instruments use as a yardstick.
+#[test]
+fn a_substituted_pick_is_not_counted_as_the_seat_taking_the_card() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-subbed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = serde_json::json!({"deck": {"maindeck": ["Ambush Viper"], "lands": {"Forest": 17}, "sideboard": []}});
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 2, "best_of": 1,
+        "seats": [{"model": "cc"}, {"model": "cc"}],
+        "decks": [deck, deck],
+        "picks": [
+            {"seat": 0, "round": 1, "pick": 1, "card": "Ambush Viper"},
+            {"seat": 0, "round": 1, "pick": 2, "card": "Naturalize", "substituted": true},
+            {"seat": 1, "round": 1, "pick": 1, "card": "Naturalize"},
+        ],
+        "matches": [],
+    });
+    let snap = dir.join("save.json");
+    std::fs::write(&snap, save.to_string()).unwrap();
+    let ledger = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py");
+    for args in [
+        vec!["night", "--save", snap.to_str().unwrap(), "--night", "2099-01-01", "--out", dir.to_str().unwrap()],
+        vec!["stats", "--out", dir.to_str().unwrap()],
+    ] {
+        let out = Command::new("python3").arg(ledger).args(&args).output().expect("python3 runs");
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    let stats: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("stats.json")).unwrap()).unwrap();
+    let card = |name: &str| stats["cards"].as_array().unwrap().iter()
+        .find(|c| c["card"] == name).unwrap_or_else(|| panic!("{name} in {stats}")).clone();
+    // Seat 1 took Naturalize first; seat 0's second pick was the runner's.
+    assert_eq!(card("Naturalize")["picked"], 1, "{stats}");
+    assert_eq!(card("Naturalize")["avg_pick"], 1.0, "{stats}");
+    assert_eq!(card("Ambush Viper")["picked"], 1, "{stats}");
+    let night: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("nights/2099-01-01.json")).unwrap()).unwrap();
+    assert_eq!(night["seats"][0]["substituted_picks"], 1, "{night}");
+    assert_eq!(night["seats"][0]["substituted"], serde_json::json!([[1, 2]]), "{night}");
+    // The debrief shows the seat that pick as the runner's, not its own.
+    let story = Command::new("python3")
+        .args(["-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import reflect; n = json.load(open(sys.argv[2])); print(reflect.seat_story(n, n['seats'][0]))"])
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop"))
+        .arg(dir.join("nights/2099-01-01.json"))
+        .output().expect("python3 runs");
+    assert!(story.status.success(), "{}", String::from_utf8_lossy(&story.stderr));
+    let story = String::from_utf8_lossy(&story.stdout);
+    assert!(story.contains("Pack 1: Ambush Viper; Naturalize (taken for you: your answer could not be used)"), "{story}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

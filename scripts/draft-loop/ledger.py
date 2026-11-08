@@ -139,6 +139,8 @@ def night(args):
             # [pack, pick within the pack, card], in the order taken.
             "picks": [[p["round"], p["pick"], p["card"]] for p in picks],
             "substituted_picks": sum(1 for p in picks if p.get("substituted")),
+            # Which, so the card stats can leave them out (#1010's review).
+            "substituted": [[p["round"], p["pick"]] for p in picks if p.get("substituted")],
             "notes": save["notes"][seat] if save.get("notes") else None,
             "match_wins": 0, "match_losses": 0, "match_draws": 0, "game_wins": 0, "game_losses": 0, "game_draws": 0,
         })
@@ -298,7 +300,12 @@ def stats(args):
             for g in gs:
                 g["seats"] += 1
             pairs[s["colors"]]["decks"] += 1
-            for _, pick, card in s["picks"]:
+            # A pick the runner substituted (the pack's first card) is not
+            # the seat taking that card at that pick (#1010's review).
+            subbed = {tuple(x) for x in s.get("substituted", [])}
+            for rnd, pick, card in s["picks"]:
+                if (rnd, pick) in subbed:
+                    continue
                 c = cards[front(card)]
                 c["picked"] += 1
                 pick_sum[front(card)] += pick
