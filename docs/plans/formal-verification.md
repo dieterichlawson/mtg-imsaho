@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-236 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+237 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. The latest is Frightful Delusion's
 "unless its controller pays {1}": the spell's controller paying, by
 tapping their Forest, and Giant Growth resolving after; declining, and
@@ -777,13 +777,15 @@ survived became a check or a board: the "may" policies, the stack count,
 test, the opponent casting in the game loop, a Bears cast with no mana
 left. Inquisitor's Flail's replacements are read: combat damage dealt by
 the equipped creature and to it by another each doubled as it is dealt,
-after any prevention (CR 614.1a, 616.1). Not yet read: copies, other
-replacement effects (token doubling, a draw from an empty library, mill
-instead of damage), counters other than +1/+1 and
--1/-1, rule modifiers (cost reductions, "can't be activated", "can't be
-cast"), modal spells, protection and hexproof granted, attack triggers
-with targets, links between abilities ("the exiled card"), and costs of
-tapping other creatures or removing counters. Each is a template, or a
+after any prevention (CR 614.1a, 616.1). Skirsdag High Priest's cost of
+tapping two other creatures is read, each pair of the caster's untapped
+creatures a way to pay it, and its morbid restriction on the board and
+after a death. Not yet read: copies, other replacement effects (token
+doubling, a draw from an empty library, mill instead of damage), counters
+other than +1/+1 and -1/-1, rule modifiers (cost reductions, "can't be
+activated", "can't be cast"), modal spells, protection and hexproof
+granted, attack triggers with targets, links between abilities ("the
+exiled card"), and costs of removing counters. Each is a template, or a
 board, to add; `READ` lists the cards read, and a change that stops
 reading any of them fails and names it.
 

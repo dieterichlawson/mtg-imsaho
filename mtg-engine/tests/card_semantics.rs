@@ -859,6 +859,14 @@ struct Activated {
     sacrifice: Option<Sacrifice>,
     /// "Exile a creature card from your graveyard" in the cost.
     exile_creature_card: bool,
+    /// "Tap two untapped creatures you control" in the cost: how many,
+    /// chosen among the others as it is activated (CR 602.2b, 601.2h); a
+    /// creature not yet under its controller's control since their turn
+    /// began may be tapped so (302.6 limits only its own {T}).
+    tap_others: usize,
+    /// "Activate only if a creature died this turn" (CR 602.5b), after its
+    /// "Morbid —" ability word (207.2c).
+    morbid: bool,
     spec: Spec,
 }
 
@@ -873,10 +881,10 @@ enum Sacrifice {
 /// Read "<cost>: <effect>" when the cost is mana, {T} and sacrificing the
 /// source, and the effect is sentences the grammar reads.
 fn read_activated(line: &str, index: usize) -> Option<Activated> {
-    let (cost, effect) = line.split_once(": ")?;
+    let (cost, effect) = line.strip_prefix("Morbid — ").unwrap_or(line).split_once(": ")?;
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
-        sacrifice: None, exile_creature_card: false, if_you_control: None, spec: Spec::default(),
+        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, spec: Spec::default(),
     };
     for part in cost.split(", ") {
         match part {
@@ -885,6 +893,9 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             "Sacrifice a creature" => ability.sacrifice = Some(Sacrifice::AnyCreature),
             "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
             "Exile a creature card from your graveyard" => ability.exile_creature_card = true,
+            _ if part.starts_with("Tap ") && part.ends_with(" untapped creatures you control") => {
+                ability.tap_others = number(part.strip_prefix("Tap ")?.strip_suffix(" untapped creatures you control")?)? as usize;
+            }
             _ if part.starts_with('{') => ability.mana = mana_cost(part)?,
             _ => return None,
         }
@@ -894,6 +905,8 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             ability.once_each_turn = true;
         } else if sentence.trim() == "Activate only as a sorcery." {
             ability.sorcery = true;
+        } else if sentence.trim() == "Activate only if a creature died this turn." {
+            ability.morbid = true;
         } else if let Some((n, what)) = sentence.trim().strip_prefix("Activate only if you control ")
             .and_then(|r| r.strip_suffix('.'))
             .and_then(|r| r.split_once(" or more "))
@@ -2252,7 +2265,7 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
-                sacrifice, exile_creature_card: false, if_you_control: None, spec: equip,
+                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -4986,6 +4999,8 @@ enum Answer {
     Found(Option<ObjectId>),
     /// A card chosen from a hand, as a discard is.
     Card(ObjectId),
+    /// A set of permanents chosen, as a cost's creatures to tap are.
+    Objects(Vec<ObjectId>),
 }
 
 /// A combat to declare: who attacks whom, and who blocks whom.
@@ -5195,6 +5210,23 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
+            Some(ResolutionChoiceKind::ChooseObjectSet { options, min, max, .. }) => {
+                return match script.next() {
+                    Some(Answer::Objects(ids)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenObjectSet(ids.clone()) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to a choice of permanents"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        let as_targets: Vec<Target> = options.iter().map(|id| Target::Object(*id)).collect();
+                        unanswered = Some(subsets(&as_targets, *max).into_iter()
+                            .filter(|s| s.len() >= *min)
+                            .map(|s| Answer::Objects(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect()))
+                            .collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
             Some(ResolutionChoiceKind::PayOrNot { .. }) => {
                 return match script.next() {
                     Some(Answer::YesNo(pay)) => Action::ResolveChoice { choice: ResolvedChoice::PayDecision(*pay) },
@@ -5395,7 +5427,7 @@ const READ: &[&str] = &[
     "Savannah Lions", "Scourge of Geier Reach", "Screeching Bat", "Selfless Cathar",
     "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
     "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Slayer of the Wicked",
+    "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked",
     "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
     "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
     "Stitcher's Apprentice", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
@@ -5775,15 +5807,18 @@ fn every_readable_activated_ability_does_what_its_text_says() {
             Effect::AtCountersRemoveAllAndTransform { kind, n, .. } => Some([n - 2, n - 1].map(|k| (kind.clone(), k))),
             _ => None,
         });
+        // A morbid ability, on the board and after a death (CR 602.5b).
         let variants = spec.activated.iter()
             .flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c))))
-            .flat_map(|(a, c)| std::iter::once((a, c, None)).chain(counted(a).into_iter().flatten().map(move |k| (a, c, Some(k)))));
-        for (ability, count, already) in variants {
+            .flat_map(|(a, c)| std::iter::once((a, c, None)).chain(counted(a).into_iter().flatten().map(move |k| (a, c, Some(k)))))
+            .flat_map(|(a, c, k)| [false, true].into_iter().filter(move |died| !died || a.morbid).map(move |died| (a, c, k.clone(), died)));
+        for (ability, count, already, died) in variants {
             checked += 1;
-            let name = format!("{}'s ability {}{}{}", card.name, ability.index,
+            let name = format!("{}'s ability {}{}{}{}", card.name, ability.index,
                 count.map_or(String::new(), |c| format!(" with {c} of its controller's")),
-                already.as_ref().map_or(String::new(), |(kind, n)| format!(" with {n} {kind} counters on it")));
-            let (mut state, mut world) = board(&registry, &cache);
+                already.as_ref().map_or(String::new(), |(kind, n)| format!(" with {n} {kind} counters on it")),
+                if died { " after a death" } else { "" });
+            let (mut state, mut world) = if died { board_after_a_death(&registry, &cache) } else { board(&registry, &cache) };
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
             if let Some((kind, n)) = &already {
                 state.get_object_mut(id).expect("just placed").counters.insert(counter_named(kind), *n);
@@ -5795,7 +5830,14 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 add_creatures_of(&mut state, &mut world, &registry, &cards, subtype, more, P0);
                 assert_eq!(of(&world, subtype), c, "{name}: the board had more than that already");
             }
-            let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n);
+            // The creatures a "tap N untapped creatures" cost chooses among.
+            let others: Vec<Target> = world.permanents.iter()
+                .filter(|(c, m)| m.controller == P0 && m.is_creature() && !m.tapped && **c != id)
+                .map(|(c, _)| Target::Object(*c))
+                .collect();
+            let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n)
+                && (!ability.morbid || world.a_creature_died)
+                && others.len() >= ability.tap_others;
             world.refresh();
             world.source = Some(id);
             fund(&mut state, P0, &ability.mana, 0);
@@ -5871,6 +5913,18 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     paid.a_creature_died = true;
                 }
                 let mut ways = vec![paid];
+                if ability.tap_others > 0 {
+                    ways = ways.iter()
+                        .flat_map(|w| subsets(&others, ability.tap_others).into_iter().filter(|set| set.len() == ability.tap_others).map(|set| {
+                            let mut w = w.clone();
+                            for t in set {
+                                let Target::Object(c) = t else { unreachable!() };
+                                w.permanents.get_mut(&c).expect("on the battlefield").tapped = true;
+                            }
+                            w
+                        }).collect::<Vec<_>>())
+                        .collect();
+                }
                 if ability.exile_creature_card {
                     ways = ways.iter()
                         .flat_map(|w| w.yard.iter().filter(|(_, m)| m.owner == P0 && m.is_creature()).map(|(c, _)| {
@@ -7882,6 +7936,9 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(gargoyle.activated[0].spec.effects, vec![Effect::LoseAndGain { slot: 0, loses: vec![Keyword::Defender], gains: vec![Keyword::Flying] }]);
     let apprentice = Printed { oracle_text: "{1}{U}, {T}: Create a 2/2 blue Homunculus creature token, then sacrifice a creature.".to_string(), ..viper.clone() };
     assert_eq!(read_creature(&apprentice).unwrap().activated[0].spec.effects.last(), Some(&Effect::SacrificeACreature));
+    let priest = Printed { oracle_text: "Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying. Activate only if a creature died this turn.".to_string(), ..viper.clone() };
+    let priest = &read_creature(&priest).unwrap().activated[0];
+    assert!(priest.tap && priest.tap_others == 2 && priest.morbid);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
