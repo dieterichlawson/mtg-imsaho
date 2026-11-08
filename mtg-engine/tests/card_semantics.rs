@@ -240,6 +240,9 @@ enum Slot {
     /// "target spell", "target noncreature spell": a spell on the stack
     /// (CR 115.1, 405).
     Spell(Filter),
+    /// "target exiled card with flashback you own": a card in exile (CR
+    /// 406), one whose text has flashback, and with `yours`, its caster's.
+    ExiledCard { flashback: bool, yours: bool },
     /// "this creature", "this land": the ability's own source. Not a
     /// target; its place in a target list is filled with the source.
     This,
@@ -1803,6 +1806,11 @@ impl Spec {
             return Some(());
         }
         if let Some(rest) = s.strip_prefix("Return target ") {
+            if rest == "exiled card with flashback you own to your hand" {
+                let slot = self.slot(Slot::ExiledCard { flashback: true, yours: true });
+                self.effects.push(Effect::ToHand { slot });
+                return Some(());
+            }
             if let Some(f) = rest.strip_suffix(" card from your graveyard to your hand") {
                 let slot = self.slot(Slot::GraveyardCard { filter: Some(filter(f)?), yours: true });
                 self.effects.push(Effect::ToHand { slot });
@@ -2625,6 +2633,26 @@ fn board_after_a_death(registry: &CardRegistry, cache: &BTreeMap<String, Printed
     (state, world)
 }
 
+/// The board with three cards in exile: the caster's Think Twice, moved
+/// there from their graveyard, which has flashback; their Walking Corpse,
+/// which does not; and an opponent's Think Twice. What a card that
+/// targets an exiled card is read against.
+fn board_with_exiled_cards(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = board(registry, cache);
+    for name in ["Think Twice", "Walking Corpse"] {
+        let id = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some(name)).map(|(id, _)| *id).expect("in the graveyard");
+        assert!(state.move_object(id, Zone::Exile, registry), "{name} exiled");
+        let m = world.leave_yard(id).expect("in the graveyard");
+        world.exile[0].push(name.to_string());
+        world.exiled.insert(id, m);
+    }
+    let theirs = card_in_graveyard(&mut state, registry, "Think Twice", P1);
+    assert!(state.move_object(theirs, Zone::Exile, registry), "the opponent's Think Twice exiled");
+    world.exile[1].push("Think Twice".to_string());
+    world.exiled.insert(theirs, Model::printed(&cache["Think Twice"], P1));
+    (state, world)
+}
+
 /// The board, with a second Grizzly Bears, the opponent's: what a card that
 /// reads names is read against.
 fn board_with_twins(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
@@ -2900,6 +2928,9 @@ struct World {
     /// The cards in graveyards, by id, for what targets them and counts
     /// them; `graveyard` is the same cards by name.
     yard: BTreeMap<ObjectId, Model>,
+    /// The cards a board starts with in exile, by id, for what targets
+    /// them; `exile` holds them by name too.
+    exiled: BTreeMap<ObjectId, Model>,
     /// A creature died this turn (CR 700.4), which morbid reads.
     a_creature_died: bool,
     /// Spells on the stack below the one being checked, by id, last cast
@@ -3387,6 +3418,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     let mut world = World {
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
+        exiled: BTreeMap::new(),
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
@@ -3619,6 +3651,11 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         Slot::GraveyardCard { filter, yours } => world.yard.iter()
             .filter(|(_, m)| !*yours || m.owner == caster)
             .filter(|(_, m)| filter.as_ref().is_none_or(|f| m.matches(f, caster)))
+            .map(|(id, _)| Target::Object(*id))
+            .collect(),
+        Slot::ExiledCard { flashback, yours } => world.exiled.iter()
+            .filter(|(_, m)| !*yours || m.owner == caster)
+            .filter(|(_, m)| !*flashback || m.name.as_ref().is_some_and(|n| cached_oracle()[n].oracle_text.lines().any(|l| l.starts_with("Flashback "))))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
     };
@@ -4222,6 +4259,11 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 if let Some(id) = object(*slot) {
                     if let Some(card) = w.leave_yard(id) {
                         w.hand[card.owner.0 as usize].push(card.name.expect("a card has a name"));
+                    } else if let Some(card) = w.exiled.remove(&id) {
+                        let (owner, name) = (card.owner.0 as usize, card.name.expect("a card has a name"));
+                        let at = w.exile[owner].iter().position(|n| *n == name).expect("an exiled card is in exile");
+                        w.exile[owner].remove(at);
+                        w.hand[owner].push(name);
                     } else {
                         w.leave(id, Dest::Hand);
                     }
@@ -5541,7 +5583,7 @@ const READ: &[&str] = &[
     "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Parallel Lives", "Paraselene", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
     "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rooftop Storm", "Rotting Fensnake", "Runechanter's Pike",
+    "Riot Devils", "Rolling Temblor", "Rooftop Storm", "Rotting Fensnake", "Runechanter's Pike", "Runic Repetition",
     "Savannah Lions", "Scourge of Geier Reach", "Screeching Bat", "Selfless Cathar",
     "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
     "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
@@ -5621,7 +5663,8 @@ fn every_readable_card_does_what_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut casts = 0;
-    let boards: [(&str, Build); 3] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins)];
+    let boards: [(&str, Build); 4] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
+        (" with exiled cards", board_with_exiled_cards)];
     // A name chosen among hundreds is checked on its own
     // (`every_name_ban_is_what_its_text_says`).
     for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
@@ -5629,7 +5672,8 @@ fn every_readable_card_does_what_its_text_says() {
         // mana test checks it.
         let reads_names = spec.effects.iter().any(|e| matches!(e, Effect::ExileWithSameName { .. }));
         let boards: Vec<&(&str, Build)> = boards.iter().enumerate()
-            .filter(|(i, _)| *i == 0 || (*i == 1 && spec.reads_morbid()) || (*i == 2 && reads_names))
+            .filter(|(i, _)| *i == 0 || (*i == 1 && spec.reads_morbid()) || (*i == 2 && reads_names)
+                || (*i == 3 && spec.slots.iter().any(|s| matches!(s, Slot::ExiledCard { .. }))))
             .map(|(_, b)| b)
             .collect();
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
@@ -6796,6 +6840,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
     let mut world = World {
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
+        exiled: BTreeMap::new(),
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
@@ -8531,6 +8576,8 @@ fn the_grammar_reads_its_templates() {
     assert!(read_enchantment(&Printed { oracle_text: "Spells with the chosen name can't be cast.".to_string(), ..nevermore.clone() }).is_err(), "a name never chosen");
     assert_eq!(read(&card("X", "Creatures you control gain protection from non-Human creatures until end of turn.")).unwrap().effects,
         vec![Effect::ProtectionFromNonUntilEndOfTurn { filter: filter("creatures you control").unwrap(), subtype: "Human".to_string() }]);
+    assert_eq!(read(&card("X", "Return target exiled card with flashback you own to your hand.")).unwrap().slots,
+        vec![Slot::ExiledCard { flashback: true, yours: true }]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

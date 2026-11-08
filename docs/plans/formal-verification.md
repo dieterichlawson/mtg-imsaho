@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-245 of the pool's 268 instants, sorceries, creatures, enchantments,
+246 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -805,8 +805,11 @@ name in the pool and nothing else, and with Grizzly Bears named neither
 player may cast it while Lightning Bolt still may be (201.3, 101.2).
 Spare from Evil's protection from non-Human creatures reaches the combat
 after it: the caster's Grizzly Bears may be blocked by the opponent's
-Human alone, and by all five that may block without it (702.16f). Not
-yet read: copies, other replacement effects (mill instead of damage),
+Human alone, and by all five that may block without it (702.16f). Runic
+Repetition is read against a board with three cards in exile, and may
+target the caster's Think Twice alone, not their Walking Corpse, which
+has no flashback, nor the opponent's Think Twice (406, 115.1). Not yet
+read: copies, other replacement effects (mill instead of damage),
 counters other than +1/+1 and -1/-1, modal spells, hexproof granted to
 creatures, attack triggers with targets, links between abilities ("the
 exiled card"), and costs of removing counters. Each is a template, or a
