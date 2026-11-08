@@ -3,16 +3,18 @@
 night's results as the tables the guide is curated from.
 
     scripts/draft-loop/ledger.py night --save SAVE --positions POS --night DATE \
-        [--guided 0,2,4,6] [--guide GUIDE] [--usage OUT.TXT] [--log DRAFT.LOG] --out reports/draft-loop
+        [--guided 0,4] [--guide GUIDE] [--conventional 2,6] [--conventional-guide GUIDE] \
+        [--usage OUT.TXT] [--log DRAFT.LOG] --out reports/draft-loop
     scripts/draft-loop/ledger.py stats --out reports/draft-loop
 
 `night` reads the runner's `--save` snapshot (picks, decks, matches, each
 seat's notes) and `MTG_DRAFT_POSITIONS` (every pick a seat was asked; a
 pack's last card is taken without asking, so it has none) and writes `<out>/nights/<DATE>.json`: per seat, its colours, deck, record and
-picks, with whether it drafted with the guide. `stats` reads every night
-and writes `<out>/stats.md` and `<out>/stats.json`: guided against
-unguided seats, the colour pairs, and per card how early it is taken, how
-often it makes a deck and how its decks do with it.
+picks, with the guide it drafted with: `loop` (the loop's own `guide.md`),
+`conventional` (the fixed `conventional.md`) or none. `stats` reads every
+night and writes `<out>/stats.md` and `<out>/stats.json`: the seats by
+guide, the colour pairs, and per card how early it is taken, how often it
+makes a deck and how its decks do with it.
 
 Colours come from the mana costs in `data/oracle_cache.json` and rarity
 from the set's print runs, the way `mtg-draft/src/set_data.rs` reads them.
@@ -115,7 +117,8 @@ def final_ranks(log):
 def night(args):
     facts = card_facts()
     save = json.load(open(args.save))
-    guided = {int(s) for s in args.guided.split(",") if s.strip()} if args.guided else set()
+    seat_list = lambda arg: {int(s) for s in arg.split(",") if s.strip()} if arg else set()
+    guided, conventional = seat_list(args.guided), seat_list(args.conventional)
     positions = [json.loads(l) for l in open(args.positions)] if args.positions and os.path.exists(args.positions) else []
     seats = []
     for seat in range(save["players"]):
@@ -125,7 +128,10 @@ def night(args):
         seats.append({
             "seat": seat,
             "model": save["seats"][seat].get("model"),
+            # `guided` is the loop's guide, as it always was; `guide` says
+            # which guide, now that some seats have the conventional one.
             "guided": seat in guided,
+            "guide": "loop" if seat in guided else ("conventional" if seat in conventional else None),
             "colors": deck_colors(deck["maindeck"], facts, deck.get("lands")),
             "maindeck": deck["maindeck"],
             "lands": deck.get("lands", {}),
@@ -175,9 +181,13 @@ def night(args):
     guide_hash = None
     if args.guide and os.path.exists(args.guide):
         guide_hash = hashlib.sha256(open(args.guide, "rb").read()).hexdigest()[:16]
+    conventional_hash = None
+    if conventional and args.conventional_guide and os.path.exists(args.conventional_guide):
+        conventional_hash = hashlib.sha256(open(args.conventional_guide, "rb").read()).hexdigest()[:16]
     record = {
         "night": args.night, "seed": save["seed"], "set": save["set"], "players": save["players"],
-        "best_of": save["best_of"], "guide_hash": guide_hash, "seats": seats, "matches": matches,
+        "best_of": save["best_of"], "guide_hash": guide_hash,
+        **({"conventional_hash": conventional_hash} if conventional_hash else {}), "seats": seats, "matches": matches,
         "offered": offered, "usage": usage_lines(args.usage) if args.usage else None,
         "health": log_health(args.log),
     }
@@ -242,6 +252,28 @@ def pct(w, n):
     return f"{100 * w / n:.0f}%" if n else "-"
 
 
+# A seat's group in the tables: the guide it drafted with. A night from
+# before seats recorded `guide` had the loop's guide on every guided seat.
+GROUPS = {"loop": "guided", "conventional": "conventional", None: "unguided"}
+
+
+def group_of(s):
+    return GROUPS[s.get("guide", "loop" if s["guided"] else None)]
+
+
+def group_rows(group):
+    rows = []
+    for k in GROUPS.values():
+        g = group[k]
+        if not g["seats"]:
+            continue
+        mn = g["match_wins"] + g["match_losses"] + g["match_draws"]
+        gn = g["game_wins"] + g["game_losses"] + g["game_draws"]
+        rows.append(f"| {k} | {g['seats']} | {g['match_wins']}-{g['match_losses']}-{g['match_draws']} | "
+                    f"{pct(g['match_wins'] + 0.5 * g['match_draws'], mn)} | {g['game_wins']}-{g['game_losses']} | {pct(g['game_wins'], gn)} |")
+    return rows
+
+
 def stats(args):
     facts = card_facts()
     nights = [json.load(open(p)) for p in sorted(glob.glob(os.path.join(args.out, "nights", "*.json")))
@@ -249,16 +281,22 @@ def stats(args):
     if not nights:
         sys.exit("no nights recorded yet")
     group = collections.defaultdict(lambda: collections.Counter())
+    # The same, over only the nights that had all three groups, so the
+    # conventional guide is set against the others on the same nights.
+    three = collections.defaultdict(lambda: collections.Counter())
     pairs = collections.defaultdict(lambda: collections.Counter())
     cards = collections.defaultdict(lambda: collections.Counter())
     pick_sum = collections.Counter()
     for n in nights:
+        all_three = {group_of(s) for s in n["seats"]} == set(GROUPS.values())
         for s in n["seats"]:
-            g = group["guided" if s["guided"] else "unguided"]
+            gs = [group[group_of(s)]] + ([three[group_of(s)]] if all_three else [])
             for k in ("match_wins", "match_losses", "match_draws", "game_wins", "game_losses", "game_draws"):
-                g[k] += s[k]
+                for g in gs:
+                    g[k] += s[k]
                 pairs[s["colors"]][k] += s[k]
-            g["seats"] += 1
+            for g in gs:
+                g["seats"] += 1
             pairs[s["colors"]]["decks"] += 1
             for _, pick, card in s["picks"]:
                 c = cards[front(card)]
@@ -296,17 +334,17 @@ def stats(args):
            f"{len(nights)} night(s), {sum(len(n['seats']) for n in nights)} decks, "
            f"{sum(len(m['games']) for n in nights for m in n['matches'])} games. "
            "Written by `scripts/draft-loop/ledger.py stats`; the data is `nights/*.json`.", ""]
+    head = ["| seats | n | matches W-L-D | match win | games W-L | game win |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
     out += ["## Guided against unguided seats", "",
-            "Even seats draft with `guide.md`, odd seats without it, every night.", "",
-            "| seats | n | matches W-L-D | match win | games W-L | game win |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
-    for k in ("guided", "unguided"):
-        g = group[k]
-        if not g["seats"]:
-            continue
-        mn = g["match_wins"] + g["match_losses"] + g["match_draws"]
-        gn = g["game_wins"] + g["game_losses"] + g["game_draws"]
-        out.append(f"| {k} | {g['seats']} | {g['match_wins']}-{g['match_losses']}-{g['match_draws']} | "
-                   f"{pct(g['match_wins'] + 0.5 * g['match_draws'], mn)} | {g['game_wins']}-{g['game_losses']} | {pct(g['game_wins'], gn)} |")
+            "`guided` seats draft with `guide.md`, the guide this loop writes; `conventional` seats with "
+            "`conventional.md`, a fixed guide of standard Innistrad advice; `unguided` seats with none. "
+            "Odd seats are unguided. Every even seat was guided until the conventional guide came in; "
+            "since, seats 0 and 4 are guided and 2 and 6 conventional.", "", *head, *group_rows(group)]
+    n_three = sum({group_of(s) for s in n["seats"]} == set(GROUPS.values()) for n in nights)
+    if n_three:
+        out += ["", f"### The nights with all three ({n_three})", "",
+                "The same seats on the same nights, which is the fair test of the two guides.", "",
+                *head, *group_rows(three)]
     out += ["", "## Colour pairs", "", "A deck's colours are those with four or more of its spells (or three on five basics); a lighter colour is a splash.", "",
             "| colours | decks | matches W-L-D | game win |", "| --- | ---: | ---: | ---: |"]
     for k, p in sorted(pairs.items(), key=lambda kv: (-kv[1]["decks"], kv[0])):
@@ -345,6 +383,8 @@ def main():
     n.add_argument("--night", required=True)
     n.add_argument("--guided", default="")
     n.add_argument("--guide")
+    n.add_argument("--conventional", default="")
+    n.add_argument("--conventional-guide")
     n.add_argument("--usage")
     n.add_argument("--log")
     n.add_argument("--out", required=True)

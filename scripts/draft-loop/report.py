@@ -5,7 +5,7 @@
 
 From the files the night wrote (`ledger.py night`, `reflect.py debrief` and
 `curate`): the standings with each seat's colours and whether it had the
-guide, tonight's guided and unguided records, every seat's lessons, what
+guide (the loop's, the conventional one, or none), tonight's record for each, every seat's lessons, what
 became of the guide, and what the night spent.
 """
 import argparse
@@ -18,6 +18,12 @@ def count(n, one, many=None):
     `mtg_draft_runner::count`, #914; this report said "curator: 1 calls"
     every night, #947)."""
     return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
+# Which guide a seat drafted with; a night from before seats recorded it
+# had the loop's guide on every guided seat.
+def guide_of(s):
+    return s.get("guide", "loop" if s["guided"] else None)
 
 
 def load(path):
@@ -40,10 +46,16 @@ def main():
         order = sorted(seats, key=lambda s: s["rank"])
     else:
         order = sorted(seats, key=lambda s: (-(3 * s["match_wins"] + s["match_draws"]), -s["game_wins"], s["seat"]))
+    def with_(g):
+        n = [str(s["seat"]) for s in seats if guide_of(s) == g]
+        return f"{'seat' if len(n) == 1 else 'seats'} {', '.join(n)}" if n else ""
+    said = ([f"{with_('loop')} drafted with the guide (hash `{night['guide_hash']}`)"] if with_("loop") else []) \
+        + ([f"{with_('conventional')} with the conventional guide (hash `{night.get('conventional_hash')}`)"]
+           if with_("conventional") else []) \
+        + ([f"{with_(None)} without one"] if with_(None) else [])
     out = [f"# Draft loop, {args.night}", "",
            f"Seed {night['seed']}, {night['players']} seats on `{seats[0]['model']}`, best-of-{night['best_of']}; "
-           + (f"even seats drafted with the guide (hash `{night['guide_hash']}`), odd seats without it."
-              if any(s["guided"] for s in seats) else "no seat drafted with a guide."), "",
+           + ("; ".join(said) if with_("loop") or with_("conventional") else "no seat drafted with a guide") + ".", "",
            "| # | seat | guide | colours | matches | games | deck notes |", "| ---: | ---: | --- | --- | ---: | ---: | --- |"]
     for i, s in enumerate(order, 1):
         flags = []
@@ -51,10 +63,10 @@ def main():
             flags.append("substitute deck")
         if s.get("substituted_picks"):
             flags.append(count(s['substituted_picks'], 'pick') + " substituted")
-        out.append(f"| {i} | {s['seat']} | {'yes' if s['guided'] else 'no'} | {s['colors']} | "
+        out.append(f"| {i} | {s['seat']} | {({'loop': 'yes', 'conventional': 'conventional'}).get(guide_of(s), 'no')} | {s['colors']} | "
                    f"{s['match_wins']}-{s['match_losses']}-{s['match_draws']} | {s['game_wins']}-{s['game_losses']} | {', '.join(flags)} |")
-    for label, want in (("guided", True), ("unguided", False)):
-        g = [s for s in seats if s["guided"] == want]
+    for label, want in (("guided", "loop"), ("conventional", "conventional"), ("unguided", None)):
+        g = [s for s in seats if guide_of(s) == want]
         if g:
             out.append(f"\nTonight the {label} seats went {sum(s['match_wins'] for s in g)}-{sum(s['match_losses'] for s in g)} "
                        f"in matches and {sum(s['game_wins'] for s in g)}-{sum(s['game_losses'] for s in g)} in games.")
