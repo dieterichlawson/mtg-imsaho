@@ -1,0 +1,366 @@
+{
+ "night": "2026-11-08",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "I ignored the guide's double-pip warning: Bloodline Keeper and Screeching Bat (2BB) on 7 Swamps went 0-2 to BR, so give BB cards 8+ black sources.",
+    "My BG deck ran only three real removal spells (Prey Upon, Bump in the Night, Geistcatcher's Rig), short of the guide's five-removal target, so take removal before filler.",
+    "My 14-turn loss to BR fits the guide's fast-start warning, and I maindecked Festerhide Boar, a guide-skip card, so cheap blockers should win that slot."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8634,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3616,
+    "output_tokens_details": {
+     "thinking_tokens": 3409
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8634
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3616,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8634,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8634,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Seven Mountains was thin for a red package of three Crossway Vampires, Geistflame, Night Revelers, Pitchburn Devils and Into the Maw of Hell; count coloured pips before settling on 7/10 land splits.",
+    "Both lost matches, to BG and WB, went 17 to 32 turns, and I had cut Divine Reckoning and Rally the Peasants, so keep one flexible late-game card in a WR aggro build.",
+    "Round 2's 2-0 win came from the aggressive curve, so when a deck has two or three playable colours, prioritise a consistent early curve over speculative late cards."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3251,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2541,
+    "output_tokens_details": {
+     "thinking_tokens": 2325
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3251
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2541,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3251,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3251,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Red removal first: Brimstone Volley, Geistflame, Into the Maw of Hell, Curse of the Pierced Heart and Sever the Bloodline carried BR to 3-0 (6-1 in games); take cheap removal over the next creature.",
+    "Tonight contradicted the guide's 8-source rule: BB Bloodgift Demon and Ghoulraiser on 7 Swamps went 3-0 with one game lost; treat that as one sample, not proof the rule is wrong.",
+    "Pair cheap bodies with removal: Typhoid Rats, Ashmouth Hound and two Feral Ridgewolf were the early bodies while burn and curses finished, matching the guide's warning against cutting blockers for a fourth flier."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8626,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3761,
+    "output_tokens_details": {
+     "thinking_tokens": 3502
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8626
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3761,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8626,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8626,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "My UR tempo build went 2-5 in games, and the two losses to BR and WR ran 16 to 26 turns without a closer, so prioritize resilient finishers like Stitched Drake and Moon Heron over fillers like Trepanation Blade.",
+    "WR's two Fiend Hunter and two Avacynian Priest answered my early creatures one for one, so favor threats that generate card advantage over spot removal when the white decks are in the pod.",
+    "Blue interaction won tonight: Frightful Delusion and fliers carried my 2-1 win over UB, so take Frightful Delusion-style tap or counter effects early when blue is open."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3314,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1699,
+    "output_tokens_details": {
+     "thinking_tokens": 1477
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3314
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1699,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3314,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3314,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Add evasion: my BG deck had only Falkenrath Noble as a flier and lost 1-2 to BR's Brimstone Volley and Geistflame, so take a second flier or Spider Spawning over a Walking Corpse.",
+    "The guide says skip Ghoulcaller's Bell, yet I took it at pick 13; in 26- and 30-turn stalls, Ghoulcaller's Chant-style card advantage decides games, so take it instead.",
+    "The guide calls Walking Corpse filler, and I maindecked it anyway; against BR's Typhoid Rats and Feral Ridgewolf I needed a sturdier early body, so take Villagers of Estwald over it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8608,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3535,
+    "output_tokens_details": {
+     "thinking_tokens": 3296
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8608
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3535,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8608,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8608,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "U",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't go mono-blue on 17 lands with artifacts: I left out Dead Weight, Smite the Monstrous, two Rebukes and Brimstone Volley, then lost 1-2 to the BG deck.",
+    "Against BG's green bodies my games ran 26 and 30 turns, and Claustrophobia and Hysterical Blindness couldn't clear them, so a second colour's removal was worth more than blue filler.",
+    "Expect blue to be contested: seat 7's UB deck also ran Forbidden Alchemy, Spectral Flight, Silent Departure and Think Twice, so take the blue staples early."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3313,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1786,
+    "output_tokens_details": {
+     "thinking_tokens": 1568
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3313
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1786,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3313,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3313,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "Contradicts the guide's WB-is-weak line: my WB went 2-1 on two Dead Weight, Victim of Night, Urgent Exorcism, Ghostly Possession and cheap white bodies, though it split 4-4 in games.",
+    "I ran Victim of Night and Morkrut Banshee, both BB, on 12 Plains and 5 Swamp, against the guide's 8-source rule for double pips; count pips before choosing the split.",
+    "Lost 0-2 to a BG deck that also ran Victim of Night and Morkrut Banshee, the same cards I drafted, so expect rivals to share these picks and take them early."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 8595,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3290,
+    "output_tokens_details": {
+     "thinking_tokens": 3067
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 8595
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3290,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 8595,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 8595,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Don't take Balefire Dragon or Olivia Voldaren as first picks in a two-colour draft: both were cut, so those early picks contributed nothing to a UB deck that went 3-6 in games.",
+    "Grasp of Phantoms was my main-deck removal, yet I sided it out in rounds 1 and 2, and both matches went to game three, which I lost each time.",
+    "All three of my matches went 1-2, so prioritise early interaction and blockers over marginal cards like Dissipate and Frightful Delusion, which I cut from the deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3442,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1961,
+    "output_tokens_details": {
+     "thinking_tokens": 1769
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3442
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1961,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3442,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3442,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
