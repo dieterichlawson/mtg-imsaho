@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-240 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+241 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. The latest is Frightful Delusion's
 "unless its controller pays {1}": the spell's controller paying, by
 tapping their Forest, and Giant Growth resolving after; declining, and
@@ -790,8 +790,11 @@ and with them when it is the caster's own (702.11d); and its enters
 trigger destroys the opponent's Curse on its caster. Laboratory
 Maniac's replacement is checked by playing the game out: its controller,
 drawing from an empty library, wins; without it, or with the opponent's,
-they lose for the draw (CR 614.1a, 104.2b, 704.5b). Not yet read: copies, other replacement
-effects (token doubling, mill instead of damage), counters other than +1/+1 and -1/-1, rule modifiers ("can't be
+they lose for the draw (CR 614.1a, 104.2b, 704.5b). Parallel Lives
+doubles the tokens of every untargeted token spell read (Army of the
+Damned's thirteen Zombies become twenty-six) on its controller's side
+and of none on the opponent's. Not yet read: copies, other replacement
+effects (mill instead of damage), counters other than +1/+1 and -1/-1, rule modifiers ("can't be
 activated", "can't be cast"), modal spells, protection and hexproof
 granted to creatures, attack triggers with targets, links between abilities ("the
 exiled card"), and costs of removing counters. Each is a template, or a

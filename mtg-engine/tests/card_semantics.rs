@@ -968,6 +968,10 @@ enum Static {
     /// "You have hexproof": its controller can't be the target of spells
     /// or abilities their opponents control (CR 702.11d).
     YouHaveHexproof,
+    /// "If an effect would create one or more tokens under your control, it
+    /// creates twice that many of those tokens instead" (CR 614.1a): each
+    /// such permanent its controller controls doubles again (616.1).
+    DoublesYourTokens,
 }
 
 /// A rule a static ability puts on a creature (CR 508.1c-d, 509.1b,
@@ -2419,6 +2423,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.extend(statics);
             continue;
         }
+        if body == "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead" {
+            spec.statics.push(Static::DoublesYourTokens);
+            continue;
+        }
         if let Some(n) = body.strip_prefix("Creature spells you cast cost ").and_then(|r| r.strip_suffix(" less to cast")) {
             let [ManaSymbol::Generic(n)] = mana_cost(n).ok_or_else(unread)?.symbols[..] else { return Err(unread()) };
             spec.creature_spells_cost_less = Some(n);
@@ -3033,6 +3041,14 @@ impl World {
         (p.map(|p| p + m.boost.0 + m.temp.0), t.map(|t| t + m.boost.1 + m.temp.1))
     }
 
+    /// How many tokens an effect makes under `player`'s control for each it
+    /// says: twice as many for each permanent of theirs that doubles them
+    /// (CR 614.1a, 616.1).
+    fn tokens_per_token(&self, player: PlayerId) -> usize {
+        let doublers = self.permanents.values().filter(|m| m.controller == player && m.statics.contains(&Static::DoublesYourTokens)).count();
+        1 << doublers
+    }
+
     /// Whether `player` can pay {`n`}: what floats in their pool and the
     /// untapped basic lands they control.
     fn can_pay_generic(&self, player: PlayerId, n: u32) -> bool {
@@ -3236,7 +3252,7 @@ impl World {
             }
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
-            Static::YouHaveHexproof => None,
+            Static::YouHaveHexproof | Static::DoublesYourTokens => None,
         }
     }
 
@@ -4245,7 +4261,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     Some(f) => w.permanents.values().chain(&w.tokens).filter(|m| m.matches(f, caster)).count() / 2,
                     None => times,
                 };
-                for _ in 0..times {
+                for _ in 0..times * w.tokens_per_token(caster) {
                     w.tokens.push(Model { tapped: *tapped, ..creature_token((*power, *toughness), colors, subtypes, keywords, caster) });
                 }
             }
@@ -4434,7 +4450,7 @@ fn sacrifice_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World>
     let Some(at) = spec.effects.iter().position(|e| *e == Effect::SacrificeACreature) else { return vec![world.clone()] };
     let made: usize = spec.effects[..at].iter()
         .map(|e| match e {
-            Effect::Tokens { n, per_creature_card: false, half_of: None, .. } => *n,
+            Effect::Tokens { n, per_creature_card: false, half_of: None, .. } => *n * world.tokens_per_token(caster),
             Effect::Tokens { .. } => panic!("the reference counts the tokens of a fixed number made before a sacrifice"),
             _ => 0,
         })
@@ -5469,7 +5485,7 @@ const READ: &[&str] = &[
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
     "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
     "Night Revelers", "Night Terrors", "Nightbird's Clutches", "Olivia Voldaren",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Parallel Lives", "Paraselene", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
     "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
     "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
@@ -7304,6 +7320,49 @@ fn every_cost_reduction_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every permanent the grammar reads that doubles the tokens its
+/// controller's effects make (Parallel Lives), on either side: each
+/// instant and sorcery the grammar reads that makes tokens, targets
+/// nothing and asks nothing, cast and resolved as its text says, twice as
+/// many tokens with the permanent on the caster's side and as many as it
+/// says on the opponent's (CR 614.1a, 111.2).
+#[test]
+fn every_token_doubling_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    let makes_tokens = |(c, s): &&(Printed, Spec)| (c.has_type("Instant") || c.has_type("Sorcery")) && s.slots.is_empty()
+        && s.additional.is_none() && !asks_as_it_resolves(s) && !s.cheaper_per_creature
+        && !mana_cost(&c.mana_cost).is_some_and(|m| m.symbols.contains(&ManaSymbol::X))
+        && s.effects.iter().any(|e| matches!(e, Effect::Tokens { .. }));
+    for (card, spec) in cards.iter().filter(|(_, s)| s.statics.contains(&Static::DoublesYourTokens)) {
+        for side in [P0, P1] {
+            for (spell_card, spell_spec) in cards.iter().filter(makes_tokens) {
+                casts += 1;
+                let (mut state, mut world) = board(&registry, &cache);
+                place_face(&mut state, &mut world, &registry, card, spec, side);
+                world.refresh();
+                let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == spell_card.name) {
+                    Some(o) => o.id,
+                    None => spell_in_hand(&mut state, &registry, &spell_card.name, P0),
+                };
+                fund(&mut state, P0, &mana_cost(&spell_card.mana_cost).expect("a cost"), 0);
+                let want = resolve(spell_spec, &world, &[], P0, spell_card, spell).observed();
+                let at = format!("{} for player {}: {}", card.name, side.0, spell_card.name);
+                match cast_and_let_resolve(&state, &registry, spell, Vec::new()) {
+                    Ok(after) if observe(&after, &registry) == want => {}
+                    Ok(after) => failures.push(format!("{at}:\n      {}", differences(&observe(&after, &registry), &want))),
+                    Err(why) => failures.push(format!("{at}: {why}")),
+                }
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature the grammar reads that wins its controller the game for
 /// a draw from an empty library (Laboratory Maniac): its controller, with
 /// an empty library, casts an untargeted spell the grammar reads that
@@ -8176,6 +8235,8 @@ fn the_grammar_reads_its_templates() {
     assert_eq!((orb.statics, orb.etb.map(|t| t.spec.effects)), (vec![Static::YouHaveHexproof], Some(vec![Effect::DestroyCursesAttachedToYou])));
     let maniac = Printed { oracle_text: "If you would draw a card while your library has no cards in it, you win the game instead.".to_string(), ..viper.clone() };
     assert!(read_creature(&maniac).unwrap().wins_drawing_from_empty_library);
+    let lives = Printed { type_line: "Enchantment".to_string(), oracle_text: "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.".to_string(), ..viper.clone() };
+    assert_eq!(read_enchantment(&lives).unwrap().statics, vec![Static::DoublesYourTokens]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
