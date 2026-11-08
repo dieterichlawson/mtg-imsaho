@@ -918,7 +918,13 @@ black, not Zombies, only its controller's graveyard, under their owners,
 no discard, two counters enough, no study counter) each fail; with an
 Evil Twin card among those it returns, the Twin enters as itself or a
 copy of a creature already there, and a black Zombie either way, which
-found defects 28 and 29. Hexproof granted until end of turn (Ranger's
+found defects 28 and 29. The Kani card proofs of Grimoire of the Dead
+and Moldgraf Monstrosity do not reach that branch: their recorder of a
+move under a player's control reports every card moved at once, so the
+branch where an entry waits, and keeps what it may copy and what it is
+given, is the tests' (the regression tests and this reference) and the
+entering-as-copy proofs', which prove the question asked among what was
+kept and the answer clearing it. Hexproof granted until end of turn (Ranger's
 Guile on the caster's Grizzly Bears) keeps each targeted instant the
 grammar reads, cast by the opponent, off the Bears, and the caster's own
 on (702.11b): the reference's targeting ignoring hexproof fails 6 of
