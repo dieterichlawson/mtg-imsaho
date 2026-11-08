@@ -158,7 +158,8 @@ fn main() {
         println!("{}", serde_json::json!({
             "id": id, "seed": p["seed"], "seat": table.seat, "pack_number": count("pack_number"),
             "pick_index": count("pick_index"), "chosen": pick.card(), "substituted": pick.was_substituted(),
-            "live": p["chosen"], "usage": usage, "system_bytes": client.system_prompt().len(),
+            "live": p["chosen"], "live_substituted": p.get("substituted").and_then(|v| v.as_bool()).unwrap_or(false),
+            "usage": usage, "system_bytes": client.system_prompt().len(),
             "prompt_bytes": prompt.len(), "notes": client.notes(),
         }));
     }
