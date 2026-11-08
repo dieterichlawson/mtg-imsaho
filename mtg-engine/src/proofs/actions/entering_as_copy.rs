@@ -18,7 +18,8 @@ use crate::types::Zone;
 /// The answer recorded and the entry finished (`record_entry_choice`, CR
 /// 614.12b, 110.2): the permanent holds the answer (a copy of the creature
 /// chosen, or declined), is no longer waiting on a choice (every other
-/// permanent waiting still is), and is put onto the battlefield, under the
+/// permanent waiting still is) nor holding what it might copy or be given,
+/// and is put onto the battlefield, under the
 /// player its entry was to give it to if `held` names one, and otherwise
 /// as it enters by default (its owner's control). For either answer,
 /// another permanent waiting or none, and `held` a constant of each
@@ -40,6 +41,9 @@ fn recording(held: Option<PlayerId>) {
     if let Some(p) = held {
         state.pending_entry_controllers.insert(entering, p);
     }
+    // What it may copy and what it is given, kept with the entry.
+    state.pending_entry_options.insert(entering, vec![copied]);
+    state.pending_entry_grants.insert(entering, (Vec::new(), Vec::new()));
     let choice = if kani::any() { EnterAsCopyChoice::Copy(copied) } else { EnterAsCopyChoice::Declined };
 
     crate::replacement::record_entry_choice(&mut state, entering, choice, &registry);
@@ -48,7 +52,7 @@ fn recording(held: Option<PlayerId>) {
     let one = [waiting];
     let still: &[ObjectId] = if other_waits { &one } else { &[] };
     assert!(state.pending_entry_choices.as_slice() == still);
-    assert!(state.pending_entry_controllers.is_empty());
+    assert!(state.pending_entry_controllers.is_empty() && state.pending_entry_options.is_empty() && state.pending_entry_grants.is_empty());
     assert!(match held {
         Some(p) => asked_for(&[Act::MoveUnder(entering, Zone::Battlefield, p)]),
         None => asked_for(&[Act::Move(entering, Zone::Battlefield)]),
@@ -140,6 +144,30 @@ fn asked(
 /// permanent either player's waiting behind one gone, and two other
 /// objects, each on the battlefield or not and a creature or not.
 fn a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there() {
+    asking(false);
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+#[kani::stub(crate::state::GameState::is_creature, creature)]
+#[kani::stub(crate::replacement::record_entry_choice, entry_recorded)]
+#[kani::stub(crate::cards::helpers::present_optional_target_choice, asked)]
+/// [`asking`], for a permanent put onto the battlefield with others, which
+/// kept what was there before them: object 3, object 2 having entered with
+/// it (Evil Twin's ruling), so that only object 3 is offered, if it is
+/// still a creature on the battlefield.
+fn a_permanent_entering_with_others_is_asked_among_the_creatures_there_before_them() {
+    asking(true);
+}
+
+/// [`a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there`],
+/// with the creatures it may copy kept with its entry when `kept`.
+fn asking(kept: bool) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut state = crate::proofs::cards::new_game();
@@ -153,6 +181,9 @@ fn a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there() {
     state.pending_entry_choices.reserve(2);
     state.pending_entry_choices.push(ObjectId(9));
     state.pending_entry_choices.push(entering);
+    if kept {
+        state.pending_entry_options.insert(entering, vec![ObjectId(3)]);
+    }
 
     crate::replacement::process_pending_entry_choices(&mut state, &registry);
 
@@ -160,7 +191,7 @@ fn a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there() {
     let mut n = 0;
     for (i, &o) in on.iter().enumerate() {
         let id = ObjectId(i as u64 + 2);
-        if o && creature(&state, id, &registry) {
+        if o && !(kept && id == ObjectId(2)) && creature(&state, id, &registry) {
             expected[n] = Some(id);
             n += 1;
         }

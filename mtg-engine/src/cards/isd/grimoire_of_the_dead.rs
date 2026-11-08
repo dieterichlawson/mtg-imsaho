@@ -142,7 +142,7 @@ impl CardBehavior for GrimoireOfTheDead {
                 }
 
                 let count = creatures.len();
-                for cid in creatures {
+                for &cid in &creatures {
                     let name = state.obj_name(cid);
                     // A card with a copy choice outstanding (Evil Twin) has
                     // its entry deferred until its controller answers, so it
@@ -151,6 +151,17 @@ impl CardBehavior for GrimoireOfTheDead {
                     // and a Zombie subtype — CR 108.4 and CR 400.7, reported
                     // by the fuzzer from fifteen seeds (issues #335-#349).
                     if !state.move_object_under_control(cid, Zone::Battlefield, controller, registry) {
+                        // Its entry waits on what it enters as a copy of
+                        // (CR 614.12b), asked once the rest have entered: it
+                        // may copy only a creature there before any of them
+                        // (Evil Twin's ruling), and is a black Zombie as
+                        // whatever it enters as.
+                        let before: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).iter()
+                            .filter(|o| !creatures.contains(&o.id) && state.is_creature(o.id, registry))
+                            .map(|o| o.id)
+                            .collect();
+                        state.pending_entry_options.insert(cid, before);
+                        state.pending_entry_grants.insert(cid, (vec!["Zombie".into()], vec![Color::Black]));
                         state.log(crate::state::LogLevel::Event, format!(
                             "Grimoire of the Dead: {name} is choosing what to enter as"));
                         continue;

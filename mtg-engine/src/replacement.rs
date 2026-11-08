@@ -171,13 +171,20 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
         };
         // "A copy of any creature on the battlefield" is a choice, not a
         // target (CR 115.1, 614.12b), so hexproof and protection do not
-        // narrow it.
-        let options: Vec<crate::actions::Target> = state
-            .all_objects_in_zone(Zone::Battlefield)
-            .iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| crate::actions::Target::Object(o.id))
-            .collect();
+        // narrow it. One put onto the battlefield with others chooses among
+        // those there before them (`pending_entry_options`), still there.
+        let options: Vec<crate::actions::Target> = match state.pending_entry_options.get(&object) {
+            Some(before) => before.iter()
+                .filter(|&&id| state.get_object(id).is_some_and(|o| o.zone == Zone::Battlefield) && state.is_creature(id, registry))
+                .map(|&id| crate::actions::Target::Object(id))
+                .collect(),
+            None => state
+                .all_objects_in_zone(Zone::Battlefield)
+                .iter()
+                .filter(|o| state.is_creature(o.id, registry))
+                .map(|o| crate::actions::Target::Object(o.id))
+                .collect(),
+        };
         if options.is_empty() {
             // Nothing to copy: the choice cannot be made, so the permanent
             // enters as its printed self.
@@ -251,6 +258,8 @@ pub fn record_entry_choice(
         obj.entering_copy_choice = choice;
     }
     state.pending_entry_choices.retain(|&id| id != object);
+    state.pending_entry_options.remove(&object);
+    let grant = state.pending_entry_grants.remove(&object);
     // The entry the deferral belonged to may have asked for a controller
     // other than the owner (Grimoire of the Dead, Moldgraf Monstrosity,
     // Fiend Hunter). It was held rather than written, so it is applied now,
@@ -260,6 +269,17 @@ pub fn record_entry_choice(
             state.move_object_under_control(object, Zone::Battlefield, controller, registry),
         None => state.move_object(object, Zone::Battlefield, registry),
     };
+    // What the effect that put it there makes it, now that it is there, as
+    // whatever it entered as.
+    if let Some((subtypes, colors)) = grant.filter(|_| state.get_object(object).is_some_and(|o| o.zone == Zone::Battlefield)) {
+        let types: Vec<String> = subtypes.into_iter().filter(|t| !state.has_subtype(object, t, registry)).collect();
+        let has = state.colors_of(object, registry);
+        let colors: Vec<crate::types::Color> = colors.into_iter().filter(|c| !has.contains(c)).collect();
+        if let Some(obj) = state.get_object_mut(object) {
+            obj.subtypes.extend(types);
+            obj.colors.extend(colors);
+        }
+    }
 }
 
 /// Which half of the entering-replacement order a pass keeps.

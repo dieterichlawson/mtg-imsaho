@@ -70,7 +70,17 @@ impl CardBehavior for MoldgrafMonstrosity {
         let to_return = state.choose_at_random(&creatures_in_gy, 2);
         for cid in &to_return {
             let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object_under_control(*cid, Zone::Battlefield, controller, registry);
+            if !state.move_object_under_control(*cid, Zone::Battlefield, controller, registry) {
+                // Its entry waits on what it enters as a copy of (CR
+                // 614.12b), asked once the other has entered: it may copy
+                // only a creature there before either (Evil Twin's ruling).
+                let before: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).iter()
+                    .filter(|o| !to_return.contains(&o.id) && state.is_creature(o.id, registry))
+                    .map(|o| o.id)
+                    .collect();
+                state.pending_entry_options.insert(*cid, before);
+                continue;
+            }
             state.log(crate::state::LogLevel::Event,
                 format!("Moldgraf Monstrosity: {name} returned to the battlefield"));
         }

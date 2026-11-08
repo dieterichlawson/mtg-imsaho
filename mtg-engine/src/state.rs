@@ -434,6 +434,26 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_controllers: IdMap<PlayerId>,
 
+    /// What a deferred entry may enter as a copy of, when an effect put it
+    /// onto the battlefield with others: the creatures there before that
+    /// effect began, not those entering with it. Evil Twin's ruling: "If
+    /// Evil Twin somehow enters the battlefield at the same time as another
+    /// creature, Evil Twin can't become a copy of that creature." The entry
+    /// is asked after the others have entered (Grimoire of the Dead returning
+    /// every creature card at once), so the list is kept from when it was
+    /// deferred. With none kept, the creatures on the battlefield as it is
+    /// asked.
+    #[serde(default)]
+    pub pending_entry_options: IdMap<Vec<ObjectId>>,
+
+    /// What the effect putting a deferred entry onto the battlefield makes
+    /// it there, given once the entry has happened, after any copy it
+    /// entered as (CR 613.1a, 613.1d-e): subtypes and colours it gains in
+    /// addition to its own (Grimoire of the Dead's "They're black Zombies in
+    /// addition to their other colors and types").
+    #[serde(default)]
+    pub pending_entry_grants: IdMap<(Vec<String>, Vec<crate::types::Color>)>,
+
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
     /// one ends the permanent goes to whichever of the rest is latest — a
@@ -759,6 +779,8 @@ impl GameState {
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
             pending_entry_controllers: IdMap::new(),
+            pending_entry_options: IdMap::new(),
+            pending_entry_grants: IdMap::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
