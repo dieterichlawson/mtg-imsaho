@@ -374,6 +374,12 @@ enum Effect {
     /// 707.2, 111.1): its copiable values, not its counters, damage, state
     /// or what else changes it.
     TokenCopy { slot: usize },
+    /// "Create a token that's a copy of that card", the card its cost
+    /// exiled (CR 707.2, 111.1): its printed copiable values, entering as
+    /// that card would, its enters trigger and all (603.6a);
+    /// `every_copy_of_an_exiled_card_is_what_its_text_says` enters it each
+    /// way it can.
+    TokenCopyOfTheExiledCard,
     /// "Return the exiled card to the battlefield under its owner's
     /// control": the card the source's other ability exiled (CR 607.2a,
     /// 610.3), a new object.
@@ -955,6 +961,11 @@ struct Activated {
     /// "Sacrifice Blazing Torch" in the cost of an ability it grants: the
     /// permanent granting it, not the creature it is on (CR 701.21a).
     sacrifice_granter: bool,
+    /// "Exile a creature card from your graveyard and pay its mana cost"
+    /// (Back from the Brink): the card exiled is chosen as the ability is
+    /// activated, and its mana cost is the ability's, X being 0 (CR
+    /// 602.2b, 107.3); [`Activated::mana`] is then nothing of its own.
+    pays_the_exiled_cards_cost: bool,
     spec: Spec,
 }
 
@@ -972,7 +983,8 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let (cost, effect) = line.strip_prefix("Morbid — ").unwrap_or(line).split_once(": ")?;
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
-        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false, spec: Spec::default(),
+        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false,
+        pays_the_exiled_cards_cost: false, spec: Spec::default(),
     };
     for part in cost.split(", ") {
         match part {
@@ -981,6 +993,10 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             "Sacrifice a creature" => ability.sacrifice = Some(Sacrifice::AnyCreature),
             "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
             "Exile a creature card from your graveyard" => ability.exile_creature_card = true,
+            "Exile a creature card from your graveyard and pay its mana cost" => {
+                ability.exile_creature_card = true;
+                ability.pays_the_exiled_cards_cost = true;
+            }
             "Remove a +1/+1 counter from this creature" => ability.remove_counter = true,
             "Sacrifice ~" => ability.sacrifice_granter = true,
             _ if part.starts_with("Tap ") && part.ends_with(" untapped creatures you control") => {
@@ -997,6 +1013,8 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             ability.sorcery = true;
         } else if sentence.trim() == "Activate only if a creature died this turn." {
             ability.morbid = true;
+        } else if sentence.trim() == "Create a token that's a copy of that card." && ability.exile_creature_card {
+            ability.spec.effects.push(Effect::TokenCopyOfTheExiledCard);
         } else if let Some((n, what)) = sentence.trim().strip_prefix("Activate only if you control ")
             .and_then(|r| r.strip_suffix('.'))
             .and_then(|r| r.split_once(" or more "))
@@ -2539,7 +2557,8 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
-                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false, spec: equip,
+                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false,
+                pays_the_exiled_cards_cost: false, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -4281,6 +4300,8 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::GrantFlashback { .. } => {}
+            // It may enter more than one way, which one world cannot hold.
+            Effect::TokenCopyOfTheExiledCard => unreachable!("entered each way it can by every_copy_of_an_exiled_card_is_what_its_text_says"),
             Effect::TokenCopy { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get(&id)).cloned() {
                     for _ in 0..w.tokens_per_token(caster) {
@@ -5185,15 +5206,25 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
 /// removed (CR 603.3d); a false intervening "if" and it does nothing
 /// (603.4).
 fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printed, id: ObjectId) -> Vec<World> {
+    entering_outcomes(spec, world, caster, Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) }, id)
+}
+
+/// Every way `m`, a creature read as `spec`, can enter the battlefield as
+/// `id` under `caster`: a card cast, or a token copy of one (CR 707.2,
+/// 111.1), whose copiable text replaces and triggers as it enters just as
+/// the card's would (614.1c, 603.6a). A token's name is not observed.
+fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model, id: ObjectId) -> Vec<World> {
     let mut w = world.clone();
-    let mut m = Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) };
     // A permanent of its caster's that has their creatures enter as a copy
     // of it (Essence of the Wild): the creature enters as that, name and all.
     // A copy of a creature there before it, or of none: its choice as it
     // enters (CR 614.12b), never itself.
     if spec.may_enter_as_a_copy {
         let mut ways = Vec::new();
-        for entering in std::iter::once(m.clone()).chain(world.permanents.values().filter(|c| c.is_creature()).map(|c| Model { name: c.name.clone(), ..copy_of(c, caster) })) {
+        let named = m.name.is_some();
+        for entering in std::iter::once(m.clone()).chain(world.permanents.values().filter(|c| c.is_creature())
+            .map(|c| Model { name: c.name.clone().filter(|_| named), ..copy_of(c, caster) }))
+        {
             let mut w = world.clone();
             w.permanents.insert(id, entering);
             w.source = Some(id);
@@ -6066,7 +6097,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 const READ: &[&str] = &[
     "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
-    "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
+    "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Back from the Brink", "Balefire Dragon",
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Blazing Torch", "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
     "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
@@ -6476,8 +6507,11 @@ fn every_readable_activated_ability_does_what_its_text_says() {
     // Each permanent the grammar reads, either face up, with mana for
     // anything and enough of what either face's abilities ask its
     // controller to control: it offers no activated ability its text does
-    // not print (CR 602.1, 712.8d-e).
-    for (card, spec) in cards.iter().chain(&backs).filter(|(c, _)| !c.has_type("Instant") && !c.has_type("Sorcery")) {
+    // not print (CR 602.1, 712.8d-e). One that is an ability for each
+    // card it may exile, numbered by that card (Back from the Brink), is
+    // `every_copy_of_an_exiled_card_is_what_its_text_says`'s.
+    let numbered_by_card = |s: &Spec| s.activated.iter().any(|a| a.pays_the_exiled_cards_cost);
+    for (card, spec) in cards.iter().chain(&backs).filter(|(c, s)| !c.has_type("Instant") && !c.has_type("Sorcery") && !numbered_by_card(s)) {
         let (mut state, mut world) = board(&registry, &cache);
         let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
         if spec.enters_with_x_counters {
@@ -6514,6 +6548,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
         });
         // A morbid ability, on the board and after a death (CR 602.5b).
         let variants = spec.activated.iter()
+            .filter(|a| !a.pays_the_exiled_cards_cost)
             .flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c))))
             .flat_map(|(a, c)| std::iter::once((a, c, None)).chain(counted(a).into_iter().flatten().map(move |k| (a, c, Some(k)))))
             .flat_map(|(a, c, k)| [false, true].into_iter().filter(move |died| !died || a.morbid).map(move |died| (a, c, k.clone(), died)));
@@ -8503,6 +8538,95 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every enchantment the grammar reads whose ability exiles a creature card
+/// from its controller's graveyard and pays that card's mana cost to make a
+/// token copy of it (Back from the Brink), on the board beside each
+/// creature card the grammar reads put into its controller's graveyard: with
+/// mana for anything, it is offered once for each name of creature card in
+/// that graveyard, none of the opponent's (CR 602.2b, 201.2); with the
+/// opponent's spell on the stack, not at all (602.5d); and activated for
+/// the card with only that card's mana cost floating, X being 0 (107.3),
+/// the card is exiled and the token enters as a copy of it would, its text
+/// replacing and triggering as it enters (707.2, 111.1, 614.1c, 603.6a).
+#[test]
+fn every_copy_of_an_exiled_card_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    // The token's place in the reference: no id the engine gives out.
+    const TOKEN: ObjectId = ObjectId(u64::MAX);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.activated.iter().any(|a| a.pays_the_exiled_cards_cost)) {
+        let ability = spec.activated.iter().find(|a| a.pays_the_exiled_cards_cost).expect("just found");
+        assert_eq!(ability.spec.effects, vec![Effect::TokenCopyOfTheExiledCard], "{}: the effect this test enters", card.name);
+        for (creature, creature_spec) in cards.iter().filter(|(c, _)| c.has_type("Creature")) {
+            checked += 1;
+            let (mut state, mut world) = board(&registry, &cache);
+            let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            let exiled = card_in_graveyard(&mut state, &registry, &creature.name, P0);
+            world.yard.insert(exiled, Model::printed(creature, P0));
+            world.graveyard[0].push(creature.name.clone());
+            world.refresh();
+            let offered = |state: &GameState| -> Vec<(String, PlayerId)> {
+                let mut names: Vec<(String, PlayerId)> = engine::legal_actions(state, &registry).actions.iter()
+                    .filter_map(|a| match a {
+                        Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id => {
+                            let o = state.get_object(ObjectId(u64::try_from(*ability_index).expect("an id")))?;
+                            Some((o.name.clone(), if o.zone == Zone::Graveyard { o.owner } else { PlayerId(9) }))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                names.sort();
+                names
+            };
+            let mut rich = state.clone();
+            fund(&mut rich, P0, &mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost"), 0);
+            let mut expected: Vec<(String, PlayerId)> = world.yard.values()
+                .filter(|m| m.owner == P0 && m.is_creature())
+                .map(|m| (m.name.clone().expect("a card"), P0))
+                .collect();
+            expected.sort();
+            expected.dedup();
+            let got = offered(&rich);
+            if got != expected {
+                failures.push(format!("{} beside {}: offered for {got:?}, the text allows {expected:?}", card.name, creature.name));
+                continue;
+            }
+            let (mut busy, mut busy_world) = (rich.clone(), world.clone());
+            the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
+            let busy_expected = if ability.sorcery { Vec::new() } else { expected.clone() };
+            let busy_got = offered(&busy);
+            if busy_got != busy_expected {
+                failures.push(format!("{} beside {}: offered with a spell on the stack for {busy_got:?}, the text allows {busy_expected:?}", card.name, creature.name));
+            }
+            let printed = mana_cost(&creature.mana_cost).expect("a cost");
+            let cost = ManaCost::new(printed.symbols.iter().filter(|s| **s != ManaSymbol::X).cloned().collect());
+            fund(&mut state, P0, &cost, 0);
+            let Some(act) = engine::legal_actions(&state, &registry).actions.into_iter().find(|a| matches!(a,
+                Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id
+                    && state.get_object(ObjectId(u64::try_from(*ability_index).expect("an id"))).is_some_and(|o| o.name == creature.name)))
+            else {
+                failures.push(format!("{} beside {}: not offered with {} floating", card.name, creature.name, creature.mana_cost));
+                continue;
+            };
+            let mut paid = world.clone();
+            let card_exiled = paid.leave_yard(exiled).expect("in the graveyard");
+            paid.exile[0].push(card_exiled.name.expect("a card"));
+            paid.x = 0;
+            let token = Model { name: None, tapped: creature_spec.enters_tapped, ..model_of(creature_spec, creature, P0) };
+            let want = entering_outcomes(creature_spec, &paid, P0, token, TOKEN);
+            let endings = every_ending_from(&state, &registry, None, Some(act));
+            if let Some(why) = disagreement(&want, &endings, &registry) {
+                failures.push(format!("{} copying {}: {why}", card.name, creature.name));
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} copies disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature card the grammar reads that may be cast from its owner's
 /// graveyard (Skaab Ruinator): there, beside the caster's three creature
 /// cards, with its mana cost floating, it is offered cast from the
@@ -9450,6 +9574,10 @@ fn the_grammar_reads_its_templates() {
     let disciple = read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).unwrap();
     assert_eq!((disciple.sacrifice, disciple.spec.effects), (Some(Sacrifice::AnyCreature), vec![Effect::GainLifeEqualToSacrificedToughness]));
     assert!(read_activated("{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.", 1).unwrap().exile_creature_card);
+    let brink = read_activated("Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card. Activate only as a sorcery.", 0).unwrap();
+    assert!(brink.exile_creature_card && brink.pays_the_exiled_cards_cost && brink.sorcery && brink.mana.symbols.is_empty());
+    assert_eq!(brink.spec.effects, vec![Effect::TokenCopyOfTheExiledCard]);
+    assert!(read_activated("{2}: Create a token that's a copy of that card.", 0).is_none(), "no card to copy without one exiled");
     assert!(read_activated("{1}, Sacrifice two creatures: Draw a card.", 0).is_none());
 
     assert_eq!(Additional::read("As an additional cost to cast this spell, sacrifice a creature."), Some(Additional::SacrificeCreature));

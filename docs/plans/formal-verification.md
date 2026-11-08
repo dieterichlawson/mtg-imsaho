@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-261 of the pool's 268 instants, sorceries, creatures, enchantments,
+262 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -857,9 +857,19 @@ exiled card returning under its owner's control as a new object. Skaab
 Ruinator is cast from its graveyard for its printed cost (601.3a),
 exiling three of the four other creature cards there every way and never
 itself, not with a spell on the stack, and Skaab Goliath beside it, with
-no such permission, not at all. Not yet read: a copy made from a card
-(Back from the Brink), counters other than +1/+1 and -1/-1, hexproof
-granted to creatures, and attack triggers with targets. Each is a
+no such permission, not at all. Back from the Brink is checked beside
+each of the 128 creature cards the grammar reads put into its
+controller's graveyard: offered once for each name of creature card
+there and none of the opponent's (602.2b), not with a spell on the stack
+(602.5d), and activated with only the card's mana cost floating, X being
+0 (107.3), the card exiled and a token entering as a copy of it would,
+by the code that enters a cast creature, its enters trigger, counters
+and choices all (707.2, 603.6a). Its first run found defect 26: the copy
+of Evil Twin was never asked what to enter as. Six mutants (no card
+exiled, the token named, the opponent's graveyard offered, the token
+entering bare, X of one, not only as a sorcery) each fail. Not yet read:
+counters other than +1/+1 and -1/-1, hexproof granted to creatures, and
+attack triggers with targets. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change
 that stops reading any of them fails and names it.
 
@@ -1943,6 +1953,7 @@ so each night starts from everything the last one reached.
 | 23 | the autotap planner counted each Deranged Assistant's ability as it is before any of the plan runs, so two over a one-card library were both planned for `{2}`: a cast was offered and then refused, and a resolving "you may pay {2}" was asked, and paying it tapped the first, milled the card and then could not pay (CR 701.17b, 118.3) | proving the planner sound for every board: asking what a step can change that the next step reads | two Deranged Assistants and one card left in the library |
 | 24 | a greedy plan that did not pay was handed on as it was: with nothing in hand to keep payable it was never run, and with something it was run, found not to pay, and returned all the same | the same: reading every way out of `keep_the_hand_castable` | latent: no board of up to three sources reaches it |
 | 25 | the auto-pass gate's count took the most of any one of a source's produced entries for a type, so an ability listing a type twice (`{C}` and `{C}`) counted once, and a cost it pays was ruled out | proving the count necessary in Verus, which asks what an ability adds of each type | latent: every mana ability in the pool adds one kind (`proofs::cards::mana`) |
+| 26 | a token copy of a card that chooses what it enters as was built onto the battlefield, where that choice was never asked: Back from the Brink copying an Evil Twin card made a 0/0 that died, though the token's copiable text is the card's, the choice among it (CR 614.12b, 707.2) | reading Back from the Brink in the `card_semantics` reference, whose token enters as a cast creature would, each way it can | Back from the Brink with Evil Twin in its controller's graveyard, and Cackling Counterpart on an Evil Twin that declined and lives (under Glorious Anthem, say) |
 
 Each has a regression test that fails without its fix.
 
