@@ -564,6 +564,10 @@ struct Spec {
     /// own slots and effects. A mode is told by how many targets it takes,
     /// as each mode read here takes a different number.
     modes: Vec<Spec>,
+    /// "Each instant and sorcery card in your graveyard gains flashback
+    /// until end of turn. The flashback cost is equal to its mana cost"
+    /// (CR 702.34a, 611.2c): the cards there as it resolves, and only those.
+    grants_flashback_to_your_graveyard: bool,
     /// "This creature enters tapped" (CR 614.1c).
     enters_tapped: bool,
     /// "Morbid — This creature enters with N +1/+1 counters on it if a
@@ -2129,6 +2133,10 @@ fn read(card: &Printed) -> Result<Spec, String> {
             spec.morbid = Some((which, n));
             continue;
         }
+        if line == "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost." {
+            spec.grants_flashback_to_your_graveyard = true;
+            continue;
+        }
         if line == "Choose one —" && spec.effects.is_empty() {
             spec.modes.push(Spec::default());
             continue;
@@ -2154,7 +2162,7 @@ fn read(card: &Printed) -> Result<Spec, String> {
     if spec.modes.len() == 1 || (!spec.modes.is_empty() && !spec.effects.is_empty()) {
         return Err("a modal spell of one mode, or of effects besides its modes".to_string());
     }
-    if spec.effects.is_empty() && spec.modes.is_empty() {
+    if spec.effects.is_empty() && spec.modes.is_empty() && !spec.grants_flashback_to_your_graveyard {
         return Err("no effects".to_string());
     }
     Ok(spec)
@@ -5728,7 +5736,7 @@ const READ: &[&str] = &[
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
     "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Nevermore",
     "Night Revelers", "Night Terrors", "Nightbird's Clutches", "Olivia Voldaren",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Parallel Lives", "Paraselene", "Pitchburn Devils",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Parallel Lives", "Paraselene", "Past in Flames", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
     "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
     "Riot Devils", "Rolling Temblor", "Rooftop Storm", "Rotting Fensnake", "Runechanter's Pike", "Runic Repetition",
@@ -7692,6 +7700,73 @@ fn every_name_ban_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {checked} checks disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every spell the grammar reads that gives the instant and sorcery cards
+/// in its caster's graveyard flashback for their mana cost (Past in
+/// Flames), cast from hand with Lightning Bolt beside Think Twice in the
+/// caster's graveyard and mana for anything: before it, Think Twice is
+/// offered by its own flashback alone and Bolt not at all; after it, each
+/// also for its mana cost, and Past in Flames itself, in the graveyard
+/// once it resolves, by its own flashback alone (CR 702.34a, 611.2c).
+#[test]
+fn every_flashback_grant_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let flashback_costs = |state: &GameState, id: ObjectId| -> Vec<ManaCost> {
+        let mut costs: Vec<ManaCost> = engine::legal_actions(state, &registry).castable_spells.into_iter()
+            .filter(|c| c.object_id == id && c.is_flashback)
+            .filter_map(|c| c.alternative_cost)
+            .collect();
+        costs.sort_by_key(|c| format!("{c:?}"));
+        costs.dedup();
+        costs
+    };
+    let sorted = |mut v: Vec<ManaCost>| { v.sort_by_key(|c| format!("{c:?}")); v };
+    for (card, spec) in cards.iter().filter(|(_, s)| s.grants_flashback_to_your_graveyard) {
+        let (mut state, world) = board(&registry, &cache);
+        let bolt = card_in_graveyard(&mut state, &registry, "Lightning Bolt", P0);
+        let twice = *world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some("Think Twice")).expect("in the graveyard").0;
+        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+        let plenty = mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost");
+        let own = |name: &str| read(&cache[name]).ok().and_then(|s| s.flashback);
+        let printed = |name: &str| mana_cost(&cache[name].mana_cost).expect("a cost");
+        let mut before = state.clone();
+        fund(&mut before, P0, &plenty, 0);
+        for (id, name, want) in [(twice, "Think Twice", own("Think Twice").into_iter().collect::<Vec<_>>()), (bolt, "Lightning Bolt", Vec::new())] {
+            checked += 1;
+            let got = flashback_costs(&before, id);
+            if got != sorted(want.clone()) {
+                failures.push(format!("before {}: {name} offered by flashback for {got:?}, its text gives {want:?}", card.name));
+            }
+        }
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+        let after = match cast_and_let_resolve(&state, &registry, spell, Vec::new()) {
+            Ok(after) => after,
+            Err(why) => {
+                failures.push(format!("{}: {why}", card.name));
+                continue;
+            }
+        };
+        let mut after = after;
+        fund(&mut after, P0, &plenty, 0);
+        for (id, name, want) in [
+            (twice, "Think Twice", [own("Think Twice").into_iter().collect::<Vec<_>>(), vec![printed("Think Twice")]].concat()),
+            (bolt, "Lightning Bolt", vec![printed("Lightning Bolt")]),
+            (spell, card.name.as_str(), spec.flashback.clone().into_iter().collect()),
+        ] {
+            checked += 1;
+            let got = flashback_costs(&after, id);
+            if got != sorted(want.clone()) {
+                failures.push(format!("after {}: {name} offered by flashback for {got:?}, the text gives {want:?}", card.name));
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} checks disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every permanent the grammar reads that lets its controller cast
 /// creature spells of a subtype for {0} rather than their mana cost
 /// (Rooftop Storm's Zombies), on the caster's side with every mana source
@@ -8732,6 +8807,7 @@ fn the_grammar_reads_its_templates() {
     assert!(read(&card("X", "Choose one —\n• Draw a card.\n• Draw two cards.")).is_err(), "two modes told apart by nothing they target");
     assert_eq!(read(&card("X", "Target player shuffles up to three target cards from their graveyard into their library.")).unwrap().slots,
         vec![Slot::Player, Slot::UpToFromThatPlayersGraveyard { n: 3 }]);
+    assert!(read(&card("X", "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R}")).unwrap().grants_flashback_to_your_graveyard);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
