@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-262 of the pool's 268 instants, sorceries, creatures, enchantments,
+263 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -867,7 +867,14 @@ by the code that enters a cast creature, its enters trigger, counters
 and choices all (707.2, 603.6a). Its first run found defect 26: the copy
 of Evil Twin was never asked what to enter as. Six mutants (no card
 exiled, the token named, the opponent's graveyard offered, the token
-entering bare, X of one, not only as a sorcery) each fail. Not yet read:
+entering bare, X of one, not only as a sorcery) each fail. Gutter Grime is the first
+enchantment read that watches deaths: on the board beside a Spirit token
+of its controller's, each of the twelve creatures there dies, and each
+two at once, and each nontoken creature of its controller's that does
+puts a slime counter on it and makes an Ooze whose size is the count of
+those counters, read each time (604.3), so that two deaths at once make
+two 2/2s. Five mutants (tokens counted, the Ooze unsized or sized as it
+was made, anyone's creatures counted, no counter put) each fail. Not yet read:
 counters other than +1/+1 and -1/-1, hexproof granted to creatures, and
 attack triggers with targets. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change

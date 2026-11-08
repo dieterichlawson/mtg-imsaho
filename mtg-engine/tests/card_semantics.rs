@@ -288,6 +288,8 @@ struct Clause {
     other: bool,
     /// "Creature tokens": only tokens (CR 111.1).
     token: bool,
+    /// "nontoken creature": only cards.
+    nontoken: bool,
     /// "you control" (Some(true)), "you don't control" / "your opponents
     /// control" (Some(false)).
     yours: Option<bool>,
@@ -380,6 +382,11 @@ enum Effect {
     /// `every_copy_of_an_exiled_card_is_what_its_text_says` enters it each
     /// way it can.
     TokenCopyOfTheExiledCard,
+    /// "Create a green Ooze creature token with \"This token's power and
+    /// toughness are each equal to the number of slime counters on ~.\"":
+    /// a creature token of those colours and subtypes whose size is that
+    /// count on the source, read each time (CR 604.3, 111.4).
+    TokenSizedByCounters { colors: Vec<Color>, subtypes: Vec<String>, kind: String },
     /// "Return the exiled card to the battlefield under its owner's
     /// control": the card the source's other ability exiled (CR 607.2a,
     /// 610.3), a new object.
@@ -1199,6 +1206,36 @@ struct Watch {
     trigger: Trigger,
 }
 
+/// "Whenever <which> dies, [you may] <effect>" (CR 603.2, 603.6c, 700.4):
+/// the deaths, and what each does. An effect ending in a quoted ability
+/// ends `."`, read as the quote closed and then the sentence.
+fn read_watch(line: &str) -> Option<Watch> {
+    let (who, rest) = line.strip_prefix("Whenever ")?.split_once(" dies, ")?;
+    let who = match who {
+        "this creature or another creature" => "creature",
+        w => w.strip_prefix("a ").unwrap_or(w),
+    };
+    let (optional, rest) = match rest.strip_prefix("you may ") {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    let rest = match rest.strip_suffix(".\"") {
+        Some(r) => format!("{r}\"."),
+        None => rest.to_string(),
+    };
+    let mut trigger = Trigger { optional, ..Trigger::default() };
+    for sentence in capitalized(&rest).split_inclusive(". ") {
+        // "You may draw a card. If you do, discard a card": declining
+        // the "may" declines the rest with it.
+        let sentence = match sentence.strip_prefix("If you do, ").filter(|_| optional) {
+            Some(then) => capitalized(then),
+            None => sentence.to_string(),
+        };
+        trigger.spec.sentence(&sentence)?;
+    }
+    Some(Watch { dying: filter(who)?, trigger })
+}
+
 /// "At the beginning of <whose> upkeep, <effect>" (CR 503.1a, 603.2).
 #[derive(Debug, Clone, PartialEq)]
 struct Upkeep {
@@ -1413,6 +1450,8 @@ fn filter(text: &str) -> Option<Filter> {
                 clause.other = true;
             } else if q.eq_ignore_ascii_case("attacking") {
                 clause.attacking = true;
+            } else if *q == "nontoken" {
+                clause.nontoken = true;
             } else if let Some(sub) = q.strip_prefix("non-") {
                 clause.not_types.push(sub.to_string());
             } else if let Some(neg) = q.strip_prefix("non") {
@@ -1757,7 +1796,9 @@ impl Spec {
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
             return Some(());
         }
-        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature")).filter(|k| k.chars().all(char::is_alphabetic)) {
+        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature").or_else(|| r.strip_suffix(" counter on this enchantment")))
+            .filter(|k| k.chars().all(char::is_alphabetic))
+        {
             let slot = self.slot(Slot::This);
             self.effects.push(Effect::NamedCounter { slot, kind: kind.to_string() });
             return Some(());
@@ -2150,6 +2191,21 @@ impl Spec {
     /// "two 1/1 white Spirit creature tokens with flying", "thirteen tapped
     /// 2/2 black Zombie creature tokens", "a 1/1 ... token".
     fn tokens(&mut self, rest: &str) -> Option<()> {
+        if let Some((what, kind)) = rest.split_once(" creature token with \"This token's power and toughness are each equal to the number of ")
+            .and_then(|(w, r)| Some((w.strip_prefix("a ")?, r.strip_suffix(" counters on ~\"")?)))
+        {
+            let mut colors = Vec::new();
+            let mut subtypes = Vec::new();
+            for w in what.split_whitespace() {
+                match color_named(w) {
+                    Some(c) => colors.push(c),
+                    None if w.chars().next().is_some_and(char::is_uppercase) => subtypes.push(w.to_string()),
+                    None => return None,
+                }
+            }
+            self.effects.push(Effect::TokenSizedByCounters { colors, subtypes, kind: kind.to_string() });
+            return Some(());
+        }
         let (rest, per_creature_card) = match rest.strip_suffix(" for each creature card in your graveyard") {
             Some(r) => (r, true),
             None => (rest, false),
@@ -2385,26 +2441,8 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.on_enter = Some(Box::new(read_enter_watch(line).ok_or_else(unread)?));
             continue;
         }
-        if let Some((who, rest)) = line.strip_prefix("Whenever ").and_then(|r| r.split_once(" dies, ")) {
-            let who = match who {
-                "this creature or another creature" => "creature",
-                w => w.strip_prefix("a ").unwrap_or(w),
-            };
-            let (optional, rest) = match rest.strip_prefix("you may ") {
-                Some(r) => (true, r),
-                None => (false, rest),
-            };
-            let mut trigger = Trigger { optional, ..Trigger::default() };
-            for sentence in capitalized(rest).split_inclusive(". ") {
-                // "You may draw a card. If you do, discard a card": declining
-                // the "may" declines the rest with it.
-                let sentence = match sentence.strip_prefix("If you do, ").filter(|_| optional) {
-                    Some(then) => capitalized(then),
-                    None => sentence.to_string(),
-                };
-                trigger.spec.sentence(&sentence).ok_or_else(unread)?;
-            }
-            spec.watch = Some(Box::new(Watch { dying: filter(who).ok_or_else(unread)?, trigger }));
+        if line.starts_with("Whenever ") && line.contains(" dies, ") {
+            spec.watch = Some(Box::new(read_watch(line).ok_or_else(unread)?));
             continue;
         }
         // "When this creature leaves the battlefield, return the exiled
@@ -2682,6 +2720,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.on_cast = Some(Box::new(read_cast_watch(line).ok_or_else(unread)?));
             continue;
         }
+        if line.starts_with("Whenever ") && line.contains(" dies, ") && !spec.enchants {
+            spec.watch = Some(Box::new(read_watch(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some(statics) = restriction_static(body) {
             spec.statics.extend(statics);
             continue;
@@ -2744,7 +2786,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
     }
     if spec.enchants != spec.slots.first().is_some()
         || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default() && spec.on_cast.is_none()
-            && spec.zero_instead_for.is_none() && spec.creature_spells_cost_less.is_none() && !spec.bans_a_chosen_name)
+            && spec.watch.is_none() && spec.zero_instead_for.is_none() && spec.creature_spells_cost_less.is_none() && !spec.bans_a_chosen_name)
     {
         return Err("not an enchantment the grammar reads".to_string());
     }
@@ -3000,6 +3042,10 @@ struct Model {
     counts_creature_cards: bool,
     /// ... or the number of cards in its controller's hand.
     counts_hand: bool,
+    /// ... or the number of counters of a kind on the permanent that made
+    /// it, read each time (Gutter Grime's Ooze; CR 604.3): none once that
+    /// permanent is gone (400.7).
+    counts_counters_on: Option<(ObjectId, String)>,
     /// Its text about combat.
     combat: CombatText,
     /// Its static abilities (CR 604.1), which [`World::refresh`] applies.
@@ -3060,6 +3106,7 @@ impl Model {
             deathtouched: false,
             counts_creature_cards: false,
             counts_hand: false,
+            counts_counters_on: None,
             combat: CombatText::default(),
             statics: Vec::new(),
             granted: Vec::new(),
@@ -3140,6 +3187,7 @@ impl Model {
                 && c.with.iter().all(has)
                 && !(c.other && is_source)
                 && (!c.token || self.name.is_none())
+                && (!c.nontoken || self.name.is_some())
                 && c.yours.is_none_or(|y| (self.controller == caster) == y)
                 // Only an attacking creature is (CR 506.4); the board is in
                 // the precombat main phase.
@@ -3466,6 +3514,9 @@ impl World {
             (n(c), n(c))
         } else if m.counts_hand {
             let c = self.hand[m.controller.0 as usize].len();
+            (n(c), n(c))
+        } else if let Some((source, kind)) = &m.counts_counters_on {
+            let c = self.permanents.get(source).and_then(|s| s.named_counters.get(kind)).copied().unwrap_or(0) as usize;
             (n(c), n(c))
         } else {
             (m.power, m.toughness)
@@ -4136,6 +4187,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         deathtouched: false,
         counts_creature_cards: false,
         counts_hand: false,
+        counts_counters_on: None,
         combat: CombatText::default(),
         statics: Vec::new(),
         granted: Vec::new(),
@@ -4797,6 +4849,14 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Mill { slot, n } => {
                 if let Some(p) = player(*slot) {
                     w.mill(p, *n);
+                }
+            }
+            Effect::TokenSizedByCounters { colors, subtypes, kind } => {
+                let source = w.source.expect("the permanent whose counters it counts");
+                for _ in 0..w.tokens_per_token(caster) {
+                    let t = Model { counts_counters_on: Some((source, kind.clone())), ..creature_token((0, 0), colors, subtypes, &[], caster) };
+                    let t = w.entering(t);
+                    w.tokens.push(t);
                 }
             }
             Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card, half_of } => {
@@ -6118,7 +6178,7 @@ const READ: &[&str] = &[
     "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Chant",
     "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
     "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hamlet Captain",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Gutter Grime", "Hamlet Captain",
     "Hanweir Watchkeep", "Harvest Pyre", "Heartless Summoning", "Heretic's Punishment", "Hinterland Harbor",
     "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
     "Inquisitor's Flail", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
@@ -8538,6 +8598,53 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every enchantment the grammar reads that watches creatures die (Gutter
+/// Grime), on the board under the caster beside a 1/1 Spirit token of
+/// theirs: each creature on the board dies, and each two at once, by
+/// lethal damage, and the triggers its text names for those deaths, as each
+/// last existed (CR 603.10a), resolve each way they can; a "nontoken"
+/// leaves the token out, and "you control" the opponent's (603.2). Gutter
+/// Grime's Oozes are each as big as its slime counters, however many die.
+#[test]
+fn every_death_watching_enchantment_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut deaths = 0;
+    for (card, spec) in cards.iter().filter(|(c, s)| c.has_type("Enchantment") && s.watch.is_some()) {
+        let (mut state, mut world) = board(&registry, &cache);
+        let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        let [spirit] = state.create_tokens_with_subtypes(1, "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], vec!["Spirit".into()], &registry)[..]
+            else { panic!("one token") };
+        state.trigger_event_index = state.events.len();
+        world.permanents.insert(spirit, creature_token((1, 1), &[Color::White], &["Spirit".to_string()], &[], P0));
+        world.source = Some(id);
+        world.refresh();
+        let creatures: Vec<ObjectId> = world.permanents.iter().filter(|(_, m)| m.is_creature()).map(|(c, _)| *c).collect();
+        let mut who: Vec<Vec<ObjectId>> = creatures.iter().map(|c| vec![*c]).collect();
+        for (i, x) in creatures.iter().enumerate() {
+            who.extend(creatures[i + 1..].iter().map(|y| vec![*x, *y]));
+        }
+        for rs in who {
+            deaths += 1;
+            let mut dying = state.clone();
+            for &r in &rs {
+                let lethal = dying.effective_toughness(r, &registry).expect("a creature").max(1);
+                dying.get_object_mut(r).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
+            }
+            let want = death_outcomes(spec, &world, P0, id, &rs, None);
+            let got = every_ending_choosing(&dying, &registry, None, None, None);
+            if let Some(why) = disagreement(&want, &got, &registry) {
+                let names: Vec<&str> = rs.iter().map(|r| world.permanents[r].name.as_deref().unwrap_or("the Spirit token")).collect();
+                failures.push(format!("{} seeing {} die: {why}", card.name, names.join(" and ")));
+            }
+        }
+    }
+    assert!(deaths > 0);
+    assert!(failures.is_empty(), "{} of {deaths} deaths disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every enchantment the grammar reads whose ability exiles a creature card
 /// from its controller's graveyard and pays that card's mana cost to make a
 /// token copy of it (Back from the Brink), on the board beside each
@@ -9574,6 +9681,13 @@ fn the_grammar_reads_its_templates() {
     let disciple = read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).unwrap();
     assert_eq!((disciple.sacrifice, disciple.spec.effects), (Some(Sacrifice::AnyCreature), vec![Effect::GainLifeEqualToSacrificedToughness]));
     assert!(read_activated("{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.", 1).unwrap().exile_creature_card);
+    let grime = read_watch("Whenever a nontoken creature you control dies, put a slime counter on this enchantment, then create a green Ooze creature token with \"This token's power and toughness are each equal to the number of slime counters on ~.\"").unwrap();
+    assert_eq!(grime.trigger.spec.effects, vec![
+        Effect::NamedCounter { slot: 0, kind: "slime".to_string() },
+        Effect::TokenSizedByCounters { colors: vec![Color::Green], subtypes: vec!["Ooze".to_string()], kind: "slime".to_string() },
+    ]);
+    assert!(matches!(&grime.dying.0[..], [c] if c.nontoken && c.yours == Some(true) && c.head.as_deref() == Some("creature")));
+    assert!(filter("nontoken Zombie").is_some_and(|f| f.0[0].nontoken && f.0[0].head.as_deref() == Some("Zombie")));
     let brink = read_activated("Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card. Activate only as a sorcery.", 0).unwrap();
     assert!(brink.exile_creature_card && brink.pays_the_exiled_cards_cost && brink.sorcery && brink.mana.symbols.is_empty());
     assert_eq!(brink.spec.effects, vec![Effect::TokenCopyOfTheExiledCard]);
