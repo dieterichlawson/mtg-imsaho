@@ -349,6 +349,9 @@ enum Effect {
     /// "Counter target spell" (CR 701.6a): it leaves the stack for its
     /// owner's graveyard, or exile when the text says "exile it instead".
     Counter { slot: usize, exile: bool },
+    /// "Destroy all Curses attached to you" (CR 701.8c): at once, each
+    /// Curse attached to its controller, whoever controls the Curse.
+    DestroyCursesAttachedToYou,
     /// "Sacrifice a creature": one its controller chooses among the
     /// creatures they control as it is done, a token made before it in the
     /// same ability among them (CR 701.21a, 608.2c); [`World::sacrificed`]
@@ -958,6 +961,9 @@ enum Static {
     /// printed or gained until end of turn, and not lost (CR 611.3a,
     /// 613.1f).
     AsLongAsItHas { keyword: Keyword, has: Vec<Keyword> },
+    /// "You have hexproof": its controller can't be the target of spells
+    /// or abilities their opponents control (CR 702.11d).
+    YouHaveHexproof,
 }
 
 /// A rule a static ability puts on a creature (CR 508.1c-d, 509.1b,
@@ -1715,6 +1721,10 @@ impl Spec {
             self.effects.push(Effect::LoseAndGain { slot, loses, gains });
             return Some(());
         }
+        if s == "Destroy all Curses attached to you" {
+            self.effects.push(Effect::DestroyCursesAttachedToYou);
+            return Some(());
+        }
         if s == "Sacrifice a creature" {
             self.effects.push(Effect::SacrificeACreature);
             return Some(());
@@ -2250,6 +2260,14 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
         let body = line.strip_suffix('.').unwrap_or(line);
         if line.starts_with("Whenever equipped creature ") {
             spec.combat.read(line).ok_or_else(|| format!("cannot read {line:?}"))?;
+        } else if let Some(rest) = line.strip_prefix("When this artifact enters, ") {
+            let mut chars = rest.chars();
+            let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            let mut trigger = Trigger::default();
+            trigger.spec.sentence(&sentence).ok_or_else(|| format!("cannot read {line:?}"))?;
+            spec.etb = Some(Box::new(trigger));
+        } else if body == "You have hexproof" {
+            spec.statics.push(Static::YouHaveHexproof);
         } else if line == "If equipped creature would deal combat damage, it deals double that damage instead." {
             spec.statics.push(Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None });
         } else if line == "If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead." {
@@ -2280,10 +2298,10 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             spec.activated.push(read_activated(line, index).ok_or_else(|| format!("cannot read {line:?}"))?);
         }
     }
-    if spec.activated.is_empty() && spec.mana.is_empty() {
+    if spec.activated.is_empty() && spec.mana.is_empty() && spec.etb.is_none() && spec.statics.is_empty() {
         return Err("no abilities".to_string());
     }
-    if !spec.statics.is_empty() && !card.type_line.contains("Equipment") {
+    if spec.statics.iter().any(|st| *st != Static::YouHaveHexproof) && !card.type_line.contains("Equipment") {
         return Err("an attached static off an Equipment".to_string());
     }
     Ok(spec)
@@ -3210,6 +3228,7 @@ impl World {
             }
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
+            Static::YouHaveHexproof => None,
         }
     }
 
@@ -3492,10 +3511,14 @@ fn differences(engine: &Observed, text: &Observed) -> String {
 
 /// Every target a slot accepts on `world`, for a spell `caster` casts. No
 /// permanent on the board has hexproof, shroud or protection, so "can be
-/// targeted" is "matches the words" (CR 115.1, 702.11, 702.16).
+/// targeted" is "matches the words" (CR 115.1, 702.11, 702.16); a player
+/// is not a target of their opponent's while a permanent they control
+/// gives them hexproof (702.11d).
 fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
+    let hexproof = |p: PlayerId| p != caster
+        && world.permanents.values().any(|m| m.controller == p && m.statics.contains(&Static::YouHaveHexproof));
     let players = |which: &dyn Fn(PlayerId) -> bool| -> Vec<Target> {
-        [P0, P1].into_iter().filter(|p| which(*p)).map(Target::Player).collect()
+        [P0, P1].into_iter().filter(|p| which(*p) && !hexproof(*p)).map(Target::Player).collect()
     };
     let creatures = || world.permanents.iter()
         .filter(|(_, m)| m.is_creature())
@@ -3733,6 +3756,15 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::Destroy { slot } => {
                 if let Some(id) = object(*slot) {
+                    w.destroy(id);
+                }
+            }
+            Effect::DestroyCursesAttachedToYou => {
+                let doomed: Vec<ObjectId> = w.permanents.iter()
+                    .filter(|(_, m)| m.subtypes.iter().any(|t| t == "Curse") && m.attached == Some(Target::Player(caster)))
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in doomed {
                     w.destroy(id);
                 }
             }
@@ -5446,7 +5478,7 @@ const READ: &[&str] = &[
     "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
     "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
     "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
-    "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
+    "Walking Corpse", "Witchbane Orb", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
     "Wreath of Geists",
 ];
 
@@ -7264,6 +7296,65 @@ fn every_cost_reduction_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every permanent the grammar reads that gives its controller hexproof
+/// ("You have hexproof"), on either side: each instant and sorcery the
+/// grammar reads that targets a player is offered at exactly the targets
+/// the text allows, its caster's opponent left out while the permanent is
+/// theirs and its caster not while it is the caster's own (CR 702.11d,
+/// 115.1); and, with a Curse of the opponent's attached to its caster, cast
+/// and resolved as its text says, its enters trigger included.
+#[test]
+fn every_player_hexproof_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    let targets_a_player = |s: &Spec| s.slots.iter().any(|slot| matches!(slot, Slot::Any | Slot::Player | Slot::PlayerOrPlaneswalker | Slot::Opponent));
+    for (card, spec) in cards.iter().filter(|(_, s)| s.statics.contains(&Static::YouHaveHexproof)) {
+        for side in [P0, P1] {
+            for (spell_card, spell_spec) in cards.iter().filter(|(c, s)| (c.has_type("Instant") || c.has_type("Sorcery")) && targets_a_player(s)) {
+                casts += 1;
+                let (mut state, mut world) = board(&registry, &cache);
+                place_face(&mut state, &mut world, &registry, card, spec, side);
+                world.refresh();
+                let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == spell_card.name) {
+                    Some(o) => o.id,
+                    None => spell_in_hand(&mut state, &registry, &spell_card.name, P0),
+                };
+                fund(&mut state, P0, &mana_cost(&spell_card.mana_cost).expect("a cost"), 0);
+                let want = target_sets(spell_spec, &world, P0);
+                match offered(&state, &registry, spell) {
+                    Ok(got) if got == want => {}
+                    Ok(got) => failures.push(format!("{} for player {}: {} offered at {got:?}, the text allows {want:?}", card.name, side.0, spell_card.name)),
+                    Err(why) => failures.push(format!("{} for player {}: {}: {why}", card.name, side.0, spell_card.name)),
+                }
+            }
+        }
+        // Cast onto a board where the opponent's Curse is on its caster.
+        let Some((curse, curse_spec)) = cards.iter().find(|(c, s)| c.type_line.contains("Curse") && s.statics.is_empty()) else {
+            failures.push(format!("{}: no Curse read to destroy", card.name));
+            continue;
+        };
+        casts += 1;
+        let (mut state, mut world) = board(&registry, &cache);
+        let on_you = place_face(&mut state, &mut world, &registry, curse, curse_spec, P1);
+        state.get_object_mut(on_you).expect("just placed").attached_to_player = Some(P0);
+        world.permanents.get_mut(&on_you).expect("just placed").attached = Some(Target::Player(P0));
+        world.refresh();
+        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+        let want = resolve(spec, &world, &[], P0, card, spell).observed();
+        match cast_and_let_resolve(&state, &registry, spell, Vec::new()) {
+            Ok(after) if observe(&after, &registry) == want => {}
+            Ok(after) => failures.push(format!("{} with {} on its caster:\n      {}", card.name, curse.name, differences(&observe(&after, &registry), &want))),
+            Err(why) => failures.push(format!("{} with {} on its caster: {why}", card.name, curse.name)),
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every activated ability an Aura the grammar reads grants, on the
 /// caster's Grizzly Bears with the Aura attached: offered on the Bears as
 /// the Aura's (CR 113.2c, 604.1) at exactly the targets its text allows,
@@ -8022,6 +8113,9 @@ fn the_grammar_reads_its_templates() {
     let summoning = Printed { type_line: "Enchantment".to_string(), oracle_text: "Creature spells you cast cost {2} less to cast.\nCreatures you control get -1/-1.".to_string(), ..viper.clone() };
     assert_eq!(read_enchantment(&summoning).unwrap().creature_spells_cost_less, Some(2));
     assert_eq!(less_generic(&mana_cost("{1}{G}").unwrap(), 2).symbols, vec![ManaSymbol::Colored(Color::Green)]);
+    let orb = Printed { type_line: "Artifact".to_string(), oracle_text: "When this artifact enters, destroy all Curses attached to you.\nYou have hexproof.".to_string(), ..viper.clone() };
+    let orb = read_artifact(&orb).unwrap();
+    assert_eq!((orb.statics, orb.etb.map(|t| t.spec.effects)), (vec![Static::YouHaveHexproof], Some(vec![Effect::DestroyCursesAttachedToYou])));
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

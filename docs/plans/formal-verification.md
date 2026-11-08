@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-238 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+239 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. The latest is Frightful Delusion's
 "unless its controller pays {1}": the spell's controller paying, by
 tapping their Forest, and Giant Growth resolving after; declining, and
@@ -783,11 +783,15 @@ creatures a way to pay it, and its morbid restriction on the board and
 after a death. Heartless Summoning's cost reduction is read and checked
 on its own: each of five creature cards offered with its cost less {2}
 of generic floating and not with one mana fewer, the opponent's at full
-price (CR 601.2f, 118.7d). Not yet read: copies, other replacement
+price (CR 601.2f, 118.7d). Witchbane Orb's "You have hexproof" is read
+and checked on its own: every spell read that targets a player is
+offered without the Orb's controller when the Orb is the opponent's,
+and with them when it is the caster's own (702.11d); and its enters
+trigger destroys the opponent's Curse on its caster. Not yet read: copies, other replacement
 effects (token doubling, a draw from an empty library, mill instead of
 damage), counters other than +1/+1 and -1/-1, rule modifiers ("can't be
 activated", "can't be cast"), modal spells, protection and hexproof
-granted, attack triggers with targets, links between abilities ("the
+granted to creatures, attack triggers with targets, links between abilities ("the
 exiled card"), and costs of removing counters. Each is a template, or a
 board, to add; `READ` lists the cards read, and a change that stops
 reading any of them fails and names it.
