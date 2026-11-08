@@ -112,6 +112,17 @@ export function noticeLineCap(room: number, hasRows = false): number {
 }
 
 /**
+ * The lines a panel text above the rows may take (the question, the X plan,
+ * the summary): `want` at most, `least` at least, out of the height left
+ * above the buttons once `reserved` is spent, and with rows below, less
+ * ROWS_LEAST. The question took its four lines out of the rows' reserve
+ * and put the pager on the button (#973's review).
+ */
+export function panelLines(left: number, reserved: number, hasRows: boolean, lineH: number, want: number, least = 0): number {
+  return Math.max(least, Math.min(want, Math.floor((left - reserved - (hasRows ? ROWS_LEAST : 0)) / lineH)));
+}
+
+/**
  * [`wrap`], capped at `maxLines`, with the cut marked.
  *
  * A bare `.slice(0, n)` over wrapped lines drops the rest silently: "Curse
@@ -1212,7 +1223,7 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
     ? wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", noticeLineCap(floor - ty - 8 * hintLines.length - markRow, panelHasRows))
     : [];
   const reserved = 8 * (hintLines.length + noticeLines.length) + markRow;
-  const room = (lineH: number, want: number, least = 0) => Math.max(least, Math.min(want, Math.floor((floor - ty - reserved) / lineH)));
+  const room = (lineH: number, want: number, least = 0) => panelLines(floor - ty, reserved, panelHasRows, lineH, want, least);
   // Beside a modal the panel holds no rows, so the question can have the
   // room: at half the modal's width the payment plan at its end was cut at
   // four lines (#939's review).

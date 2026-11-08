@@ -10,7 +10,7 @@
 
 globalThis.Image ??= class { };
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
-const { wrapCapped, noticeLineCap, NOTICE_LINES, ROWS_LEAST } = await import("../dist/render.js");
+const { wrapCapped, noticeLineCap, panelLines, NOTICE_LINES, ROWS_LEAST } = await import("../dist/render.js");
 const P = await import("../dist/prompts.js");
 
 let failures = 0;
@@ -42,6 +42,24 @@ for (let room = 0; room <= 300; room++) {
     if (cap > 3 && need > room) fail(`room ${room}, rows ${rows}: ${cap} lines leave no room for what is below`);
   }
 }
+// The whole stack above the rows: hint, then a notice at its cap, then the
+// question at what is left. Wherever the notice took more than its three,
+// the rows still have their reserve: the question shrinks to one line
+// rather than taking it (#973's review: a four-line question put the pager
+// on the button).
+for (let room = 0; room <= 300; room++) {
+  for (const hint of [0, 1, 3]) {
+    const left = room;
+    const notice = noticeLineCap(left - 8 * hint, true);
+    const reserved = 8 * (hint + notice);
+    const title = panelLines(left, reserved, true, 9, 4, 1);
+    if (notice > 3 && reserved + 9 * title + ROWS_LEAST > left)
+      fail(`room ${room}, hint ${hint}: notice ${notice} and question ${title} lines leave the rows no room`);
+  }
+}
+// Without rows the question has the room down to the buttons.
+if (panelLines(9 * 4, 0, false, 9, 4, 1) !== 4) fail("with no rows the question keeps its four lines");
+
 // Below the buttons' top (13px under the floor), the rows start 2px under
 // the notice and a page needs two 11px lines: ROWS_LEAST is that sum.
 if (ROWS_LEAST < 13 + 2 + 2 * 11) fail(`ROWS_LEAST ${ROWS_LEAST} is less than one row and its pager`);
