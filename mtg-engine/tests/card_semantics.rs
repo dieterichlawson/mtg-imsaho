@@ -636,6 +636,9 @@ struct Spec {
     /// Zombie you control and each Zombie card in your graveyard" (CR
     /// 614.1c): the subtype, counted for the player it enters under.
     enters_with_a_counter_for_each: Option<String>,
+    /// "This creature enters with X +1/+1 counters on it" (CR 614.1c,
+    /// 107.3a): the X its spell was cast with.
+    enters_with_x_counters: bool,
     /// What it says about attacking, blocking and combat damage.
     combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
@@ -925,6 +928,9 @@ struct Activated {
     /// "Activate only if a creature died this turn" (CR 602.5b), after its
     /// "Morbid —" ability word (207.2c).
     morbid: bool,
+    /// "Remove a +1/+1 counter from this creature" in the cost (CR 602.2b,
+    /// 118.3): payable only with one there.
+    remove_counter: bool,
     spec: Spec,
 }
 
@@ -942,7 +948,7 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let (cost, effect) = line.strip_prefix("Morbid — ").unwrap_or(line).split_once(": ")?;
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
-        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, spec: Spec::default(),
+        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, spec: Spec::default(),
     };
     for part in cost.split(", ") {
         match part {
@@ -951,6 +957,7 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             "Sacrifice a creature" => ability.sacrifice = Some(Sacrifice::AnyCreature),
             "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
             "Exile a creature card from your graveyard" => ability.exile_creature_card = true,
+            "Remove a +1/+1 counter from this creature" => ability.remove_counter = true,
             _ if part.starts_with("Tap ") && part.ends_with(" untapped creatures you control") => {
                 ability.tap_others = number(part.strip_prefix("Tap ")?.strip_suffix(" untapped creatures you control")?)? as usize;
             }
@@ -1729,6 +1736,11 @@ impl Spec {
             self.effects.push(Effect::MillEach { n });
             return Some(());
         }
+        if s == "Put a +1/+1 counter on this creature" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::PlusCounters { slot, n: 1 });
+            return Some(());
+        }
         if let Some(f) = s.strip_prefix("Put a +1/+1 counter on each ").filter(|f| !f.starts_with("of up to ")) {
             self.effects.push(Effect::PlusCountersEach { filter: filter(f)? });
             return Some(());
@@ -2196,7 +2208,21 @@ fn read(card: &Printed) -> Result<Spec, String> {
 /// enters-the-battlefield trigger whose effect is one of the spell
 /// templates above.
 fn read_creature(card: &Printed) -> Result<Spec, String> {
-    let text = without_reminders(&card.oracle_text).replace(&card.name, "~");
+    let mut text = without_reminders(&card.oracle_text).replace(&card.name, "~");
+    // A legendary creature names itself by the name before its comma
+    // ("Mikaeus enters with ..."): this creature (CR 201.5).
+    if let Some((short, _)) = card.name.split_once(", ") {
+        text = text.lines()
+            .map(|l| {
+                let l = l.replace(short, "this creature");
+                match l.strip_prefix("this creature") {
+                    Some(rest) => format!("This creature{rest}"),
+                    None => l,
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
     let mut spec = Spec { permanent: true, ..Spec::default() };
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let unread = || format!("cannot read {line:?}");
@@ -2210,6 +2236,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             .and_then(|(a, b)| (a == b).then(|| a.to_string()))
         {
             spec.enters_with_a_counter_for_each = Some(subtype);
+            continue;
+        }
+        if line == "This creature enters with X +1/+1 counters on it." {
+            spec.enters_with_x_counters = true;
             continue;
         }
         if line == "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it." {
@@ -2426,7 +2456,7 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
-                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, spec: equip,
+                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -4386,8 +4416,11 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::PlusCountersEach { filter } => {
-                for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
-                    if m.is_creature() && m.matches(filter, caster) {
+                // "Each other creature you control": not the ability's own
+                // source (CR 109.5).
+                let source = w.source;
+                for (id, m) in w.permanents.iter_mut().map(|(id, m)| (Some(*id), m)).chain(w.tokens.iter_mut().map(|m| (None, m))) {
+                    if m.is_creature() && m.matches_from(filter, caster, id.is_some() && id == source) {
                         change(m, 1, 1);
                         m.counters.0 += 1;
                     }
@@ -4939,6 +4972,11 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         let n = i32::try_from(n).expect("a few");
         change(&mut m, n, n);
         m.counters.0 += n as u32;
+    }
+    if spec.enters_with_x_counters {
+        let n = i32::try_from(world.x).expect("a few");
+        change(&mut m, n, n);
+        m.counters.0 += world.x;
     }
     // A counter for each other permanent of a subtype its caster controls
     // and each card of it in their graveyard (Unbreathing Horde), counted
@@ -5814,7 +5852,7 @@ const READ: &[&str] = &[
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Laboratory Maniac", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
     "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
-    "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Memory's Journey", "Mentor of the Meek",
+    "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Memory's Journey", "Mentor of the Meek", "Mikaeus, the Lunarch",
     "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
     "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Nevermore",
@@ -5952,8 +5990,16 @@ fn every_readable_card_does_what_its_text_says() {
             }
             if spec.permanent && card.has_type("Creature") {
                 casts += 1;
+                // An {X} in its cost: every X from nothing to what floats
+                // (CR 107.3a).
+                let xs: Vec<u32> = if cost.symbols.contains(&ManaSymbol::X) { (0..=X_FLOAT).collect() } else { vec![0] };
                 let entering: Vec<World> = payable.iter()
-                    .flat_map(|p| creature_outcomes(spec, &pay(&world, p), P0, card, spell))
+                    .flat_map(|p| xs.iter().map(move |&x| (p, x)))
+                    .flat_map(|(p, x)| {
+                        let paid = pay(&world, p);
+                        let w = if cost.symbols.contains(&ManaSymbol::X) { World { x, pool: x_left(&paid, x), ..paid } } else { paid };
+                        creature_outcomes(spec, &w, P0, card, spell)
+                    })
                     .collect();
                 let random = spec.etb.as_ref().is_some_and(|t| is_random(&t.spec)) || spec.dies.as_ref().is_some_and(|t| is_random(&t.spec));
                 let endings = if random {
@@ -6182,6 +6228,9 @@ fn every_readable_activated_ability_does_what_its_text_says() {
     for (card, spec) in cards.iter().chain(&backs).filter(|(c, _)| !c.has_type("Instant") && !c.has_type("Sorcery")) {
         let (mut state, mut world) = board(&registry, &cache);
         let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        if spec.enters_with_x_counters {
+            state.get_object_mut(id).expect("just placed").counters.insert(CounterType::PlusOnePlusOne, 2);
+        }
         let front = cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name));
         let other = front.and_then(|f| read_creature(f).ok()).or_else(|| card.back.as_deref().and_then(back_face_reads));
         for (n, subtype) in spec.activated.iter().chain(other.iter().flat_map(|o| &o.activated)).filter_map(|a| a.if_you_control.as_ref()) {
@@ -6224,6 +6273,14 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 if died { " after a death" } else { "" });
             let (mut state, mut world) = if died { board_after_a_death(&registry, &cache) } else { board(&registry, &cache) };
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            // A 0/0 but for the counters it enters with (Mikaeus) is
+            // placed with two, as placing it gives it none.
+            if spec.enters_with_x_counters {
+                state.get_object_mut(id).expect("just placed").counters.insert(CounterType::PlusOnePlusOne, 2);
+                let m = world.permanents.get_mut(&id).expect("just placed");
+                change(m, 2, 2);
+                m.counters.0 = 2;
+            }
             if let Some((kind, n)) = &already {
                 state.get_object_mut(id).expect("just placed").counters.insert(counter_named(kind), *n);
                 world.permanents.get_mut(&id).expect("just placed").named_counters.insert(kind.clone(), *n);
@@ -6241,6 +6298,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 .collect();
             let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n)
                 && (!ability.morbid || world.a_creature_died)
+                && (!ability.remove_counter || world.permanents[&id].counters.0 > 0)
                 && others.len() >= ability.tap_others;
             world.refresh();
             world.source = Some(id);
@@ -6306,6 +6364,11 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 let mut paid = world.clone();
                 if ability.tap {
                     paid.permanents.get_mut(&id).expect("the source").tapped = true;
+                }
+                if ability.remove_counter {
+                    let m = paid.permanents.get_mut(&id).expect("the source");
+                    m.counters.0 -= 1;
+                    change(m, -1, -1);
                 }
                 if ability.sacrifice_self {
                     paid.leave(id, Dest::Graveyard);
@@ -7255,7 +7318,7 @@ fn number_after_the_front(front: &Spec, back: &mut Spec) {
 fn fighters<'a>(cards: &'a [(Printed, Spec)], backs: &'a [(Printed, Spec)]) -> Vec<(&'a Printed, &'a Spec)> {
     cards.iter().chain(backs)
         .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.activated.is_empty()
-            && s.enters_with_a_counter_for_each.is_none()
+            && s.enters_with_a_counter_for_each.is_none() && !s.enters_with_x_counters
             && s.mana.is_empty() && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
             && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
         .map(|(c, s)| (c, s))
@@ -8353,7 +8416,7 @@ fn every_creature_is_declared_as_its_text_says() {
         let (mut state, mut world, a, _) = arena(&registry, (card, spec), None);
         // A 0/0 but for the counters it enters with (Unbreathing Horde) is
         // declared with one, as placing it gives it none.
-        if spec.enters_with_a_counter_for_each.is_some() {
+        if spec.enters_with_a_counter_for_each.is_some() || spec.enters_with_x_counters {
             state.get_object_mut(a).expect("placed").counters.insert(CounterType::PlusOnePlusOne, 1);
             let m = world.permanents.get_mut(&a).expect("placed");
             change(m, 1, 1);
@@ -9034,6 +9097,9 @@ fn the_grammar_reads_its_templates() {
     let horde = Printed { oracle_text: "This creature enters with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard.\nIf this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it.".to_string(), ..viper.clone() };
     let horde = read_creature(&horde).unwrap();
     assert_eq!((horde.enters_with_a_counter_for_each.as_deref(), horde.statics), (Some("Zombie"), vec![Static::DamageRemovesACounterInstead]));
+    let mikaeus = Printed { name: "Mikaeus, the Lunarch".to_string(), oracle_text: "Mikaeus enters with X +1/+1 counters on it.\n{T}: Put a +1/+1 counter on Mikaeus.\n{T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1 counter on each other creature you control.".to_string(), ..viper.clone() };
+    let mikaeus = read_creature(&mikaeus).unwrap();
+    assert!(mikaeus.enters_with_x_counters && !mikaeus.activated[0].remove_counter && mikaeus.activated[1].remove_counter);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

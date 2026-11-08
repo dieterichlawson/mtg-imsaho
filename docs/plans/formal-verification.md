@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-252 of the pool's 268 instants, sorceries, creatures, enchantments,
+253 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -828,13 +828,16 @@ Humans (614.1c, 614.12). Unbreathing Horde enters with a counter for
 each Zombie card in its caster's graveyard and none for the opponent's
 two Zombies on the board, the count defect 9 got wrong; and Lightning
 Bolt or Brimstone Volley at it removes a counter instead of dealing
-damage, the last leaving a 0/0 to die (615.1, 704.5f). Not yet read:
-copies, other replacement effects (mill instead of damage), counters
-other than +1/+1 and -1/-1, hexproof granted to creatures, attack
-triggers with targets, links between abilities ("the exiled card"), and
-costs of removing counters. Each is a template, or a board, to add;
-`READ` lists the cards read, and a change that stops reading any of them
-fails and names it.
+damage, the last leaving a 0/0 to die (615.1, 704.5f). Mikaeus, the
+Lunarch is the first {X} creature read, entering with each X from none,
+a 0/0 that dies, to three, and the first cost of removing a counter: its
+second ability takes one from Mikaeus and puts one on each other
+creature its controller has. Not yet read: copies, other replacement
+effects (mill instead of damage), counters other than +1/+1 and -1/-1,
+hexproof granted to creatures, attack triggers with targets, and links
+between abilities ("the exiled card"). Each is a template, or a board,
+to add; `READ` lists the cards read, and a change that stops reading any
+of them fails and names it.
 
 ### Cards proved with Kani
 
