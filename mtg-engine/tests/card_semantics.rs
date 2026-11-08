@@ -628,6 +628,10 @@ struct Spec {
     /// win the game instead" (CR 614.1a, 104.2b): the draw that would lose
     /// the game (704.5b) wins it for its controller.
     wins_drawing_from_empty_library: bool,
+    /// "As long as this creature is in your graveyard, each Human creature you
+    /// control enters with an additional +1/+1 counter on it" (CR 614.1c,
+    /// 614.12): the subtype, while the card is in its owner's graveyard.
+    from_the_graveyard_enters_with_a_counter: Option<String>,
     /// What it says about attacking, blocking and combat damage.
     combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
@@ -2190,6 +2194,12 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         let unread = || format!("cannot read {line:?}");
         if line == "This creature enters tapped." {
             spec.enters_tapped = true;
+            continue;
+        }
+        if let Some(subtype) = line.strip_prefix("As long as this creature is in your graveyard, each ")
+            .and_then(|r| r.strip_suffix(" creature you control enters with an additional +1/+1 counter on it."))
+        {
+            spec.from_the_graveyard_enters_with_a_counter = Some(subtype.to_string());
             continue;
         }
         if line == "If you would draw a card while your library has no cards in it, you win the game instead." {
@@ -4891,6 +4901,19 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         change(&mut m, n, n);
         m.counters.0 += n as u32;
     }
+    // A card in its caster's graveyard that gives their creatures of a
+    // subtype a counter as they enter (Dearly Departed), each one.
+    let extra = world.yard.values()
+        .filter(|c| c.owner == caster)
+        .filter_map(|c| c.name.as_ref().and_then(|n| cached_oracle().get(n)))
+        .filter_map(|p| read_creature(p).ok()?.from_the_graveyard_enters_with_a_counter)
+        .filter(|t| m.subtypes.contains(t))
+        .count();
+    if extra > 0 {
+        let n = i32::try_from(extra).expect("a few");
+        change(&mut m, n, n);
+        m.counters.0 += n as u32;
+    }
     w.permanents.insert(id, m);
     w.source = Some(id);
     w.state_based_actions();
@@ -5723,7 +5746,7 @@ const READ: &[&str] = &[
     "Creeping Renaissance", "Crossway Vampire", "Curiosity", "Curse of Death's Hold",
     "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
     "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
-    "Daybreak Ranger", "Dead Weight", "Delver of Secrets", "Demonmail Hauberk",
+    "Daybreak Ranger", "Dead Weight", "Dearly Departed", "Delver of Secrets", "Demonmail Hauberk",
     "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
     "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
     "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
@@ -7968,6 +7991,53 @@ fn every_token_doubling_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature card the grammar reads that, from its owner's graveyard,
+/// gives their creatures of a subtype a counter as they enter (Dearly
+/// Departed's Humans): a Human cast by the card's owner enters with the
+/// counter, and Grizzly Bears without; so does a Human cast by the other
+/// player, or with the card nowhere (CR 614.1c, 614.12).
+#[test]
+fn every_graveyard_counter_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, _) in cards.iter().filter(|(_, s)| s.from_the_graveyard_enters_with_a_counter.is_some()) {
+        for (creature, caster, owner) in [("Elite Inquisitor", P0, Some(P0)), ("Invisible Stalker", P0, Some(P0)), ("Grizzly Bears", P0, Some(P0)),
+            ("Elite Inquisitor", P1, Some(P0)), ("Elite Inquisitor", P0, Some(P1)), ("Elite Inquisitor", P0, None)]
+        {
+            casts += 1;
+            let (printed, creature_spec) = (&cache[creature], read_creature(&cache[creature]).expect("reads"));
+            let (mut state, mut world) = board(&registry, &cache);
+            if let Some(owner) = owner {
+                let id = card_in_graveyard(&mut state, &registry, &card.name, owner);
+                world.yard.insert(id, Model::printed(card, owner));
+                world.graveyard[owner.0 as usize].push(card.name.clone());
+            }
+            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
+                Some(o) => {
+                    let at = world.hand[caster.0 as usize].iter().position(|h| h == creature).expect("in the reference's hand");
+                    world.hand[caster.0 as usize].remove(at);
+                    o.id
+                }
+                None => spell_in_hand(&mut state, &registry, creature, caster),
+            };
+            fund(&mut state, caster, &mana_cost(&printed.mana_cost).expect("a cost"), 0);
+            state.active_player = caster;
+            state.priority_player = Some(caster);
+            let want = creature_outcomes(&creature_spec, &world, caster, printed, spell);
+            let got = every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new())));
+            if let Some(why) = disagreement(&want, &got, &registry) {
+                failures.push(format!("{} in {} graveyard, player {} casts {creature}: {why}", card.name,
+                    owner.map_or("no".to_string(), |p| format!("player {}'s", p.0)), caster.0));
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature the grammar reads that wins its controller the game for
 /// a draw from an empty library (Laboratory Maniac): its controller, with
 /// an empty library, casts an untargeted spell the grammar reads that
@@ -8861,6 +8931,8 @@ fn the_grammar_reads_its_templates() {
     assert!(read(&card("X", "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R}")).unwrap().grants_flashback_to_your_graveyard);
     let snapcaster = Printed { oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".to_string(), ..viper.clone() };
     assert!(read_creature(&snapcaster).unwrap().etb.is_some_and(|t| matches!(t.spec.effects[..], [Effect::GrantFlashback { slot: 0 }])));
+    let departed = Printed { oracle_text: "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.".to_string(), ..viper.clone() };
+    assert_eq!(read_creature(&departed).unwrap().from_the_graveyard_enters_with_a_counter.as_deref(), Some("Human"));
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
