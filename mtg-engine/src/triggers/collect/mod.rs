@@ -121,10 +121,12 @@ impl Collector {
 /// (CR 113.7a).
 ///
 /// A permanent counts as present if it is still there, or if it left the
-/// battlefield somewhere in this same batch of events. Ordering within the
-/// batch is not consulted: a batch is one resolution or one turn-based action,
-/// so a departure in it is a consequence of the event rather than something
-/// that preceded it.
+/// battlefield in `events`, which runs from the start of the event being
+/// collected to the end of the action. A departure at or after that start is
+/// the event's own, or a consequence of it (combat damage, then the check
+/// that kills the creature that dealt it). A departure before it is not in
+/// the list: a watcher that died in one state-based check is not around for
+/// a death in the next one (CR 704.3, 603.10a; #1000).
 pub(crate) fn was_on_the_battlefield(
     state: &crate::state::GameState,
     events: &[crate::events::GameEvent],

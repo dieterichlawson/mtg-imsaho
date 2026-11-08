@@ -689,11 +689,19 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
   // not" (issue #572, G13). Two cards of one name in one hand are the same
   // card to the rules, so a copy with nothing of its own borrows what its
   // namesake was offered: any Forest plays a Forest.
-  const hand = state.view.your_hand || [];
-  for (const card of hand) {
-    if (verbs.has(card.object_id)) continue;
-    const twin = hand.find(c => c.object_id !== card.object_id && c.name === card.name && verbs.has(c.object_id));
-    if (twin) verbs.set(card.object_id, verbs.get(twin.object_id)!);
+  //
+  // The graveyard has the same shape: identical untargeted flashbacks are
+  // one offer for every copy (`castable_spells` names one of three Think
+  // Twice), so the other two answered no click in the `g` overlay (#968).
+  // Copies borrow within their own zone only — a Think Twice in hand does
+  // not flash back.
+  const ownGraveyard = (state.view.graveyards || []).find(([pid]) => pid === state.view.you)?.[1] || [];
+  for (const zone of [state.view.your_hand || [], ownGraveyard]) {
+    for (const card of zone) {
+      if (verbs.has(card.object_id)) continue;
+      const twin = zone.find(c => c.object_id !== card.object_id && c.name === card.name && verbs.has(c.object_id));
+      if (twin) verbs.set(card.object_id, verbs.get(twin.object_id)!);
+    }
   }
   ui.hint = hasPass ? "Click a card for what it can do. Enter passes." : "Choose an action.";
   if (hasPass) ui.buttons.push({ label: "Pass", primary: true, run: () => send("PassPriority") });

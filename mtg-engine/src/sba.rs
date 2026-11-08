@@ -55,6 +55,11 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
     }
     let mut any_action = false;
     loop {
+        // CR 704.3: this check is one event, separate from whatever came
+        // before it in the action — including the previous check.
+        if state.sba_check_starts.last() != Some(&state.events.len()) {
+            state.sba_check_starts.push(state.events.len());
+        }
         match one_pass(state, registry) {
             Pass::Settled => return any_action,
             Pass::Acted => any_action = true,

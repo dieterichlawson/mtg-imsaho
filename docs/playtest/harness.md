@@ -1211,3 +1211,35 @@ say what your stub says.
   requirements. Next time, look for every such pair (`cancel` beside
   `indices`/`sources`, `confirm`, a "none" row) and answer each the way a
   seat declining would, under both `MTG_CLAUDE_CODE_ANSWERS` settings
+- H40 [proposed 2026-11-08, from 099c7d3, e5dba4e, 99e65c5, a21747d] the
+  guide-replay instrument against a seat that does not answer:
+  `scripts/decision-eval/draft-replay.py --guide FILE|none`,
+  `guide-effect.py` and `judge-picks.py` decide whether a draft guide is
+  kept (`reports/guide-replay/`), and none of them had been run against
+  anything but a well-behaved model. Take 40 kept positions
+  (`xz -dc reports/draft-loop/nights/<date>-positions.jsonl.xz | head -40`),
+  replay `none-a`, `none-b` and `current` under a wrapper of
+  `scripts/llm-prompt-stub.py` that answers wrongly one call in four (prose
+  with no object, an index past the pack), with
+  `MTG_DRAFT_RETRY_BUDGET_SECS=5` so a dead pick costs seconds. Verify:
+  a row the binary could not answer says why in `error`; a `fallback` row
+  is neither an answer in `guide-effect.py`'s noise, settled set and
+  changed picks nor a card `judge-picks.py` sends to the judge; a resumed
+  replay asks a fallback row again; `--samples 2` is not collapsed to one
+  answer per position; and `judge-picks.py` under a stub judge that always
+  says "A" reports the order bias it claims to check
+  — **played 2026-11-08: the scripts read a substituted pick as an
+  answer, and a dead pick leaves no reason.** Under a stub that answered
+  prose one call in four (the deterministic stub re-asks with the same
+  prompt, so every such pick spent the whole retry budget and died),
+  `mtg-draft-replay` exited 101 with a raw panic and backtrace: it never
+  installs `install_panic_hook`, which #218 gave the runner and the server
+  have; `draft-replay.py` kept the last stderr line, "note: Some details
+  are omitted…", as every dead row's `error` (#1009). Under an
+  out-of-range index one call in four, 3 of 120 picks were substituted
+  (pack[0]) after the re-ask; `guide-effect.py` counted two as the model
+  disagreeing with itself and one as a settled pick the guide left alone
+  (#1010; `judge-picks.py` and the resume read `action` the same way). The
+  2026-11-07 published results have 0 fallback rows, so their numbers
+  stand. Not yet done: `--samples 2` and the stub judge that always says
+  "A"

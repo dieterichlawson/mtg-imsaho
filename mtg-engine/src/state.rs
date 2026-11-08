@@ -381,6 +381,15 @@ pub struct GameState {
     #[serde(default)]
     pub trigger_event_index: usize,
 
+    /// Where in `events` each state-based-action check began (CR 704.3:
+    /// each check is one event, and the check is then repeated). A
+    /// leaves-the-battlefield ability looks back only to the event its
+    /// source left in (CR 603.10a), so trigger collection reads these to
+    /// tell "left in the same check" from "left in an earlier one" (#1000).
+    /// Cleared with `events`.
+    #[serde(default)]
+    pub sba_check_starts: Vec<usize>,
+
     /// How many actions have been submitted to reach this state. Two
     /// consecutive decision points are one action apart exactly when this
     /// moved by one — the game loop may pass on a player's behalf in
@@ -744,6 +753,7 @@ impl GameState {
             pending_ability_effect: None,
             pending_spell_cast: None,
             trigger_event_index: 0,
+            sba_check_starts: Vec::new(),
             submit_seq: 0,
             observe_every_submit: false,
             pending_triggers: Vec::new(),

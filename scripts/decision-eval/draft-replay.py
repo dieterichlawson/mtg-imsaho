@@ -2,7 +2,7 @@
 """Ask kept draft picks again, under one seat configuration.
 
     scripts/decision-eval/draft-replay.py --positions picks.jsonl --out DIR --name NAME \
-        --model cc:claude-haiku-5-5 [--env MTG_LLM_THINKING=off ...] \
+        --model cc:claude-haiku-5-5 [--env MTG_LLM_THINKING=off ...] [--guide FILE|none] \
         [--bin target/release/mtg-draft-replay] [--jobs 4] [--samples 1] [--limit N]
 
 `picks.jsonl` is what `mtg-draft-runner` keeps when `MTG_DRAFT_POSITIONS`
@@ -15,6 +15,11 @@ position and sample goes to `<out>/<name>.jsonl`, in the rows
 cost, and the bytes of the system prompt and the prompt. A position
 already in the file is skipped, so an interrupted run picks up where it
 stopped.
+
+Each position is asked under the guide its seat drafted with, as the
+position records it. `--guide FILE` asks every position under that file
+instead, and `--guide none` under no guide, so one night's packs can be
+asked under several guides and the answers compared.
 
 Every pick is a real model call: on a `cc` seat that is plan quota, not
 an API bill. A metered seat is refused.
@@ -39,10 +44,15 @@ def run_one(args, pid, position, sample):
         k, _, v = kv.partition("=")
         env[k] = v
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+        if args.guide == "none":
+            # Recorded as no guide rather than left out, so the binary does
+            # not warn that the position predates recorded guides.
+            position = json.dumps({**json.loads(position), "guide": None}) + "\n"
         f.write(position)
         path = f.name
+    guide = ["--guide", args.guide] if args.guide not in (None, "none") else []
     try:
-        out = subprocess.run([args.bin, "--positions", path, "--model", args.model],
+        out = subprocess.run([args.bin, "--positions", path, "--model", args.model, *guide],
                              cwd=ROOT, env=env, capture_output=True, text=True, timeout=args.timeout)
         line = next((l for l in out.stdout.splitlines() if l.startswith("{")), None)
         rc = out.returncode
@@ -78,6 +88,7 @@ def main():
     ap.add_argument("--name", required=True)
     ap.add_argument("--model", required=True)
     ap.add_argument("--env", action="append", default=[])
+    ap.add_argument("--guide", help="ask every position under this guide file, or 'none' for no guide")
     ap.add_argument("--bin", default=os.path.join(ROOT, "target/release/mtg-draft-replay"))
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--samples", type=int, default=1)
@@ -85,6 +96,10 @@ def main():
     ap.add_argument("--timeout", type=int, default=900)
     args = ap.parse_args()
     args.bin = os.path.abspath(args.bin)
+    if args.guide not in (None, "none"):
+        if not os.path.isfile(args.guide):
+            sys.exit(f"draft-replay.py: --guide {args.guide}: no such file")
+        args.guide = os.path.abspath(args.guide)
     # A provider mtg-draft-replay does not know is named as one, not as
     # metered: "CC is a metered API seat" sent a typo to the wrong fix (#922).
     provider = args.model.split(":")[0]
@@ -102,6 +117,7 @@ def main():
         "positions": os.path.abspath(args.positions), "model": args.model, "env": sorted(args.env),
         "bin": os.path.abspath(args.bin), "cli": os.environ.get("CLAUDE_CODE_BIN", "claude"),
         "inherited": runstamp.inherited(), "positions_sha256": runstamp.content(args.positions),
+        **({"guide": args.guide if args.guide == "none" else runstamp.content(args.guide)} if args.guide else {}),
     }, os.path.basename(__file__))
     done = set()
     if os.path.exists(result_path):

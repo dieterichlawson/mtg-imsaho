@@ -105,9 +105,10 @@ pub(super) fn creature_died(
 
     // 2. Death-watch: collect triggers from permanents on the
     // battlefield, plus permanents that left in the same event
-    // batch — they were still on the battlefield when the
-    // simultaneous deaths occurred, so their death-watch abilities
-    // trigger (CR 603.10a).
+    // (the same state-based check, or later) — they were still on the
+    // battlefield when the simultaneous deaths occurred, so their
+    // death-watch abilities trigger (CR 603.10a). One that left in an
+    // earlier check was not (#1000).
     //
     // Keyed on LeftBattlefield rather than CreatureDied, because
     // `destroy` only emits CreatureDied for things with power. A

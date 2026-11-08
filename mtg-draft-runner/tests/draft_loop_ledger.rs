@@ -371,3 +371,74 @@ fn the_night_report_says_why_the_guide_was_not_taken() {
     assert!(!report.contains("missing []"), "{report}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The loop's guide is set against a fixed conventional one: seats 0 and 4
+/// draft with `guide.md`, 2 and 6 with `conventional.md`, odd seats with
+/// none. Each seat records which; a night from before that is read as it
+/// was, every guided seat on the loop's guide; and the tables count the
+/// three groups over all nights and over the nights that had all three.
+#[test]
+fn the_conventional_guide_is_a_third_group_in_the_ledger_and_the_report() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-arms-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = |card: &str| serde_json::json!({"deck": {"maindeck": [card], "lands": {"Forest": 17}, "sideboard": []}});
+    let game = |winner: usize| serde_json::json!({"winner": winner, "turns": 9});
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 4, "best_of": 3,
+        "seats": [{"model": "cc"}, {"model": "cc"}, {"model": "cc"}, {"model": "cc"}],
+        "decks": [deck("Ambush Viper"), deck("Darkthicket Wolf"), deck("Avacyn's Pilgrim"), deck("Orchard Spirit")],
+        "picks": [],
+        "matches": [
+            {"round": 1, "result": {"player_a": 0, "player_b": 1, "wins_a": 2, "wins_b": 0, "games": [game(0), game(0)]}},
+            {"round": 1, "result": {"player_a": 2, "player_b": 3, "wins_a": 2, "wins_b": 1, "games": [game(2), game(3), game(2)]}},
+        ],
+    });
+    let snap = dir.join("save.json");
+    std::fs::write(&snap, save.to_string()).unwrap();
+    let conventional = dir.join("conventional.md");
+    std::fs::write(&conventional, "# Innistrad draft guide\n\n## Pick order\n\nRemoval.\n").unwrap();
+    let ledger = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py");
+    let run = |args: Vec<&str>| {
+        let out = Command::new("python3").arg(ledger).args(&args).output().expect("python3 runs");
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    };
+    let d = dir.to_str().unwrap();
+    // A night from before: both even seats on the loop's guide, recorded
+    // with no `guide` field.
+    run(vec!["night", "--save", snap.to_str().unwrap(), "--night", "2099-01-01", "--guided", "0,2", "--out", d]);
+    let old = dir.join("nights/2099-01-01.json");
+    let mut night: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&old).unwrap()).unwrap();
+    for s in night["seats"].as_array_mut().unwrap() {
+        s.as_object_mut().unwrap().remove("guide");
+    }
+    std::fs::write(&old, night.to_string()).unwrap();
+    run(vec!["night", "--save", snap.to_str().unwrap(), "--night", "2099-01-02", "--guided", "0", "--conventional", "2",
+             "--conventional-guide", conventional.to_str().unwrap(), "--out", d]);
+    run(vec!["stats", "--out", d]);
+
+    let night: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("nights/2099-01-02.json")).unwrap()).unwrap();
+    let guides: Vec<_> = night["seats"].as_array().unwrap().iter().map(|s| s["guide"].clone()).collect();
+    assert_eq!(guides, [serde_json::json!("loop"), serde_json::Value::Null, serde_json::json!("conventional"), serde_json::Value::Null]);
+    assert!(night["conventional_hash"].is_string(), "{night}");
+
+    let stats = std::fs::read_to_string(dir.join("stats.md")).unwrap();
+    // Seat 2 won its match both nights: on the loop's guide the first, on
+    // the conventional one the second.
+    for row in ["| guided | 3 | 3-0-0 |", "| conventional | 1 | 1-0-0 |", "| unguided | 4 | 0-4-0 |",
+                "### The nights with all three (1)", "| guided | 1 | 1-0-0 |", "| unguided | 2 | 0-2-0 |"] {
+        assert!(stats.contains(row), "{row:?} in:\n{stats}");
+    }
+
+    let out = Command::new("python3")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/report.py"))
+        .args(["--night", "2099-01-02", "--out", d])
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let report = std::fs::read_to_string(dir.join("nights/2099-01-02.md")).unwrap();
+    for said in ["seat 0 drafted with the guide", "seat 2 with the conventional guide", "seats 1, 3 without one",
+                 "| 2 | conventional |", "Tonight the conventional seats went 1-0 in matches and 2-1 in games."] {
+        assert!(report.contains(said), "{said:?} in:\n{report}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
