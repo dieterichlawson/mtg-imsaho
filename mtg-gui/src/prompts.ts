@@ -266,7 +266,8 @@ export function autoPassNotice(declined: number, stillOn: boolean): string | nul
   if (stillOn && declined === 0) return "Auto-pass on — passing to your next Main Phase 1. Press f again to turn it off.";
   if (stillOn) return `Auto-pass on — it declined ${what(declined)} at that prompt, and passes to your next Main Phase 1. Press f again to turn it off.`;
   if (declined === 0) return null;
-  return `Auto-pass has stopped. When it was turned on it declined ${what(declined)}.`;
+  // Said after "Auto-pass off: <why>", so it does not say it stopped again (#973).
+  return `When it was turned on it declined ${what(declined)}.`;
 }
 
 /**

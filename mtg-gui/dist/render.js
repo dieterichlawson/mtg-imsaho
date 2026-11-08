@@ -89,6 +89,23 @@ export function wrap(ctx, s, maxW, font = "8px Silkscreen") {
     return lines.map(l => clip(ctx, l, maxW, font));
 }
 /**
+ * How many lines the panel's notice may wrap to, given the height left
+ * above the buttons once the hint and the mark count have theirs. A fixed
+ * three cut the auto-pass stop notice before its declined count (#796),
+ * the only new thing in it, with the panel empty below (#973). It takes
+ * up to NOTICE_LINES as the room allows, leaving the question one line
+ * (9px) and, when the panel has rows, ROWS_LEAST for one row and its
+ * pager line above the buttons; never fewer than three, which is what it
+ * always had. A long notice now wins over a long question in a short
+ * panel: the question is cut to one line before the notice is.
+ */
+export const NOTICE_LINES = 8;
+/** The gap from `floor` to the buttons' top (13), the rows' offset (2), and one row and its pager line (22). */
+export const ROWS_LEAST = 37;
+export function noticeLineCap(room, hasRows = false) {
+    return Math.max(3, Math.min(NOTICE_LINES, Math.floor((room - 9 - (hasRows ? ROWS_LEAST : 0)) / 8)));
+}
+/**
  * [`wrap`], capped at `maxLines`, with the cut marked.
  *
  * A bare `.slice(0, n)` over wrapped lines drops the rest silently: "Curse
@@ -1356,8 +1373,15 @@ function promptArea(ctx, hits, state, x, y, w, h) {
     const buttonCount = ((ui && ui.buttons) || []).length;
     const floor = y + h - 18 - 15 * Math.max(0, buttonCount - 1) - 2;
     const hintLines = ui && ui.hint ? wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3) : [];
-    const noticeLines = state.notice ? wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3) : [];
-    const reserved = 8 * (hintLines.length + noticeLines.length) + (ui && ui.mode === "mark" ? 9 : 0);
+    const markRow = ui && ui.mode === "mark" ? 9 : 0;
+    // The rows drawn below (none beside a modal, which has its own), so a long
+    // notice leaves one row and its pager above the buttons (#973's review).
+    const panelHasRows = !(ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number"))
+        && (((ui && ui.rows) || (ui && ui.looseRows) || []).length > 0);
+    const noticeLines = state.notice
+        ? wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", noticeLineCap(floor - ty - 8 * hintLines.length - markRow, panelHasRows))
+        : [];
+    const reserved = 8 * (hintLines.length + noticeLines.length) + markRow;
     const room = (lineH, want, least = 0) => Math.max(least, Math.min(want, Math.floor((floor - ty - reserved) / lineH)));
     // Beside a modal the panel holds no rows, so the question can have the
     // room: at half the modal's width the payment plan at its end was cut at
