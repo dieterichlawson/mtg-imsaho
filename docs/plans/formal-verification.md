@@ -924,7 +924,8 @@ has it report a card that chooses what it enters as not moved
 (`deferring_entries`), and proves that card's entry keeps the creature
 there before the return as all it may copy and black and Zombie to be
 given (166 s). The entering-as-copy proofs prove the question asked
-among what was kept and the answer giving and clearing it. Moldgraf
+among what was kept and the answer clearing it; that the grant is then
+given is the regression test's. Moldgraf
 Monstrosity's branch is the tests' alone, its card proofs being out of
 memory already. Hexproof granted until end of turn (Ranger's
 Guile on the caster's Grizzly Bears) keeps each targeted instant the
