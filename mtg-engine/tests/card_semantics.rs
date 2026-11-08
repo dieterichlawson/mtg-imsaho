@@ -59,7 +59,7 @@ use common::*;
 use mtg_engine::actions::{Action, CastTargetSpec, CombatPrompt, ResolvedChoice, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+use mtg_engine::state::{AwaitingAction, GameResult, ResolutionChoiceKind};
 use mtg_engine::types::*;
 
 // ---- the Oracle data ----
@@ -585,6 +585,10 @@ struct Spec {
     pt_is_creature_cards: bool,
     /// "... equal to the number of cards in your hand".
     pt_is_cards_in_hand: bool,
+    /// "If you would draw a card while your library has no cards in it, you
+    /// win the game instead" (CR 614.1a, 104.2b): the draw that would lose
+    /// the game (704.5b) wins it for its controller.
+    wins_drawing_from_empty_library: bool,
     /// What it says about attacking, blocking and combat damage.
     combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
@@ -2085,6 +2089,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         let unread = || format!("cannot read {line:?}");
         if line == "This creature enters tapped." {
             spec.enters_tapped = true;
+            continue;
+        }
+        if line == "If you would draw a card while your library has no cards in it, you win the game instead." {
+            spec.wins_drawing_from_empty_library = true;
             continue;
         }
         if let Some(n) = line.strip_prefix("Morbid — This creature enters with ")
@@ -5453,7 +5461,7 @@ const READ: &[&str] = &[
     "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
     "Inquisitor's Flail", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
     "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
-    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
+    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Laboratory Maniac", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
     "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
     "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
@@ -7296,6 +7304,56 @@ fn every_cost_reduction_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature the grammar reads that wins its controller the game for
+/// a draw from an empty library (Laboratory Maniac): its controller, with
+/// an empty library, casts an untargeted spell the grammar reads that
+/// draws a card, and wins (CR 614.1a, 104.2b); with the creature nowhere,
+/// or the opponent's, they lose for the draw (704.5b, 104.3c); and with a
+/// card in their library, they draw it and the game goes on.
+#[test]
+fn every_empty_draw_replacement_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let (draw, _) = cards.iter()
+        .find(|(c, s)| (c.has_type("Instant") || c.has_type("Sorcery")) && s.slots.is_empty() && s.additional.is_none()
+            && s.effects.first() == Some(&Effect::Draw { n: 1 }))
+        .expect("an untargeted spell read that draws a card");
+    let mut failures = Vec::new();
+    let mut games = 0;
+    for (card, _) in cards.iter().filter(|(_, s)| s.wins_drawing_from_empty_library) {
+        for (side, empty) in [(None, true), (Some(P0), true), (Some(P1), true), (Some(P0), false)] {
+            games += 1;
+            let mut state = game_at_step(Step::PrecombatMain, P0);
+            if let Some(side) = side {
+                named_permanent(&mut state, &registry, &card.name, side);
+            }
+            if !empty {
+                stock_library_with(&mut state, &registry, P0, "Island", 1);
+            }
+            // A land in hand, so the game loop asks the caster once the
+            // spell has resolved rather than passing on for them.
+            spell_in_hand(&mut state, &registry, "Island", P0);
+            let spell = spell_in_hand(&mut state, &registry, &draw.name, P0);
+            fund(&mut state, P0, &mana_cost(&draw.mana_cost).expect("a cost"), 0);
+            let want = match (side, empty) {
+                (_, false) => None,
+                (Some(P0), true) => Some(GameResult::Winner(P0)),
+                _ => Some(GameResult::Winner(P1)),
+            };
+            let at = format!("{} {}, the caster's library {}: {}", card.name,
+                side.map_or("nowhere".to_string(), |p| format!("player {}'s", p.0)), if empty { "empty" } else { "a card" }, draw.name);
+            match cast_and_let_resolve(&state, &registry, spell, Vec::new()) {
+                Ok(after) if after.result == want => {}
+                Ok(after) => failures.push(format!("{at}: the game ends {:?}, the text says {want:?}", after.result)),
+                Err(why) => failures.push(format!("{at}: {why}")),
+            }
+        }
+    }
+    assert!(games > 0);
+    assert!(failures.is_empty(), "{} of {games} games disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every permanent the grammar reads that gives its controller hexproof
 /// ("You have hexproof"), on either side: each instant and sorcery the
 /// grammar reads that targets a player is offered at exactly the targets
@@ -8116,6 +8174,8 @@ fn the_grammar_reads_its_templates() {
     let orb = Printed { type_line: "Artifact".to_string(), oracle_text: "When this artifact enters, destroy all Curses attached to you.\nYou have hexproof.".to_string(), ..viper.clone() };
     let orb = read_artifact(&orb).unwrap();
     assert_eq!((orb.statics, orb.etb.map(|t| t.spec.effects)), (vec![Static::YouHaveHexproof], Some(vec![Effect::DestroyCursesAttachedToYou])));
+    let maniac = Printed { oracle_text: "If you would draw a card while your library has no cards in it, you win the game instead.".to_string(), ..viper.clone() };
+    assert!(read_creature(&maniac).unwrap().wins_drawing_from_empty_library);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
