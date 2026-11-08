@@ -87,7 +87,7 @@
 
 use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, case_by_case, each_case, each_is, has_subtype, kept, new_ids, prints_where, target_at, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -1395,6 +1395,60 @@ case_by_case! { grimoire_of_the_dead_returns_every_creature_card_as_a_black_zomb
     grimoire_of_the_dead_still_there_leaves_a_noncreature_card_in_a_graveyard: (Zone::Graveyard, false, false),
     grimoire_of_the_dead_still_there_leaves_a_creature_on_the_battlefield: (Zone::Battlefield, true, false),
     grimoire_of_the_dead_still_there_leaves_a_noncreature_on_the_battlefield: (Zone::Battlefield, false, false),
+}
+
+/// A 0/0 Shapeshifter creature card that may enter as a copy of a
+/// creature: what Evil Twin is to the copy rules (CR 614.12b).
+struct Twin;
+
+impl CardBehavior for Twin {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Twin".into(),
+            card_types: vec![CardType::Creature],
+            subtypes: vec!["Shapeshifter".into()],
+            power: Some(0),
+            toughness: Some(0),
+            ..CardData::default()
+        }
+    }
+
+    fn chooses_copy_as_it_enters(&self) -> bool { true }
+}
+
+card_proof! { deferring_entries
+    /// Grimoire of the Dead's second ability returning a creature card
+    /// whose entry waits on what it enters as a copy of (an Evil Twin card
+    /// in the other player's graveyard; CR 614.12b): it is put onto the
+    /// battlefield under the player who activated the ability, and its
+    /// entry keeps what it may copy, the creature on the battlefield
+    /// before the return (Evil Twin's ruling), and what the Grimoire gives
+    /// it, black and a Zombie, to be given once it has entered (613.1d-e);
+    /// nothing is written on the card while it waits.
+    fn grimoire_of_the_dead_holds_a_card_that_chooses_what_it_enters_as() {
+        let (mut registry, mut state, blank, card) = board(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead));
+        let twin_card = registry.register(Box::new(Twin));
+        let you = PlayerId(0);
+        let me = state.create_object(card, you, Zone::Graveyard, None, None);
+        state.get_object_mut(me).expect("just created").last_controller = Some(you);
+        state.players[0].graveyard_order.push(me);
+        let there = state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+        state.get_object_mut(there).expect("just created").card_types = vec![CardType::Creature];
+        let twin = state.create_object(twin_card, PlayerId(1), Zone::Graveyard, Some(0), Some(0));
+        state.players[1].graveyard_order.push(twin);
+        state.resolving_ability_activator = Some(you);
+        let mut b = Board { registry, state, me, others: [there, twin], you };
+
+        b.resolve(1, &[]);
+
+        assert!(asked_for(&[Act::MoveUnder(twin, Zone::Battlefield, you)]));
+        assert!(b.state.pending_entry_options.get(&twin).is_some_and(|kept| kept.len() == 1 && kept[0] == there));
+        assert!(b.state.pending_entry_grants.get(&twin).is_some_and(|(types, colors)|
+            types.len() == 1 && types[0] == "Zombie" && colors.len() == 1 && colors[0] == Color::Black));
+        let o = b.state.get_object(twin).expect("on the board");
+        assert!(o.zone == Zone::Graveyard && o.subtypes.is_empty() && o.colors.is_empty());
+        std::mem::forget(b);
+    }
 }
 
 /// Back from the Brink's board: the enchantment on the battlefield under
