@@ -4475,7 +4475,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 for id in returned {
                     let card = w.leave_yard(id).expect("in a graveyard");
                     let printed = &cached_oracle()[card.name.as_deref().expect("a card")];
-                    let mut m = read_creature(printed).map_or_else(|_| Model::printed(printed, caster), |spec| model_of(&spec, printed, caster));
+                    let read = read_creature(printed).ok();
+                    let mut m = read.as_ref().map_or_else(|| Model::printed(printed, caster), |spec| model_of(spec, printed, caster));
+                    // A copy of the creature chosen, which was on the
+                    // battlefield before any of these came back.
+                    if let (true, Some(c)) = (read.as_ref().is_some_and(|s| s.may_enter_as_a_copy), world.chosen.first().and_then(|c| world.permanents.get(c))) {
+                        m = Model { name: c.name.clone(), ..copy_of(c, caster) };
+                    }
                     m.controller = caster;
                     if !m.colors.contains(&Color::Black) {
                         m.colors.push(Color::Black);
@@ -5197,6 +5203,29 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
     if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::PlayerExilesFromGraveyard { .. })) {
         ways = ways.iter()
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
+            .collect();
+    }
+    // A creature card returned with the rest that may enter as a copy
+    // (Evil Twin): as itself, or as a copy of a creature already on the
+    // battlefield, never one entering with it (CR 614.12b, 707.9; its
+    // ruling), its choice held in `chosen`.
+    if spec.effects.contains(&Effect::ReturnAllCreatureCardsAsBlackZombies) {
+        let clones = |w: &World| w.yard.values()
+            .filter(|m| m.is_creature())
+            .filter(|m| m.name.as_ref().and_then(|n| cached_oracle().get(n)).and_then(|p| read_creature(p).ok()).is_some_and(|s| s.may_enter_as_a_copy))
+            .count();
+        assert!(ways.iter().all(|w| clones(w) <= 1), "the reference returns at most one card that chooses what it enters as");
+        ways = ways.iter()
+            .flat_map(|w| {
+                let copies: Vec<ObjectId> = if clones(w) == 1 {
+                    w.permanents.iter().filter(|(_, m)| m.is_creature()).map(|(id, _)| *id).collect()
+                } else {
+                    Vec::new()
+                };
+                std::iter::once(World { chosen: Vec::new(), ..w.clone() })
+                    .chain(copies.into_iter().map(move |c| World { chosen: vec![c], ..w.clone() }))
+                    .collect::<Vec<_>>()
+            })
             .collect();
     }
     ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, targets, caster))
@@ -8806,6 +8835,60 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     }
     assert!(casts > 0);
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// Every artifact the grammar reads that returns every creature card of
+/// every graveyard (Grimoire of the Dead), with three study counters and an
+/// Evil Twin card in its controller's graveyard beside the board's: the
+/// Twin enters with the rest as itself, a 0/0 that dies, or as a copy of a
+/// creature already on the battlefield, never one returning with it (CR
+/// 614.12b, 707.9, and Evil Twin's ruling), and is a black Zombie whichever
+/// it is, as every card returned is.
+#[test]
+fn every_return_of_a_card_that_chooses_what_it_enters_as_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.activated.iter().any(|a| a.spec.effects.contains(&Effect::ReturnAllCreatureCardsAsBlackZombies))) {
+        checked += 1;
+        let ability = spec.activated.iter().find(|a| a.spec.effects.contains(&Effect::ReturnAllCreatureCardsAsBlackZombies)).expect("just found");
+        let (mut state, mut world) = board(&registry, &cache);
+        let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        if let Some((kind, n)) = &ability.remove_named {
+            state.get_object_mut(id).expect("just placed").counters.insert(counter_named(kind), *n);
+            world.permanents.get_mut(&id).expect("just placed").named_counters.insert(kind.clone(), *n);
+        }
+        let twin = card_in_graveyard(&mut state, &registry, "Evil Twin", P0);
+        world.yard.insert(twin, Model::printed(&cache["Evil Twin"], P0));
+        world.graveyard[0].push("Evil Twin".to_string());
+        world.refresh();
+        fund(&mut state, P0, &ability.mana, 0);
+        let Some(act) = engine::legal_actions(&state, &registry).actions.into_iter()
+            .find(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id && *ability_index == ability.index))
+        else {
+            failures.push(format!("{}: its ability is not offered", card.name));
+            continue;
+        };
+        let mut paid = world.clone();
+        assert!(ability.tap && ability.sacrifice_self, "the costs this test pays");
+        paid.leave(id, Dest::Graveyard);
+        paid.source = Some(id);
+        let want: Vec<World> = resolution_ways(&ability.spec, &paid, &[], P0).into_iter()
+            .map(|w| {
+                let mut after = apply(&ability.spec, &w, &[], P0);
+                after.state_based_actions();
+                after
+            })
+            .collect();
+        let got = every_ending_from(&state, &registry, None, Some(act));
+        if let Some(why) = disagreement(&want, &got, &registry) {
+            failures.push(format!("{} returning an Evil Twin: {why}", card.name));
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} returns disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every creature the grammar reads whose ability shuffles it into its
