@@ -349,6 +349,11 @@ enum Effect {
     /// "Counter target spell" (CR 701.6a): it leaves the stack for its
     /// owner's graveyard, or exile when the text says "exile it instead".
     Counter { slot: usize, exile: bool },
+    /// "Sacrifice a creature": one its controller chooses among the
+    /// creatures they control as it is done, a token made before it in the
+    /// same ability among them (CR 701.21a, 608.2c); [`World::sacrificed`]
+    /// is one way it goes.
+    SacrificeACreature,
     /// "Counter target spell unless its controller pays {N}" (CR 701.6a,
     /// 608.2g): that player chooses as it resolves, and pays with what
     /// they have, floating or tapped for; [`World::paid`] is one way it
@@ -1684,6 +1689,10 @@ impl Spec {
             self.effects.push(Effect::LoseAndGain { slot, loses, gains });
             return Some(());
         }
+        if s == "Sacrifice a creature" {
+            self.effects.push(Effect::SacrificeACreature);
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
@@ -2801,6 +2810,10 @@ struct World {
     /// Whether the controller of a spell countered "unless its controller
     /// pays" paid, one way it can go; [`pay_choices`] lists them.
     paid: bool,
+    /// The creature "sacrifice a creature" takes, one way it can go: a
+    /// permanent, or a token by its place once the tokens before it are
+    /// made; [`sacrifice_choices`] lists them.
+    sacrificed: Option<Src>,
     /// The card put into a hand from the top of a library, by name, and
     /// whether the top card was revealed: one way each can go.
     picked: Option<String>,
@@ -3260,6 +3273,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         chosen: Vec::new(),
         discarded: Vec::new(),
         paid: false,
+        sacrificed: None,
         picked: None,
         revealed: false,
         found: None,
@@ -3843,6 +3857,19 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.a_creature_died = true;
                 }
             }
+            Effect::SacrificeACreature => match w.sacrificed {
+                Some(Src::Permanent(victim)) => {
+                    w.leave(victim, Dest::Graveyard);
+                    w.a_creature_died = true;
+                }
+                Some(Src::Token(i)) => {
+                    // A token dies too, and then ceases to exist (CR 700.4,
+                    // 704.5d).
+                    w.tokens.remove(i);
+                    w.a_creature_died = true;
+                }
+                None => {}
+            },
             Effect::EachPlayerChoosesACreature => {}
             Effect::DestroyTheRest => {
                 let doomed: Vec<ObjectId> = w.permanents.iter()
@@ -4321,7 +4348,29 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
     }
     ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, targets, caster))
         .flat_map(|w| pay_choices(spec, &w, targets))
+        .flat_map(|w| sacrifice_choices(spec, &w, caster))
         .collect()
+}
+
+/// Every creature "sacrifice a creature" can take as `spec` resolves for
+/// `caster`: each creature they control, and each creature token they
+/// control once the tokens `spec` makes before it are made (CR 608.2c).
+fn sacrifice_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
+    let Some(at) = spec.effects.iter().position(|e| *e == Effect::SacrificeACreature) else { return vec![world.clone()] };
+    let made: usize = spec.effects[..at].iter()
+        .map(|e| match e {
+            Effect::Tokens { n, per_creature_card: false, half_of: None, .. } => *n,
+            Effect::Tokens { .. } => panic!("the reference counts the tokens of a fixed number made before a sacrifice"),
+            _ => 0,
+        })
+        .sum();
+    let mut victims: Vec<Src> = world.permanents.iter()
+        .filter(|(_, m)| m.controller == caster && m.is_creature())
+        .map(|(id, _)| Src::Permanent(*id))
+        .collect();
+    victims.extend(world.tokens.iter().enumerate().filter(|(_, t)| t.controller == caster && t.is_creature()).map(|(i, _)| Src::Token(i)));
+    victims.extend((0..made).map(|k| Src::Token(world.tokens.len() + k)));
+    victims.into_iter().map(|v| World { sacrificed: Some(v), ..world.clone() }).collect()
 }
 
 /// Every way the controller of a spell that `spec` counters "unless its
@@ -4405,7 +4454,7 @@ fn asks_as_it_resolves(spec: &Spec) -> bool {
         Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }
         | Effect::PlayerExilesFromGraveyard { .. } | Effect::Discard { .. } | Effect::LookTopPickOne { .. }
         | Effect::RevealTopTransformIf { .. } | Effect::ExileChosenNonlandFromHand { .. } | Effect::ReturnAllOfChosenType
-        | Effect::CounterUnlessPays { .. } | Effect::ThatPlayerDiscards { .. }))
+        | Effect::CounterUnlessPays { .. } | Effect::ThatPlayerDiscards { .. } | Effect::SacrificeACreature))
 }
 
 /// Whether `spec` does something at random.
@@ -5336,7 +5385,7 @@ const READ: &[&str] = &[
     "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Slayer of the Wicked",
     "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
     "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
-    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
+    "Stitcher's Apprentice", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
     "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
     "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
     "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats",
@@ -6561,6 +6610,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         chosen: Vec::new(),
         discarded: Vec::new(),
         paid: false,
+        sacrificed: None,
         picked: None,
         revealed: false,
         found: None,
@@ -7812,6 +7862,8 @@ fn the_grammar_reads_its_templates() {
     let gargoyle = read_creature(&gargoyle).unwrap();
     assert_eq!(gargoyle.statics, vec![Static::AsLongAsItHas { keyword: Keyword::Defender, has: vec![Keyword::Indestructible] }]);
     assert_eq!(gargoyle.activated[0].spec.effects, vec![Effect::LoseAndGain { slot: 0, loses: vec![Keyword::Defender], gains: vec![Keyword::Flying] }]);
+    let apprentice = Printed { oracle_text: "{1}{U}, {T}: Create a 2/2 blue Homunculus creature token, then sacrifice a creature.".to_string(), ..viper.clone() };
+    assert_eq!(read_creature(&apprentice).unwrap().activated[0].spec.effects.last(), Some(&Effect::SacrificeACreature));
     let unread = Printed { oracle_text: "Flying\nThis creature can't be the target of spells.".to_string(), ..viper };
     assert!(read_creature(&unread).is_err());
 

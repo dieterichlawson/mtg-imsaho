@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-234 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+235 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. The latest is Frightful Delusion's
 "unless its controller pays {1}": the spell's controller paying, by
 tapping their Forest, and Giant Growth resolving after; declining, and
