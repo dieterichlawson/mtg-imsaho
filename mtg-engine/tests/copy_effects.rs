@@ -554,6 +554,56 @@ fn a_token_copy_entering_under_essence_of_the_wild_is_an_essence_of_the_wild() {
         "the CR 707.8 name-cache clause must not fire: {violations:?}");
 }
 
+/// CR 614.12b, 707.2: a token copy of a card that chooses what it enters as
+/// chooses too, since its copiable values are the card's text, that
+/// replacement among them. Back from the Brink exiling an Evil Twin card
+/// built the token straight onto the battlefield, where Evil Twin's
+/// replacement found no answer recorded and the token entered as a 0/0 that
+/// was never asked and died. Its entry now waits on the choice as the
+/// card's would: nothing is on the battlefield, nor does the token cease to
+/// exist, while it waits; a copy of the Bear enters as a 2/2 Bear, and
+/// declined, the 0/0 enters and is gone.
+#[test]
+fn a_token_copy_of_evil_twin_chooses_what_it_enters_as() {
+    let reg = registry();
+    for copy in [true, false] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+        let twin_card = named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
+
+        let token = state.create_token_copy(twin_card, P0, &reg);
+        while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+        assert!(state.get_object(token).is_some_and(|o| o.zone != Zone::Battlefield),
+            "the token neither entered nor ceased to exist while its choice waits");
+        assert!(!state.objects_in_zone(Zone::Battlefield, P0).iter().any(|o| o.is_token));
+
+        mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+        let options = match &state.awaiting_action {
+            Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+                choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+            }) => options.clone(),
+            other => panic!("the token copy should offer a copy choice, got {other:?}"),
+        };
+        assert_eq!(options, vec![Target::Object(bear)], "any creature on the battlefield");
+        let violations = mtg_engine::invariants::check_settled(&state, &reg);
+        assert!(!violations.iter().any(|v| v.contains("command zone") || v.contains("still exists")),
+            "a token waiting on its entry is neither stray nor in the wrong zone: {violations:?}");
+
+        state.awaiting_action = None;
+        let choice = if copy { mtg_engine::state::EnterAsCopyChoice::Copy(bear) } else { mtg_engine::state::EnterAsCopyChoice::Declined };
+        mtg_engine::replacement::record_entry_choice(&mut state, token, choice, &reg);
+        while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+        if copy {
+            let o = state.get_object(token).expect("on the battlefield");
+            assert!(o.zone == Zone::Battlefield && o.is_token && o.controller == P0);
+            assert_eq!(state.name_of(token, &reg), "Grizzly Bears");
+            assert_eq!((state.effective_power(token, &reg), state.effective_toughness(token, &reg)), (Some(2), Some(2)));
+        } else {
+            assert!(state.get_object(token).is_none(), "a 0/0 token died and ceased to exist");
+        }
+    }
+}
+
 /// The other half of the same mechanism: with nothing replacing the entry, a
 /// token copy is still a copy of the card it was made from — face, legend
 /// flag and all. Handing the copied card in at creation rather than stamping

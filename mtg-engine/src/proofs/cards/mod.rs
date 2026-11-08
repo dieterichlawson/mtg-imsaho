@@ -1512,6 +1512,13 @@ impl Snapshot {
     /// `controller`, after the objects it had: untapped, undamaged, with no
     /// counters, attached to nothing and face up; nothing else changed.
     pub fn with_new_permanents(&self, ids: &[ObjectId], controller: PlayerId) -> Self {
+        self.with_new_objects(ids, controller, Zone::Battlefield)
+    }
+
+    /// This snapshot with new objects `ids`, in that order, in `zone` under
+    /// `controller`, untapped, undamaged, without counters and attached to
+    /// nothing; nothing else changed.
+    pub fn with_new_objects(&self, ids: &[ObjectId], controller: PlayerId, zone: Zone) -> Self {
         let mut s = self.clone();
         let mut objects = Vec::with_capacity(self.objects.len() + MAX_LISTED);
         objects.extend_from_slice(&self.objects);
@@ -1519,7 +1526,7 @@ impl Snapshot {
         for id in ids {
             objects.push(ObjectRow {
                 id: *id,
-                zone: Zone::Battlefield,
+                zone,
                 controller,
                 tapped: false,
                 damage: 0,

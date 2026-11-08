@@ -1155,6 +1155,23 @@ impl GameState {
                 subtypes: subtypes_printed,
             }),
         };
+        // CR 614.12b, 707.2: a token copy of a card that chooses what it
+        // enters as (Back from the Brink's copy of an Evil Twin card) makes
+        // that choice as it enters, as the card would: its copiable values
+        // are the card's text, that replacement included. Its entry waits on
+        // the answer the way a card's does (`move_object`), the token held
+        // in the command zone, which nothing in this pool otherwise uses, so
+        // that nothing sees it on the battlefield as its printed self with
+        // the choice outstanding. The answer moves it onto the battlefield
+        // (`replacement::record_entry_choice`), planned then as any entry is.
+        // Built on the battlefield, it was a 0/0 that never chose and died.
+        if face.is_some_and(|f| registry.get(f.card_id).is_some_and(crate::cards::CardBehavior::chooses_copy_as_it_enters)) {
+            let mut obj = obj;
+            obj.zone = Zone::Command;
+            self.objects.insert(id, obj);
+            self.pending_entry_choices.push(id);
+            return id;
+        }
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
         // replacement effects apply (CR 614.1c/d).

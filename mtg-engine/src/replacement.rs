@@ -28,7 +28,9 @@ use crate::types::{CounterType, Zone};
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnteringPermanent {
     pub object: ObjectId,
-    /// Where it is coming from. `None` for a token, which comes from nowhere.
+    /// Where it is coming from. `None` for a token, which comes from nowhere;
+    /// the command zone for a token copy held there for its enters-as-a-copy
+    /// choice (`GameState::create_token_internal`), which nothing reads.
     pub from: Option<Zone>,
     pub controller: PlayerId,
     pub tapped: bool,

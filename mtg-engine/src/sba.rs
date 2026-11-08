@@ -348,10 +348,11 @@ pub(crate) fn apply_legend_rule(state: &mut GameState, registry: &CardRegistry) 
 }
 
 /// Rule 704.5d: A token not on the battlefield ceases to exist. Whether
-/// any did.
+/// any did. A token held for its enters-as-a-copy choice has not entered
+/// yet, and is not one (CR 614.12b; `GameState::create_token_internal`).
 pub(crate) fn remove_tokens_elsewhere(state: &mut GameState) -> bool {
     let dead_tokens: Vec<_> = state.objects_in_id_order().into_iter()
-        .filter(|o| o.is_token && o.zone != Zone::Battlefield)
+        .filter(|o| o.is_token && o.zone != Zone::Battlefield && !state.pending_entry_choices.contains(&o.id))
         .map(|o| o.id)
         .collect();
     let took_action = !dead_tokens.is_empty();
