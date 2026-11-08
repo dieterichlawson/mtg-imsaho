@@ -621,7 +621,21 @@ pub fn record_pay(_: &mut GameState, player: PlayerId, cost: &crate::types::Mana
 /// a board of the blank card's (`proofs::actions::paying`).
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn any_payment_plan(_: &GameState, _: PlayerId, _: &crate::types::ManaCost, _: &CardRegistry) -> Option<Vec<(ObjectId, usize)>> {
-    if kani::any() { Some(Vec::new()) } else { None }
+    let planned: bool = kani::any();
+    // SAFETY: a proof runs on one thread, and only this function writes PLANNED.
+    unsafe { *std::ptr::addr_of_mut!(PLANNED.value) = Some(planned) };
+    if planned { Some(Vec::new()) } else { None }
+}
+
+/// Whether [`any_payment_plan`] last found a plan, if it was asked: for a
+/// proof that a question is asked exactly when there is a way to pay.
+static mut PLANNED: Held<Option<bool>> = Held::new(None, (&raw const PLANNED).cast());
+
+/// What [`any_payment_plan`] last answered: `Some(true)` a plan, `Some(false)`
+/// none, `None` not asked.
+pub fn planned() -> Option<bool> {
+    // SAFETY: as in `any_payment_plan`.
+    unsafe { *std::ptr::addr_of!(PLANNED.value) }
 }
 
 /// Stands in for `GameState::create_token_copy`: the id the token would

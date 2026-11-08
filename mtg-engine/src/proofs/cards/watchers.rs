@@ -156,10 +156,13 @@ case_by_case! { mentor_of_the_meek_triggers_for_another_small_creature_of_yours;
 }
 
 /// Mentor of the Meek's effect: its controller is asked whether to pay
-/// {1}, and on "yes" pays it and, if it was paid, draws a card (CR
-/// 117.12a... "if you do"); on "no", nothing. Answered `yes` or not, a
-/// constant in each harness: the trigger and both answers in one harness
-/// ran out of memory at four gigabytes in symbolic execution.
+/// {1} if they can (with no way to pay it the "may" has one answer, and
+/// nothing is asked or done, CR 117.3, #940), and on "yes" pays it and, if
+/// it was paid, draws a card (CR 117.12a... "if you do"); on "no",
+/// nothing. Whether they can is the planner's (`any_payment_plan` stands
+/// in for it: a plan or none). Answered `yes` or not, a constant in each
+/// harness: the trigger and both answers in one harness ran out of memory
+/// at four gigabytes in symbolic execution.
 fn mentor_of_the_meek_draws_for_a_small_creature_if_you_pay(yes: bool) {
     let mut b = watching_of(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false, &CREATURES);
     let entered = b.either();
@@ -170,7 +173,14 @@ fn mentor_of_the_meek_draws_for_a_small_creature_if_you_pay(yes: bool) {
     let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
         player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
     }) if *player == b.you && *source == b.me && *source_card == b.me);
-    assert!(asked && acted() == 0);
+    assert!(acted() == 0 && super::planned() == Some(asked));
+    kani::cover!(asked, "asked, a payment planned");
+    kani::cover!(!asked, "not asked, none planned");
+    if !asked {
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget(b);
+        return;
+    }
     crate::proofs::cards::clear_prompt(&mut b.state);
     assert!(Snapshot::of(&b.state) == before);
     b.registry.get(card).expect("registered").on_yes_no_choice(&mut b.state, b.me, yes, &b.registry);
