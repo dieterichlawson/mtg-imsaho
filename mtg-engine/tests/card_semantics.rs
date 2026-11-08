@@ -370,6 +370,10 @@ enum Effect {
     /// (CR 702.34a): nothing on the board shows it, which
     /// `every_flashback_grant_is_what_its_text_says` checks.
     GrantFlashback { slot: usize },
+    /// "Create a token that's a copy of target creature you control" (CR
+    /// 707.2, 111.1): its copiable values, not its counters, damage, state
+    /// or what else changes it.
+    TokenCopy { slot: usize },
     /// "Destroy all Curses attached to you" (CR 701.8c): at once, each
     /// Curse attached to its controller, whoever controls the Curse.
     DestroyCursesAttachedToYou,
@@ -1023,6 +1027,10 @@ enum Static {
     /// remove a +1/+1 counter from it" (CR 615.1, 614.1a): any damage at
     /// all, a counter for each time, none removed when it has none.
     DamageRemovesACounterInstead,
+    /// "Creatures you control enter as a copy of this creature" (CR 614.1c,
+    /// 707.2): each creature entering under its controller enters as a
+    /// copy of it, its name and all.
+    CreaturesYouControlEnterAsACopy,
     /// "You have hexproof": its controller can't be the target of spells
     /// or abilities their opponents control (CR 702.11d).
     YouHaveHexproof,
@@ -1812,6 +1820,11 @@ impl Spec {
             self.effects.push(Effect::GrantFlashback { slot });
             return Some(());
         }
+        if let Some(f) = s.strip_prefix("Create a token that's a copy of target ") {
+            let slot = self.slot(Slot::Permanent(filter(f)?));
+            self.effects.push(Effect::TokenCopy { slot });
+            return Some(());
+        }
         if s == "Destroy all Curses attached to you" {
             self.effects.push(Effect::DestroyCursesAttachedToYou);
             return Some(());
@@ -2236,6 +2249,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             .and_then(|(a, b)| (a == b).then(|| a.to_string()))
         {
             spec.enters_with_a_counter_for_each = Some(subtype);
+            continue;
+        }
+        if line == "Creatures you control enter as a copy of this creature." {
+            spec.statics.push(Static::CreaturesYouControlEnterAsACopy);
             continue;
         }
         if line == "This creature enters with X +1/+1 counters on it." {
@@ -3252,6 +3269,26 @@ impl World {
         (p.map(|p| p + m.boost.0 + m.temp.0), t.map(|t| t + m.boost.1 + m.temp.1))
     }
 
+    /// A creature entering under `m`'s controller as it would: a copy of
+    /// the permanent of theirs that has their creatures enter as a copy of
+    /// it (Essence of the Wild), named as it is unless a token, and tapped
+    /// and attacking as `m` enters; or itself (CR 614.1c, 707.2).
+    fn entering(&self, m: Model) -> Model {
+        if !m.is_creature() {
+            return m;
+        }
+        match self.permanents.values().find(|e| e.controller == m.controller && e.statics.contains(&Static::CreaturesYouControlEnterAsACopy)) {
+            Some(e) => Model {
+                name: m.name.as_ref().and(e.name.clone()),
+                tapped: m.tapped,
+                attacking: m.attacking,
+                exile_at_end_of_combat: m.exile_at_end_of_combat,
+                ..copy_of(e, m.controller)
+            },
+            None => m,
+        }
+    }
+
     /// How many tokens an effect makes under `player`'s control for each it
     /// says: twice as many for each permanent of theirs that doubles them
     /// (CR 614.1a, 616.1).
@@ -3464,7 +3501,7 @@ impl World {
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
             Static::YouHaveHexproof | Static::DoublesYourTokens | Static::ArtifactAbilitiesCantBeActivated
-            | Static::DamageRemovesACounterInstead => None,
+            | Static::DamageRemovesACounterInstead | Static::CreaturesYouControlEnterAsACopy => None,
         }
     }
 
@@ -3894,6 +3931,40 @@ fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>>
     sets
 }
 
+/// A token copy of `m` under `controller`: its copiable values, the
+/// characteristics of the face it shows and the text behind them (CR
+/// 707.2), and none of its counters, damage, tapping, attachments or
+/// effects. A token's name is not observed.
+fn copy_of(m: &Model, controller: PlayerId) -> Model {
+    let net = i32::try_from(m.counters.0).expect("a few") - i32::try_from(m.counters.1).expect("a few");
+    Model {
+        name: None,
+        owner: controller,
+        controller,
+        power: m.power.map(|p| p - net),
+        toughness: m.toughness.map(|t| t - net),
+        damage: 0,
+        tapped: false,
+        counters: (0, 0),
+        named_counters: BTreeMap::new(),
+        attached: None,
+        deathtouched: false,
+        granted: Vec::new(),
+        boost: (0, 0),
+        restricted: Vec::new(),
+        shields: 0,
+        temp: (0, 0),
+        temp_keywords: Vec::new(),
+        temp_lost: Vec::new(),
+        temp_protection_from_non: Vec::new(),
+        temp_restricted: Vec::new(),
+        stolen_from: None,
+        attacking: false,
+        exile_at_end_of_combat: false,
+        ..m.clone()
+    }
+}
+
 /// A creature token with the characteristics its text gives it (CR 111.3).
 fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[String], keywords: &[Keyword], controller: PlayerId) -> Model {
     Model {
@@ -4080,6 +4151,14 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::GrantFlashback { .. } => {}
+            Effect::TokenCopy { slot } => {
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get(&id)).cloned() {
+                    for _ in 0..w.tokens_per_token(caster) {
+                        let t = w.entering(copy_of(&m, caster));
+                        w.tokens.push(t);
+                    }
+                }
+            }
             Effect::DestroyCursesAttachedToYou => {
                 let doomed: Vec<ObjectId> = w.permanents.iter()
                     .filter(|(_, m)| m.subtypes.iter().any(|t| t == "Curse") && m.attached == Some(Target::Player(caster)))
@@ -4567,7 +4646,8 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     None => times,
                 };
                 for _ in 0..times * w.tokens_per_token(caster) {
-                    w.tokens.push(Model { tapped: *tapped, ..creature_token((*power, *toughness), colors, subtypes, keywords, caster) });
+                    let t = w.entering(Model { tapped: *tapped, ..creature_token((*power, *toughness), colors, subtypes, keywords, caster) });
+                    w.tokens.push(t);
                 }
             }
             Effect::ControllerGainsLifeEqualToPower { slot } => {
@@ -4968,6 +5048,16 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
 fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printed, id: ObjectId) -> Vec<World> {
     let mut w = world.clone();
     let mut m = Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) };
+    // A permanent of its caster's that has their creatures enter as a copy
+    // of it (Essence of the Wild): the creature enters as that, name and all.
+    // Its own counters and enters trigger are not the copy's.
+    if world.permanents.values().any(|e| e.controller == caster && e.statics.contains(&Static::CreaturesYouControlEnterAsACopy)) {
+        let entering = world.entering(m);
+        w.permanents.insert(id, entering);
+        w.source = Some(id);
+        w.state_based_actions();
+        return vec![w];
+    }
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
         let n = i32::try_from(n).expect("a few");
         change(&mut m, n, n);
@@ -5827,7 +5917,7 @@ const READ: &[&str] = &[
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
     "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
-    "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
+    "Cackling Counterpart", "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
     "Charmbreaker Devils", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
     "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
     "Creeping Renaissance", "Crossway Vampire", "Curiosity", "Curse of Death's Hold",
@@ -5836,7 +5926,7 @@ const READ: &[&str] = &[
     "Daybreak Ranger", "Dead Weight", "Dearly Departed", "Delver of Secrets", "Demonmail Hauberk",
     "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
     "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor", "Essence of the Wild",
     "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
     "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest", "Fortress Crab",
     "Frightful Delusion", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
@@ -6815,7 +6905,8 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
         let k = if t.per_creature_card { w.creature_cards_in_graveyard(P0) } else { 1 };
         for _ in 0..k {
             let token = creature_token((t.power, t.toughness), &t.colors, &t.subtypes, &t.keywords, P0);
-            w.tokens.push(Model { tapped: true, attacking: true, exile_at_end_of_combat: t.exile_at_end_of_combat, ..token });
+            let token = w.entering(Model { tapped: true, attacking: true, exile_at_end_of_combat: t.exile_at_end_of_combat, ..token });
+            w.tokens.push(token);
         }
         w.state_based_actions();
     }
@@ -8144,6 +8235,47 @@ fn every_damage_replacement_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature the grammar reads that has its controller's creatures
+/// enter as a copy of it (Essence of the Wild): on the caster's side,
+/// Grizzly Bears and Elite Inquisitor each enter as a copy of it, name and
+/// all; on the opponent's side, or nowhere, as themselves (CR 614.1c,
+/// 707.2).
+#[test]
+fn every_enter_as_a_copy_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.statics.contains(&Static::CreaturesYouControlEnterAsACopy)) {
+        for (creature, side) in [("Grizzly Bears", Some(P0)), ("Elite Inquisitor", Some(P0)), ("Grizzly Bears", Some(P1)), ("Grizzly Bears", None)] {
+            casts += 1;
+            let (printed, creature_spec) = (&cache[creature], read_creature(&cache[creature]).expect("reads"));
+            let (mut state, mut world) = board(&registry, &cache);
+            if let Some(side) = side {
+                place_face(&mut state, &mut world, &registry, card, spec, side);
+                world.refresh();
+            }
+            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == creature) {
+                Some(o) => {
+                    let at = world.hand[0].iter().position(|h| h == creature).expect("in the reference's hand");
+                    world.hand[0].remove(at);
+                    o.id
+                }
+                None => spell_in_hand(&mut state, &registry, creature, P0),
+            };
+            fund(&mut state, P0, &mana_cost(&printed.mana_cost).expect("a cost"), 0);
+            let want = creature_outcomes(&creature_spec, &world, P0, printed, spell);
+            let got = every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new())));
+            if let Some(why) = disagreement(&want, &got, &registry) {
+                failures.push(format!("{} {}, {creature} cast: {why}", card.name, side.map_or("nowhere".to_string(), |p| format!("player {}'s", p.0))));
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature card the grammar reads that, from its owner's graveyard,
 /// gives their creatures of a subtype a counter as they enter (Dearly
 /// Departed's Humans): a Human cast by the card's owner enters with the
@@ -9100,6 +9232,9 @@ fn the_grammar_reads_its_templates() {
     let mikaeus = Printed { name: "Mikaeus, the Lunarch".to_string(), oracle_text: "Mikaeus enters with X +1/+1 counters on it.\n{T}: Put a +1/+1 counter on Mikaeus.\n{T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1 counter on each other creature you control.".to_string(), ..viper.clone() };
     let mikaeus = read_creature(&mikaeus).unwrap();
     assert!(mikaeus.enters_with_x_counters && !mikaeus.activated[0].remove_counter && mikaeus.activated[1].remove_counter);
+    assert_eq!(read(&card("X", "Create a token that's a copy of target creature you control.")).unwrap().effects, vec![Effect::TokenCopy { slot: 0 }]);
+    let essence = Printed { oracle_text: "Creatures you control enter as a copy of this creature.".to_string(), ..viper.clone() };
+    assert_eq!(read_creature(&essence).unwrap().statics, vec![Static::CreaturesYouControlEnterAsACopy]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

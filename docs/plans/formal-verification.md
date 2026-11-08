@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-253 of the pool's 268 instants, sorceries, creatures, enchantments,
+255 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -832,12 +832,18 @@ damage, the last leaving a 0/0 to die (615.1, 704.5f). Mikaeus, the
 Lunarch is the first {X} creature read, entering with each X from none,
 a 0/0 that dies, to three, and the first cost of removing a counter: its
 second ability takes one from Mikaeus and puts one on each other
-creature its controller has. Not yet read: copies, other replacement
-effects (mill instead of damage), counters other than +1/+1 and -1/-1,
-hexproof granted to creatures, attack triggers with targets, and links
-between abilities ("the exiled card"). Each is a template, or a board,
-to add; `READ` lists the cards read, and a change that stops reading any
-of them fails and names it.
+creature its controller has. Copies are read where they are tokens and
+where a creature enters as one (707.2): Cackling Counterpart's token
+takes a creature's copiable values and none of its state, and with
+Essence of the Wild on its side every creature entering there, Grizzly
+Bears cast or Geist of Saint Traft's Angel in combat, is a 6/6 Avatar.
+Not yet read: a copy chosen as a creature enters (Evil Twin) or made
+from a card (Back from the Brink), other replacement effects (mill
+instead of damage), counters other than +1/+1 and -1/-1, hexproof
+granted to creatures, attack triggers with targets, and links between
+abilities ("the exiled card"). Each is a template, or a board, to add;
+`READ` lists the cards read, and a change that stops reading any of them
+fails and names it.
 
 ### Cards proved with Kani
 
