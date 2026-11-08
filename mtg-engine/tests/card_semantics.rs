@@ -972,6 +972,9 @@ enum Static {
     /// creates twice that many of those tokens instead" (CR 614.1a): each
     /// such permanent its controller controls doubles again (616.1).
     DoublesYourTokens,
+    /// "Activated abilities of artifacts can't be activated" (CR 602.5):
+    /// every player's artifacts, mana abilities included (605.1a).
+    ArtifactAbilitiesCantBeActivated,
 }
 
 /// A rule a static ability puts on a creature (CR 508.1c-d, 509.1b,
@@ -2423,6 +2426,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.extend(statics);
             continue;
         }
+        if body == "Activated abilities of artifacts can't be activated" {
+            spec.statics.push(Static::ArtifactAbilitiesCantBeActivated);
+            continue;
+        }
         if body == "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead" {
             spec.statics.push(Static::DoublesYourTokens);
             continue;
@@ -3252,7 +3259,7 @@ impl World {
             }
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
-            Static::YouHaveHexproof | Static::DoublesYourTokens => None,
+            Static::YouHaveHexproof | Static::DoublesYourTokens | Static::ArtifactAbilitiesCantBeActivated => None,
         }
     }
 
@@ -5495,7 +5502,7 @@ const READ: &[&str] = &[
     "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked",
     "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
     "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
-    "Stitcher's Apprentice", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
+    "Stitcher's Apprentice", "Stony Silence", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
     "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
     "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
     "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats",
@@ -7320,6 +7327,66 @@ fn every_cost_reduction_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every permanent the grammar reads that stops artifacts' activated
+/// abilities ("Activated abilities of artifacts can't be activated"), on
+/// either side: each artifact the grammar reads with an activated or mana
+/// ability, its controller's with mana for anything, offers no activation
+/// with it there and some without (CR 602.5, 605.1a); and the caster's
+/// Sol Ring pays for nothing, Grizzly Bears castable on {G} floating
+/// without it and not with it.
+#[test]
+fn every_artifact_prohibition_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let activations = |state: &GameState, id: ObjectId| engine::legal_actions(state, &registry).actions.iter()
+        .filter(|a| matches!(a, Action::ActivateAbility { object_id, .. } | Action::ActivateManaAbility { object_id, .. } if *object_id == id))
+        .count();
+    for (card, spec) in cards.iter().filter(|(_, s)| s.statics.contains(&Static::ArtifactAbilitiesCantBeActivated)) {
+        for side in [None, Some(P0), Some(P1)] {
+            for (artifact, aspec) in cards.iter().filter(|(c, s)| c.has_type("Artifact") && (!s.activated.is_empty() || !s.mana.is_empty())) {
+                checked += 1;
+                let (mut state, mut world) = board(&registry, &cache);
+                if let Some(side) = side {
+                    place_face(&mut state, &mut world, &registry, card, spec, side);
+                }
+                // A copy already on the board is the one offered: the
+                // engine lists one mana ability for copies of a card.
+                let id = match state.objects.values().find(|o| o.zone == Zone::Battlefield && o.controller == P0 && o.name == artifact.name) {
+                    Some(o) => o.id,
+                    None => place_face(&mut state, &mut world, &registry, artifact, aspec, P0),
+                };
+                fund(&mut state, P0, &mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost"), 0);
+                let offered = activations(&state, id);
+                if side.is_some() && offered > 0 {
+                    failures.push(format!("{} for player {}: {} offers {offered} activations", card.name, side.map_or(0, |p| p.0), artifact.name));
+                } else if side.is_none() && offered == 0 {
+                    failures.push(format!("{} offers no activation without {}", artifact.name, card.name));
+                }
+            }
+            // The caster's Sol Ring, the Plains tapped: Grizzly Bears on {G}.
+            checked += 1;
+            let (mut state, mut world) = board(&registry, &cache);
+            if let Some(side) = side {
+                place_face(&mut state, &mut world, &registry, card, spec, side);
+            }
+            for o in state.objects.values_mut().filter(|o| o.zone == Zone::Battlefield && o.name == "Plains") {
+                o.tapped = true;
+            }
+            fund(&mut state, P0, &mana_cost("{G}").expect("a cost"), 0);
+            let bears = state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == "Grizzly Bears").expect("in hand").id;
+            let castable = engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == bears);
+            if castable != side.is_none() {
+                failures.push(format!("{}: Grizzly Bears castable {castable} on {{G}} and Sol Ring", side.map_or(format!("without {}", card.name), |p| format!("{} for player {}", card.name, p.0))));
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} boards disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every permanent the grammar reads that doubles the tokens its
 /// controller's effects make (Parallel Lives), on either side: each
 /// instant and sorcery the grammar reads that makes tokens, targets
@@ -8237,6 +8304,8 @@ fn the_grammar_reads_its_templates() {
     assert!(read_creature(&maniac).unwrap().wins_drawing_from_empty_library);
     let lives = Printed { type_line: "Enchantment".to_string(), oracle_text: "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.".to_string(), ..viper.clone() };
     assert_eq!(read_enchantment(&lives).unwrap().statics, vec![Static::DoublesYourTokens]);
+    let silence = Printed { type_line: "Enchantment".to_string(), oracle_text: "Activated abilities of artifacts can't be activated.".to_string(), ..viper.clone() };
+    assert_eq!(read_enchantment(&silence).unwrap().statics, vec![Static::ArtifactAbilitiesCantBeActivated]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

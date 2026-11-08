@@ -761,45 +761,50 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-241 of the pool's 268 instants, sorceries, creatures, enchantments, lands
-and artifacts are read, and all agree. The latest is Frightful Delusion's
-"unless its controller pays {1}": the spell's controller paying, by
-tapping their Forest, and Giant Growth resolving after; declining, and
-Giant Growth countered; and the discard either way. Every template has been shown to
-catch a deliberate bug in a card that uses it, and the engine code under
-it, from Lightning Bolt dealing 2 to the untap step untapping every
-player's permanents (`reports/verification-mutants.md` lists the rounds:
-of the latest 190 mutants, 187 caught, one missed for want of a change of
-control between activation and resolution, two equivalent), and the
-failure names the cast and the difference. Every mutant that first
-survived became a check or a board: the "may" policies, the stack count,
-"nothing beyond its text", the opponent's Vampire, the declarations
-test, the opponent casting in the game loop, a Bears cast with no mana
-left. Inquisitor's Flail's replacements are read: combat damage dealt by
-the equipped creature and to it by another each doubled as it is dealt,
-after any prevention (CR 614.1a, 616.1). Skirsdag High Priest's cost of
-tapping two other creatures is read, each pair of the caster's untapped
+242 of the pool's 268 instants, sorceries, creatures, enchantments,
+lands and artifacts are read, and all agree. Among the latest read is
+Frightful Delusion's "unless its controller pays {1}": the spell's
+controller paying, by tapping their Forest, and Giant Growth resolving
+after; declining, and Giant Growth countered; and the discard either
+way. Every template has been shown to catch a deliberate bug in a card
+that uses it, and the engine code under it, from Lightning Bolt dealing
+2 to the untap step untapping every player's permanents
+(`reports/verification-mutants.md` lists the rounds: of the latest 190
+mutants, 187 caught, one missed for want of a change of control between
+activation and resolution, two equivalent), and the failure names the
+cast and the difference. Every mutant that first survived became a check
+or a board: the "may" policies, the stack count, "nothing beyond its
+text", the opponent's Vampire, the declarations test, the opponent
+casting in the game loop, a Bears cast with no mana left. Inquisitor's
+Flail's replacements are read: combat damage dealt by the equipped
+creature and to it by another each doubled as it is dealt, after any
+prevention (CR 614.1a, 616.1). Skirsdag High Priest's cost of tapping
+two other creatures is read, each pair of the caster's untapped
 creatures a way to pay it, and its morbid restriction on the board and
 after a death. Heartless Summoning's cost reduction is read and checked
 on its own: each of five creature cards offered with its cost less {2}
 of generic floating and not with one mana fewer, the opponent's at full
 price (CR 601.2f, 118.7d). Witchbane Orb's "You have hexproof" is read
 and checked on its own: every spell read that targets a player is
-offered without the Orb's controller when the Orb is the opponent's,
-and with them when it is the caster's own (702.11d); and its enters
-trigger destroys the opponent's Curse on its caster. Laboratory
-Maniac's replacement is checked by playing the game out: its controller,
-drawing from an empty library, wins; without it, or with the opponent's,
-they lose for the draw (CR 614.1a, 104.2b, 704.5b). Parallel Lives
-doubles the tokens of every untargeted token spell read (Army of the
-Damned's thirteen Zombies become twenty-six) on its controller's side
-and of none on the opponent's. Not yet read: copies, other replacement
-effects (mill instead of damage), counters other than +1/+1 and -1/-1, rule modifiers ("can't be
-activated", "can't be cast"), modal spells, protection and hexproof
-granted to creatures, attack triggers with targets, links between abilities ("the
-exiled card"), and costs of removing counters. Each is a template, or a
-board, to add; `READ` lists the cards read, and a change that stops
-reading any of them fails and names it.
+offered without the Orb's controller when the Orb is the opponent's, and
+with them when it is the caster's own (702.11d); and its enters trigger
+destroys the opponent's Curse on its caster. Laboratory Maniac's
+replacement is checked by playing the game out: its controller, drawing
+from an empty library, wins; without it, or with the opponent's, they
+lose for the draw (CR 614.1a, 104.2b, 704.5b). Parallel Lives doubles
+the tokens of every untargeted token spell read (Army of the Damned's
+thirteen Zombies become twenty-six) on its controller's side and of none
+on the opponent's. Stony Silence, on either side, leaves every artifact
+read offering no activation, mana abilities included, and Sol Ring
+paying for nothing (CR 602.5, 605.1a); with Stony Silence gone from the
+engine's every check, 34 of the 51 boards fail. Not yet read: copies,
+other replacement effects (mill instead of damage), counters other than
++1/+1 and -1/-1, rule modifiers ("can't be cast"), modal spells,
+protection and hexproof granted to creatures, attack triggers with
+targets, links between abilities ("the exiled card"), and costs of
+removing counters. Each is a template, or a board, to add; `READ` lists
+the cards read, and a change that stops reading any of them fails and
+names it.
 
 ### Cards proved with Kani
 
