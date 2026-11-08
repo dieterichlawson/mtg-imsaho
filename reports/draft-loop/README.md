@@ -5,7 +5,8 @@ plays a best-of-three Swiss tournament; then each drafter writes down what
 it learned, and the guide the next night drafts with is rewritten from
 those lessons and every night's statistics. Over many nights the guide is
 meant to become the best Innistrad draft guide these drafters can write,
-and the ledger says whether it is helping.
+and the ledger says whether it is helping, and whether it beats a fixed
+guide of the standard advice on the format.
 
 `scripts/draft-loop/night.sh` runs a night; the nightly routine runs it and
 commits what is here.
@@ -14,18 +15,19 @@ commits what is here.
 
 | file | what |
 | --- | --- |
-| `guide.md` | The guide. Even seats draft with it in their prompt at every pick; odd seats without it. `git log -p guide.md` is its history. |
-| `stats.md` | Every night's tables: guided against unguided seats, colour pairs, and per card how early it is taken, how often it is played, and how its decks do. `stats.json` is the same as data. |
+| `guide.md` | The guide. Seats 0 and 4 draft with it in their prompt at every pick (every even seat did until the conventional guide came in). `git log -p guide.md` is its history. |
+| `conventional.md` | A fixed guide of standard Innistrad limited advice, written without the loop's numbers; never rewritten. Seats 2 and 6 draft with it. Odd seats draft with no guide. Why it is here: `reports/guide-replay/2026-11-07-guides.md`. |
+| `stats.md` | Every night's tables: guided, conventional and unguided seats (over all nights, and over the nights that had all three), colour pairs, and per card how early it is taken, how often it is played, and how its decks do. `stats.json` is the same as data. |
 | `nights/DATE.json` | One night as data: each seat's picks (pack, pick, card), colours, deck, record, end-of-draft notes, and every pack it was asked to pick from (a pack's last card is taken without asking). |
-| `nights/DATE-lessons.json` | Each seat's lessons, with its record and whether it had the guide. |
+| `nights/DATE-lessons.json` | Each seat's lessons, with its record and which guide it had. |
 | `nights/DATE-curate.json` | The guide's rewrite: the model, its length, and whether it was taken. |
-| `nights/DATE.md` | The night, for reading: standings, guided and unguided records, lessons, the guide's fate, what it spent. |
+| `nights/DATE.md` | The night, for reading: standings, guided, conventional and unguided records, lessons, the guide's fate, what it spent. |
 | `nights/DATE-positions.jsonl.xz` | Every pick a seat was asked, as `MTG_DRAFT_POSITIONS` keeps it, each with its seat's guide: the pick eval's input (`scripts/decision-eval/draft-replay.py`). |
 
 ## How a night runs
 
 1. `mtg-draft-runner --model cc:claude-haiku-5-5 --players 8 --best-of 3
-   --seed <date> --guide-0 guide.md --guide-2 ... --save ...` — the draft,
+   --seed <date> --guide-0 guide.md --guide-2 conventional.md ... --save ...` — the draft,
    the deck builds, sideboarding between games, and the tournament.
 2. `ledger.py night` and `ledger.py stats` — the night into the ledger,
    and the tables over all nights.
@@ -56,7 +58,9 @@ and `DRAFT_LOOP_BEST_OF` change the defaults; `DRAFT_LOOP_OUT` and
 
 ## Reading it
 
-The guided-against-unguided table is the loop's own test. A night is eight
+The guided-against-unguided table is the loop's own test, and its
+"nights with all three" table is the fair test of the loop's guide against
+the conventional one: the same nights, the same seats. A night is eight
 decks and about thirty games, so a difference of a game or two is noise;
 read it over weeks. Per-card numbers below about ten games are anecdotes,
 and the guide is told to say so. A card's games are the games it was in

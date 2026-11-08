@@ -5,10 +5,13 @@
 #
 #   scripts/draft-loop/night.sh [DATE]          # DATE defaults to today (UTC)
 #
-# Even seats draft with reports/draft-loop/guide.md in their prompt and odd
-# seats without it, so the ledger can say whether the guide helps
-# (`stats.md`, "Guided against unguided seats"). The seed is the date, so a
-# night replays. Everything the loop keeps goes under reports/draft-loop/:
+# Seats 0 and 4 draft with reports/draft-loop/guide.md in their prompt, the
+# guide the loop writes; seats 2 and 6 with reports/draft-loop/conventional.md,
+# a fixed guide of standard Innistrad advice; odd seats with none. So the
+# ledger can say whether the loop's guide helps, and whether it beats the
+# advice anyone could have written down (`stats.md`, "Guided against
+# unguided seats"). The seed is the date, so a night replays. Everything the
+# loop keeps goes under reports/draft-loop/:
 #
 #   nights/DATE.json            the night as data (ledger.py night)
 #   nights/DATE-lessons.json    each seat's lessons (reflect.py debrief)
@@ -18,6 +21,7 @@
 #                               (a pack's last card is taken without asking: no position)
 #   stats.md, stats.json        every night's tables (ledger.py stats)
 #   guide.md                    the guide the next night drafts with
+#   conventional.md             the conventional guide (never rewritten)
 #
 # The run's own log, save and stdout stay under logs/draft-loop/DATE/
 # (gitignored; DATE-<out> for a DRAFT_LOOP_OUT of its own). Seats are plan quota, never metered:
@@ -39,6 +43,9 @@ case "$night" in
   *) seed=$(printf '%s' "$night" | tr -d '-') ;;
 esac
 out="${DRAFT_LOOP_OUT:-reports/draft-loop}"
+# The conventional guide is the repo's, wherever the kept files go: a dry
+# run into a scratch DRAFT_LOOP_OUT drafts with the same one.
+conventional=reports/draft-loop/conventional.md
 # The snapshot is the ledger's it was played for, and by the CLI it was
 # played with: a stub dry run into a scratch DRAFT_LOOP_OUT kept its save
 # where the real night of that date then carried it on, recording the
@@ -47,7 +54,20 @@ logs="logs/draft-loop/$night"
 if [ "$out" != "reports/draft-loop" ]; then
   logs="$logs-$(printf '%s' "$out" | tr -c 'A-Za-z0-9._-' '_')"
 fi
-run="out=$out cli=${CLAUDE_CODE_BIN:-claude} model=$model players=$players best_of=$best_of"
+# Which seat has which guide, by seat: 0 and 4 the loop's (L), 2 and 6 the
+# conventional one (C), odd seats none (-). A snapshot taken under another
+# split is another run's, and the stamp below says so.
+arms=""
+seat=0
+while [ "$seat" -lt "$players" ]; do
+  case $((seat % 4)) in
+    0) arms="${arms}L" ;;
+    2) if [ -f "$conventional" ]; then arms="${arms}C"; else arms="${arms}L"; fi ;;
+    *) arms="${arms}-" ;;
+  esac
+  seat=$((seat + 1))
+done
+run="out=$out cli=${CLAUDE_CODE_BIN:-claude} model=$model players=$players best_of=$best_of guides=$arms"
 mkdir -p "$out/nights" "$logs"
 if [ -f "$out/nights/$night.md" ]; then
   echo "$night is already in the ledger ($out/nights/$night.md); a second run that day is ${night}_b" >&2
@@ -78,19 +98,20 @@ if [ -z "${MTG_DRAFT_RUNNER_BIN:-}" ]; then
   MTG_DRAFT_RUNNER_BIN=./target/release/mtg-draft-runner
 fi
 
-# The guide for the even seats, by seat flag; the runner records its hash.
+# Each seat's guide, by seat flag, as `arms` says; the runner records its hash.
 guided=""
+conv=""
 guide_flags=""
 seat=0
 while [ "$seat" -lt "$players" ]; do
-  if [ $((seat % 2)) -eq 0 ]; then
-    guided="$guided${guided:+,}$seat"
-    guide_flags="$guide_flags --guide-$seat $guide"
-  fi
+  case $(printf '%s' "$arms" | cut -c$((seat + 1))) in
+    L) guided="$guided${guided:+,}$seat"; guide_flags="$guide_flags --guide-$seat $guide" ;;
+    C) conv="$conv${conv:+,}$seat"; guide_flags="$guide_flags --guide-$seat $conventional" ;;
+  esac
   seat=$((seat + 1))
 done
 
-echo "draft loop $night: seed $seed, $players seats on cc:$model, best-of-$best_of, guided seats $guided"
+echo "draft loop $night: seed $seed, $players seats on cc:$model, best-of-$best_of, guided seats $guided, conventional seats ${conv:-none}"
 # shellcheck disable=SC2086
 MTG_DRAFT_POSITIONS="$PWD/$logs/positions.jsonl" "$MTG_DRAFT_RUNNER_BIN" \
   --model "cc:$model" --players "$players" --best-of "$best_of" --seed "$seed" --quiet \
@@ -98,9 +119,9 @@ MTG_DRAFT_POSITIONS="$PWD/$logs/positions.jsonl" "$MTG_DRAFT_RUNNER_BIN" \
     echo "the run failed; see $logs/out.txt" >&2; tail -20 "$logs/out.txt" >&2; exit 1; }
 
 python3 scripts/draft-loop/ledger.py night --save "$logs/save.json" --positions "$logs/positions.jsonl" \
-  --night "$night" --guided "$guided" --guide "$guide" --usage "$logs/out.txt" --log "$logs/draft.log" --out "$out"
+  --night "$night" --guided "$guided" --guide "$guide" --conventional "$conv" --conventional-guide "$conventional" --usage "$logs/out.txt" --log "$logs/draft.log" --out "$out"
 xz -9 -c "$logs/positions.jsonl" > "$out/nights/$night-positions.jsonl.xz"
-python3 scripts/draft-loop/reflect.py debrief --night "$night" --out "$out" --guide "$guide"
+python3 scripts/draft-loop/reflect.py debrief --night "$night" --out "$out" --guide "$guide" --conventional-guide "$conventional"
 python3 scripts/draft-loop/ledger.py stats --out "$out"
 python3 scripts/draft-loop/reflect.py curate --night "$night" --out "$out" --guide "$guide"
 python3 scripts/draft-loop/report.py --night "$night" --out "$out"
