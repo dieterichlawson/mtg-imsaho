@@ -940,6 +940,9 @@ struct Activated {
     /// "Remove a +1/+1 counter from this creature" in the cost (CR 602.2b,
     /// 118.3): payable only with one there.
     remove_counter: bool,
+    /// "Sacrifice Blazing Torch" in the cost of an ability it grants: the
+    /// permanent granting it, not the creature it is on (CR 701.21a).
+    sacrifice_granter: bool,
     spec: Spec,
 }
 
@@ -957,7 +960,7 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let (cost, effect) = line.strip_prefix("Morbid — ").unwrap_or(line).split_once(": ")?;
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
-        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, spec: Spec::default(),
+        sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false, spec: Spec::default(),
     };
     for part in cost.split(", ") {
         match part {
@@ -967,6 +970,7 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
             "Exile a creature card from your graveyard" => ability.exile_creature_card = true,
             "Remove a +1/+1 counter from this creature" => ability.remove_counter = true,
+            "Sacrifice ~" => ability.sacrifice_granter = true,
             _ if part.starts_with("Tap ") && part.ends_with(" untapped creatures you control") => {
                 ability.tap_others = number(part.strip_prefix("Tap ")?.strip_suffix(" untapped creatures you control")?)? as usize;
             }
@@ -1036,6 +1040,10 @@ enum Static {
     /// 707.2): each creature entering under its controller enters as a
     /// copy of it, its name and all.
     CreaturesYouControlEnterAsACopy,
+    /// "Equipped creature can't be blocked by Vampires or Zombies" (CR
+    /// 509.1b): the subtypes whose creatures can't block the creature it is
+    /// attached to.
+    AttachedNotBlockedBy(Vec<String>),
     /// "You have hexproof": its controller can't be the target of spells
     /// or abilities their opponents control (CR 702.11d).
     YouHaveHexproof,
@@ -2463,6 +2471,11 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             spec.etb = Some(Box::new(trigger));
         } else if body == "You have hexproof" {
             spec.statics.push(Static::YouHaveHexproof);
+        } else if let Some(ability) = line.strip_prefix("Equipped creature has \"").and_then(|r| r.strip_suffix('"')) {
+            // The engine numbers it after the Equipment's own abilities.
+            spec.grants.push(read_activated(ability, 0).ok_or_else(|| format!("cannot read {line:?}"))?);
+        } else if let Some(ts) = body.strip_prefix("Equipped creature can't be blocked by ") {
+            spec.statics.push(Static::AttachedNotBlockedBy(ts.split(" or ").map(singular).collect()));
         } else if line == "If equipped creature would deal combat damage, it deals double that damage instead." {
             spec.statics.push(Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None });
         } else if line == "If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead." {
@@ -2482,7 +2495,7 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
-                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, spec: equip,
+                sacrifice, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -2492,6 +2505,10 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
         } else {
             spec.activated.push(read_activated(line, index).ok_or_else(|| format!("cannot read {line:?}"))?);
         }
+    }
+    let own = spec.activated.len();
+    for (i, grant) in spec.grants.iter_mut().enumerate() {
+        grant.index = own + i;
     }
     if spec.activated.is_empty() && spec.mana.is_empty() && spec.etb.is_none() && spec.statics.is_empty() {
         return Err("no abilities".to_string());
@@ -2943,6 +2960,8 @@ struct Model {
     /// "Protection from non-<subtype> creatures" until end of turn: the
     /// subtypes (CR 702.16a).
     temp_protection_from_non: Vec<String>,
+    /// The subtypes an Equipment on it says can't block it, as refreshed.
+    granted_not_blocked_by: Vec<String>,
     /// ... and rules: "can't block this turn".
     temp_restricted: Vec<Restriction>,
     /// Who controlled it before an effect that gives it back in the
@@ -2988,6 +3007,7 @@ impl Model {
             temp_keywords: Vec::new(),
             temp_lost: Vec::new(),
             temp_protection_from_non: Vec::new(),
+            granted_not_blocked_by: Vec::new(),
             temp_restricted: Vec::new(),
             stolen_from: None,
             attacking: false,
@@ -3405,7 +3425,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_lost: Vec::new(), temp_protection_from_non: Vec::new(), temp_restricted: Vec::new(), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_lost: Vec::new(), temp_protection_from_non: Vec::new(), granted_not_blocked_by: Vec::new(), temp_restricted: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -3437,6 +3457,19 @@ impl World {
             m.granted.clear();
             m.boost = (0, 0);
             m.restricted.clear();
+            m.granted_not_blocked_by.clear();
+        }
+        let evasions: Vec<(ObjectId, Vec<String>)> = self.permanents.values()
+            .filter_map(|src| match src.attached { Some(Target::Object(on)) => Some((on, src)), _ => None })
+            .flat_map(|(on, src)| src.statics.iter().filter_map(move |st| match st {
+                Static::AttachedNotBlockedBy(ts) => Some((on, ts.clone())),
+                _ => None,
+            }))
+            .collect();
+        for (on, ts) in evasions {
+            if let Some(m) = self.permanents.get_mut(&on) {
+                m.granted_not_blocked_by.extend(ts);
+            }
         }
         for keywords in [true, false] {
             let before = self.clone();
@@ -3510,7 +3543,8 @@ impl World {
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
             Static::YouHaveHexproof | Static::DoublesYourTokens | Static::ArtifactAbilitiesCantBeActivated
-            | Static::DamageRemovesACounterInstead | Static::CreaturesYouControlEnterAsACopy => None,
+            | Static::DamageRemovesACounterInstead | Static::CreaturesYouControlEnterAsACopy
+            | Static::AttachedNotBlockedBy(_) => None,
         }
     }
 
@@ -3966,6 +4000,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
         temp_keywords: Vec::new(),
         temp_lost: Vec::new(),
         temp_protection_from_non: Vec::new(),
+        granted_not_blocked_by: Vec::new(),
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
@@ -4007,6 +4042,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         temp_keywords: Vec::new(),
         temp_lost: Vec::new(),
         temp_protection_from_non: Vec::new(),
+        granted_not_blocked_by: Vec::new(),
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
@@ -5937,7 +5973,7 @@ const READ: &[&str] = &[
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
     "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
-    "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
+    "Blazing Torch", "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
     "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
     "Cackling Counterpart", "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
     "Charmbreaker Devils", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
@@ -6891,6 +6927,7 @@ fn evasion_allows(attacker: &Model, blocker: &Model) -> bool {
             && !(blocker.types.iter().any(|t| t == "artifact") || attacker.colors.iter().any(|c| blocker.colors.contains(c))))
         && !a.not_blocked_by.iter().chain(&a.protection_from).any(|t| blocker.subtypes.contains(t))
         && !attacker.temp_protection_from_non.iter().any(|t| !blocker.subtypes.contains(t))
+        && !attacker.granted_not_blocked_by.iter().any(|t| blocker.subtypes.contains(t))
 }
 
 /// Whether damage `source` would deal `to` is prevented by protection
@@ -8513,6 +8550,9 @@ fn every_granted_ability_does_what_its_text_says() {
                 if ability.tap {
                     paid.permanents.get_mut(&bears).expect("the Bears").tapped = true;
                 }
+                if ability.sacrifice_granter {
+                    paid.leave(aura, Dest::Graveyard);
+                }
                 let want: Vec<World> = resolution_ways(&ability.spec, &paid, full, P0).iter()
                     .map(|w| {
                         let mut after = apply(&ability.spec, w, full, P0);
@@ -8698,6 +8738,7 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
                     let changed = |id: ObjectId| {
                         let (x, y) = (&world.permanents[&id], &without.permanents[&id]);
                         x.boost != y.boost || x.granted != y.granted || x.restricted != y.restricted
+                            || x.granted_not_blocked_by != y.granted_not_blocked_by
                     };
                     // A permanent whose combat text watches the fight changes
                     // it too: one watching its controller's attackers of a
@@ -8742,8 +8783,9 @@ fn kinds<'a>(fighters: &[(&'a Printed, &'a Spec)]) -> Vec<(&'a Printed, &'a Spec
         .collect()
 }
 
-/// A vanilla fighter, and one with each keyword that changes how combat
-/// damage is dealt or who may block: the opponents an Equipment's or an
+/// A vanilla fighter, one with each keyword that changes how combat
+/// damage is dealt or who may block, and one of each subtype an
+/// Equipment's evasion names: the opponents an Equipment's or an
 /// Aura's creature fights unless CARD_SEMANTICS_EVERY_FIGHT is set
 /// (scripts/prove.sh exhaustive), when it fights every fighter.
 fn probes<'a>(fighters: &[(&'a Printed, &'a Spec)]) -> Option<Vec<(&'a Printed, &'a Spec)>> {
@@ -8754,6 +8796,13 @@ fn probes<'a>(fighters: &[(&'a Printed, &'a Spec)]) -> Option<Vec<(&'a Printed, 
     for k in [None, Some(Keyword::Flying), Some(Keyword::FirstStrike), Some(Keyword::Deathtouch), Some(Keyword::Trample), Some(Keyword::Reach)] {
         let kind = fighters.iter().copied().find(|(c, s)| s.statics.is_empty() && s.combat == CombatText::default()
             && k.map_or(c.keywords().is_empty(), |k| c.keywords().contains(&k)));
+        probes.extend(kind.filter(|p| !probes.iter().any(|q| q.0.name == p.0.name)));
+    }
+    // And one of each subtype an Equipment's evasion names (Blazing Torch's
+    // Vampires and Zombies), so that it has a blocker to keep out.
+    for t in ["Vampire", "Zombie"] {
+        let kind = fighters.iter().copied().find(|(c, s)| s.statics.is_empty() && s.combat == CombatText::default()
+            && c.types().1.iter().any(|x| x == t));
         probes.extend(kind.filter(|p| !probes.iter().any(|q| q.0.name == p.0.name)));
     }
     Some(probes)
@@ -9259,6 +9308,10 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read_creature(&essence).unwrap().statics, vec![Static::CreaturesYouControlEnterAsACopy]);
     let twin = Printed { oracle_text: "You may have this creature enter as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\"".to_string(), ..viper.clone() };
     assert!(read_creature(&twin).unwrap().may_enter_as_a_copy);
+    let torch = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "Equipped creature can't be blocked by Vampires or Zombies.\nEquipped creature has \"{T}, Sacrifice ~: ~ deals 2 damage to any target.\"\nEquip {1}".to_string(), ..viper.clone() };
+    let torch = read_artifact(&torch).unwrap();
+    assert_eq!(torch.statics, vec![Static::AttachedNotBlockedBy(vec!["Vampire".to_string(), "Zombie".to_string()])]);
+    assert!(torch.grants[0].tap && torch.grants[0].sacrifice_granter && torch.grants[0].index == 1);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
