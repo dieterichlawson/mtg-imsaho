@@ -1211,3 +1211,20 @@ say what your stub says.
   requirements. Next time, look for every such pair (`cancel` beside
   `indices`/`sources`, `confirm`, a "none" row) and answer each the way a
   seat declining would, under both `MTG_CLAUDE_CODE_ANSWERS` settings
+- H40 [proposed 2026-11-08, from 099c7d3, e5dba4e, 99e65c5, a21747d] the
+  guide-replay instrument against a seat that does not answer:
+  `scripts/decision-eval/draft-replay.py --guide FILE|none`,
+  `guide-effect.py` and `judge-picks.py` decide whether a draft guide is
+  kept (`reports/guide-replay/`), and none of them had been run against
+  anything but a well-behaved model. Take 40 kept positions
+  (`xz -dc reports/draft-loop/nights/<date>-positions.jsonl.xz | head -40`),
+  replay `none-a`, `none-b` and `current` under a wrapper of
+  `scripts/llm-prompt-stub.py` that answers wrongly one call in four (prose
+  with no object, an index past the pack), with
+  `MTG_DRAFT_RETRY_BUDGET_SECS=5` so a dead pick costs seconds. Verify:
+  a row the binary could not answer says why in `error`; a `fallback` row
+  is neither an answer in `guide-effect.py`'s noise, settled set and
+  changed picks nor a card `judge-picks.py` sends to the judge; a resumed
+  replay asks a fallback row again; `--samples 2` is not collapsed to one
+  answer per position; and `judge-picks.py` under a stub judge that always
+  says "A" reports the order bias it claims to check
