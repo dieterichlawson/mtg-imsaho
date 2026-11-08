@@ -416,16 +416,41 @@ pub(crate) fn creature_fates(state: &GameState, registry: &CardRegistry) -> (Vec
 /// What rules 704.5f-h do to the creatures [`creature_fates`] names: one
 /// of toughness 0 or less goes to its owner's graveyard, which nothing
 /// stops; one destroyed is, unless it has indestructible as the pass
-/// begins or a regeneration shield, which is used instead. Whether
-/// anything was done.
+/// begins or a regeneration shield, which is used instead. Each death is
+/// captured, last known information and all (CR 608.2h), before any of
+/// them is acted on (704.3). Whether anything was done.
 pub(crate) fn remove_creatures(state: &mut GameState, zero_toughness_ids: Vec<ObjectId>, destroyed_ids: Vec<ObjectId>, registry: &CardRegistry) -> bool {
     let mut took_action = false;
+    // Per rule 704.3, SBAs happen simultaneously, so what the pass reads of
+    // the creatures it removes is read before any of them goes.
+    // Indestructible first, so that e.g. Angelic Overseer retains it even if
+    // the Human granting it dies in the same batch: this snapshot was taken
+    // after the creatures of no toughness had already gone. Then each death's
+    // last known information, so that a toughness counting the creature
+    // cards in a graveyard (a creature under Wreath of Geists, dying beside
+    // the Abattoir Ghoul whose trigger gains life equal to it) does not count
+    // one that died beside it: each was read just before its own move, after
+    // the moves before it.
+    // A list rather than a `HashSet`, whose hasher a proof cannot model.
+    let indestructible_snapshot: Vec<ObjectId> = destroyed_ids.iter()
+        .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, registry))
+        .copied()
+        .collect();
+    let shielded = |state: &GameState, id: ObjectId| state.get_object(id).is_some_and(|o| o.regeneration_shields > 0);
+    let zero_deaths: Vec<Option<crate::events::GameEvent>> = zero_toughness_ids.iter()
+        .map(|&id| crate::destruction::death_event(state, id, Some(registry)))
+        .collect();
+    let destroyed_deaths: Vec<Option<crate::events::GameEvent>> = destroyed_ids.iter()
+        .map(|&id| if indestructible_snapshot.contains(&id) || shielded(state, id) {
+            None
+        } else {
+            crate::destruction::death_event(state, id, Some(registry))
+        })
+        .collect();
+
     // Rule 704.5f: zero toughness goes directly to graveyard.
-    for id in zero_toughness_ids {
-        // The same last-known-information capture the destruction pipeline
-        // does, and now literally the same code: this was a hand-rolled
-        // copy that had to be kept in step with it by hand.
-        if let Some(event) = crate::destruction::death_event(state, id, Some(registry)) {
+    for (id, death) in zero_toughness_ids.into_iter().zip(zero_deaths) {
+        if let Some(event) = death {
             state.events.push(event);
         }
         // move_object handles the death log message.
@@ -435,28 +460,18 @@ pub(crate) fn remove_creatures(state: &mut GameState, zero_toughness_ids: Vec<Ob
     }
 
     // Rules 704.5g/h: lethal damage or deathtouch — use destruction pipeline.
-    // Per rule 704.3, SBAs happen simultaneously. We must snapshot indestructible
-    // status BEFORE processing any deaths, so that e.g. Angelic Overseer retains
-    // indestructible even if the Human granting it dies in the same SBA batch.
-    // A list rather than a `HashSet`, whose hasher a proof cannot model.
-    let indestructible_snapshot: Vec<ObjectId> = destroyed_ids.iter()
-        .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, registry))
-        .copied()
-        .collect();
-
-    for id in destroyed_ids {
+    for (id, death) in destroyed_ids.into_iter().zip(destroyed_deaths) {
         // Check indestructible from the snapshot (before any deaths in this batch).
         if indestructible_snapshot.contains(&id) {
             continue;
         }
         // Still need regeneration check.
-        let shields = state.get_object(id).map_or(0, |o| o.regeneration_shields);
-        if shields > 0 {
+        if shielded(state, id) {
             crate::destruction::regenerate_sba(state, id);
             took_action = true;
             continue;
         }
-        crate::destruction::destroy_sba(state, id, registry);
+        crate::destruction::destroy_sba(state, id, death, registry);
         took_action = true;
     }
 

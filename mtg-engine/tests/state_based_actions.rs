@@ -865,3 +865,34 @@ fn a_draw_that_wins_with_laboratory_maniac_logs_the_draw_before_the_win() {
     assert!(drew < won,
         "nothing is drawn after the game has already been won: {messages:?}");
 }
+
+/// CR 704.3, 608.2h: the creatures one pass removes leave at once, so each
+/// death is announced as the creature last existed, beside the others
+/// still there. A Boneyard Wurm, its size the creature cards in its
+/// controller's graveyard, and a Grizzly Bears of theirs, both holding
+/// lethal damage, die together: the Wurm was a 2/2 when it died. The pass
+/// read each death just before its own move, so the Bears, gone first,
+/// was already counted and the Wurm died a 3/3 — what an Abattoir Ghoul
+/// that had damaged it would have gained.
+#[test]
+fn creatures_dying_together_are_each_announced_as_they_last_existed() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Moon Heron", P0);
+    assert_eq!(state.effective_toughness(wurm, &reg), Some(2), "two creature cards in the graveyard");
+    state.get_object_mut(bears).unwrap().damage_marked = 2;
+    state.get_object_mut(wurm).unwrap().damage_marked = 2;
+    state.trigger_event_index = state.events.len();
+
+    check_state_based_actions(&mut state, &reg);
+
+    let died = |id: ObjectId| state.events.iter().find_map(|e| match e {
+        mtg_engine::events::GameEvent::CreatureDied { object, last_known_toughness, .. } if *object == id => Some(*last_known_toughness),
+        _ => None,
+    });
+    assert_eq!(died(bears), Some(2));
+    assert_eq!(died(wurm), Some(2), "the Wurm died a 2/2, the Bears beside it not yet in the graveyard");
+}

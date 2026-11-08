@@ -138,16 +138,23 @@ fn regenerate_sba(_: &mut GameState, id: ObjectId) {
 }
 
 /// Stands in for `destruction::destroy_sba` (`try_destroy`'s `destroy`, as
-/// that proof shows it): recorded.
+/// that proof shows it): recorded, and handed the creature's own death as
+/// the pass captured it.
 #[allow(dead_code)] // named only by `kani::stub`
-fn destroy_sba(_: &mut GameState, id: ObjectId, _: &CardRegistry) {
+fn destroy_sba(_: &mut GameState, id: ObjectId, death: Option<GameEvent>, _: &CardRegistry) {
+    assert!(matches!(death, Some(GameEvent::Tapped { object }) if object == id), "destroyed with its own death");
     done(false, id);
 }
 
 /// Stands in for `destruction::death_event` (`try_destroy`'s proof says
-/// what it captures): a marker naming the creature.
+/// what it captures): a marker naming the creature. Every death is
+/// captured before the pass moves, regenerates or destroys anything (CR
+/// 704.3, 608.2h).
 #[allow(dead_code)] // named only by `kani::stub`
 fn death_event(_: &GameState, id: ObjectId, _: Option<&CardRegistry>) -> Option<GameEvent> {
+    // SAFETY: as in `is_creature`, for DONE_N.
+    let done = unsafe { *std::ptr::addr_of!(DONE_N.value) };
+    assert!(acted() == 0 && done == 0, "a death captured after the pass began removing creatures");
     Some(GameEvent::Tapped { object: id })
 }
 
@@ -163,12 +170,13 @@ fn has_keyword(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegistry) 
 }
 
 /// What the pass does to the creatures it removes (`remove_creatures`, CR
-/// 704.5f-h, 704.3): each of `zero` (toughness 0 or less), in order, has
-/// its death captured and goes to its owner's graveyard, which
-/// indestructible and regeneration do not stop, and a creature has died
-/// this turn; then each of `destroyed` with indestructible is left, each
-/// other with a regeneration shield is regenerated, and each other is
-/// destroyed, in order. Whether anything was done is whether any of that
+/// 704.5f-h, 704.3): every death is captured before any creature is moved,
+/// regenerated or destroyed (608.2h); each of `zero` (toughness 0 or
+/// less), in order, has its death announced and goes to its owner's
+/// graveyard, which indestructible and regeneration do not stop, and a
+/// creature has died this turn; then each of `destroyed` with
+/// indestructible is left, each other with a regeneration shield is
+/// regenerated, and each other is destroyed with its own death, in order. Whether anything was done is whether any of that
 /// was. For each creature with indestructible or not and a shield or not.
 fn removing(zero: &[u64], destroyed: &[u64]) {
     let mut registry = CardRegistry::new();

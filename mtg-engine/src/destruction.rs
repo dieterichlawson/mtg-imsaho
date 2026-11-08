@@ -369,10 +369,20 @@ pub fn regenerate_sba(state: &mut GameState, id: ObjectId) {
     regenerate(state, id);
 }
 
-/// Destroy during SBA processing (public for sba.rs).
+/// Destroy during SBA processing (public for sba.rs), with its death as
+/// the pass captured it: before any creature the pass removes had left
+/// (CR 704.3, 608.2h), not as the board stands once those before it have.
 /// Skips the indestructible check since SBAs snapshot that separately.
-pub fn destroy_sba(state: &mut GameState, id: ObjectId, registry: &CardRegistry) {
-    destroy(state, id, Some(registry));
+pub fn destroy_sba(state: &mut GameState, id: ObjectId, death: Option<GameEvent>, registry: &CardRegistry) {
+    if !on_battlefield(state, id) {
+        return;
+    }
+    if let Some(event) = death {
+        state.events.push(event);
+        state.creature_died_this_turn = true;
+    }
+    // move_object handles the death/graveyard log message.
+    state.move_object(id, Zone::Graveyard, registry);
 }
 
 /// Remove a creature from the current combat (if any).
