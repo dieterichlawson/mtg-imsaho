@@ -297,6 +297,9 @@ enum Effect {
     DamageEach { amount: u32, filter: Filter },
     /// "<slot> gets +P/+T [and gains K] until end of turn" (CR 611.2).
     Pump { slot: usize, power: i32, toughness: i32, gains: Vec<Keyword> },
+    /// "Until end of turn, this creature loses K and gains K'" (CR 611.2a,
+    /// 613.1f): the loss after every gain it has.
+    LoseAndGain { slot: usize, loses: Vec<Keyword>, gains: Vec<Keyword> },
     /// "<filter> get +P/+T [and gain K] until end of turn".
     PumpEach { filter: Filter, power: i32, toughness: i32, gains: Vec<Keyword> },
     /// "Destroy target ..." (CR 701.8).
@@ -929,6 +932,10 @@ enum Static {
     /// What a creature's own text stops it doing: "This creature doesn't
     /// untap during your untap step" (CR 502.3).
     RestrictsItself { what: Vec<Restriction> },
+    /// "This creature has K as long as it has K'": as long as it has K'
+    /// printed or gained until end of turn, and not lost (CR 611.3a,
+    /// 613.1f).
+    AsLongAsItHas { keyword: Keyword, has: Vec<Keyword> },
 }
 
 /// A rule a static ability puts on a creature (CR 508.1c-d, 509.1b,
@@ -1670,6 +1677,13 @@ impl Spec {
             self.effects.push(Effect::CantBlockThisTurn { slot });
             return Some(());
         }
+        if let Some((loses, gains)) = s.strip_prefix("Until end of turn, this creature loses ").and_then(|r| r.split_once(" and gains ")) {
+            let loses = loses.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?;
+            let gains = gains.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?;
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::LoseAndGain { slot, loses, gains });
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
@@ -2286,6 +2300,10 @@ fn creature_static(line: &str) -> Option<Static> {
     if body == "This creature doesn't untap during your untap step" {
         return Some(Static::RestrictsItself { what: vec![Restriction::DoesntUntap] });
     }
+    if let Some((has, keyword)) = body.strip_prefix("This creature has ").and_then(|r| r.split_once(" as long as it has ")) {
+        let has = has.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?;
+        return Some(Static::AsLongAsItHas { keyword: keyword_named(keyword)?, has });
+    }
     if let Some((change, each)) = body.strip_prefix("This creature gets ").and_then(|r| r.split_once(" for each ")) {
         let (power, toughness) = pt_change(change)?;
         return Some(Static::PerEach { filter: filter(each)?, power, toughness });
@@ -2612,6 +2630,8 @@ struct Model {
     /// 514.2, 611.2a).
     temp: (i32, i32),
     temp_keywords: Vec<Keyword>,
+    /// Keywords lost until end of turn, after every gain (CR 613.1f).
+    temp_lost: Vec<Keyword>,
     /// ... and rules: "can't block this turn".
     temp_restricted: Vec<Restriction>,
     /// Who controlled it before an effect that gives it back in the
@@ -2655,6 +2675,7 @@ impl Model {
             shields: 0,
             temp: (0, 0),
             temp_keywords: Vec::new(),
+            temp_lost: Vec::new(),
             temp_restricted: Vec::new(),
             stolen_from: None,
             attacking: false,
@@ -2707,7 +2728,7 @@ impl Model {
     /// [`Model::matches`] for an ability whose source this is when
     /// `is_source`, which "other" leaves out (CR 109.5).
     fn matches_from(&self, filter: &Filter, caster: PlayerId, is_source: bool) -> bool {
-        let has = |k: &Keyword| self.keywords.contains(k) || self.granted.contains(k) || self.temp_keywords.contains(k);
+        let has = |k: &Keyword| has(self, *k);
         filter.0.iter().any(|c| {
             let head = match &c.head {
                 None => true,
@@ -2872,7 +2893,10 @@ struct PermanentSeen {
 }
 
 fn seen(m: &Model) -> PermanentSeen {
-    let mut keywords: Vec<&'static str> = m.keywords.iter().chain(&m.granted).chain(&m.temp_keywords).map(|k| k.label()).collect();
+    let mut keywords: Vec<&'static str> = m.keywords.iter().chain(&m.granted).chain(&m.temp_keywords)
+        .filter(|k| !m.temp_lost.contains(k))
+        .map(|k| k.label())
+        .collect();
     keywords.sort_unstable();
     keywords.dedup();
     let mut colors: Vec<char> = m.colors.iter().map(|c| color_letter(*c)).collect();
@@ -3034,7 +3058,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_restricted: Vec::new(), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_lost: Vec::new(), temp_restricted: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -3137,6 +3161,7 @@ impl World {
                 (whom && holds).then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() })
             }
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
+            Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
         }
     }
 
@@ -3552,6 +3577,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         shields: 0,
         temp: (0, 0),
         temp_keywords: Vec::new(),
+        temp_lost: Vec::new(),
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
@@ -3611,6 +3637,12 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Pump { slot, power, toughness, gains } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
                     until_end_of_turn(m, (*power, *toughness), gains);
+                }
+            }
+            Effect::LoseAndGain { slot, loses, gains } => {
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    m.temp_keywords.extend(gains);
+                    m.temp_lost.extend(loses);
                 }
             }
             Effect::PumpEach { filter, power, toughness, gains } => {
@@ -4535,6 +4567,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
         m.deathtouched = false;
         m.temp = (0, 0);
         m.temp_keywords.clear();
+        m.temp_lost.clear();
         m.temp_restricted.clear();
         m.shields = 0;
         if let Some(owner) = m.stolen_from.take() {
@@ -5288,7 +5321,7 @@ const READ: &[&str] = &[
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
     "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
-    "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
+    "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
     "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
     "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
@@ -6144,7 +6177,7 @@ fn every_turn_ends_as_its_text_says() {
 // ---- combat ----
 
 fn has(m: &Model, k: Keyword) -> bool {
-    m.keywords.contains(&k) || m.granted.contains(&k) || m.temp_keywords.contains(&k)
+    (m.keywords.contains(&k) || m.granted.contains(&k) || m.temp_keywords.contains(&k)) && !m.temp_lost.contains(&k)
 }
 
 /// Whether `blocker` may block `attacker` alone (CR 509.1a-b): a creature
@@ -7775,6 +7808,10 @@ fn the_grammar_reads_its_templates() {
     let inquisitor = Printed { oracle_text: "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies".to_string(), ..viper.clone() };
     assert_eq!(read_creature(&inquisitor).unwrap().combat.protection_from, vec!["Vampire", "Werewolf", "Zombie"]);
     assert_eq!(Printed { oracle_text: "Defender, protection from Zombies".to_string(), ..viper.clone() }.keywords(), vec![Keyword::Defender]);
+    let gargoyle = Printed { oracle_text: "Defender\nThis creature has indestructible as long as it has defender.\n{1}: Until end of turn, this creature loses defender and gains flying.".to_string(), ..viper.clone() };
+    let gargoyle = read_creature(&gargoyle).unwrap();
+    assert_eq!(gargoyle.statics, vec![Static::AsLongAsItHas { keyword: Keyword::Defender, has: vec![Keyword::Indestructible] }]);
+    assert_eq!(gargoyle.activated[0].spec.effects, vec![Effect::LoseAndGain { slot: 0, loses: vec![Keyword::Defender], gains: vec![Keyword::Flying] }]);
     let unread = Printed { oracle_text: "Flying\nThis creature can't be the target of spells.".to_string(), ..viper };
     assert!(read_creature(&unread).is_err());
 
