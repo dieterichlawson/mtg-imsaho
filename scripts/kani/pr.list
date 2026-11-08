@@ -1,6 +1,6 @@
 # What a pull request proves: the fastest proved harness of each module of
-# the proofs, fastest first, 32 of the 197 modules within 450 s
-# (424 s in the last run). Written by scripts/kani-tiers.py write.
+# the proofs, fastest first, 32 of the 198 modules within 450 s
+# (430 s in the last run). Written by scripts/kani-tiers.py write.
 proofs::mana_payment::each_type_has_its_own_slot
 proofs::actions::mana_cost::a_cost_of_no_symbols_is_built_as_none
 proofs::cards::counted_pt::skaab_ruinator_costs_three_creature_cards_and_casts_from_the_graveyard
@@ -26,10 +26,10 @@ proofs::actions::mulligan::keeping_a_hand_owes_a_card_to_the_bottom_for_each_mul
 proofs::actions::filters::flying_or_reach_matches_exactly_what_has_either
 proofs::actions::until_end_of_turn::no_flashback_granted_until_end_of_turn_is_read_as_none
 proofs::vec_map::inserting_into_a_vec_set_is_inserting_into_an_ordered_set
-proofs::actions::state_based::the_legend_rule_waits_while_another_question_is_waiting
 proofs::cards::targets::brimstone_volley_targets_any_target
 proofs::actions::predicates::an_object_is_a_creature_when_its_types_say_so::of_a_card
 proofs::actions::predicates::an_objects_colours_are_its_own::of_a_card
 proofs::actions::predicates::an_objects_card_types_are_its_own::of_a_card
 proofs::actions::predicates::an_objects_keywords_are_its_tokens_or_its_cards::of_a_card
 proofs::actions::predicates::nothing_has_protection_on_a_board_that_grants_none::of_a_token
+proofs::actions::scopes::other_creatures_you_control_skips_its_source

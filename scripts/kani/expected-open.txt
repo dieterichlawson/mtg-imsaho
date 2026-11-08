@@ -2,11 +2,6 @@
 # run of every harness (scripts/kani-tiers.py write). The tiers in CI fail
 # on any other harness that does not prove; one of these that proves is
 # said so, to be taken off.
-proofs::actions::answering::two_objects_offered_have_the_effect_applied  # OOM
-proofs::actions::answering::two_objects_offered_have_it_applied_in_the_order_chosen  # OOM
-proofs::actions::answering::one_object_for_a_set_of_two_is_refused  # OOM
-proofs::actions::answering::one_object_chosen_twice_is_refused  # OOM
-proofs::actions::answering::an_object_not_offered_is_refused  # OOM
 proofs::actions::attacking::declaring_no_attacker_attacks_with_those_that_must  # OOM
 proofs::actions::cast_answers::no_target_for_an_up_to_slot_is_cast_with_the_fixed_ones  # OOM
 proofs::actions::cast_answers::one_target_offered_is_cast_after_the_fixed_ones  # OOM
@@ -16,35 +11,18 @@ proofs::actions::cast_answers::a_target_not_offered_cancels_the_cast  # OOM
 proofs::actions::cast_answers::a_target_chosen_twice_cancels_the_cast  # OOM
 proofs::actions::casting_costs::a_creature_spell_of_three_and_black_costs_one_and_black_less_two  # OOM
 proofs::actions::casting_costs::a_creature_spell_of_one_and_black_costs_black_less_two  # OOM
-proofs::actions::combat_damage::a_blocked_attacker_deals_damage_to_its_blockers_in_the_order_announced_in_a_first_strike_step  # OOM
-proofs::actions::combat_damage::a_blocked_attacker_deals_damage_to_its_blockers_in_the_order_announced_in_a_regular_step  # OOM
-proofs::actions::effects::preventing_damage_for_a_counter_reaches_the_creature_it_is_attached_to  # OOM
-proofs::actions::effects::blocked_only_by_flying_or_reach  # OOM
-proofs::actions::effects::cant_be_blocked_by_humans_reaches_the_creature_it_is_on  # OOM
-proofs::actions::effects::cant_be_blocked_by_vampires_or_zombies_reaches_the_creature_it_is_attached_to  # OOM
-proofs::actions::effects::combat_damage_to_a_player_is_prevented_by_the_creature_it_is_attached_to  # OOM
-proofs::actions::effects::noncombat_damage_to_a_player_is_not_prevented_by_combat_damage_prevention  # OOM
-proofs::actions::effects::combat_damage_to_a_player_is_doubled_by_the_creature_it_is_attached_to  # OOM
-proofs::actions::effects::noncombat_damage_to_a_player_is_not_doubled_by_combat_damage_doubling  # OOM
 proofs::actions::paying::one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_no_colorless_for_the_first_player  # OOM
 proofs::actions::paying::one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_no_colorless_for_the_second_player  # OOM
 proofs::actions::paying::one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_no_colorless_for_the_first_player  # OOM
 proofs::actions::paying::one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_no_colorless_for_the_second_player  # OOM
-proofs::actions::paying::one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_one_green_for_the_first_player  # OOM
-proofs::actions::paying::one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_one_green_for_the_second_player  # OOM
-proofs::actions::paying::one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_first_player  # OOM
-proofs::actions::paying::one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_second_player  # OOM
+proofs::actions::paying::the_forests_ability_taps_it_and_adds_green_for_the_first_player  # OOM
+proofs::actions::paying::the_forests_ability_taps_it_and_adds_green_for_the_second_player  # OOM
 proofs::actions::paying::one_is_planned_with_an_untapped_forest_for_the_first_player  # OOM
 proofs::actions::paying::one_is_planned_with_an_untapped_forest_for_the_second_player  # OOM
-proofs::actions::paying::green_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player  # OOM
-proofs::actions::paying::one_and_green_are_planned_with_an_untapped_forest_and_no_green_floating_for_the_first_player  # OOM
-proofs::actions::paying::one_and_green_are_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player  # OOM
 proofs::actions::paying::one_and_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_first_player  # OOM
 proofs::actions::paying::one_and_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player  # OOM
 proofs::actions::paying::one_and_green_are_planned_with_an_untapped_forest_and_two_green_floating_for_the_first_player  # OOM
 proofs::actions::paying::one_and_green_are_planned_with_an_untapped_forest_and_two_green_floating_for_the_second_player  # OOM
-proofs::actions::paying::two_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_first_player  # OOM
-proofs::actions::paying::two_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player  # OOM
 proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_no_green_floating_for_the_first_player  # OOM
 proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_no_green_floating_for_the_second_player  # OOM
 proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player  # OOM
@@ -63,8 +41,6 @@ proofs::actions::paying::two_green_are_paid_with_an_untapped_forest_and_one_gree
 proofs::actions::paying::two_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player  # OOM
 proofs::actions::paying::two_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player  # OOM
 proofs::actions::paying::two_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player  # OOM
-proofs::actions::paying::the_forests_ability_taps_it_and_adds_green_for_the_first_player  # OOM
-proofs::actions::paying::the_forests_ability_taps_it_and_adds_green_for_the_second_player  # OOM
 proofs::actions::state_based::a_player_with_two_legends_of_one_name_is_asked_which_to_keep  # OOM
 proofs::actions::targeting::any_target_offers_creatures_planeswalkers_and_players_that_pass  # OOM
 proofs::actions::targeting::player_or_planeswalker_offers_the_players_and_planeswalkers_that_pass  # OOM
@@ -187,13 +163,13 @@ proofs::cards::targeted_spells::ghoulcallers_chant_returns_its_targets_to_hand  
 proofs::cards::targeted_spells::memorys_journey_shuffles_its_targets_into_their_library  # OOM
 proofs::cards::targeted_spells::blasphemous_act_costs_less_and_deals_thirteen_to_each_creature  # OOM
 proofs::cards::targeted_spells::tribute_to_hunger_makes_them_choose_a_creature_to_sacrifice  # OOM
+proofs::cards::targeted_spells::night_terrors_over_grizzly_bears_and_grizzly_bears  # OOM
 proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_card_with_the_token_of_its_name  # OOM
 proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_card_with_the_token_of_another_name  # OOM
 proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_token_of_the_cards_name  # OOM
 proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_token_of_another_name  # OOM
 proofs::cards::targeted_spells::tribute_to_hunger_sacrifices_the_card_they_chose_and_you_gain_its_toughness  # OOM
 proofs::cards::targeted_spells::tribute_to_hunger_sacrifices_the_token_they_chose_and_you_gain_its_toughness  # OOM
-proofs::cards::targeted_spells::night_terrors_over_grizzly_bears_and_grizzly_bears  # OOM
 proofs::cards::transforming::delver_of_secrets_of_the_second_player_over_lightning_bolt  # OOM
 proofs::cards::transforming::delver_of_secrets_of_the_second_player_over_lava_axe  # OOM
 proofs::cards::transforming::delver_of_secrets_of_the_second_player_over_a_blank_card  # OOM
