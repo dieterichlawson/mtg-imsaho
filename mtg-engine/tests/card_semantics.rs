@@ -346,6 +346,15 @@ enum Effect {
     /// "Counter target spell" (CR 701.6a): it leaves the stack for its
     /// owner's graveyard, or exile when the text says "exile it instead".
     Counter { slot: usize, exile: bool },
+    /// "Counter target spell unless its controller pays {N}" (CR 701.6a,
+    /// 608.2g): that player chooses as it resolves, and pays with what
+    /// they have, floating or tapped for; [`World::paid`] is one way it
+    /// goes.
+    CounterUnlessPays { slot: usize, n: u32 },
+    /// "That player discards a card": the controller of the spell in
+    /// `slot` as it last was (CR 608.2h), a card of their choice, paid or
+    /// not (the 2011-09-22 ruling on Frightful Delusion).
+    ThatPlayerDiscards { slot: usize },
     /// "Mill N cards": the controller mills (CR 701.17).
     MillYou { n: usize },
     /// "Untap all <filter>".
@@ -1391,6 +1400,13 @@ impl Spec {
             self.effects.push(Effect::Damage { amount: number(n)?, slot });
             return Some(());
         }
+        // The controller of the spell an "unless its controller pays"
+        // counters, before a Curse's "that player".
+        if s == "That player discards a card" {
+            let Some(&Effect::CounterUnlessPays { slot, .. }) = self.effects.last() else { return None };
+            self.effects.push(Effect::ThatPlayerDiscards { slot });
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("That player ") {
             let slot = self.slot(Slot::EnchantedPlayer { or_planeswalker: false });
             if let Some(n) = rest.strip_prefix("mills ") {
@@ -1657,6 +1673,12 @@ impl Spec {
         if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
+            return Some(());
+        }
+        if let Some((f, cost)) = s.strip_prefix("Counter target ").and_then(|r| r.split_once(" unless its controller pays ")) {
+            let [ManaSymbol::Generic(n)] = mana_cost(cost)?.symbols[..] else { return None };
+            let slot = self.slot(Slot::Spell(filter(f)?));
+            self.effects.push(Effect::CounterUnlessPays { slot, n });
             return Some(());
         }
         if let Some(f) = s.strip_prefix("Counter target ") {
@@ -2501,7 +2523,7 @@ fn opponent_casts_a_spell(state: &mut GameState, world: &mut World, registry: &C
     });
     assert!(state.stack.len() == 1 && state.priority_player == Some(P0),
         "Giant Growth is on the stack and the caster has priority");
-    world.stack.push((growth, Model::printed(&cache["Giant Growth"], P1)));
+    world.stack.push((growth, Model::printed(&cache["Giant Growth"], P1), vec![Target::Object(kindercatch)]));
 }
 
 /// [`opponent_casts_a_spell`], each step submitted rather than played
@@ -2523,7 +2545,7 @@ fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut Wo
     state.priority_player = Some(P0);
     assert!(state.stack.len() == 1 && state.priority_player == Some(P0),
         "Giant Growth is on the stack and the caster has priority");
-    world.stack.push((growth, Model::printed(&cache["Giant Growth"], P1)));
+    world.stack.push((growth, Model::printed(&cache["Giant Growth"], P1), vec![Target::Object(kindercatch)]));
 }
 
 /// Each player's library, top first: distinct names, so a card put on top
@@ -2738,8 +2760,9 @@ struct World {
     /// A creature died this turn (CR 700.4), which morbid reads.
     a_creature_died: bool,
     /// Spells on the stack below the one being checked, by id, last cast
-    /// last (CR 405.2).
-    stack: Vec<(ObjectId, Model)>,
+    /// last (CR 405.2), each with its targets, which it resolves against
+    /// when nothing counters it.
+    stack: Vec<(ObjectId, Model, Vec<Target>)>,
     /// The permanent whose ability is being read, which "another" excludes.
     source: Option<ObjectId>,
     /// The cards exiled to pay the spell's additional cost.
@@ -2754,6 +2777,9 @@ struct World {
     /// The cards discarded at random, by name, one way it can go;
     /// [`random_choices`] lists them all.
     discarded: Vec<String>,
+    /// Whether the controller of a spell countered "unless its controller
+    /// pays" paid, one way it can go; [`pay_choices`] lists them.
+    paid: bool,
     /// The card put into a hand from the top of a library, by name, and
     /// whether the top card was revealed: one way each can go.
     picked: Option<String>,
@@ -2907,6 +2933,33 @@ impl World {
     fn pt_of(&self, m: &Model) -> (Option<i32>, Option<i32>) {
         let (p, t) = self.defined_pt(m);
         (p.map(|p| p + m.boost.0 + m.temp.0), t.map(|t| t + m.boost.1 + m.temp.1))
+    }
+
+    /// Whether `player` can pay {`n`}: what floats in their pool and the
+    /// untapped basic lands they control.
+    fn can_pay_generic(&self, player: PlayerId, n: u32) -> bool {
+        let floating: u32 = self.pool[player.0 as usize].values().sum();
+        floating + u32::try_from(self.untapped_basics(player).len()).expect("a few") >= n
+    }
+
+    fn untapped_basics(&self, player: PlayerId) -> Vec<ObjectId> {
+        self.permanents.iter()
+            .filter(|(_, m)| m.controller == player && !m.tapped && m.name.as_deref().is_some_and(|n| BASIC_LANDS.contains(&n)))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// `player` pays {`n`} by tapping basic lands: with nothing floating,
+    /// as on every board here, and lands of one name, so which ones are
+    /// tapped is not told apart (CR 601.2g-h, 605.3a).
+    fn pay_generic(&mut self, player: PlayerId, n: u32) {
+        assert_eq!(self.pool[player.0 as usize].values().sum::<u32>(), 0, "the reference pays from lands, nothing floating");
+        let lands = self.untapped_basics(player);
+        let names: BTreeSet<Option<String>> = lands.iter().map(|id| self.permanents[id].name.clone()).collect();
+        assert!(names.len() <= 1, "the reference pays from lands of one name, not {names:?}");
+        for id in lands.iter().take(n as usize) {
+            self.permanents.get_mut(id).expect("on the battlefield").tapped = true;
+        }
     }
 
     /// [`World::pt_of`] before static abilities change it (CR 613.4b-c),
@@ -3181,6 +3234,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        paid: false,
         picked: None,
         revealed: false,
         found: None,
@@ -3394,8 +3448,8 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
             .into_iter()
             .collect(),
         Slot::Spell(f) => world.stack.iter()
-            .filter(|(_, m)| m.matches(f, caster))
-            .map(|(id, _)| Target::Object(*id))
+            .filter(|(_, m, _)| m.matches(f, caster))
+            .map(|(id, _, _)| Target::Object(*id))
             .collect(),
         Slot::GraveyardCard { filter, yours } => world.yard.iter()
             .filter(|(_, m)| !*yours || m.owner == caster)
@@ -3936,10 +3990,30 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::Counter { slot, exile } => {
-                if let Some(at) = object(*slot).and_then(|id| w.stack.iter().position(|(s, _)| *s == id)) {
-                    let (_, m) = w.stack.remove(at);
+                if let Some(at) = object(*slot).and_then(|id| w.stack.iter().position(|(s, _, _)| *s == id)) {
+                    let (_, m, _) = w.stack.remove(at);
                     let name = m.name.expect("a spell from a card");
                     if *exile { w.exile[m.owner.0 as usize].push(name) } else { w.graveyard[m.owner.0 as usize].push(name) }
+                }
+            }
+            Effect::CounterUnlessPays { slot, n } => {
+                if let Some(at) = object(*slot).and_then(|id| w.stack.iter().position(|(s, _, _)| *s == id)) {
+                    if w.paid {
+                        let payer = w.stack[at].1.controller;
+                        w.pay_generic(payer, *n);
+                    } else {
+                        let (_, m, _) = w.stack.remove(at);
+                        w.graveyard[m.owner.0 as usize].push(m.name.expect("a spell from a card"));
+                    }
+                }
+            }
+            Effect::ThatPlayerDiscards { slot } => {
+                // Whose the spell was before anything here moved it.
+                let whose = object(*slot).and_then(|id| world.stack.iter().find(|(s, _, _)| *s == id)).map(|(_, m, _)| m.controller.0 as usize);
+                if let (Some(p), Some(card)) = (whose, w.discarded.first().cloned()) {
+                    let at = w.hand[p].iter().position(|h| *h == card).expect("a card of that hand");
+                    w.hand[p].remove(at);
+                    w.graveyard[p].push(card);
                 }
             }
             Effect::ToHand { slot } => {
@@ -4213,7 +4287,41 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
             .collect();
     }
-    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, targets, caster)).collect()
+    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, targets, caster))
+        .flat_map(|w| pay_choices(spec, &w, targets))
+        .collect()
+}
+
+/// Every way the controller of a spell that `spec` counters "unless its
+/// controller pays" can choose as it resolves: to pay, when they can (CR
+/// 608.2g), or not; and which card of their hand they then discard, by
+/// name.
+fn pay_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<World> {
+    let whose = |slot: usize| match targets.get(slot) {
+        Some(Target::Object(id)) => world.stack.iter().find(|(s, _, _)| s == id).map(|(_, m, _)| m.controller),
+        _ => None,
+    };
+    let mut ways = vec![world.clone()];
+    for effect in &spec.effects {
+        match effect {
+            Effect::CounterUnlessPays { slot, n } => {
+                if whose(*slot).is_some_and(|p| world.can_pay_generic(p, *n)) {
+                    ways = ways.into_iter().flat_map(|w| [World { paid: true, ..w.clone() }, w]).collect();
+                }
+            }
+            Effect::ThatPlayerDiscards { slot } => {
+                let Some(p) = whose(*slot) else { continue };
+                let mut hand = world.hand[p.0 as usize].clone();
+                hand.sort();
+                hand.dedup();
+                if !hand.is_empty() {
+                    ways = ways.into_iter().flat_map(|w| hand.iter().map(move |h| World { discarded: vec![h.clone()], ..w.clone() })).collect();
+                }
+            }
+            _ => {}
+        }
+    }
+    ways
 }
 
 /// Every way its controller can choose among the top of their library as
@@ -4264,7 +4372,8 @@ fn asks_as_it_resolves(spec: &Spec) -> bool {
     is_random(spec) || spec.effects.iter().any(|e| matches!(e,
         Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }
         | Effect::PlayerExilesFromGraveyard { .. } | Effect::Discard { .. } | Effect::LookTopPickOne { .. }
-        | Effect::RevealTopTransformIf { .. } | Effect::ExileChosenNonlandFromHand { .. } | Effect::ReturnAllOfChosenType))
+        | Effect::RevealTopTransformIf { .. } | Effect::ExileChosenNonlandFromHand { .. } | Effect::ReturnAllOfChosenType
+        | Effect::CounterUnlessPays { .. } | Effect::ThatPlayerDiscards { .. }))
 }
 
 /// Whether `spec` does something at random.
@@ -4359,7 +4468,16 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
     if !spec.permanent {
         w.graveyard[caster.0 as usize].push(card.name.clone());
     }
-    assert!(w.stack.is_empty(), "the reference resolves only what it counters; {:?} is left", w.stack);
+    // A spell below that nothing countered resolves next, against the
+    // targets it was cast with (CR 405.5, 608.2): Giant Growth, its
+    // controller having paid for it.
+    while let Some((_, m, targets)) = w.stack.pop() {
+        let name = m.name.clone().expect("a spell from a card");
+        let spec = read(&cached_oracle()[&name]).expect("a spell the reference reads");
+        w = apply(&spec, &w, &targets, m.controller);
+        w.state_based_actions();
+        w.graveyard[m.owner.0 as usize].push(name);
+    }
     w
 }
 
@@ -4982,6 +5100,19 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
+            Some(ResolutionChoiceKind::PayOrNot { .. }) => {
+                return match script.next() {
+                    Some(Answer::YesNo(pay)) => Action::ResolveChoice { choice: ResolvedChoice::PayDecision(*pay) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to whether to pay"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        unanswered = Some(vec![Answer::YesNo(true), Answer::YesNo(false)]);
+                        Action::AbandonGame
+                    }
+                };
+            }
             Some(prompt) => {
                 trouble = Some(format!("the engine asked {prompt:?}, which the text does not"));
                 return Action::AbandonGame;
@@ -5144,7 +5275,7 @@ const READ: &[&str] = &[
     "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
     "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
     "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest", "Fortress Crab",
-    "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
+    "Frightful Delusion", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
     "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
     "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession",
     "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
@@ -6396,6 +6527,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        paid: false,
         picked: None,
         revealed: false,
         found: None,
@@ -7651,7 +7783,10 @@ fn the_grammar_reads_its_templates() {
     let Slot::Spell(Filter(clauses)) = &spec.slots[0] else { panic!("a spell slot") };
     assert_eq!((clauses[0].head.clone(), clauses[0].not_types.clone()), (None, vec!["creature".to_string()]));
 
-    assert!(read(&card("X", "Counter target spell unless its controller pays {1}.")).is_err(), "a payment is not a template yet");
+    assert_eq!(read(&card("X", "Counter target spell unless its controller pays {1}. That player discards a card.")).unwrap().effects,
+        vec![Effect::CounterUnlessPays { slot: 0, n: 1 }, Effect::ThatPlayerDiscards { slot: 0 }]);
+    assert!(read(&card("X", "Counter target spell unless its controller pays {1}{U}.")).is_err(), "a payment of coloured mana is not a template yet");
+    assert!(read(&card("X", "Draw a card. That player discards a card.")).is_err(), "that player is the countered spell's controller");
     assert_eq!(read(&card("X", "Draw two cards, then discard a card at random.")).unwrap().effects,
         vec![Effect::Draw { n: 2 }, Effect::DiscardAtRandom { n: 1 }]);
     assert_eq!(read(&card("X", "Return two cards at random from your graveyard to your hand.")).unwrap().effects,

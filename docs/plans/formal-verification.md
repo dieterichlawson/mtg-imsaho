@@ -761,8 +761,11 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-224 of the pool's 268 instants, sorceries, creatures, enchantments, lands
-and artifacts are read, and all agree. Every template has been shown to
+233 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+and artifacts are read, and all agree. The latest is Frightful Delusion's
+"unless its controller pays {1}": the spell's controller paying, by
+tapping their Forest, and Giant Growth resolving after; declining, and
+Giant Growth countered; and the discard either way. Every template has been shown to
 catch a deliberate bug in a card that uses it, and the engine code under
 it, from Lightning Bolt dealing 2 to the untap step untapping every
 player's permanents (`reports/verification-mutants.md` lists the rounds:
