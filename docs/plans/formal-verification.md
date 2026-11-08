@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-260 of the pool's 268 instants, sorceries, creatures, enchantments,
+261 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -853,11 +853,15 @@ it damages destroyed in some endings and not in others, as the reference
 forks each flip (705.2). Fiend Hunter is the first link between
 abilities read (607.2a): it enters twelve ways, each of the eleven other
 creatures exiled or none, and a death is checked from each way, the
-exiled card returning under its owner's control as a new object. Not yet
-read: a copy made from a card (Back from the Brink), counters other than
-+1/+1 and -1/-1, hexproof granted to creatures, and attack triggers with
-targets. Each is a template, or a board, to add; `READ` lists the cards
-read, and a change that stops reading any of them fails and names it.
+exiled card returning under its owner's control as a new object. Skaab
+Ruinator is cast from its graveyard for its printed cost (601.3a),
+exiling three of the four other creature cards there every way and never
+itself, not with a spell on the stack, and Skaab Goliath beside it, with
+no such permission, not at all. Not yet read: a copy made from a card
+(Back from the Brink), counters other than +1/+1 and -1/-1, hexproof
+granted to creatures, and attack triggers with targets. Each is a
+template, or a board, to add; `READ` lists the cards read, and a change
+that stops reading any of them fails and names it.
 
 ### Cards proved with Kani
 

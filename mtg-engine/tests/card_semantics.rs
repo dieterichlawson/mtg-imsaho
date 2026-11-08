@@ -652,6 +652,9 @@ struct Spec {
     /// target, among the creatures there before it, or none and itself.
     /// What the exception gives the copy is not observed here.
     may_enter_as_a_copy: bool,
+    /// "You may cast this card from your graveyard" (CR 601.3a): for its
+    /// printed cost and timing, from its owner's graveyard.
+    castable_from_graveyard: bool,
     /// What it says about attacking, blocking and combat damage.
     combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
@@ -2295,6 +2298,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         }
         if line == "Whenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token." {
             spec.statics.push(Static::OpponentsMilledCreaturesBecomeZombies);
+            continue;
+        }
+        if line == "You may cast this card from your graveyard." {
+            spec.castable_from_graveyard = true;
             continue;
         }
         if line == "Creatures you control enter as a copy of this creature." {
@@ -6100,7 +6107,7 @@ const READ: &[&str] = &[
     "Savannah Lions", "Scourge of Geier Reach", "Screeching Bat", "Selfless Cathar",
     "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
     "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked", "Snapcaster Mage",
+    "Skaab Goliath", "Skaab Ruinator", "Skeletal Grimace", "Skirsdag Cultist", "Skirsdag High Priest", "Slayer of the Wicked", "Snapcaster Mage",
     "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
     "Spare from Evil", "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
     "Stitcher's Apprentice", "Stony Silence", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
@@ -8496,6 +8503,57 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature card the grammar reads that may be cast from its owner's
+/// graveyard (Skaab Ruinator): there, beside the caster's three creature
+/// cards, with its mana cost floating, it is offered cast from the
+/// graveyard for its printed cost (CR 601.3a), and enters as a cast from
+/// a hand would, its additional cost exiling the other three, never itself;
+/// with the opponent's spell on the stack it is not offered (307.1); and
+/// Skaab Goliath beside it, with no such permission, is not offered at all.
+#[test]
+fn every_cast_from_the_graveyard_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.castable_from_graveyard) {
+        casts += 1;
+        let (mut state, world) = board(&registry, &cache);
+        let id = card_in_graveyard(&mut state, &registry, &card.name, P0);
+        let goliath = card_in_graveyard(&mut state, &registry, "Skaab Goliath", P0);
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+        if !engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == id && c.from_graveyard && c.alternative_cost.is_none()) {
+            failures.push(format!("{}: not offered from its graveyard", card.name));
+            continue;
+        }
+        let mut for_goliath = state.clone();
+        fund(&mut for_goliath, P0, &mana_cost(&cache["Skaab Goliath"].mana_cost).expect("a cost"), 0);
+        if engine::legal_actions(&for_goliath, &registry).castable_spells.iter().any(|c| c.object_id == goliath) {
+            failures.push(format!("{}: Skaab Goliath offered from the graveyard beside it", card.name));
+        }
+        let (mut busy, mut busy_world) = (state.clone(), world.clone());
+        the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
+        if engine::legal_actions(&busy, &registry).castable_spells.iter().any(|c| c.object_id == id) {
+            failures.push(format!("{}: offered from its graveyard with a spell on the stack", card.name));
+        }
+        // The Goliath beside it: a creature card its additional cost may
+        // exile, in both.
+        let mut world = world;
+        world.yard.insert(goliath, Model::printed(&cache["Skaab Goliath"], P0));
+        world.graveyard[0].push("Skaab Goliath".to_string());
+        let want: Vec<World> = payments(spec, &world, P0).iter()
+            .flat_map(|p| creature_outcomes(spec, &pay(&world, p), P0, card, id))
+            .collect();
+        let got = every_ending_from(&state, &registry, Some(id), Some(cast_action(id, Vec::new())));
+        if let Some(why) = disagreement(&want, &got, &registry) {
+            failures.push(format!("{} cast from its graveyard: {why}", card.name));
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature card the grammar reads that, from its owner's graveyard,
 /// gives their creatures of a subtype a counter as they enter (Dearly
 /// Departed's Humans): a Human cast by the card's owner enters with the
@@ -9481,6 +9539,8 @@ fn the_grammar_reads_its_templates() {
     let hunter = Printed { oracle_text: "When this creature enters, you may exile another target creature.\nWhen this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.".to_string(), ..viper.clone() };
     let hunter = read_creature(&hunter).unwrap();
     assert!(hunter.etb.is_some_and(|t| t.optional) && hunter.dies.is_some_and(|t| t.spec.effects == vec![Effect::ReturnTheExiledCard]));
+    let ruinator = Printed { oracle_text: "As an additional cost to cast this spell, exile three creature cards from your graveyard.\nFlying\nYou may cast this card from your graveyard.".to_string(), ..viper.clone() };
+    assert!(read_creature(&ruinator).unwrap().castable_from_graveyard);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
