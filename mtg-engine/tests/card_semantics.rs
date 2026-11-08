@@ -2551,7 +2551,8 @@ struct Model {
     damage: u32,
     tapped: bool,
     /// +1/+1 and -1/-1 counters (CR 122.1a), already counted in power
-    /// and toughness.
+    /// and toughness; [`World::defined_pt`] adds them to a count that
+    /// defines both.
     counters: (u32, u32),
     /// Counters of other kinds, by name: hatchling, study, slime.
     named_counters: BTreeMap<String, u32>,
@@ -2908,9 +2909,13 @@ impl World {
         (p.map(|p| p + m.boost.0 + m.temp.0), t.map(|t| t + m.boost.1 + m.temp.1))
     }
 
-    /// [`World::pt_of`] before static abilities change it (CR 613.4b-c).
+    /// [`World::pt_of`] before static abilities change it (CR 613.4b-c),
+    /// its +1/+1 and -1/-1 counters counted (613.4c): in its power and
+    /// toughness, or added to the count that defines them (604.3), as
+    /// Sturmgeist's counter from Curse of Stalked Prey is.
     fn defined_pt(&self, m: &Model) -> (Option<i32>, Option<i32>) {
-        let n = |count: usize| Some(i32::try_from(count).expect("a few"));
+        let net = i32::try_from(m.counters.0).expect("a few") - i32::try_from(m.counters.1).expect("a few");
+        let n = |count: usize| Some(i32::try_from(count).expect("a few") + net);
         if m.counts_creatures {
             let c = self.permanents.values().chain(&self.tokens).filter(|o| o.is_creature() && o.controller == m.controller).count();
             (n(c), n(c))
