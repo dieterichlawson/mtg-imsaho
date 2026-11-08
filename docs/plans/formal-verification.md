@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-235 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+236 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. The latest is Frightful Delusion's
 "unless its controller pays {1}": the spell's controller paying, by
 tapping their Forest, and Giant Growth resolving after; declining, and
@@ -775,8 +775,11 @@ failure names the cast and the difference. Every mutant that first
 survived became a check or a board: the "may" policies, the stack count,
 "nothing beyond its text", the opponent's Vampire, the declarations
 test, the opponent casting in the game loop, a Bears cast with no mana
-left. Not yet read: copies, replacement effects ("would deal combat
-damage, deals double", token doubling), counters other than +1/+1 and
+left. Inquisitor's Flail's replacements are read: combat damage dealt by
+the equipped creature and to it by another each doubled as it is dealt,
+after any prevention (CR 614.1a, 616.1). Not yet read: copies, other
+replacement effects (token doubling, a draw from an empty library, mill
+instead of damage), counters other than +1/+1 and
 -1/-1, rule modifiers (cost reductions, "can't be activated", "can't be
 cast"), modal spells, protection and hexproof granted, attack triggers
 with targets, links between abilities ("the exiled card"), and costs of

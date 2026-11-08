@@ -951,6 +951,15 @@ enum Restriction {
     CantBlock,
     AttacksEachCombat,
     NoCombatDamage,
+    /// "If equipped creature would deal combat damage, it deals double that
+    /// damage instead" (CR 614.1a): each amount it was assigned, doubled as
+    /// it is dealt (510.2), after any prevention of it (616.1).
+    DoublesCombatDamage,
+    /// "If another creature would deal combat damage to equipped creature,
+    /// it deals double that damage to equipped creature instead": with
+    /// [`Restriction::DoublesCombatDamage`] on the creature dealing it,
+    /// each doubles it once (CR 614.1a, 616.1).
+    TakesDoubleCombatDamage,
     DoesntUntap,
 }
 
@@ -2224,6 +2233,10 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
         let body = line.strip_suffix('.').unwrap_or(line);
         if line.starts_with("Whenever equipped creature ") {
             spec.combat.read(line).ok_or_else(|| format!("cannot read {line:?}"))?;
+        } else if line == "If equipped creature would deal combat damage, it deals double that damage instead." {
+            spec.statics.push(Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None });
+        } else if line == "If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead." {
+            spec.statics.push(Static::Restricts { group: false, what: vec![Restriction::TakesDoubleCombatDamage], unless_subtype: None });
         } else if let Some(rest) = body.strip_prefix("Equipped creature ") {
             spec.statics.push(attached_static(rest, None).ok_or_else(|| format!("cannot read {line:?}"))?);
         } else if let Some((subtype, rest)) = body.strip_prefix("As long as equipped creature is a ").and_then(|r| r.split_once(", it ")) {
@@ -5365,7 +5378,7 @@ const READ: &[&str] = &[
     "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hamlet Captain",
     "Hanweir Watchkeep", "Harvest Pyre", "Heretic's Punishment", "Hinterland Harbor",
     "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
-    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
+    "Inquisitor's Flail", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
     "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
@@ -6412,6 +6425,11 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                     if n == 0 {
                         continue;
                     }
+                    let n = if restricted(&source, Restriction::DoublesCombatDamage) { 2 * n } else { n };
+                    let n = match to {
+                        Target::Object(id) if restricted(&w.permanents[id], Restriction::TakesDoubleCombatDamage) => 2 * n,
+                        _ => n,
+                    };
                     match to {
                         Target::Object(id) => {
                             let m = w2.permanents.get_mut(id).expect("in combat");
@@ -7864,6 +7882,11 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(gargoyle.activated[0].spec.effects, vec![Effect::LoseAndGain { slot: 0, loses: vec![Keyword::Defender], gains: vec![Keyword::Flying] }]);
     let apprentice = Printed { oracle_text: "{1}{U}, {T}: Create a 2/2 blue Homunculus creature token, then sacrifice a creature.".to_string(), ..viper.clone() };
     assert_eq!(read_creature(&apprentice).unwrap().activated[0].spec.effects.last(), Some(&Effect::SacrificeACreature));
+    let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
+    assert_eq!(read_artifact(&flail).unwrap().statics, vec![
+        Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
+        Static::Restricts { group: false, what: vec![Restriction::TakesDoubleCombatDamage], unless_subtype: None },
+    ]);
     let unread = Printed { oracle_text: "Flying\nThis creature can't be the target of spells.".to_string(), ..viper };
     assert!(read_creature(&unread).is_err());
 
