@@ -243,6 +243,10 @@ enum Slot {
     /// "target exiled card with flashback you own": a card in exile (CR
     /// 406), one whose text has flashback, and with `yours`, its caster's.
     ExiledCard { flashback: bool, yours: bool },
+    /// "up to three target cards from their graveyard" after "target
+    /// player": any set of at most `n` of that player's graveyard cards,
+    /// the rest of the targets after the player's (CR 601.2c).
+    UpToFromThatPlayersGraveyard { n: usize },
     /// "this creature", "this land": the ability's own source. Not a
     /// target; its place in a target list is filled with the source.
     This,
@@ -357,6 +361,10 @@ enum Effect {
     /// subtype, which can't block them (702.16f) and whose damage to them
     /// is prevented (702.16e), until the cleanup step.
     ProtectionFromNonUntilEndOfTurn { filter: Filter, subtype: String },
+    /// "Target player shuffles up to three target cards from their
+    /// graveyard into their library": the cards still there go to that
+    /// library, and the player shuffles it, cards or none (CR 701.20a).
+    ShuffleIntoLibrary { player: usize },
     /// "Destroy all Curses attached to you" (CR 701.8c): at once, each
     /// Curse attached to its controller, whoever controls the Curse.
     DestroyCursesAttachedToYou,
@@ -1758,6 +1766,12 @@ impl Spec {
             .and_then(|(who, r)| Some((who, r.strip_suffix(" creatures until end of turn")?)))
         {
             self.effects.push(Effect::ProtectionFromNonUntilEndOfTurn { filter: filter(who)?, subtype: subtype.to_string() });
+            return Some(());
+        }
+        if let Some(n) = s.strip_prefix("Target player shuffles up to ").and_then(|r| r.strip_suffix(" target cards from their graveyard into their library")) {
+            let player = self.slot(Slot::Player);
+            self.slot(Slot::UpToFromThatPlayersGraveyard { n: number(n)? as usize });
+            self.effects.push(Effect::ShuffleIntoLibrary { player });
             return Some(());
         }
         if s == "Destroy all Curses attached to you" {
@@ -3697,6 +3711,8 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
             .filter(|(_, m)| filter.as_ref().is_none_or(|f| m.matches(f, caster)))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
+        // Only after its player's slot, which `target_sets` reads them by.
+        Slot::UpToFromThatPlayersGraveyard { .. } => panic!("cards of a target player's graveyard, read with that player"),
         Slot::ExiledCard { flashback, yours } => world.exiled.iter()
             .filter(|(_, m)| !*yours || m.owner == caster)
             .filter(|(_, m)| !*flashback || m.name.as_ref().is_some_and(|n| cached_oracle()[n].oracle_text.lines().any(|l| l.starts_with("Flashback "))))
@@ -3749,6 +3765,21 @@ fn permutations(n: usize) -> Vec<Vec<usize>> {
 fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>> {
     if !spec.modes.is_empty() {
         let mut sets: Vec<Vec<Target>> = spec.modes.iter().flat_map(|m| target_sets(m, world, caster)).collect();
+        sets.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+        return sets;
+    }
+    // "Target player ... up to three target cards from their graveyard":
+    // each player, and each set of their cards after them.
+    if let [Slot::Player, Slot::UpToFromThatPlayersGraveyard { n }] = spec.slots.as_slice() {
+        let mut sets = Vec::new();
+        for player in candidates(&Slot::Player, world, caster) {
+            let Target::Player(p) = player else { unreachable!() };
+            let mut cards: Vec<Target> = world.yard.iter().filter(|(_, m)| m.owner == p).map(|(id, _)| Target::Object(*id)).collect();
+            cards.sort_by_key(target_key);
+            for set in subsets(&cards, *n) {
+                sets.push([vec![player.clone()], set].concat());
+            }
+        }
         sets.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
         return sets;
     }
@@ -3936,6 +3967,19 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     if m.is_creature() && m.matches(filter, caster) {
                         m.temp_protection_from_non.push(subtype.clone());
                     }
+                }
+            }
+            Effect::ShuffleIntoLibrary { player: slot } => {
+                if let Some(p) = player(*slot) {
+                    for t in &targets[*slot + 1..] {
+                        if let Target::Object(id) = t {
+                            if w.yard.get(id).is_some_and(|m| m.owner.0 as usize == p) {
+                                let card = w.leave_yard(*id).expect("in the graveyard");
+                                w.library[p].push(card.name.expect("a card has a name"));
+                            }
+                        }
+                    }
+                    w.shuffled[p] = true;
                 }
             }
             Effect::DestroyCursesAttachedToYou => {
@@ -4710,7 +4754,7 @@ fn asks_as_it_resolves(spec: &Spec) -> bool {
 
 /// Whether `spec` does something at random.
 fn is_random(spec: &Spec) -> bool {
-    spec.effects.iter().any(|e| matches!(e, Effect::DiscardAtRandom { .. } | Effect::ReturnAtRandom { .. }))
+    spec.effects.iter().any(|e| matches!(e, Effect::DiscardAtRandom { .. } | Effect::ReturnAtRandom { .. } | Effect::ShuffleIntoLibrary { .. }))
 }
 
 /// Every ending `play` reaches from `state` with each of 32 seeds for the
@@ -5161,7 +5205,17 @@ fn offered_as(state: &GameState, registry: &CardRegistry, spell: ObjectId, flash
         CastTargetSpec::TwoTargets { first, second, second_min: 1, second_max: 1 } => first.iter().zip(second)
             .flat_map(|(a, bs)| bs.iter().map(move |b| vec![a.clone(), b.clone()]))
             .collect(),
-        CastTargetSpec::TwoTargets { .. } => return Err("an \"up to\" second slot, which no template reads".to_string()),
+        // An "up to" second slot: each set of it after each first target.
+        CastTargetSpec::TwoTargets { first, second, second_min, second_max } => first.iter().zip(second)
+            .flat_map(|(a, bs)| {
+                let mut bs = bs.clone();
+                bs.sort_by_key(target_key);
+                subsets(&bs, *second_max).into_iter()
+                    .filter(|set| set.len() >= *second_min)
+                    .map(|set| [vec![a.clone()], set].concat())
+                    .collect::<Vec<_>>()
+            })
+            .collect(),
         CastTargetSpec::ChosenAtCast => {
             let asked = engine::submit_action(state, &cast_for(spell, Vec::new(), flashback), registry);
             asked_at_cast(&asked, registry)?
@@ -5297,6 +5351,18 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
     // No spell: the game is played on from where it stands, as after a
     // death, which the loop handles before it asks anyone anything.
     let mut cast = first.or_else(|| spell.map(|spell| cast_action(spell, if asks { Vec::new() } else { targets })));
+    // A first target and an "up to" set after it (Memory's Journey's player,
+    // then their cards): the cast names the first, and its question the
+    // rest, the first fixed (CR 601.2c).
+    if let Some(Action::CastSpell { object_id, targets, alternative_cost, .. }) = cast.as_mut() {
+        let up_to_after = engine::legal_actions(&state, registry).castable_spells.iter()
+            .any(|c| c.object_id == *object_id && c.is_flashback == alternative_cost.is_some()
+                && matches!(c.target_spec, CastTargetSpec::TwoTargets { second_min, second_max, .. } if (second_min, second_max) != (1, 1)));
+        if up_to_after && !targets.is_empty() {
+            answers = targets.split_off(1).into_iter().collect();
+            answering_cast = true;
+        }
+    }
     let mut script = script.iter();
     let mut trouble = None;
     let mut unanswered = None;
@@ -5657,7 +5723,7 @@ const READ: &[&str] = &[
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Laboratory Maniac", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
     "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
-    "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
+    "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Memory's Journey", "Mentor of the Meek",
     "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
     "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Nevermore",
@@ -8664,6 +8730,8 @@ fn the_grammar_reads_its_templates() {
     let chant = read(&card("X", "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand.")).unwrap();
     assert_eq!(chant.modes.iter().map(|m| m.slots.len()).collect::<Vec<_>>(), vec![1, 2]);
     assert!(read(&card("X", "Choose one —\n• Draw a card.\n• Draw two cards.")).is_err(), "two modes told apart by nothing they target");
+    assert_eq!(read(&card("X", "Target player shuffles up to three target cards from their graveyard into their library.")).unwrap().slots,
+        vec![Slot::Player, Slot::UpToFromThatPlayersGraveyard { n: 3 }]);
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

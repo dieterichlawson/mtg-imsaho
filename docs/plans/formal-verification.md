@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-247 of the pool's 268 instants, sorceries, creatures, enchantments,
+248 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -813,12 +813,16 @@ Ghoulcaller's Chant is the first modal spell read (700.2): its modes are
 told by their counts, as the engine's question tells them, and on a
 board with a second Zombie card in the caster's graveyard it is offered
 at each creature card alone and at the two Zombie cards together, never
-one card twice (601.2c). Not yet read: copies, other replacement effects
-(mill instead of damage), counters other than +1/+1 and -1/-1, hexproof
-granted to creatures, attack triggers with targets, links between
-abilities ("the exiled card"), and costs of removing counters. Each is a
-template, or a board, to add; `READ` lists the cards read, and a change
-that stops reading any of them fails and names it.
+one card twice (601.2c). Memory's Journey's targets are read in the
+engine's two parts, a player named in the cast and up to three of that
+player's graveyard cards asked after it, and its shuffle as random: from
+hand and by flashback, each set is offered and resolves as the text says
+(701.20a). Not yet read: copies, other replacement effects (mill instead
+of damage), counters other than +1/+1 and -1/-1, hexproof granted to
+creatures, attack triggers with targets, links between abilities ("the
+exiled card"), and costs of removing counters. Each is a template, or a
+board, to add; `READ` lists the cards read, and a change that stops
+reading any of them fails and names it.
 
 ### Cards proved with Kani
 
