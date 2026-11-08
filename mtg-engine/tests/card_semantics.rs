@@ -374,6 +374,10 @@ enum Effect {
     /// 707.2, 111.1): its copiable values, not its counters, damage, state
     /// or what else changes it.
     TokenCopy { slot: usize },
+    /// "Return the exiled card to the battlefield under its owner's
+    /// control": the card the source's other ability exiled (CR 607.2a,
+    /// 610.3), a new object.
+    ReturnTheExiledCard,
     /// "Destroy all Curses attached to you" (CR 701.8c): at once, each
     /// Curse attached to its controller, whoever controls the Curse.
     DestroyCursesAttachedToYou,
@@ -1851,6 +1855,10 @@ impl Spec {
             self.effects.push(Effect::TokenCopy { slot });
             return Some(());
         }
+        if s == "Return the exiled card to the battlefield under its owner's control" {
+            self.effects.push(Effect::ReturnTheExiledCard);
+            return Some(());
+        }
         if s == "Destroy all Curses attached to you" {
             self.effects.push(Effect::DestroyCursesAttachedToYou);
             return Some(());
@@ -2374,6 +2382,14 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.watch = Some(Box::new(Watch { dying: filter(who).ok_or_else(unread)?, trigger }));
             continue;
         }
+        // "When this creature leaves the battlefield, return the exiled
+        // card ...": the death check plays it as the creature dies, the one
+        // way of leaving it plays (CR 603.6c).
+        let line = if line == "When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control." {
+            "When this creature dies, return the exiled card to the battlefield under its owner's control."
+        } else {
+            line
+        };
         if let Some(rest) = line.strip_prefix("When this creature dies, ") {
             let mut chars = rest.chars();
             let text: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
@@ -3134,6 +3150,9 @@ struct World {
     /// The cards a board starts with in exile, by id, for what targets
     /// them; `exile` holds them by name too.
     exiled: BTreeMap<ObjectId, Model>,
+    /// The permanent an ability of `source` last exiled, as it was: what
+    /// "the exiled card" of that source's other ability means (CR 607.2a).
+    linked_exile: Option<(ObjectId, Model)>,
     /// A creature died this turn (CR 700.4), which morbid reads.
     a_creature_died: bool,
     /// Spells on the stack below the one being checked, by id, last cast
@@ -3694,6 +3713,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
         exiled: BTreeMap::new(),
+        linked_exile: None,
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
@@ -4569,7 +4589,25 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     if let Some(card) = w.leave_yard(id) {
                         w.exile[card.owner.0 as usize].push(card.name.expect("a card has a name"));
                     } else {
+                        // A permanent an ability exiles, linked to its source.
+                        if let (Some(src), Some(m)) = (w.source, w.permanents.get(&id).cloned()) {
+                            w.linked_exile = Some((src, m));
+                        }
                         w.leave(id, Dest::Exile);
+                    }
+                }
+            }
+            Effect::ReturnTheExiledCard => {
+                if let Some((src, m)) = w.linked_exile.clone().filter(|(src, _)| Some(*src) == w.source) {
+                    let _ = src;
+                    w.linked_exile = None;
+                    let name = m.name.clone().expect("a card has a name");
+                    if let Some(at) = w.exile[m.owner.0 as usize].iter().position(|n| *n == name) {
+                        w.exile[m.owner.0 as usize].remove(at);
+                        // A new object, as it is printed, under its owner
+                        // (CR 400.7, 610.3).
+                        let back = w.entering(Model::printed_with_faces(&cached_oracle()[&name], m.owner));
+                        w.permanents.insert(ObjectId(u64::MAX - w.permanents.len() as u64), back);
                     }
                 }
             }
@@ -6036,7 +6074,7 @@ const READ: &[&str] = &[
     "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
     "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor", "Essence of the Wild", "Evil Twin",
     "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest", "Fortress Crab",
+    "Feral Ridgewolf", "Festerhide Boar", "Fiend Hunter", "Forbidden Alchemy", "Forest", "Fortress Crab",
     "Frightful Delusion", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
     "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
     "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Chant",
@@ -6210,12 +6248,20 @@ fn every_readable_card_does_what_its_text_says() {
                     continue;
                 }
                 if spec.dies.is_some() || spec.watch.is_some() {
-                    // Seeds repeat the one way it entered.
-                    let ([after_entering], Ok([entered, ..])) = (entering.as_slice(), endings.as_deref()) else {
-                        // One way of entering, so one creature to kill.
-                        failures.push(format!("{name}: a death is checked from one way of entering"));
+                    // Each way it entered, beside the engine's ending of it,
+                    // told by what is observed: a death checked from each.
+                    let Ok(engine_entered) = endings.as_deref() else { continue };
+                    let pairs: Vec<(&World, &GameState)> = entering.iter()
+                        .filter_map(|w| {
+                            let seen = w.observed();
+                            engine_entered.iter().find(|e| observe(e, &registry) == seen).map(|e| (w, e))
+                        })
+                        .collect();
+                    if pairs.len() != entering.len() {
+                        failures.push(format!("{name}: a way it entered that no ending of the engine's is"));
                         continue;
-                    };
+                    }
+                    for (after_entering, entered) in pairs {
                     let id = entered.objects.values()
                         .find(|o| o.zone == Zone::Battlefield && !o.is_token && o.name == card.name)
                         .map(|o| o.id)
@@ -6276,6 +6322,7 @@ fn every_readable_card_does_what_its_text_says() {
                                 break;
                             }
                         }
+                    }
                     }
                 }
                 continue;
@@ -7398,6 +7445,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
         exiled: BTreeMap::new(),
+        linked_exile: None,
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
@@ -9430,6 +9478,9 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read_creature(&alchemist).unwrap().statics, vec![Static::MillsInsteadOfCombatDamage("Zombie".to_string()), Static::OpponentsMilledCreaturesBecomeZombies]);
     let doll = Printed { oracle_text: "Indestructible\nWhenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.".to_string(), ..viper.clone() };
     assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
+    let hunter = Printed { oracle_text: "When this creature enters, you may exile another target creature.\nWhen this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.".to_string(), ..viper.clone() };
+    let hunter = read_creature(&hunter).unwrap();
+    assert!(hunter.etb.is_some_and(|t| t.optional) && hunter.dies.is_some_and(|t| t.spec.effects == vec![Effect::ReturnTheExiledCard]));
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

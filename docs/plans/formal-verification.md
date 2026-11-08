@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-259 of the pool's 268 instants, sorceries, creatures, enchantments,
+260 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -850,12 +850,14 @@ which applies first is played both ways (616.1); and a card milled
 counts in its graveyard, as Runechanter's Pike's bonus reads it. Creepy
 Doll's flip is played over 32 seeds in each fight it is in, the creature
 it damages destroyed in some endings and not in others, as the reference
-forks each flip (705.2). Not yet read: a copy made from a card (Back
-from the Brink), counters other than +1/+1 and -1/-1, hexproof granted
-to creatures, attack triggers with targets, and links between abilities
-("the exiled card"). Each is a template, or a board, to add; `READ`
-lists the cards read, and a change that stops reading any of them fails
-and names it.
+forks each flip (705.2). Fiend Hunter is the first link between
+abilities read (607.2a): it enters twelve ways, each of the eleven other
+creatures exiled or none, and a death is checked from each way, the
+exiled card returning under its owner's control as a new object. Not yet
+read: a copy made from a card (Back from the Brink), counters other than
++1/+1 and -1/-1, hexproof granted to creatures, and attack triggers with
+targets. Each is a template, or a board, to add; `READ` lists the cards
+read, and a change that stops reading any of them fails and names it.
 
 ### Cards proved with Kani
 
