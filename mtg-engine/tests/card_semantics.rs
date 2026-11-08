@@ -526,6 +526,12 @@ struct Spec {
     /// spells you cast": the subtype whose creature spells its controller
     /// may cast for nothing instead (CR 118.9, 601.2b).
     zero_instead_for: Option<String>,
+    /// "As this enchantment enters, choose a nonland card name. Spells with
+    /// the chosen name can't be cast" (CR 614.12, 201.3, 101.2): a name its
+    /// controller chooses among every nonland card's, and no spell of that
+    /// name cast by anyone while it is there. Checked on its own, as its
+    /// question has a few hundred answers.
+    bans_a_chosen_name: bool,
     /// "Morbid — ~ deals N damage instead if a creature died this turn":
     /// which effect's amount, and what it becomes (CR 207.2c: an ability
     /// word has no rules meaning; the condition is the text after it).
@@ -2430,6 +2436,13 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.extend(statics);
             continue;
         }
+        if body == "As this enchantment enters, choose a nonland card name" {
+            continue;
+        }
+        if body == "Spells with the chosen name can't be cast" && text.contains("As this enchantment enters, choose a nonland card name.") {
+            spec.bans_a_chosen_name = true;
+            continue;
+        }
         if let Some(subtype) = body.strip_prefix("You may pay {0} rather than pay the mana cost for ").and_then(|r| r.strip_suffix(" creature spells you cast")) {
             spec.zero_instead_for = Some(subtype.to_string());
             continue;
@@ -2481,7 +2494,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
     }
     if spec.enchants != spec.slots.first().is_some()
         || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default() && spec.on_cast.is_none()
-            && spec.zero_instead_for.is_none() && spec.creature_spells_cost_less.is_none())
+            && spec.zero_instead_for.is_none() && spec.creature_spells_cost_less.is_none() && !spec.bans_a_chosen_name)
     {
         return Err("not an enchantment the grammar reads".to_string());
     }
@@ -5499,7 +5512,7 @@ const READ: &[&str] = &[
     "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
     "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
-    "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
+    "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Nevermore",
     "Night Revelers", "Night Terrors", "Nightbird's Clutches", "Olivia Voldaren",
     "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Parallel Lives", "Paraselene", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
@@ -5585,7 +5598,9 @@ fn every_readable_card_does_what_its_text_says() {
     let mut failures = Vec::new();
     let mut casts = 0;
     let boards: [(&str, Build); 3] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins)];
-    for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none()) {
+    // A name chosen among hundreds is checked on its own
+    // (`every_name_ban_is_what_its_text_says`).
+    for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
         // A mana ability is not cast-and-resolve material (CR 605.3b): the
         // mana test checks it.
         let reads_names = spec.effects.iter().any(|e| matches!(e, Effect::ExileWithSameName { .. }));
@@ -7336,6 +7351,75 @@ fn every_cost_reduction_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every enchantment the grammar reads that bans a name chosen as it
+/// enters (Nevermore), cast by the caster: the names it offers are every
+/// nonland card's in the pool, by its front face, in order (CR 201.3,
+/// 614.12); with Grizzly Bears chosen, and mana for anything, neither
+/// player may cast Grizzly Bears, and the caster may still cast Lightning
+/// Bolt (101.2).
+#[test]
+fn every_name_ban_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let mut want_names: Vec<String> = registry.all_names().into_iter()
+        .filter(|n| cache.get(*n).is_some_and(|c| !c.has_type("Land")))
+        .map(str::to_string)
+        .collect();
+    want_names.sort();
+    for (card, _) in cards.iter().filter(|(_, s)| s.bans_a_chosen_name) {
+        checked += 1;
+        let (mut state, _) = board(&registry, &cache);
+        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("a cost"), 0);
+        let mut cast = Some(cast_action(spell, Vec::new()));
+        let mut offered: Option<Vec<String>> = None;
+        engine::run_game_loop(&mut state, &registry, |s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
+            if let Some(c) = cast.take() {
+                return c;
+            }
+            if let Some(ResolutionChoiceKind::ChooseCardName { options, .. }) = &legal.resolution_prompt {
+                offered = Some(options.clone());
+                let at = options.iter().position(|n| n == "Grizzly Bears").unwrap_or(0);
+                return Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(at, options[at].clone()) };
+            }
+            if s.stack.is_empty() { Action::AbandonGame } else { Action::PassPriority }
+        });
+        match &offered {
+            Some(names) if *names == want_names => {}
+            Some(names) => {
+                let extra: Vec<&String> = names.iter().filter(|n| !want_names.contains(n)).collect();
+                let missing: Vec<&String> = want_names.iter().filter(|n| !names.contains(n)).collect();
+                failures.push(format!("{}: names offered beyond the pool's nonland cards {extra:?}, missing {missing:?}", card.name));
+            }
+            None => {
+                failures.push(format!("{}: no name was asked for", card.name));
+                continue;
+            }
+        }
+        // Each player in their own main phase, with mana for anything.
+        for (caster, name, castable) in [(P0, "Grizzly Bears", false), (P1, "Grizzly Bears", false), (P0, "Lightning Bolt", true)] {
+            checked += 1;
+            let mut s = state.clone();
+            let spell = match s.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == name) {
+                Some(o) => o.id,
+                None => spell_in_hand(&mut s, &registry, name, caster),
+            };
+            fund(&mut s, caster, &mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost"), 0);
+            s.active_player = caster;
+            s.priority_player = Some(caster);
+            let got = engine::legal_actions(&s, &registry).castable_spells.iter().any(|c| c.object_id == spell);
+            if got != castable {
+                failures.push(format!("{} naming Grizzly Bears: player {} may cast {name} {got}, the text says {castable}", card.name, caster.0));
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} checks disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every permanent the grammar reads that lets its controller cast
 /// creature spells of a subtype for {0} rather than their mana cost
 /// (Rooftop Storm's Zombies), on the caster's side with every mana source
@@ -8364,6 +8448,9 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(read_enchantment(&silence).unwrap().statics, vec![Static::ArtifactAbilitiesCantBeActivated]);
     let storm = Printed { type_line: "Enchantment".to_string(), oracle_text: "You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.".to_string(), ..viper.clone() };
     assert_eq!(read_enchantment(&storm).unwrap().zero_instead_for.as_deref(), Some("Zombie"));
+    let nevermore = Printed { type_line: "Enchantment".to_string(), oracle_text: "As this enchantment enters, choose a nonland card name.\nSpells with the chosen name can't be cast.".to_string(), ..viper.clone() };
+    assert!(read_enchantment(&nevermore).unwrap().bans_a_chosen_name);
+    assert!(read_enchantment(&Printed { oracle_text: "Spells with the chosen name can't be cast.".to_string(), ..nevermore.clone() }).is_err(), "a name never chosen");
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
