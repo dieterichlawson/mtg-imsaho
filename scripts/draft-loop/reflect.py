@@ -2,13 +2,14 @@
 """The nightly draft loop's notes across sessions: each seat's lessons from
 tonight, and the guide rewritten from them and from every night's tables.
 
-    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE]
+    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE] [--conventional-guide GUIDE]
     scripts/draft-loop/reflect.py curate  --night DATE --out reports/draft-loop --guide GUIDE
 
 `debrief` asks every seat of `<out>/nights/<DATE>.json`, in one `claude -p`
 call each, for up to three lessons grounded in what happened to it: its
 picks, its deck, its matches, its own end-of-draft notes, and the guide it
-drafted with (or that it drafted without one). They go to
+drafted with: the loop's guide, the fixed conventional one
+(`--conventional-guide`), or none. They go to
 `<out>/nights/<DATE>-lessons.json`.
 
 `curate` hands the guide, tonight's lessons and `<out>/stats.md` (every
@@ -165,11 +166,13 @@ exact names. A lesson that only restates general Limited advice is worth nothing
 
 def debrief(args):
     night = json.load(open(os.path.join(args.out, "nights", f"{args.night}.json")))
-    guide = open(args.guide).read().strip() if args.guide and os.path.exists(args.guide) else ""
+    read = lambda path: open(path).read().strip() if path and os.path.exists(path) else ""
+    guides = {"loop": read(args.guide), "conventional": read(args.conventional_guide)}
     model = os.environ.get("DRAFT_LOOP_MODEL", "claude-haiku-5-5")
 
     def one(s):
-        told = (f"You drafted with this guide in your prompt:\n\n{guide}\n" if s["guided"] and guide
+        guide = guides.get(s.get("guide", "loop" if s["guided"] else None), "")
+        told = (f"You drafted with this guide in your prompt:\n\n{guide}\n" if guide
                 else "You drafted without a guide.\n")
         message = (f"{seat_story(night, s)}\n\n{told}\nWrite up to three lessons for the next drafter, each one "
                    "sentence of at most 35 words. Where tonight contradicted the guide, say so in the lesson.\n\n"
@@ -177,7 +180,8 @@ def debrief(args):
         text, usage = claude(DEBRIEF_SYSTEM, message, model)
         answer = json_in_text(text) or {}
         lessons = [l.strip() for l in answer.get("lessons", []) if isinstance(l, str) and l.strip()][:3]
-        return {"seat": s["seat"], "guided": s["guided"], "colors": s["colors"],
+        return {"seat": s["seat"], "guided": s["guided"], "guide": s.get("guide", "loop" if s["guided"] else None),
+                "colors": s["colors"],
                 "record": f"{s['match_wins']}-{s['match_losses']}-{s['match_draws']}", "lessons": lessons, "usage": usage}
 
     with cf.ThreadPoolExecutor(4) as ex:
@@ -269,10 +273,18 @@ def curate(args):
     guide = sections(open(args.guide).read()) if os.path.exists(args.guide) else ""
     stats = open(stats_path).read() if os.path.exists(stats_path) else "(no statistics yet)"
     lessons = json.load(open(lessons_path)) if os.path.exists(lessons_path) else {"seats": []}
-    told = "\n".join(f"- seat {s['seat']} ({s['colors']}, {s['record']}, {'guided' if s['guided'] else 'unguided'}): {l}"
+    label = {"loop": "guided", "conventional": "conventional guide", None: "unguided"}
+    told = "\n".join(f"- seat {s['seat']} ({s['colors']}, {s['record']}, "
+                     f"{label[s.get('guide', 'loop' if s['guided'] else None)]}): {l}"
                      for s in lessons["seats"] for l in s["lessons"])
+    # Lessons from a seat that drafted with the conventional guide are about
+    # that guide, not this one: the curator is told so (it sees the tables
+    # that compare the two, not the conventional guide itself).
+    other = ("Seats marked \"conventional guide\" drafted with a fixed guide of standard Innistrad advice, "
+             "not yours; where their lessons speak of \"the guide\", they mean that one.\n\n"
+             if any(s.get("guide") == "conventional" for s in lessons["seats"]) else "")
     message = (f"The guide now:\n\n{guide or '(none yet: write the first one)'}\n\n"
-               f"Tonight's lessons ({args.night}):\n{told or '(none)'}\n\n"
+               f"Tonight's lessons ({args.night}):\n{told or '(none)'}\n\n{other}"
                f"The statistics of every night so far:\n\n{stats}\n\n"
                f"Write the next guide: only the markdown, starting with the first heading.")
     model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
@@ -309,6 +321,8 @@ def main():
         p.add_argument("--night", required=True)
         p.add_argument("--out", required=True)
         p.add_argument("--guide", required=name == "curate")
+        if name == "debrief":
+            p.add_argument("--conventional-guide")
     args = ap.parse_args()
     debrief(args) if args.cmd == "debrief" else curate(args)
 
