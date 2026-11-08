@@ -552,6 +552,10 @@ struct Spec {
     /// "Flashback {cost}" (CR 702.34a): castable from its owner's
     /// graveyard for that cost, and exiled as it leaves the stack.
     flashback: Option<ManaCost>,
+    /// "Choose one —" and a bullet for each mode (CR 700.2): each mode its
+    /// own slots and effects. A mode is told by how many targets it takes,
+    /// as each mode read here takes a different number.
+    modes: Vec<Spec>,
     /// "This creature enters tapped" (CR 614.1c).
     enters_tapped: bool,
     /// "Morbid — This creature enters with N +1/+1 counters on it if a
@@ -1805,6 +1809,14 @@ impl Spec {
             self.effects.push(Effect::Exile { slot });
             return Some(());
         }
+        if let Some(f) = s.strip_prefix("Return two target ").and_then(|r| r.strip_suffix(" cards from your graveyard to your hand")) {
+            let f = filter(&singular(f))?;
+            for _ in 0..2 {
+                let slot = self.slot(Slot::GraveyardCard { filter: Some(f.clone()), yours: true });
+                self.effects.push(Effect::ToHand { slot });
+            }
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("Return target ") {
             if rest == "exiled card with flashback you own to your hand" {
                 let slot = self.slot(Slot::ExiledCard { flashback: true, yours: true });
@@ -2103,11 +2115,32 @@ fn read(card: &Printed) -> Result<Spec, String> {
             spec.morbid = Some((which, n));
             continue;
         }
+        if line == "Choose one —" && spec.effects.is_empty() {
+            spec.modes.push(Spec::default());
+            continue;
+        }
+        if let Some(mode) = line.strip_prefix("• ") {
+            let mut m = Spec::default();
+            for sentence in mode.split_inclusive(". ") {
+                m.sentence(sentence).ok_or_else(|| format!("cannot read {sentence:?}"))?;
+            }
+            if spec.modes.first().is_some_and(|f| f.effects.is_empty()) {
+                spec.modes.clear();
+            }
+            if spec.modes.iter().any(|o| o.slots.len() == m.slots.len()) {
+                return Err(format!("two modes of {} targets", m.slots.len()));
+            }
+            spec.modes.push(m);
+            continue;
+        }
         for sentence in line.split_inclusive(". ") {
             spec.sentence(sentence).ok_or_else(|| format!("cannot read {sentence:?}"))?;
         }
     }
-    if spec.effects.is_empty() {
+    if spec.modes.len() == 1 || (!spec.modes.is_empty() && !spec.effects.is_empty()) {
+        return Err("a modal spell of one mode, or of effects besides its modes".to_string());
+    }
+    if spec.effects.is_empty() && spec.modes.is_empty() {
         return Err("no effects".to_string());
     }
     Ok(spec)
@@ -2650,6 +2683,17 @@ fn board_with_exiled_cards(registry: &CardRegistry, cache: &BTreeMap<String, Pri
     assert!(state.move_object(theirs, Zone::Exile, registry), "the opponent's Think Twice exiled");
     world.exile[1].push("Think Twice".to_string());
     world.exiled.insert(theirs, Model::printed(&cache["Think Twice"], P1));
+    (state, world)
+}
+
+/// The board with a second Zombie card in the caster's graveyard, Diregraf
+/// Ghoul beside Walking Corpse: what a mode that returns two Zombie cards
+/// is read against.
+fn board_with_two_zombie_cards(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = board(registry, cache);
+    let id = card_in_graveyard(&mut state, registry, "Diregraf Ghoul", P0);
+    world.yard.insert(id, Model::printed(&cache["Diregraf Ghoul"], P0));
+    world.graveyard[0].push("Diregraf Ghoul".to_string());
     (state, world)
 }
 
@@ -3703,6 +3747,23 @@ fn permutations(n: usize) -> Vec<Vec<usize>> {
 }
 
 fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>> {
+    if !spec.modes.is_empty() {
+        let mut sets: Vec<Vec<Target>> = spec.modes.iter().flat_map(|m| target_sets(m, world, caster)).collect();
+        sets.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+        return sets;
+    }
+    // "Two target Zombie cards": one word "target", so two different cards
+    // (CR 601.2c), a set, here in order.
+    if spec.slots.len() == 2 && spec.slots[0] == spec.slots[1] && matches!(spec.slots[0], Slot::GraveyardCard { .. }) {
+        let options = candidates(&spec.slots[0], world, caster);
+        let mut sets = Vec::new();
+        for (i, a) in options.iter().enumerate() {
+            for b in &options[i + 1..] {
+                sets.push(vec![a.clone(), b.clone()]);
+            }
+        }
+        return sets;
+    }
     if let [Slot::UpTo { n, .. }] = spec.slots.as_slice() {
         let mut sets = subsets(&candidates(&spec.slots[0], world, caster), *n);
         sets.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
@@ -3779,6 +3840,11 @@ fn change(m: &mut Model, power: i32, toughness: i32) {
 /// What `spec`'s effects do to `world` with `targets`, in order (CR
 /// 608.2c), before state-based actions.
 fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> World {
+    // A modal spell resolves as the mode its targets were chosen for.
+    if !spec.modes.is_empty() {
+        let mode = spec.modes.iter().find(|m| m.slots.len() == targets.len()).expect("a mode of that many targets");
+        return apply(mode, world, targets, caster);
+    }
     let mut w = world.clone();
     let c = caster.0 as usize;
     // An "up to" slot's targets are the whole list; any other slot is one.
@@ -5137,6 +5203,22 @@ fn asked_at_cast(state: &GameState, registry: &CardRegistry) -> Result<Vec<Vec<T
             }
             Ok(sets)
         }
+        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTargetSet { by_count, .. }, .. }) => {
+            let mut sets = Vec::new();
+            for (count, list) in by_count {
+                let mut sorted = list.clone();
+                sorted.sort_by_key(target_key);
+                for answer in subsets(&sorted, *count).into_iter().filter(|s| s.len() == *count) {
+                    let next = engine::submit_action(state, &Action::ResolveChoice {
+                        choice: ResolvedChoice::ChosenTargetSet(answer.clone()),
+                    }, registry);
+                    for rest in asked_at_cast(&next, registry)? {
+                        sets.push([answer.clone(), rest].concat());
+                    }
+                }
+            }
+            Ok(sets)
+        }
         Some(other) => Err(format!("the cast asks {other:?}, which no template reads")),
     }
 }
@@ -5564,7 +5646,7 @@ const READ: &[&str] = &[
     "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest", "Fortress Crab",
     "Frightful Delusion", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
     "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
-    "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession",
+    "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Chant",
     "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
     "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
     "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hamlet Captain",
@@ -5663,8 +5745,8 @@ fn every_readable_card_does_what_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut casts = 0;
-    let boards: [(&str, Build); 4] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
-        (" with exiled cards", board_with_exiled_cards)];
+    let boards: [(&str, Build); 5] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
+        (" with exiled cards", board_with_exiled_cards), (" with two Zombie cards", board_with_two_zombie_cards)];
     // A name chosen among hundreds is checked on its own
     // (`every_name_ban_is_what_its_text_says`).
     for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
@@ -5673,7 +5755,8 @@ fn every_readable_card_does_what_its_text_says() {
         let reads_names = spec.effects.iter().any(|e| matches!(e, Effect::ExileWithSameName { .. }));
         let boards: Vec<&(&str, Build)> = boards.iter().enumerate()
             .filter(|(i, _)| *i == 0 || (*i == 1 && spec.reads_morbid()) || (*i == 2 && reads_names)
-                || (*i == 3 && spec.slots.iter().any(|s| matches!(s, Slot::ExiledCard { .. }))))
+                || (*i == 3 && spec.slots.iter().any(|s| matches!(s, Slot::ExiledCard { .. })))
+                || (*i == 4 && !spec.modes.is_empty()))
             .map(|(_, b)| b)
             .collect();
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
@@ -8578,6 +8661,9 @@ fn the_grammar_reads_its_templates() {
         vec![Effect::ProtectionFromNonUntilEndOfTurn { filter: filter("creatures you control").unwrap(), subtype: "Human".to_string() }]);
     assert_eq!(read(&card("X", "Return target exiled card with flashback you own to your hand.")).unwrap().slots,
         vec![Slot::ExiledCard { flashback: true, yours: true }]);
+    let chant = read(&card("X", "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand.")).unwrap();
+    assert_eq!(chant.modes.iter().map(|m| m.slots.len()).collect::<Vec<_>>(), vec![1, 2]);
+    assert!(read(&card("X", "Choose one —\n• Draw a card.\n• Draw two cards.")).is_err(), "two modes told apart by nothing they target");
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },

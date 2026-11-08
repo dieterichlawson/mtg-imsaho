@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-246 of the pool's 268 instants, sorceries, creatures, enchantments,
+247 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -808,13 +808,17 @@ after it: the caster's Grizzly Bears may be blocked by the opponent's
 Human alone, and by all five that may block without it (702.16f). Runic
 Repetition is read against a board with three cards in exile, and may
 target the caster's Think Twice alone, not their Walking Corpse, which
-has no flashback, nor the opponent's Think Twice (406, 115.1). Not yet
-read: copies, other replacement effects (mill instead of damage),
-counters other than +1/+1 and -1/-1, modal spells, hexproof granted to
-creatures, attack triggers with targets, links between abilities ("the
-exiled card"), and costs of removing counters. Each is a template, or a
-board, to add; `READ` lists the cards read, and a change that stops
-reading any of them fails and names it.
+has no flashback, nor the opponent's Think Twice (406, 115.1).
+Ghoulcaller's Chant is the first modal spell read (700.2): its modes are
+told by their counts, as the engine's question tells them, and on a
+board with a second Zombie card in the caster's graveyard it is offered
+at each creature card alone and at the two Zombie cards together, never
+one card twice (601.2c). Not yet read: copies, other replacement effects
+(mill instead of damage), counters other than +1/+1 and -1/-1, hexproof
+granted to creatures, attack triggers with targets, links between
+abilities ("the exiled card"), and costs of removing counters. Each is a
+template, or a board, to add; `READ` lists the cards read, and a change
+that stops reading any of them fails and names it.
 
 ### Cards proved with Kani
 
