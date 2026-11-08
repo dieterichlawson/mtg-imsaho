@@ -6259,13 +6259,16 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
         worlds = next;
     }
     // End of combat: what its text exiles then is exiled, a token ceasing
-    // to exist (CR 511.1, 111.7).
+    // to exist (CR 511.1, 111.7), and the state-based actions are checked
+    // before anyone has priority (704.3): a creature counting what left
+    // shrinks, and one holding lethal damage dies (Scourge of Geier Reach,
+    // counting Geist of Saint Traft's Angel, 704.5g).
     for w in &mut worlds {
         w.tokens.retain(|t| !t.exile_at_end_of_combat);
         for t in w.tokens.iter_mut().chain(w.permanents.values_mut()) {
             t.attacking = false;
         }
-        w.refresh();
+        w.state_based_actions();
     }
     worlds
 }
