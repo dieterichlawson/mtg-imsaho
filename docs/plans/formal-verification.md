@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-265 of the pool's 268 instants, sorceries, creatures, enchantments,
+266 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -896,8 +896,14 @@ activated test's, its entering tapped the cast's, and its staying tapped
 the turn's. Eight mutants (no counter, the counter with no target,
 hexproof ignored, its own creatures targeted, no destruction, the
 sacrifice's counter dropped, entering untapped, untapping) each fail.
-Not yet read: Bitterheart Witch's search for
-a Curse put onto the battlefield attached to a target player as it dies,
+Bitterheart Witch dies with a Curse of Death's Hold and a Curse of the
+Pierced Heart in its controller's library: the trigger targets either
+player (603.3d), and its "may" taken, each Curse is found or none
+(701.19b), put onto the battlefield attached to that player, and Death's
+Hold shrinks that player's creatures at once; the library is shuffled
+either way, and not at all if the "may" is declined. Five mutants (the
+Curse on its controller, the search bound to find, no shuffle, the "may"
+read as a must, the Curse doing nothing) each fail. Not yet read:
 Grimoire of the Dead's study
 counters and its return of every creature card under one player, and
 Mirror-Mad Phantasm's shuffle and reveal until it is found; and, of

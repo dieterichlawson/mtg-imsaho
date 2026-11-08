@@ -526,6 +526,12 @@ enum Effect {
     /// `morbid_battlefield`, "you may put that card onto the battlefield
     /// instead ... if a creature died this turn" (CR 701.19).
     SearchForBasicLand { of: Option<usize>, to_battlefield: bool, morbid_battlefield: bool },
+    /// "Search your library for a Curse card, put it onto the battlefield
+    /// attached to target player, then shuffle" (CR 701.19b, 303.4f): any
+    /// Curse card there, by name, or none, a search for a card of a stated
+    /// quality being free to fail; it enters attached to that player, and
+    /// the library is shuffled either way.
+    SearchForCurseAttachedTo { player: usize },
     /// A dies trigger's "exile it": the card the creature became, from its
     /// owner's graveyard (CR 400.7, 608.2h).
     ExileItFromGraveyard,
@@ -1678,6 +1684,11 @@ impl Spec {
             self.effects.push(Effect::SearchForBasicLand { of: Some(of), to_battlefield: true, morbid_battlefield: false });
             return Some(());
         }
+        if s == "Search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle" {
+            let player = self.slot(Slot::Player);
+            self.effects.push(Effect::SearchForCurseAttachedTo { player });
+            return Some(());
+        }
         if let Some((first, then)) = s.split_once(", then ") {
             self.sentence(&format!("{first}."))?;
             let mut chars = then.chars();
@@ -2485,9 +2496,13 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             line
         };
         if let Some(rest) = line.strip_prefix("When this creature dies, ") {
+            let (optional, rest) = match rest.strip_prefix("you may ") {
+                Some(r) => (true, r),
+                None => (false, rest),
+            };
             let mut chars = rest.chars();
             let text: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
-            let mut trigger = Trigger::default();
+            let mut trigger = Trigger { optional, ..Trigger::default() };
             for sentence in text.split_inclusive(". ") {
                 trigger.spec.sentence(sentence).ok_or_else(unread)?;
             }
@@ -4544,6 +4559,18 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.graveyard[c].push(card);
                 }
             }
+            Effect::SearchForCurseAttachedTo { player: slot } => {
+                if let (Some((name, _)), Some(p)) = (&world.found, player(*slot)) {
+                    let at = w.library[c].iter().position(|n| n == name).expect("a card the search can find");
+                    w.library[c].remove(at);
+                    let printed = &cached_oracle()[name];
+                    let curse = read_enchantment(printed).expect("a Curse the grammar reads");
+                    // Its place in the reference: no id the engine gives out.
+                    let id = ObjectId(u64::MAX - 1);
+                    w.permanents.insert(id, Model { attached: Some(Target::Player(PlayerId(u8::try_from(p).expect("a player")))), ..model_of(&curse, printed, caster) });
+                }
+                w.shuffled[c] = true;
+            }
             Effect::SearchForBasicLand { of, .. } => {
                 let p = searcher(world, targets, *of, caster);
                 if let Some((name, onto_battlefield)) = &world.found {
@@ -5069,6 +5096,17 @@ fn basic_land(name: &str, owner: PlayerId) -> Model {
 /// battlefield as well when morbid allows it.
 fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
     let mut ways = vec![world.clone()];
+    if spec.effects.iter().any(|e| matches!(e, Effect::SearchForCurseAttachedTo { .. })) {
+        let mut curses: Vec<String> = world.library[caster.0 as usize].iter()
+            .filter(|n| cached_oracle().get(*n).is_some_and(|c| c.types().1.iter().any(|t| t == "Curse")))
+            .cloned()
+            .collect();
+        curses.sort();
+        curses.dedup();
+        ways = std::iter::once(None).chain(curses.into_iter().map(|c| Some((c, true))))
+            .map(|found| World { found, ..world.clone() })
+            .collect();
+    }
     for effect in &spec.effects {
         let Effect::SearchForBasicLand { of, to_battlefield, morbid_battlefield } = effect else { continue };
         let p = searcher(world, targets, *of, caster);
@@ -6214,7 +6252,7 @@ const READ: &[&str] = &[
     "Abattoir Ghoul", "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
     "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Back from the Brink", "Balefire Dragon",
-    "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
+    "Battleground Geist", "Bitterheart Witch", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Blazing Torch", "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
     "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
     "Cackling Counterpart", "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
@@ -8679,6 +8717,48 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature the grammar reads whose death searches its controller's
+/// library for a Curse (Bitterheart Witch), on the board with a Curse of
+/// Death's Hold and a Curse of the Pierced Heart in that library: it dies,
+/// the trigger targets either player (CR 603.3d), and taking the "may",
+/// each Curse is found or none (701.19b) and put onto the battlefield
+/// attached to that player, the library shuffled either way; declined,
+/// nothing is searched or shuffled. Each "may" taken, each declined, and
+/// every way. Death's Hold shrinks the creatures of the player it curses as
+/// it arrives (303.4f), the state-based actions after.
+#[test]
+fn every_search_for_a_curse_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut deaths = 0;
+    let searches = |s: &Spec| s.dies.as_ref().is_some_and(|t| t.spec.effects.iter().any(|e| matches!(e, Effect::SearchForCurseAttachedTo { .. })));
+    for (card, spec) in cards.iter().filter(|(_, s)| searches(s)) {
+        for may in [None, Some(true), Some(false)] {
+            deaths += 1;
+            let (mut state, mut world) = board(&registry, &cache);
+            for curse in ["Curse of Death's Hold", "Curse of the Pierced Heart"] {
+                stock_library_with(&mut state, &registry, P0, curse, 1);
+                world.library[0].push(curse.to_string());
+            }
+            let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            world.source = Some(id);
+            world.refresh();
+            let lethal = state.effective_toughness(id, &registry).expect("a creature").max(1);
+            state.get_object_mut(id).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
+            let want = death_outcomes(spec, &world, P0, id, &[id], may);
+            let got = every_ending_choosing(&state, &registry, None, None, may);
+            if let Some(why) = disagreement(&want, &got, &registry) {
+                let policy = match may { None => "", Some(true) => ", taking the \"may\"", Some(false) => ", declining the \"may\"" };
+                failures.push(format!("{} dying{policy}: {why}", card.name));
+            }
+        }
+    }
+    assert!(deaths > 0);
+    assert!(failures.is_empty(), "{} of {deaths} deaths disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature the grammar reads whose attack trigger has a target
 /// (Grimgrin's "destroy target creature defending player controls, then
 /// put a +1/+1 counter on this creature"): it attacks, unblocked, into a
@@ -9900,6 +9980,10 @@ fn the_grammar_reads_its_templates() {
     assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
     let ghoul = Printed { oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".to_string(), ..viper.clone() };
     let ghoul = read_creature(&ghoul).unwrap();
+    let witch = Printed { oracle_text: "Deathtouch\nWhen this creature dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.".to_string(), ..viper.clone() };
+    let witch = read_creature(&witch).unwrap().dies.expect("a trigger as it dies");
+    assert!(witch.optional && witch.spec.slots == vec![Slot::Player]);
+    assert_eq!(witch.spec.effects, vec![Effect::SearchForCurseAttachedTo { player: 0 }]);
     let grimgrin = Printed { name: "Grimgrin, Corpse-Born".to_string(), oracle_text: "Grimgrin enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.".to_string(), ..viper.clone() };
     let grimgrin = read_creature(&grimgrin).unwrap();
     assert!(grimgrin.enters_tapped && grimgrin.statics == vec![Static::RestrictsItself { what: vec![Restriction::DoesntUntap] }]);
