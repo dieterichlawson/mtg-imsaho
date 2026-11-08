@@ -632,6 +632,10 @@ struct Spec {
     /// control enters with an additional +1/+1 counter on it" (CR 614.1c,
     /// 614.12): the subtype, while the card is in its owner's graveyard.
     from_the_graveyard_enters_with_a_counter: Option<String>,
+    /// "This creature enters with a +1/+1 counter on it for each other
+    /// Zombie you control and each Zombie card in your graveyard" (CR
+    /// 614.1c): the subtype, counted for the player it enters under.
+    enters_with_a_counter_for_each: Option<String>,
     /// What it says about attacking, blocking and combat damage.
     combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
@@ -1008,6 +1012,10 @@ enum Static {
     /// printed or gained until end of turn, and not lost (CR 611.3a,
     /// 613.1f).
     AsLongAsItHas { keyword: Keyword, has: Vec<Keyword> },
+    /// "If this creature would be dealt damage, prevent that damage and
+    /// remove a +1/+1 counter from it" (CR 615.1, 614.1a): any damage at
+    /// all, a counter for each time, none removed when it has none.
+    DamageRemovesACounterInstead,
     /// "You have hexproof": its controller can't be the target of spells
     /// or abilities their opponents control (CR 702.11d).
     YouHaveHexproof,
@@ -2194,6 +2202,18 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         let unread = || format!("cannot read {line:?}");
         if line == "This creature enters tapped." {
             spec.enters_tapped = true;
+            continue;
+        }
+        if let Some(subtype) = line.strip_prefix("This creature enters with a +1/+1 counter on it for each other ")
+            .and_then(|r| r.strip_suffix(" card in your graveyard."))
+            .and_then(|r| r.split_once(" you control and each "))
+            .and_then(|(a, b)| (a == b).then(|| a.to_string()))
+        {
+            spec.enters_with_a_counter_for_each = Some(subtype);
+            continue;
+        }
+        if line == "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it." {
+            spec.statics.push(Static::DamageRemovesACounterInstead);
             continue;
         }
         if let Some(subtype) = line.strip_prefix("As long as this creature is in your graveyard, each ")
@@ -3413,7 +3433,8 @@ impl World {
             }
             Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
             Static::AsLongAsItHas { keyword, has: gives } => (is_source && has(m, *keyword)).then(|| change((0, 0), gives)),
-            Static::YouHaveHexproof | Static::DoublesYourTokens | Static::ArtifactAbilitiesCantBeActivated => None,
+            Static::YouHaveHexproof | Static::DoublesYourTokens | Static::ArtifactAbilitiesCantBeActivated
+            | Static::DamageRemovesACounterInstead => None,
         }
     }
 
@@ -3890,6 +3911,24 @@ fn until_end_of_turn(m: &mut Model, (power, toughness): (i32, i32), gains: &[Key
     m.temp_keywords.extend(gains);
 }
 
+/// `n` damage dealt to `m`, or none: a creature whose text prevents it
+/// loses a +1/+1 counter instead, if it has one (Unbreathing Horde, CR
+/// 615.1). Whether damage was dealt, which deathtouch and lifelink read.
+fn deal(m: &mut Model, n: u32) -> bool {
+    if n == 0 {
+        return false;
+    }
+    if m.statics.contains(&Static::DamageRemovesACounterInstead) {
+        if m.counters.0 > 0 {
+            m.counters.0 -= 1;
+            change(m, -1, -1);
+        }
+        return false;
+    }
+    m.damage += n;
+    true
+}
+
 /// A creature's power, toughness and counters changed by `by` (CR 613.4).
 fn change(m: &mut Model, power: i32, toughness: i32) {
     m.power = m.power.map(|p| p + power);
@@ -3925,7 +3964,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     _ => *amount,
                 };
                 if let Some(id) = object(*slot) {
-                    w.permanents.get_mut(&id).expect("a target on the board").damage += amount;
+                    deal(w.permanents.get_mut(&id).expect("a target on the board"), amount);
                 } else if let Some(p) = player(*slot) {
                     w.life[p] -= amount as i32;
                 }
@@ -3933,7 +3972,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::DamageEach { amount, filter } => {
                 for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
                     if m.matches(filter, caster) {
-                        m.damage += amount;
+                        deal(m, *amount);
                     }
                 }
             }
@@ -3976,8 +4015,8 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 let dealt = |p: Option<i32>| u32::try_from(p.unwrap_or(0).max(0)).expect("non-negative");
                 for (to, from, p) in [(ib, &ma, pa), (ia, &mb, pb)] {
                     let m = w.permanents.get_mut(&to).expect("on the board");
-                    m.damage += dealt(p);
-                    m.deathtouched |= has(from, Keyword::Deathtouch) && dealt(p) > 0;
+                    let took = deal(m, dealt(p));
+                    m.deathtouched |= has(from, Keyword::Deathtouch) && took;
                 }
                 for (m, p) in [(&ma, pa), (&mb, pb)] {
                     if has(m, Keyword::Lifelink) {
@@ -4335,7 +4374,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::DamageEqualToExiledPower { slot } => {
                 let n: u32 = w.cost_exiled.iter().map(|m| u32::try_from(m.power.unwrap_or(0).max(0)).expect("non-negative")).sum();
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
-                    m.damage += n;
+                    deal(m, n);
                 }
             }
             Effect::MillEach { n } => {
@@ -4424,7 +4463,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::DamageX { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.permanents.get_mut(&id).expect("a target on the board").damage += world.x;
+                    deal(w.permanents.get_mut(&id).expect("a target on the board"), world.x);
                 } else if let Some(p) = player(*slot) {
                     w.life[p] -= world.x as i32;
                 }
@@ -4897,6 +4936,16 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
     let mut w = world.clone();
     let mut m = Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) };
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
+        let n = i32::try_from(n).expect("a few");
+        change(&mut m, n, n);
+        m.counters.0 += n as u32;
+    }
+    // A counter for each other permanent of a subtype its caster controls
+    // and each card of it in their graveyard (Unbreathing Horde), counted
+    // as it enters under them.
+    if let Some(t) = &spec.enters_with_a_counter_for_each {
+        let n = world.permanents.values().chain(&world.tokens).filter(|o| o.controller == caster && o.subtypes.contains(t)).count()
+            + world.yard.values().filter(|c| c.owner == caster && c.subtypes.contains(t)).count();
         let n = i32::try_from(n).expect("a few");
         change(&mut m, n, n);
         m.counters.0 += n as u32;
@@ -5783,7 +5832,7 @@ const READ: &[&str] = &[
     "Stitcher's Apprentice", "Stony Silence", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
     "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
     "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
-    "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats",
+    "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats", "Unbreathing Horde",
     "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
     "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
     "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
@@ -6757,8 +6806,9 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             }
             if let Some(n) = om.combat.block_damage.filter(|_| !protected(&xm, &om)) {
                 let m = w.permanents.get_mut(&other).expect("in combat");
-                m.damage += n;
-                m.deathtouched |= has(&om, Keyword::Deathtouch);
+                if deal(m, n) {
+                    m.deathtouched |= has(&om, Keyword::Deathtouch);
+                }
             }
         }
         w.state_based_actions();
@@ -6844,8 +6894,9 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                     match to {
                         Target::Object(id) => {
                             let m = w2.permanents.get_mut(id).expect("in combat");
-                            m.damage += n;
-                            m.deathtouched |= has(&source, Keyword::Deathtouch);
+                            if deal(m, n) {
+                                m.deathtouched |= has(&source, Keyword::Deathtouch);
+                            }
                         }
                         Target::Player(p) => {
                             w2.life[p.0 as usize] -= n as i32;
@@ -6970,8 +7021,9 @@ fn on_damage_to_player(w2: &mut World, a: ObjectId, attacker: &Model, dealt: u32
                 for id in theirs {
                     if !protected(&w2.permanents[&id], attacker) {
                         let m = w2.permanents.get_mut(&id).expect("on the battlefield");
-                        m.damage += dealt;
-                        m.deathtouched |= has(attacker, Keyword::Deathtouch);
+                        if deal(m, dealt) {
+                            m.deathtouched |= has(attacker, Keyword::Deathtouch);
+                        }
                     }
                 }
             }
@@ -7203,6 +7255,7 @@ fn number_after_the_front(front: &Spec, back: &mut Spec) {
 fn fighters<'a>(cards: &'a [(Printed, Spec)], backs: &'a [(Printed, Spec)]) -> Vec<(&'a Printed, &'a Spec)> {
     cards.iter().chain(backs)
         .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.activated.is_empty()
+            && s.enters_with_a_counter_for_each.is_none()
             && s.mana.is_empty() && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
             && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
         .map(|(c, s)| (c, s))
@@ -7991,6 +8044,43 @@ fn every_token_doubling_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature the grammar reads whose text prevents the damage dealt
+/// to it and removes a +1/+1 counter instead (Unbreathing Horde), with two
+/// counters and with one: Lightning Bolt cast at it leaves it with one
+/// fewer and no damage, the last leaving a 0/0 to die (CR 615.1, 704.5f);
+/// and Brimstone Volley's 3 at it likewise.
+#[test]
+fn every_damage_replacement_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.statics.contains(&Static::DamageRemovesACounterInstead)) {
+        for (bolt, counters) in [("Lightning Bolt", 2), ("Lightning Bolt", 1), ("Brimstone Volley", 2)] {
+            casts += 1;
+            let (bolt_card, bolt_spec) = (&cache[bolt], read(&cache[bolt]).expect("reads"));
+            let (mut state, mut world) = board(&registry, &cache);
+            let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            state.get_object_mut(id).expect("just placed").counters.insert(CounterType::PlusOnePlusOne, counters);
+            let m = world.permanents.get_mut(&id).expect("just placed");
+            change(m, counters as i32, counters as i32);
+            m.counters.0 = counters;
+            world.refresh();
+            let spell = spell_in_hand(&mut state, &registry, bolt, P0);
+            fund(&mut state, P0, &mana_cost(&bolt_card.mana_cost).expect("a cost"), 0);
+            let want = resolve(&bolt_spec, &world, &[Target::Object(id)], P0, bolt_card, spell).observed();
+            match cast_and_let_resolve(&state, &registry, spell, vec![Target::Object(id)]) {
+                Ok(after) if observe(&after, &registry) == want => {}
+                Ok(after) => failures.push(format!("{bolt} at {} with {counters} counters:\n      {}", card.name, differences(&observe(&after, &registry), &want))),
+                Err(why) => failures.push(format!("{bolt} at {} with {counters} counters: {why}", card.name)),
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature card the grammar reads that, from its owner's graveyard,
 /// gives their creatures of a subtype a counter as they enter (Dearly
 /// Departed's Humans): a Human cast by the card's owner enters with the
@@ -8260,7 +8350,15 @@ fn every_creature_is_declared_as_its_text_says() {
     let mut checked = 0;
     for (card, spec) in cards.iter().chain(&backs).filter(|(c, _)| c.has_type("Creature") && !fighting.contains(&c.name.as_str())) {
         checked += 1;
-        let (state, world, a, _) = arena(&registry, (card, spec), None);
+        let (mut state, mut world, a, _) = arena(&registry, (card, spec), None);
+        // A 0/0 but for the counters it enters with (Unbreathing Horde) is
+        // declared with one, as placing it gives it none.
+        if spec.enters_with_a_counter_for_each.is_some() {
+            state.get_object_mut(a).expect("placed").counters.insert(CounterType::PlusOnePlusOne, 1);
+            let m = world.permanents.get_mut(&a).expect("placed");
+            change(m, 1, 1);
+            m.counters.0 = 1;
+        }
         let asked = combat_questions(&state, &registry, a);
         let am = &world.permanents[&a];
         let may_attack = !has(am, Keyword::Defender) && !restricted(am, Restriction::CantAttack);
@@ -8933,6 +9031,9 @@ fn the_grammar_reads_its_templates() {
     assert!(read_creature(&snapcaster).unwrap().etb.is_some_and(|t| matches!(t.spec.effects[..], [Effect::GrantFlashback { slot: 0 }])));
     let departed = Printed { oracle_text: "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.".to_string(), ..viper.clone() };
     assert_eq!(read_creature(&departed).unwrap().from_the_graveyard_enters_with_a_counter.as_deref(), Some("Human"));
+    let horde = Printed { oracle_text: "This creature enters with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard.\nIf this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it.".to_string(), ..viper.clone() };
+    let horde = read_creature(&horde).unwrap();
+    assert_eq!((horde.enters_with_a_counter_for_each.as_deref(), horde.statics), (Some("Zombie"), vec![Static::DamageRemovesACounterInstead]));
     let flail = Printed { type_line: "Artifact — Equipment".to_string(), oracle_text: "If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}".to_string(), ..viper.clone() };
     assert_eq!(read_artifact(&flail).unwrap().statics, vec![
         Static::Restricts { group: false, what: vec![Restriction::DoublesCombatDamage], unless_subtype: None },
