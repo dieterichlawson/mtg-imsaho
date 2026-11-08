@@ -382,6 +382,14 @@ enum Effect {
     /// `every_copy_of_an_exiled_card_is_what_its_text_says` enters it each
     /// way it can.
     TokenCopyOfTheExiledCard,
+    /// "This creature's owner shuffles it into their library. If that
+    /// player does, they reveal cards from the top of that library until a
+    /// card named ~ is revealed. The player puts that card onto the
+    /// battlefield and all other cards revealed this way into their
+    /// graveyard" (CR 701.20a, 701.16a, 400.7): where the shuffle puts it
+    /// is random, so `every_shuffle_and_reveal_is_what_its_text_says`
+    /// plays every place it can land.
+    ShuffleIntoLibraryRevealUntilNamed,
     /// "Create a green Ooze creature token with \"This token's power and
     /// toughness are each equal to the number of slime counters on ~.\"":
     /// a creature token of those colours and subtypes whose size is that
@@ -1015,6 +1023,11 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
         sacrifice: None, exile_creature_card: false, if_you_control: None, tap_others: 0, morbid: false, remove_counter: false, sacrifice_granter: false,
         pays_the_exiled_cards_cost: false, spec: Spec::default(),
     };
+    if effect == "This creature's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named ~ is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard." {
+        ability.mana = mana_cost(cost)?;
+        ability.spec.effects.push(Effect::ShuffleIntoLibraryRevealUntilNamed);
+        return Some(ability);
+    }
     for part in cost.split(", ") {
         match part {
             "{T}" => ability.tap = true,
@@ -4424,6 +4437,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::GrantFlashback { .. } => {}
             // It may enter more than one way, which one world cannot hold.
             Effect::TokenCopyOfTheExiledCard => unreachable!("entered each way it can by every_copy_of_an_exiled_card_is_what_its_text_says"),
+            Effect::ShuffleIntoLibraryRevealUntilNamed => unreachable!("each place it lands played by every_shuffle_and_reveal_is_what_its_text_says"),
             Effect::TokenCopy { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get(&id)).cloned() {
                     for _ in 0..w.tokens_per_token(caster) {
@@ -6281,7 +6295,7 @@ const READ: &[&str] = &[
     "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
     "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
     "Manor Gargoyle", "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Memory's Journey", "Mentor of the Meek", "Mikaeus, the Lunarch",
-    "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
+    "Midnight Haunting", "Mindshrieker", "Mirror-Mad Phantasm", "Moan of the Unhallowed", "Moldgraf Monstrosity",
     "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
     "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Nevermore",
     "Night Revelers", "Night Terrors", "Nightbird's Clutches", "Olivia Voldaren",
@@ -6701,8 +6715,10 @@ fn every_readable_activated_ability_does_what_its_text_says() {
             _ => None,
         });
         // A morbid ability, on the board and after a death (CR 602.5b).
+        // One whose result is a shuffle's order is
+        // `every_shuffle_and_reveal_is_what_its_text_says`'s.
         let variants = spec.activated.iter()
-            .filter(|a| !a.pays_the_exiled_cards_cost)
+            .filter(|a| !a.pays_the_exiled_cards_cost && !a.spec.effects.contains(&Effect::ShuffleIntoLibraryRevealUntilNamed))
             .flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c))))
             .flat_map(|(a, c)| std::iter::once((a, c, None)).chain(counted(a).into_iter().flatten().map(move |k| (a, c, Some(k)))))
             .flat_map(|(a, c, k)| [false, true].into_iter().filter(move |died| !died || a.morbid).map(move |died| (a, c, k.clone(), died)));
@@ -8717,6 +8733,63 @@ fn every_enter_as_a_copy_is_what_its_text_says() {
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every creature the grammar reads whose ability shuffles it into its
+/// owner's library and reveals until a card of its name (Mirror-Mad
+/// Phantasm), on the board with two cards left in that library: activated
+/// with its cost floating, it is shuffled in (CR 701.20a), the cards above
+/// it revealed and put into its owner's graveyard, and it put onto the
+/// battlefield, a new object (400.7). Over 32 shuffles the engine lands it
+/// at each of the three places, and no ending but those the text allows.
+#[test]
+fn every_shuffle_and_reveal_is_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let reveals = |a: &Activated| a.spec.effects.contains(&Effect::ShuffleIntoLibraryRevealUntilNamed);
+    for (card, spec) in cards.iter().filter(|(_, s)| s.activated.iter().any(reveals)) {
+        checked += 1;
+        let ability = spec.activated.iter().find(|a| reveals(a)).expect("just found");
+        let (mut state, mut world) = board(&registry, &cache);
+        let kept = 2;
+        let order = state.players[0].library_order.clone();
+        for gone in &order[kept..] {
+            state.cease_to_exist(*gone);
+        }
+        world.library[0].truncate(kept);
+        let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        world.refresh();
+        fund(&mut state, P0, &ability.mana, 0);
+        let Some(act) = engine::legal_actions(&state, &registry).actions.into_iter()
+            .find(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id && *ability_index == ability.index))
+        else {
+            failures.push(format!("{}: its ability is not offered with {:?} floating", card.name, ability.mana));
+            continue;
+        };
+        let library = world.library[0].clone();
+        let want: Vec<World> = (0..1u32 << library.len())
+            .map(|above| {
+                let mut w = world.clone();
+                let (revealed, left): (Vec<(usize, String)>, Vec<(usize, String)>) = library.iter().cloned().enumerate()
+                    .partition(|(i, _)| above & (1 << i) != 0);
+                w.graveyard[0].extend(revealed.into_iter().map(|(_, n)| n));
+                w.library[0] = left.into_iter().map(|(_, n)| n).collect();
+                w.shuffled[0] = true;
+                w.permanents.insert(id, model_of(spec, card, P0));
+                w.state_based_actions();
+                w
+            })
+            .collect();
+        let got = over_seeds(&state, |s| every_ending_from(s, &registry, None, Some(act.clone())));
+        if let Some(why) = disagreement(&want, &got, &registry) {
+            failures.push(format!("{}: {why}", card.name));
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} reveals disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every creature the grammar reads whose death searches its controller's
 /// library for a Curse (Bitterheart Witch), on the board with a Curse of
 /// Death's Hold and a Curse of the Pierced Heart in that library: it dies,
@@ -9980,6 +10053,8 @@ fn the_grammar_reads_its_templates() {
     assert!(read_creature(&doll).unwrap().combat.flips_to_destroy_what_it_damages);
     let ghoul = Printed { oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".to_string(), ..viper.clone() };
     let ghoul = read_creature(&ghoul).unwrap();
+    let phantasm = read_activated("{1}{U}: This creature's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named ~ is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard.", 1).unwrap();
+    assert!(phantasm.spec.effects == vec![Effect::ShuffleIntoLibraryRevealUntilNamed] && phantasm.mana == mana_cost("{1}{U}").unwrap());
     let witch = Printed { oracle_text: "Deathtouch\nWhen this creature dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.".to_string(), ..viper.clone() };
     let witch = read_creature(&witch).unwrap().dies.expect("a trigger as it dies");
     assert!(witch.optional && witch.spec.slots == vec![Slot::Player]);

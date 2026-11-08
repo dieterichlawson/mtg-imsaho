@@ -761,7 +761,7 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-266 of the pool's 268 instants, sorceries, creatures, enchantments,
+267 of the pool's 268 instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
@@ -903,11 +903,15 @@ player (603.3d), and its "may" taken, each Curse is found or none
 Hold shrinks that player's creatures at once; the library is shuffled
 either way, and not at all if the "may" is declined. Five mutants (the
 Curse on its controller, the search bound to find, no shuffle, the "may"
-read as a must, the Curse doing nothing) each fail. Not yet read:
-Grimoire of the Dead's study
-counters and its return of every creature card under one player, and
-Mirror-Mad Phantasm's shuffle and reveal until it is found; and, of
-templates, hexproof granted to creatures. Each is a
+read as a must, the Curse doing nothing) each fail. Mirror-Mad
+Phantasm's ability is played with two cards left in its owner's library,
+over 32 shuffles: it lands in each of the three places, the cards above
+it put into the graveyard and it put back onto the battlefield, a new
+object (701.20a, 400.7), and no other ending; four mutants (the revealed
+cards kept, the Phantasm not returned, always on top, returned tapped)
+each fail. Not yet read: Grimoire of the Dead's study counters and its
+return of every creature card under one player; and, of templates,
+hexproof granted to creatures. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change
 that stops reading any of them fails and names it.
 
