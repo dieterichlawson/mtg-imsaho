@@ -8882,11 +8882,18 @@ fn every_cast_watcher_sees_what_its_text_says() {
             (watch.kinds.is_empty() || watch.kinds.iter().any(|k| spell.types().0.iter().any(|t| t.to_lowercase() == *k)))
                 && (!watch.from_graveyard || from_graveyard)
         };
-        // The caster's own casts, from the hand and from the graveyard.
-        for from_graveyard in [false, true] {
+        // The caster's own casts, from the hand and from the graveyard; and
+        // with the watcher its controller's but the other player's card, as
+        // after Olivia Voldaren took it: "whenever you cast" is its
+        // controller (CR 109.5), and so is the trigger (603.3a).
+        for (from_graveyard, borrowed) in [(false, false), (true, false), (false, true), (true, true)] {
             casts += 1;
             let (mut state, mut world) = board(&registry, &cache);
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            if borrowed {
+                state.get_object_mut(id).expect("just placed").owner = P1;
+                world.permanents.get_mut(&id).expect("just placed").owner = P1;
+            }
             world.refresh();
             let (spell, flashback) = if from_graveyard {
                 let spell = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some("Think Twice")).map(|(i, _)| *i).expect("on the board");
@@ -8912,7 +8919,8 @@ fn every_cast_watcher_sees_what_its_text_says() {
                 })
                 .collect();
             let got = every_ending_casting(&state, &registry, spell, &[], Some(cast_for(spell, Vec::new(), flashback.as_ref())));
-            let what = format!("{} as its controller casts Think Twice{}", card.name, if from_graveyard { " by flashback" } else { "" });
+            let what = format!("{} as its controller casts Think Twice{}{}", card.name, if from_graveyard { " by flashback" } else { "" },
+                if borrowed { ", the watcher the other player's card" } else { "" });
             // The engine puts the spell on the stack as well.
             let mut from = state.clone();
             from.stack_puts += 1;
@@ -8980,12 +8988,21 @@ fn every_enter_watcher_sees_what_its_text_says() {
     for (card, spec) in cards.iter().filter(|(_, s)| s.on_enter.is_some()) {
         let watch = spec.on_enter.as_deref().expect("filtered");
         // And the Bears once more with the caster's mana sources all tapped
-        // and nothing floating, so that a "may" with a cost cannot be paid.
-        for (creature, caster, broke) in [("Grizzly Bears", P0, false), ("Elite Inquisitor", P0, false), ("Elite Inquisitor", P1, false), ("Grizzly Bears", P0, true)] {
+        // and nothing floating, so that a "may" with a cost cannot be paid;
+        // and with the watcher its controller's but the other player's
+        // card, as after Olivia Voldaren took it: "you control" is its
+        // controller (CR 109.5), and so is the trigger (603.3a).
+        let cases = [("Grizzly Bears", P0, false, false), ("Elite Inquisitor", P0, false, false), ("Elite Inquisitor", P1, false, false),
+            ("Grizzly Bears", P0, true, false), ("Grizzly Bears", P0, false, true), ("Elite Inquisitor", P1, false, true)];
+        for (creature, caster, broke, borrowed) in cases {
             casts += 1;
             let (printed, creature_spec) = (&cache[creature], read_creature(&cache[creature]).expect("reads"));
             let (mut state, mut world) = board(&registry, &cache);
             let watcher = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            if borrowed {
+                state.get_object_mut(watcher).expect("just placed").owner = P1;
+                world.permanents.get_mut(&watcher).expect("just placed").owner = P1;
+            }
             world.refresh();
             let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
                 Some(o) => {
@@ -9027,7 +9044,8 @@ fn every_enter_watcher_sees_what_its_text_says() {
             let mut from = state.clone();
             from.stack_puts += 1;
             if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
-                failures.push(format!("{} as player {} casts {creature}{}: {why}", card.name, caster.0, if broke { " with no mana left" } else { "" }));
+                failures.push(format!("{} as player {} casts {creature}{}{}: {why}", card.name, caster.0, if broke { " with no mana left" } else { "" },
+                    if borrowed { ", the watcher the other player's card" } else { "" }));
             }
         }
     }
