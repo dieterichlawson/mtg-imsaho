@@ -723,7 +723,11 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   the next turn's main phase, with the face up by then (513.1a, 603.4).
   Both turn tests also count what the engine puts on the stack against
   the triggers the text fires, so one that triggers when its "if" is false
-  and then does nothing is seen.
+  and then does nothing is seen. And both play each permanent again as
+  its controller's but the other player's card, as after Olivia Voldaren
+  took it: "your upkeep" and "your end step" are its controller's (CR
+  109.5). A collector reading the owner is caught in 23 of 72 upkeeps
+  and 12 of 40 end steps.
 - **"You may"**: besides every ending reached, the death checks play
   every "may" taken and every one declined, since as a set of endings a
   wrong answer to one can hide behind a right answer to another. A "may"
@@ -860,8 +864,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 216
-mutants, 212 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 217
+mutants, 213 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, two
 equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check

@@ -531,9 +531,9 @@ wrong the same way the engine was.
 ## The cards: borrowed attackers — 2026-11-09
 
 Every kind of fighter attacks its owner under the other player's control
-(`every_borrowed_fighter_attacks_its_owner`, 802 combats), and each
-activated ability is tried with its source the other player's card.
-Four mutants, three caught, and the one missed at first was defect 34.
+(`every_borrowed_fighter_attacks_its_owner`, 802 combats), each
+activated ability and each upkeep and end-step permanent is tried as the
+other player's card. Five mutants, four caught, and the one missed at first was defect 34.
 
 | family | mutant | caught by |
 |---|---|---|
@@ -541,6 +541,7 @@ Four mutants, three caught, and the one missed at first was defect 34.
 | combat damage triggers | the trigger of "whenever this creature deals combat damage to a player" is controlled by its source's owner (the engine) | the borrowed test, 9 of 802, since defect 34's fix; before it, nothing |
 | lifelink | lifelink gains its source's owner life (the engine) | not caught: the fighters' one lifelinker, Markov Patrician, has power 0 |
 | control, activated abilities | `last_known_controller` answers a permanent's owner, each activated ability tried with its source the other player's card (the engine) | `every_readable_activated_ability_does_what_its_text_says`, 54 of 130 abilities |
+| control, upkeep and end step | the step trigger collector reads a permanent's owner as the player whose upkeep or end step it is (the engine) | the turn tests with each permanent the other player's card: 23 of 72 upkeeps, 12 of 40 end steps |
 
 The second was missed because no card read the trigger's controller:
 each hook read its source's controller again as it resolved, so who the
