@@ -755,7 +755,10 @@ else.
   when the mana floating pays it, and played with none left.
 - **Who answers**: as a set, the endings hide who chose; every way of
   answering is reached whoever is asked. So each question the engine
-  asks on a card's behalf is held to the player its text has answer it:
+  asks on a card's behalf, in every test that casts, activates or
+  triggers it (spells, activated, loyalty and granted abilities, flashback,
+  enter, dies, upkeep, end-step, death, cast and enter watchers), is held
+  to the player its text has answer it:
   its controller, "you" (CR 608.2d); the target player who discards,
   sacrifices or exiles from their graveyard; each player; the countered
   spell's controller who may pay (118.12); the destroyed land's
