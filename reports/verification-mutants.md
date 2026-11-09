@@ -439,3 +439,26 @@ into a checked one, and made the Delver, Mulch, Forbidden Alchemy and
 Mindshrieker templates mean something. The harness had relied on the drawn
 card being a land the active player could play, so that the game stopped
 in their main phase; each player now holds a land instead.
+
+## The cards: double blocks — 2026-11-09
+
+The combat reference took a single blocker until now; it takes a list,
+with every damage assignment order the attacking player may announce
+(CR 509.2) and every division under it (510.1c-d). The same method for
+the double-block test (`every_double_block_ends_as_the_rules_say`): four
+mutants, four caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| the division | a blocker assigned damage before the one ahead of it has lethal (the reference) | the double-block test, 204 of 587 |
+| the order | one order only (the reference) | the double-block test, 320 of 587 |
+| | the blockers placed in the order declared, not the order chosen (the engine, `ChosenOrder`) | the double-block test, 320 of 587 |
+| a gain on any death | Abattoir Ghoul gains nothing when Creepy Doll's coin destroys a creature it damaged (the reference) | **only** with the Doll beside the Ghoul, 9 of 1,092 |
+
+The last was the reference's own bug, found by the exhaustive sweep
+(every fighter blocked by every two kinds of fighter, about 100,000
+double blocks) before any mutant: the Ghoul's "dies" had been counted only
+for deaths to damage, in the state-based actions. The default run now
+puts the Doll beside the Ghoul so that it is seen without the sweep. The
+sweep also turned up a legendary creature paired with itself, which the
+legend rule leaves alone (CR 704.5j); such pairs are not fought.

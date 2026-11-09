@@ -760,6 +760,28 @@ opponent's creatures tapped.
   player. About 3,700 and 26,000 combats agree; `scripts/prove.sh
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
+- **Double blocks**: every kind of fighter attacks again, blocked by two
+  creatures at once: every two of a vanilla creature, one with first
+  strike, deathtouch, flying and reach, Ashmouth Hound and Abattoir
+  Ghoul, each also with a second of its name; and Creepy Doll beside
+  the Ghoul. The reference announces each damage assignment order the
+  attacking player may (CR 509.2) and divides the damage every way it
+  may under it: all of it assigned, each blocker lethal before the next
+  is assigned any, a trampler's excess to the player only once both have
+  lethal, 1 lethal from deathtouch (510.1c-d, 702.19b-c, 702.2c); both
+  blockers deal theirs, a first striker among them before the rest, and
+  the order stands for the second step, so a blocker gone after the
+  first leaves the other to take it all (510.4); a creature blocked by
+  two has each of its block triggers once for each. 1,092 double blocks
+  agree; `scripts/prove.sh exhaustive` blocks every fighter with every
+  two kinds of fighter, about 100,000, which is how the reference was
+  found missing Abattoir Ghoul's gain when Creepy Doll's coin destroys a
+  creature the Ghoul damaged (its "dies" is any death, not only one to
+  damage). Caught on purpose: the reference with the lethal-first rule
+  dropped (204 of 587 disagree) or one order only (320), the engine
+  placing the blockers in the order declared rather than the order
+  chosen (320), and the reference without the Ghoul's gain on a
+  destruction (9 of 1,092).
 
 All 268 of the pool's instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and all agree. Among the latest read is
@@ -769,8 +791,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 190
-mutants, 187 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 194
+mutants, 191 caught, one missed for want of a change of control between
 activation and resolution, two equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its
