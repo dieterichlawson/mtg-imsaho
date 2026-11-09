@@ -1176,3 +1176,19 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   with the guide's real size each time the guide passes 5,000 words. Also
   try a guide in CRLF or with a byte-order mark: `sections()` and the
   heading check both match on exact strings.
+- D60 [proposed 2026-11-09, from 30232d2, 646cec4 and 69c06f6] the
+  three-guide split. Since 2026-11-08 seats 0 and 4 draft with
+  `guide.md`, seats 2 and 6 with `reports/draft-loop/conventional.md`
+  and the odd seats with none; the split is in the run stamp, the ledger
+  records `guide` per seat, and the curator is told which lessons came
+  from which guide. Check that each seat was sent the guide the ledger
+  says: decompress the night's `*-positions.jsonl.xz` and compare the
+  system prompt's guide section, seat by seat, against the two files'
+  hashes in the night report. Then stop a stub night after the draft
+  (`scripts/draft-loop/night.sh` under the prompt stub) and resume it
+  with the split changed; it must be refused, not carried on. Read the
+  debriefs: on 2026-11-09 seat 4 (BR, 0-3) wrote "the guided 3-0 BR won
+  with Sever the Bloodline", and no BR deck went 3-0 that night (the
+  3-0 was seat 3's unguided UB). Find what the debrief prompt showed it
+  (`reflect.py debrief`) and whether a lesson built on a fact the seat
+  was never given can reach the curator unchecked.
