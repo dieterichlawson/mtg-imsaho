@@ -56,6 +56,20 @@ over the campaigns the plan doc counts.
 | hand | the other player's hand size reported as the id of their first card (the view) | the fuzz, dealing the hand anew, at the fourth decision of the first game (every decision held then) |
 | menu | the acting player's menu naming the other player's top library card (the engine's legal actions) | the fuzz, every library reversed, at the fourth decision of the first game (every decision held then) |
 
+## The log: hidden information — 2026-11-09
+
+The log every seat is sent (every line above `Private`) must name no card
+no one has seen. The fuzz runner reads each line written between two
+decisions for the objects it names and flags one in a hand or a library at
+both that was not revealed, not being cast and never in a public zone. Two
+mutants, each writing a hidden card into a shared line as the engine names
+objects, `Name (#id)`. Both caught; with neither, no failure over 608 games.
+
+| family | mutant | caught by |
+|---|---|---|
+| draw | each card drawn named at `Debug` ("p1 drew Swamp (#48)") | the fuzz, at the first draw of the first game |
+| look | Delver of Secrets's look at the top card written at `Debug`, not `Private` | the fuzz, within eight seeds of a Delver deck |
+
 # What the proofs catch that the tests do not — 2026-10-25
 
 `mtg-kernel` holds the pieces of the rules proved with Verus: paying a mana

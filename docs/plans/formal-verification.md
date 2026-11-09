@@ -1118,6 +1118,27 @@ a noninterference property, checked two ways.
   minutes; a leak that shows at all shows on most decisions of a game,
   and defect 37 undone is flagged at the 32nd. As it ships: 553 games,
   87,828 decisions, then 1,818 games, 301,531 decisions, no failure.
+- The shared log, which neither check above sees: every line above
+  `Private` is in the log both seats are sent (`full_log`), and a view
+  and its copy with the hands dealt anew share one log. The fuzz runner
+  reads every line written between two decisions for the objects it
+  names (`Name (#12)`, as the engine writes them) and flags one that was
+  in a hand or a library at both and was never seen: not revealed (the
+  line says so, CR 701.16a), not the card being cast (601.2a; the engine
+  keeps a cast waiting on its X in the hand), and never found in a public
+  zone at a decision, as a creature returned to its owner's hand has
+  been. Over 130 games it flagged only the library searches, naming the
+  land each put into a hand. Every search into a hand in the pool
+  reveals what it finds (Traveler's Amulet, Caravan Vigil, Garruk, the
+  Veil-Cursed), so those lines now say "revealed", and
+  `every_search_into_a_hand_reveals_what_it_finds` holds the pool to
+  it: a card that searched into a hand without revealing would have to
+  name its find to its searcher alone. With a draw writing the card's
+  name, the first draw of the first game is flagged; with Delver of
+  Secrets's look written above `Private`, within eight seeds. It reads
+  ids only, so a line naming a hidden card by name alone, as Delver's
+  look does at `Private`, is not seen. 608 games, 101,128 decisions, no
+  failure.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
