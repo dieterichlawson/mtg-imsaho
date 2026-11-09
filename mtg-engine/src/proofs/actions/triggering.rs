@@ -553,8 +553,11 @@ card_proof! {
     /// "Whenever this creature deals combat damage to a creature" (CR
     /// 510.2, 603.2): combat damage one creature deals another raises the
     /// dealer's ability when it prints one, under its controller, for the
-    /// creature dealt damage and the amount; noncombat damage raises none.
-    /// The dealer printing it or not, either player's.
+    /// creature dealt damage and the amount; noncombat damage raises none,
+    /// and nor does combat damage to a planeswalker, which is no creature
+    /// (510.1a-c; Creepy Doll's coin was flipped for a Garruk it hit). The
+    /// dealer printing it or not, either player's, dealing it to a creature
+    /// or to a planeswalker.
     fn combat_damage_to_a_creature_raises_the_dealers_ability() {
         let (registry, blank, cards) = registry_of(vec![Box::new(watching(TriggerKind::DealsCombatDamageToCreature))]);
         let mut state = crate::proofs::cards::new_game();
@@ -562,7 +565,12 @@ card_proof! {
         let prints: bool = kani::any();
         let controller = anyone();
         let source = state.create_object(if prints { cards[0] } else { blank }, controller, Zone::Battlefield, Some(2), Some(2));
-        let damaged = state.create_object(blank, anyone(), Zone::Battlefield, Some(3), Some(3));
+        let walker: bool = kani::any();
+        let (power, toughness) = if walker { (None, None) } else { (Some(3), Some(3)) };
+        let damaged = state.create_object(blank, anyone(), Zone::Battlefield, power, toughness);
+        if walker {
+            state.get_object_mut(damaged).expect("just made").card_types.push(crate::types::CardType::Planeswalker);
+        }
         let combat: bool = kani::any();
         // Each kind of damage its own constant event (`collect` says why).
         let c = if combat {
@@ -570,7 +578,7 @@ card_proof! {
         } else {
             collect(&mut state, &[GameEvent::NonCombatDamageDealt { source, target: DamageTarget::Object(damaged), amount: 2 }], &registry)
         };
-        let expected: &[(ObjectId, PlayerId, bool)] = &[(source, controller, combat && prints)];
+        let expected: &[(ObjectId, PlayerId, bool)] = &[(source, controller, combat && prints && !walker)];
         assert!(collected(&c, expected, |_, e| matches!(e, TriggerEvent::CombatDamageToCreature { damaged_creature, amount }
             if *damaged_creature == damaged && *amount == 2)));
         std::mem::forget((registry, state, c, cards));

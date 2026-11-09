@@ -3070,6 +3070,30 @@ fn trigger_does_not_fire_on_combat_damage_to_player() {
         "Should NOT trigger on combat damage to player");
 }
 
+/// "Whenever this creature deals combat damage to a creature": a
+/// planeswalker it attacks and damages is not one (CR 510.1a-c, 120.3c).
+/// The collector used to raise the trigger for damage to any object, and
+/// a won flip destroyed the Garruk it hit. Found by the card reference
+/// (`every_attack_on_a_planeswalker_is_what_the_rules_say`).
+#[test]
+fn creepy_doll_flips_no_coin_for_a_planeswalker_it_damages() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
+    attacks_unblocked(&mut state, doll, P1);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(garruk),
+        amount: 1,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    assert!(!state.stack.iter().any(|entry| matches!(entry, StackEntry::Trigger(_))),
+        "no coin is flipped for damage to a planeswalker");
+}
+
 /// "Flip a coin. If you win the flip, destroy that creature." Both outcomes,
 /// named rather than sampled: the game's randomness lives on `GameState`, so
 /// a test says which way the coin went.
