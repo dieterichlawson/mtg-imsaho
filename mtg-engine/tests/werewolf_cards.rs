@@ -1526,7 +1526,7 @@ fn only_the_permanents_own_undelayed_ability_is_refused_a_second_transform() {
     let ability = |source_id| StackEntry::Ability {
         source_id, ability_index: 0, behavior_card_id: other_card, targets: vec![],
         activator: P0, x_value: None, target_requirement: None, sacrificed: None,
-        sacrificed_toughness: None, loyalty: false, source_transforms: stale, source_name: None,
+        sacrificed_toughness: None, loyalty: false, source_transforms: stale, source_zone_changes: None, source_name: None,
         target_zone_changes: vec![],
     };
     let trigger = |id, card_id, event| {

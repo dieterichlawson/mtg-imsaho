@@ -103,7 +103,7 @@ impl CardBehavior for CharmbreakerDevils {
         // instant-speed control change between the cast and the resolution
         // would have swallowed the pump. CR 113.7a: the ability resolves and
         // the +4/+0 goes on this creature whoever controls it by then.
-        state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
+        state.add_until_end_of_turn(crate::state::TemporaryEffect::ModifyPT {
             target: self_id,
             power_mod: 4,
             toughness_mod: 0,

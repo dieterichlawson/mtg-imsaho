@@ -84,11 +84,11 @@ impl CardBehavior for Mindshrieker {
             // so for that seat the ability's whole effect on its own creature
             // went unreported. Same question #553 settled for damage that came
             // out 0 and #299 for a permanent entering with 0 counters.
-            let still_on_battlefield = state.get_object(object_id)
-                .is_some_and(|o| o.zone == Zone::Battlefield);
+            // Nor is a Mindshrieker back since a new object (CR 400.7).
+            let still_on_battlefield = crate::cards::helpers::still_on_battlefield(state, object_id);
 
             if mana_value > 0 && still_on_battlefield {
-                state.until_end_of_turn.push(
+                state.add_until_end_of_turn(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: object_id,
                         power_mod: mana_value,

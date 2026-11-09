@@ -599,7 +599,7 @@ pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
 /// `apply_transform`) decline on their own, which they already do.
 #[must_use]
 pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
-    state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield)
+    state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) && !state.is_new_source(object_id)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -726,7 +726,10 @@ pub fn transform_quietly(
         // stamped with a DFC's `card_id` would otherwise pick up that card's
         // upkeep trigger and flip.
         Some(o) if o.zone == Zone::Battlefield && o.is_token => return TransformResult::Token,
-        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.is_transformed, o.copy_grantor),
+        // CR 400.7: the ability's own source back on the battlefield since
+        // it went on the stack is a new object, not the permanent it names.
+        Some(o) if o.zone == Zone::Battlefield && !state.is_new_source(object_id) =>
+            (o.card_id, o.is_transformed, o.copy_grantor),
         _ => return TransformResult::NotAPermanent,
     };
     let (card_id, was_transformed, copy_grantor) = (card_id.0, card_id.1, card_id.2);

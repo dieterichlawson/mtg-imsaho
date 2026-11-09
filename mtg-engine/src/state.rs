@@ -68,6 +68,13 @@ pub enum StackEntry {
         /// entry made before it was recorded, which is not checked.
         #[serde(default)]
         source_transforms: Option<u32>,
+        /// The source's `zone_change_count` as this went on the stack (CR
+        /// 400.7); stamped by [`GameState::put_on_stack`]. A source that has
+        /// changed zones since is a new object the ability does not act on
+        /// ([`GameState::is_new_source`]). `None` on an entry made before it
+        /// was recorded, which is not checked.
+        #[serde(default)]
+        source_zone_changes: Option<u32>,
         /// The source's name as this went on the stack; stamped by
         /// [`GameState::put_on_stack`]. CR 113.7a: the ability exists
         /// independently of its source, so it is named after the object that
@@ -294,7 +301,8 @@ pub struct GameState {
     /// section, after the events already said the ability resolved (#833).
     /// Set around the card's hook, kept while a choice it raised is pending,
     /// and cleared with `resolving_ability_activator` once the chain runs
-    /// out. Read only by the view.
+    /// out. Read by the view, and for what the ability's source was as it
+    /// went on (`is_new_source`, and CR 701.28f's transform count).
     #[serde(default)]
     pub resolving_ability: Option<StackEntry>,
 
@@ -646,7 +654,9 @@ impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
     pub fn put_on_stack(&mut self, mut entry: StackEntry) {
         // CR 701.28f: "since the ability was put onto the stack" is measured
-        // from here, so the source's transform count is recorded here.
+        // from here, so the source's transform count is recorded here, and
+        // so is its zone change count: one that leaves and comes back is a
+        // new object the ability does not act on (CR 400.7).
         // And what each target is (CR 400.7): the objects named, as they
         // are now.
         match &mut entry {
@@ -658,12 +668,16 @@ impl GameState {
                 }
             }
             StackEntry::Trigger(t) => {
-                t.source.source_transforms = self.get_object(t.source.id).map(|o| o.transforms);
+                let source = self.get_object(t.source.id);
+                t.source.source_transforms = source.map(|o| o.transforms);
+                t.source.source_zone_changes = source.map(|o| o.zone_change_count);
                 t.source.target_zone_changes = crate::stack::zone_changes_of(self, &t.source.chosen_targets);
             }
-            StackEntry::Ability { source_id, source_transforms, source_name, targets, target_zone_changes, .. } => {
-                *source_transforms = self.get_object(*source_id).map(|o| o.transforms);
-                *source_name = self.get_object(*source_id).map(|o| o.name.clone());
+            StackEntry::Ability { source_id, source_transforms, source_zone_changes, source_name, targets, target_zone_changes, .. } => {
+                let source = self.get_object(*source_id);
+                *source_transforms = source.map(|o| o.transforms);
+                *source_zone_changes = source.map(|o| o.zone_change_count);
+                *source_name = source.map(|o| o.name.clone());
                 *target_zone_changes = crate::stack::zone_changes_of(self, targets);
             }
         }
@@ -681,6 +695,42 @@ impl GameState {
             }
             self.stack_puts_by[p] += 1;
         }
+    }
+
+    /// Whether `id` is the resolving ability's own source and has changed
+    /// zones since the ability was put on the stack (CR 400.7): the object
+    /// `id` names now is a new one, which the ability does not act on.
+    ///
+    /// Champion of the Parish's trigger put its counter on a Champion that
+    /// Fiend Hunter had exiled and the Hunter's death had returned in
+    /// response, and Moldgraf Monstrosity's "exile it" exiled one that had
+    /// died, come back and died again. The counters, shields, taps, untaps,
+    /// transforms and until-end-of-turn effects an ability puts on its
+    /// source each ask this; a
+    /// trigger's source dead as it triggered is stamped in the graveyard,
+    /// where its "it" is (CR 603.10a). A spell is not an ability.
+    #[must_use]
+    pub fn is_new_source(&self, id: ObjectId) -> bool {
+        let stamped = match &self.resolving_ability {
+            Some(StackEntry::Trigger(t)) if t.source.id == id => t.source.source_zone_changes,
+            Some(StackEntry::Ability { source_id, source_zone_changes, .. }) if *source_id == id => *source_zone_changes,
+            _ => None,
+        };
+        stamped.is_some_and(|then| self.objects.get(&id).is_some_and(|o| o.zone_change_count != then))
+    }
+
+    /// Create an until-end-of-turn effect, unless what it is about is the
+    /// resolving ability's own source come back as a new object
+    /// ([`Self::is_new_source`], CR 400.7): Darkthicket Wolf's "+2/+2"
+    /// does not pump the Wolf that returned. Whether it was created. One
+    /// about a permanent gone altogether is dropped as the resolution ends
+    /// ([`Self::prune_effects_on_departed_objects`]).
+    pub fn add_until_end_of_turn(&mut self, effect: TemporaryEffect) -> bool {
+        if until_eot_object_target(&effect).is_some_and(|id| self.is_new_source(id)) {
+            return false;
+        }
+        self.until_end_of_turn.push(effect);
+        true
     }
 
     /// CR 400.7: an until-end-of-turn effect created for a permanent that is
@@ -3052,6 +3102,9 @@ impl GameState {
     /// because CR 400.7 makes it a new object rather than because anything
     /// untapped it, and not for one entering tapped, which was never untapped.
     pub fn untap(&mut self, id: ObjectId) -> bool {
+        if self.is_new_source(id) {
+            return false;
+        }
         match self.get_object_mut(id) {
             // CR 110.5, as for `tap`: tapped is a status of permanents, and
             // only a permanent is untapped. Leaving the battlefield clears
@@ -3116,6 +3169,9 @@ impl GameState {
     }
 
     pub fn tap(&mut self, id: ObjectId) -> bool {
+        if self.is_new_source(id) {
+            return false;
+        }
         match self.get_object_mut(id) {
             // CR 110.5: tapped is a status of permanents. An effect resolving
             // through last-known information can name an object that has
@@ -3522,7 +3578,9 @@ impl GameState {
         // counters regardless of zone, the Ooze it made came in 1/1 instead of
         // the 0/0 the ruling requires. The counter then rode along if the
         // Grime was ever reanimated.
-        if count == 0 || self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+        // Nor does one land on a source that has come back since its
+        // ability went on the stack: that is a new object (`is_new_source`).
+        if count == 0 || self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) || self.is_new_source(id) {
             return false;
         }
         if let Some(obj) = self.objects.get_mut(&id) {
@@ -3558,7 +3616,7 @@ impl GameState {
     /// earned. Grimoire of the Dead, Unburial Rites and Moldgraf Monstrosity
     /// are all in this set.
     pub fn add_regeneration_shield(&mut self, id: ObjectId) {
-        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) || self.is_new_source(id) {
             return;
         }
         let Some(obj) = self.objects.get_mut(&id) else { return };
@@ -3584,6 +3642,9 @@ impl GameState {
     /// sacrificed in the same cost, and the removal has to happen before the
     /// zone change clears them all (CR 601.2h).
     pub fn remove_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        if self.is_new_source(id) {
+            return;
+        }
         let before = self.get_counter_count(id, counter_type);
         if let Some(obj) = self.objects.get_mut(&id) {
             if let Some(current) = obj.counters.get_mut(&counter_type) {

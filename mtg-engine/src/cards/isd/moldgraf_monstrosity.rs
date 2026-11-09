@@ -48,7 +48,9 @@ impl CardBehavior for MoldgrafMonstrosity {
         //
         // The return happens either way — a trigger that can't do the first
         // part still does as much as it can (CR 608.2).
-        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Graveyard) {
+        // A Monstrosity that has died, come back and died again since is a
+        // new object too, and not the one this "it" names (CR 400.7).
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Graveyard) && !state.is_new_source(object_id) {
             state.move_object(object_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
                 "Moldgraf Monstrosity: exiled on death".into());

@@ -61,13 +61,18 @@ pub struct TriggerSource {
     /// stamped by `GameState::put_on_stack`.
     #[serde(default)]
     pub source_transforms: Option<u32>,
+    /// The source's `zone_change_count` as this went on the stack (CR
+    /// 400.7); stamped by `GameState::put_on_stack` and read by
+    /// `GameState::is_new_source`.
+    #[serde(default)]
+    pub source_zone_changes: Option<u32>,
 }
 
 impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
         Self { id, card_id, controller, description: description.into(),
-               chosen_targets: Vec::new(), target_zone_changes: Vec::new(), from_back_face: false, source_transforms: None }
+               chosen_targets: Vec::new(), target_zone_changes: Vec::new(), from_back_face: false, source_transforms: None, source_zone_changes: None }
     }
 
     /// Record which face this triggered from (CR 712.8 — the faces have
