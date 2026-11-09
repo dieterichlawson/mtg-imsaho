@@ -8390,11 +8390,16 @@ impl CliPlayer {
     /// marking every row cannot be an answer, and with the cancel key where
     /// the choice can be abandoned.
     fn set_how_to(pick: &SetPick) -> String {
-        let how = if Self::set_takes_all(pick) {
+        let mut how = if Self::set_takes_all(pick) {
             SET_HOW_TO.to_string()
         } else {
             SET_HOW_TO.replace("[a=all] ", "")
         };
+        // `n` unmarks every row. Where nothing marked is no answer ("Mark 2
+        // of the 6 cards below") it is a way to start over, not "none" (#1002).
+        if pick.min > 0 {
+            how = how.replace("[n=none]", "[n=clear]");
+        }
         match pick.cancel {
             Some(label) => format!("{how} [c={label}]"),
             None => how,
@@ -12800,12 +12805,14 @@ Wolves or Werewolves is prevented".into()];
             rows, min: 1, max: 1, cancel: None };
         assert!(!CliPlayer::set_takes_all(&pick));
         let how = CliPlayer::set_how_to(&pick);
-        assert!(!how.contains("[a=all]") && how.contains("[n=none]"), "{how}");
+        assert!(!how.contains("[a=all]") && how.contains("[n=clear]") && !how.contains("[n=none]"),
+            "nothing marked is no answer here, so `n` clears (#1002): {how}");
         // "Up to 8 of 8" and "exactly 8" take every row, and say so.
         pick.min = 0;
         pick.max = 8;
         assert!(CliPlayer::set_takes_all(&pick));
         assert!(CliPlayer::set_how_to(&pick).contains("[a=all]"));
+        assert!(CliPlayer::set_how_to(&pick).contains("[n=none]"), "with no minimum, none is an answer");
         pick.cancel = Some("cancel");
         assert!(CliPlayer::set_how_to(&pick).ends_with("[c=cancel]"));
 
