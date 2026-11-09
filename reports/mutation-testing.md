@@ -1513,3 +1513,43 @@ Accepted:
   (bucket 3). The planner's contract (an offered plan pays, a `None` means
   none would) is held by the `compute_autotap` property tests, whatever this
   list contains.
+
+## The proofs' stand-ins — 2026-11-09, before the weekly sweep sees them
+
+The formal-verification branch builds the engine under Kani with stand-ins
+for what CBMC cannot get through: `VecMap` and `VecSet` for the B-trees,
+`KindMap` for the counter and mana maps, `NameList` for the card-name
+`HashMap`, and Kani twins of `transient`, `discard` and `Collector::list`.
+cargo-mutants does not read `cfg` attributes, so it mutates all of them,
+and before this none had a `cargo test`: the weekly sweep would have filed
+every mutation of them as a survivor. `cargo mutants --list` over the four
+files gives 115 mutants in the two map files alone.
+
+- **Killed by new tests.** `vec_map.rs` and `kind_map.rs` carry unit tests
+  that play 64 seeded sequences of 300 to 400 random operations, each
+  checked against `BTreeMap` or `BTreeSet` after every step, read every
+  way the map is read (`iter`, `for`, `keys`, `values`, `len`, `get`,
+  `contains_key`). Values are strings, so an entry `exchange` moved
+  twice or not at all is a double free or a lost value. `KindMap`'s test
+  also checks each kind's slot against its place in sorted order.
+  `kind_map` and `NameList` are compiled for tests now (`any(kani, test)`),
+  and `NameList` is held to the `HashMap` it stands in for, over every
+  name the registry registers, and to refusing a name registered twice.
+  Each file run with its tests in a scratch crate of its own, so that each
+  mutant rebuilds in a second: 115 mutants in the maps, 82 caught, 3
+  timed out (livelocks the tests catch by hanging), 27 unviable, 3 missed.
+  One of the 3 was a weak test: `values_mut` returning nothing passed,
+  because the test zipped the two maps' `values_mut`, so an empty one
+  wrote to neither. It writes through each on its own now and kills it.
+  All of `NameList`'s viable mutants are caught.
+- **Accepted.** The two `reserve`s made a no-op change only capacity,
+  which no test can see. They are there so a proof's push does not
+  reallocate (`proofs::cards::no_growing`), and only a proof can tell.
+  The Kani twins of `transient` (`ManuallyDrop::new`), `discard`
+  (`mem::forget`) and `Collector::list` (`Vec::with_capacity(2)`) are
+  compiled only under `cfg(kani)`, as `proofs/` is (`-e proofs`, #985). Each
+  differs from the twin every other build runs only in what is dropped
+  or in capacity, which only a proof can see. Mutated to `()`, the
+  non-Kani `discard` still drops its argument at the end of the body, and
+  `vec![]` is `Vec::new()`, so those two mutants are equivalent in every
+  other build too.
