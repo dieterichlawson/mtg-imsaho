@@ -468,8 +468,10 @@ legend rule leaves alone (CR 704.5j); such pairs are not fought.
 The reference had read no planeswalker; it reads Garruk Relentless, both
 faces, and Liliana of the Veil (`every_loyalty_ability_does_what_its_text_says`),
 and the Oracle cache now carries a planeswalker's printed loyalty, which
-`card_characteristics` holds the engine's starting loyalty to. Thirteen
-mutants, thirteen caught, two of them only by a check added for them.
+`card_characteristics` holds the engine's starting loyalty to; and every
+card and every ability that may target a planeswalker is cast beside one
+on each side. Sixteen mutants, sixteen caught, two of them only by a
+check added for them.
 
 | family | mutant | caught by |
 |---|---|---|
@@ -486,6 +488,9 @@ mutants, thirteen caught, two of them only by a check added for them.
 | loyalty abilities | twice in a turn | the loyalty test, 13 of 14 |
 | | one counter short of the cost | the loyalty test, its offers |
 | the reference | no 704.5i: a planeswalker with no loyalty stays | the loyalty test, 12 of 22 |
+| damage | noncombat damage marked on a planeswalker, no loyalty removed | the cast test beside planeswalkers, 165 of 4,608 |
+| targets | "any target" without planeswalkers | the cast test beside planeswalkers, 5 |
+| | "target player or planeswalker" without planeswalkers | the cast test, 155, and Stensia Bloodhall's ability |
 
 The two that first survived each became a check. No creature on the
 board has power 1, so Garruk at his printed three went to one or to none

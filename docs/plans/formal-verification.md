@@ -622,7 +622,7 @@ to a board described by its cards' Oracle data, state-based actions
 included; and the engine is held to it on a board of fifteen permanents
 and six graveyard cards chosen for their differences, and on variants of
 it: after a death, with a second permanent of a name, with one of the
-opponent's creatures tapped.
+opponent's creatures tapped, and beside a planeswalker on each side.
 
 - **Instants and sorceries**: damage to a target or to each of a group;
   pumps of a target or a group (subtype-qualified too); destroy, destroy
@@ -694,7 +694,12 @@ opponent's creatures tapped.
   and one division played with each pile chosen, since as a set of
   endings every pile is reachable whoever chooses it. A planeswalker's
   printed loyalty is now in the Oracle cache too, and
-  `card_characteristics` holds `starting_loyalty` to it.
+  `card_characteristics` holds `starting_loyalty` to it. And every card
+  read, and every activated ability that may target one, is cast beside
+  Garruk on the caster's side and Liliana on the opponent's: "any target"
+  and "target player or planeswalker" offer them (CR 115.4), "target
+  creature" and "each creature" leave them alone, and damage to one
+  removes loyalty (120.3c).
 - **Triggers on other deaths** ("whenever another creature you control
   dies"): once such a creature has entered, every creature on the board
   dies in turn and every two at once, it among them or not. The reference
@@ -822,8 +827,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 207
-mutants, 204 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 210
+mutants, 207 caught, one missed for want of a change of control between
 activation and resolution, two equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its
