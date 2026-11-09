@@ -3203,6 +3203,10 @@ fn board_with_twins(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) 
 /// caster has something to do and the game loop asks them rather than
 /// passing for them.
 fn opponent_casts_a_spell(state: &mut GameState, world: &mut World, registry: &CardRegistry, cache: &BTreeMap<String, Printed>) {
+    // Two cards left in their hand once it is cast, the Island and a
+    // Plains, so that "that player discards a card" is theirs to choose.
+    spell_in_hand(state, registry, "Plains", P1);
+    world.hand[1].push("Plains".to_string());
     let growth = spell_in_hand(state, registry, "Giant Growth", P1);
     fund(state, P1, &mana_cost("{G}").expect("a cost"), 0);
     let kindercatch = world.permanents.iter()
@@ -3229,10 +3233,6 @@ fn opponent_casts_a_spell(state: &mut GameState, world: &mut World, registry: &C
 /// to do and would let Giant Growth resolve for a caster whose only ability
 /// is activated as a sorcery.
 fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut World, registry: &CardRegistry, cache: &BTreeMap<String, Printed>) {
-    // Two cards left in their hand once it is cast, the Island and a
-    // Plains, so that "that player discards a card" is theirs to choose.
-    spell_in_hand(state, registry, "Plains", P1);
-    world.hand[1].push("Plains".to_string());
     let growth = spell_in_hand(state, registry, "Giant Growth", P1);
     fund(state, P1, &mana_cost("{G}").expect("a cost"), 0);
     let kindercatch = world.permanents.iter()
