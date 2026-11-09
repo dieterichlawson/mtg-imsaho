@@ -37,6 +37,24 @@ was cast, and now holds two. Curse of Oblivion's choice was never asked
 either, the cursed player holding exactly the two cards it exiles; the
 reference now takes every two of three.
 
+## The views: hidden information — 2026-11-09
+
+A player's view, and what they are offered, must be the same whatever
+they cannot see: each library's order (CR 401.2), the other player's
+hand (402.3), what the other player looks at or searches through
+(701.16, 701.19). `tests/view_hidden_information.rs` checks it on boards
+of its own, and the fuzz runner on one decision in 32 of every
+invariant-checked game. Two of the defects it found are mutants of
+their fixes; three more leak on purpose. All five caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| library order | a player's own library listed as it lies (defect 37's fix undone, the view) | the library-order test; and the fuzz, at the 32nd action of the first game |
+| question's cards | the names of the cards of a question put to one player in both views (defect 38's fix undone, the view) | the question test, a discard, a look and a search put to the other player |
+| hand | the other player's hand size reported as the id of their first card (the view) | the fuzz, dealing the hand anew, at the fourth decision |
+| menu | the acting player's menu naming the other player's top library card (the engine's legal actions) | the fuzz, every library reversed, at the fourth decision |
+| who sees | the check's own plumbing, each case with its fix in place: no failure in 2,765 games and 458,064 decisions held to the library check, 2,212 games to the hand check, 1,659 to the menu check | — |
+
 # What the proofs catch that the tests do not — 2026-10-25
 
 `mtg-kernel` holds the pieces of the rules proved with Verus: paying a mana
