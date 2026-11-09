@@ -4310,8 +4310,8 @@ impl GameState {
     }
 
     /// Colors of the object: the union of any granted at runtime (Grimoire of
-    /// the Dead's black) and those derived from the active face's mana cost.
-    /// (Color indicators are not modeled.)
+    /// the Dead's black) and those of the active face: its colour indicator
+    /// if it has one, else those derived from its mana cost (CR 204, 202.2).
     #[must_use]
     pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
         let mut cols = self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default();
