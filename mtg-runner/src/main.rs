@@ -440,6 +440,37 @@ fn views_hide_other_hands(state: &GameState, registry: &CardRegistry) -> Vec<Str
     out
 }
 
+/// What a player is offered at a decision with no question pending — the
+/// spells, abilities, targets and costs on their menu — must no more read
+/// what they cannot see than their view does: the same with every library
+/// reversed (CR 401.2), and with each other player's hand dealt anew among
+/// its objects (402.3).
+fn offers_hide_what_is_hidden(state: &GameState, acting: PlayerId, registry: &CardRegistry) -> Vec<String> {
+    if state.awaiting_action.is_some() {
+        return Vec::new();
+    }
+    // Computed afresh rather than taken from the seat, which may have been
+    // handed an observed pass.
+    let offered = serde_json::to_value(engine::legal_actions(state, registry)).unwrap_or(serde_json::Value::Null);
+    let mut reversed = state.clone();
+    for p in &mut reversed.players {
+        p.library_order.reverse();
+    }
+    let mut dealt = state.clone();
+    for other in state.players.iter().filter(|p| p.id != acting) {
+        let hand: Vec<mtg_engine::ids::ObjectId> = state.objects_in_zone(mtg_engine::types::Zone::Hand, other.id).iter().map(|o| o.id).collect();
+        for (i, id) in hand.iter().enumerate() {
+            let mut next = state.get_object(hand[(i + 1) % hand.len()]).expect("in the hand").clone();
+            next.id = *id;
+            dealt.objects.insert(*id, next);
+        }
+    }
+    [("every library reversed (CR 401.2)", reversed), ("the other player's hand dealt anew (CR 402.3)", dealt)].into_iter()
+        .filter(|(_, variant)| serde_json::to_value(engine::legal_actions(variant, registry)).unwrap_or(serde_json::Value::Null) != offered)
+        .map(|(what, _)| format!("p{}'s offers change with {what}", acting.0))
+        .collect()
+}
+
 fn views_hide_library_order(state: &GameState, registry: &CardRegistry) -> Vec<String> {
     let mut reversed = state.clone();
     for p in &mut reversed.players {
@@ -1162,6 +1193,7 @@ stops here — pass --save {path} to keep writing it");
             violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
             violations.extend(views_hide_library_order(game_state, registry_ref));
             violations.extend(views_hide_other_hands(game_state, registry_ref));
+            violations.extend(offers_hide_what_is_hidden(game_state, acting_player, registry_ref));
 
             let mut counts = vec![0usize; game_state.players.len()];
             for obj in game_state.objects.values() {
