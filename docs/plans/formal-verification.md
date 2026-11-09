@@ -711,7 +711,10 @@ else.
   endings every pile is reachable whoever chooses it. Each ability is
   played again with its planeswalker exiled in response: it resolves all
   the same (CR 113.7a), Garruk's 3 damage dealt and the creature's damage
-  back to him dealt to nothing, its lifelink gaining nothing (120.1). A
+  back to him dealt to nothing, its lifelink gaining nothing (120.1).
+  And each loyalty is tried with the planeswalker its controller's own
+  card and the other player's: its "you" is its controller (CR 606.3),
+  and one left with no loyalty goes to its owner's graveyard. A
   planeswalker's printed loyalty is now in the Oracle cache too, and
   `card_characteristics` holds `starting_loyalty` to it. And every card
   read, and every activated ability that may target one, is cast beside
@@ -731,7 +734,9 @@ else.
   turn, with every land tapped, into that turn's main phase: damage gone,
   only the active player's permanents untapped, the trigger resolved every
   way in the upkeep its text names and no other, and the draw (CR 514.2,
-  502.3, 503.1a, 504.1).
+  502.3, 503.1a, 504.1). Curse of Oblivion is played again with a third
+  card in the cursed player's graveyard, so that which two it exiles is
+  theirs to choose.
 - **End-step triggers**, either face up, with intervening "if"s (morbid,
   "didn't attack this turn"): from each player's postcombat main phase,
   on the board and after a death, through the end step and cleanup into
@@ -748,6 +753,20 @@ else.
   wrong answer to one can hide behind a right answer to another. A "may"
   with a cost ("you may pay {1}. If you do, draw a card") is taken only
   when the mana floating pays it, and played with none left.
+- **Who answers**: as a set, the endings hide who chose; every way of
+  answering is reached whoever is asked. So each question the engine
+  asks on a card's behalf is held to the player its text has answer it:
+  its controller, "you" (CR 608.2d); the target player who discards,
+  sacrifices or exiles from their graveyard; each player; the countered
+  spell's controller who may pay (118.12); the destroyed land's
+  controller who may search; Liliana's controller who divides and the
+  target player who picks the pile. A combat's damage is the attacking
+  player's to order and assign (509.2, 510.1), wherever it is asked. A
+  survey of the 172,000 questions the suite asks found none put to the
+  wrong player, and two never asked, now asked: Curse of Oblivion's
+  choice and Frightful Delusion's discard, each forced by a board that
+  held exactly what was owed. The check keeps it so: eleven mutants,
+  each moving one question or one "you" to the other player, all caught.
 - **Triggers on spells cast and creatures entering**: with the watcher on
   the board, its controller casts an instant from hand and by flashback
   and a creature, and the opponent casts in the game loop, so that what a
@@ -881,8 +900,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 223
-mutants, 217 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 234
+mutants, 228 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, one
 for want of a spell that reads its target's controller, three
 equivalent), and the failure names the

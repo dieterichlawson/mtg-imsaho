@@ -1,3 +1,36 @@
+## The cards: who answers — 2026-11-09
+
+Each loyalty ability is tried with its planeswalker the other player's
+card, and each question the engine asks on a card's behalf is held to
+the player its text has answer it (`choosers` in
+`mtg-engine/tests/card_semantics.rs`): as a set, the endings hide who
+chose. Eleven mutants, each moving one question, or one "you", to the
+wrong player.
+
+| family | mutant | caught by |
+|---|---|---|
+| loyalty, borrowed | Garruk Relentless's "you" is his owner (the engine) | the loyalty test with Garruk the other player's card, 9 of 44 |
+| loyalty, borrowed | Liliana of the Veil's "you" is her owner (the engine) | the loyalty test with Liliana the other player's card: her owner divides the piles; before the asker check, nothing, since her controller only divides |
+| piles | Liliana's target player divides the piles (the engine) | the loyalty test |
+| pay or not | the caster of Frightful Delusion decides whether the countered spell's controller pays (the engine) | the spell test, on each board with Giant Growth on the stack |
+| discard | Frightful Delusion's "that player discards" asked of the other player (the engine) | the spell test, once the countered spell's controller holds two cards; before, nothing |
+| sacrifice | Tribute to Hunger's sacrifice chosen by its caster (the engine) | the spell test, once a question the text gives to a named player is theirs alone; before, nothing |
+| graveyard | Graveyard Shovel's exile chosen by its activator, not the target player (the engine) | the activated test, likewise; before, nothing |
+| loot | Civilized Scholar's discard asked of the other player (the engine) | the activated test, its source the activator's own card, the other player's and exiled in response |
+| curse | Curse of Oblivion's exile chosen by its controller, not the cursed player (the engine) | the upkeep test with a third card in the cursed player's graveyard, its owner either player |
+| curse | Curse of Oblivion exiles the first two of three without asking (the engine) | the upkeep test with a third card in the cursed player's graveyard |
+| combat | a blocked attacker's damage assigned by the blocker's controller (the engine) | 9 of the 48 tests, every combat test among them: the attacking player assigns (CR 510.1) |
+
+The first round missed three, and each became a fix in the reference.
+Graveyard Shovel's and Tribute to Hunger's choices asked of the caster
+were allowed because the rule let a card's controller answer any
+question; a question the text gives to players it names is now theirs
+alone. Frightful Delusion's discard asked of the wrong player was never
+asked at all: the countered spell's controller held one card once it
+was cast, and now holds two. Curse of Oblivion's choice was never asked
+either, the cursed player holding exactly the two cards it exiles; the
+reference now takes every two of three.
+
 # What the proofs catch that the tests do not — 2026-10-25
 
 `mtg-kernel` holds the pieces of the rules proved with Verus: paying a mana
