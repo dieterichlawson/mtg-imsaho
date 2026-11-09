@@ -146,6 +146,11 @@ fn violations(
     // The log every seat is sent names no card no one has seen (CR 400.2).
     v.extend(shared_log.check(last.map(|(prev, _)| prev), state));
     v.extend(mtg_engine::invariants::check_legal(state, acting, legal, registry));
+    // Nor does any view or menu read what its player cannot see (CR 401.2,
+    // 402.3), held to one decision in so many, as the runner holds it.
+    if decision % mtg_player::hidden::HIDDEN_EVERY == 0 {
+        v.extend(mtg_player::hidden::hidden_stays_hidden(state, acting, legal, registry));
+    }
 
     // No card enters or leaves the game (CR 400.1, 108.3).
     let mut counts = vec![0usize; state.players.len()];
