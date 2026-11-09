@@ -3821,6 +3821,19 @@ impl World {
         true
     }
 
+    /// What Abattoir Ghoul's triggers gain if `victim` dies now: for each
+    /// Ghoul on the battlefield that dealt it damage this turn, its
+    /// controller gains the victim's toughness as it last existed (CR
+    /// 603.10a).
+    fn gained_if_it_dies(&self, victim: ObjectId) -> Vec<(PlayerId, i32)> {
+        let Some(v) = self.permanents.get(&victim) else { return Vec::new() };
+        self.damaged_by_life_gainers.iter()
+            .filter(|(id, _)| *id == victim)
+            .filter_map(|(_, gainer)| self.permanents.get(gainer))
+            .map(|g| (g.controller, self.pt_of(v).1.unwrap_or(0).max(0)))
+            .collect()
+    }
+
     /// State-based actions, as CR 704.5f-h state them: a creature with
     /// toughness 0 or less is put into its owner's graveyard, and one with
     /// damage at least its toughness, or any from a source with deathtouch,
@@ -6141,11 +6154,14 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
-            Some(ResolutionChoiceKind::ChooseTriggerOrder { options, .. }) => {
+            // The order triggers go on the stack (CR 603.3b), and the
+            // order an attacker's blockers are assigned damage (509.2).
+            Some(ResolutionChoiceKind::ChooseTriggerOrder { options, .. })
+            | Some(ResolutionChoiceKind::ChooseDamageAssignmentOrder { options, .. }) => {
                 return match script.next() {
                     Some(Answer::Order(order)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order.clone()) },
                     Some(other) => {
-                        trouble = Some(format!("the script answers {other:?} to ordering triggers"));
+                        trouble = Some(format!("the script answers {other:?} to an ordering"));
                         Action::AbandonGame
                     }
                     None => {
@@ -7363,7 +7379,7 @@ fn protected(to: &Model, source: &Model) -> bool {
 /// "whenever this creature deals combat damage to a player" that the step
 /// set off resolves (603.3), and state-based actions again. An attacker
 /// without vigilance taps to attack (508.1f, 702.20b).
-fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec<World> {
+fn combat_outcomes(world: &World, a: ObjectId, blockers: &[ObjectId]) -> Vec<World> {
     let mut w = world.clone();
     w.refresh();
     if !has(&w.permanents[&a], Keyword::Vigilance) {
@@ -7381,17 +7397,17 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             trigger_outcomes(&trigger, &put, P0).into_iter()
                 .flat_map(|mut after| {
                     after.source = w.source;
-                    combat_after_attacking(after, a, blocker)
+                    combat_after_attacking(after, a, blockers)
                 })
                 .collect()
         }
-        None => combat_after_attacking(w, a, blocker),
+        None => combat_after_attacking(w, a, blockers),
     }
 }
 
 /// [`combat_outcomes`] from `a` attacking, its targeted attack trigger
 /// resolved.
-fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) -> Vec<World> {
+fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> Vec<World> {
     // Its attack trigger: tokens that enter tapped and attacking, never
     // having been declared attackers (CR 508.4).
     if let Some(t) = w.permanents[&a].combat.on_attack_tokens.clone() {
@@ -7421,10 +7437,9 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) 
     }
     // "Whenever this creature attacks or blocks, other Humans you control
     // get +1/+1 until end of turn", as it attacks and as it blocks.
-    for (fighter, declared) in [(Some(a), true), (blocker, blocker.is_some())] {
-        let Some(m) = fighter.and_then(|f| w.permanents.get(&f)).filter(|_| declared).cloned() else { continue };
+    for &source in std::iter::once(&a).chain(blockers) {
+        let Some(m) = w.permanents.get(&source).cloned() else { continue };
         if let Some((who, (p, t))) = &m.combat.attack_or_block_pump {
-            let source = fighter.expect("declared");
             let ids: Vec<ObjectId> = w.permanents.iter().filter(|(id, o)| o.is_creature() && o.matches_from(who, m.controller, **id == source)).map(|(id, _)| *id).collect();
             for id in ids {
                 let o = w.permanents.get_mut(&id).expect("on the battlefield");
@@ -7440,8 +7455,10 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) 
     // Block triggers (CR 509.4): "blocks or becomes blocked by a creature,
     // this creature deals 1 damage to that creature", and a stake on
     // either destroying the other if it is the type the stake names, past
-    // any shield.
-    if let Some(b) = blocker {
+    // any shield. A creature blocked by two triggers once for each, and
+    // each trigger resolves as its source last existed, so the state-based
+    // actions wait until all of them have (CR 603.10, 608.2h).
+    for &b in blockers {
         for (one, other) in [(a, b), (b, a)] {
             let (Some(om), Some(xm)) = (w.permanents.get(&one).cloned(), w.permanents.get(&other).cloned()) else { continue };
             let staked = w.permanents.values()
@@ -7458,13 +7475,20 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) 
                 }
             }
         }
+    }
+    if !blockers.is_empty() {
         w.state_based_actions();
     }
     let fast = |m: &Model| has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike);
-    let any_fast = w.permanents.get(&a).is_some_and(fast) || blocker.is_some_and(|b| w.permanents.get(&b).is_some_and(fast))
+    let any_fast = w.permanents.get(&a).is_some_and(fast) || blockers.iter().any(|b| w.permanents.get(b).is_some_and(fast))
         || w.tokens.iter().any(|t| t.attacking && fast(t));
     let steps: &[Option<bool>] = if any_fast { &[Some(true), Some(false)] } else { &[None] };
-    let mut worlds = vec![w];
+    // The damage assignment order the attacking player announces for its
+    // blockers, each it may, standing for both damage steps (CR 509.2,
+    // 510.4): each world goes with its order.
+    let mut worlds: Vec<(World, Vec<ObjectId>)> = permutations(blockers.len()).into_iter()
+        .map(|order| (w.clone(), order.into_iter().map(|i| blockers[i]).collect()))
+        .collect();
     for &step in steps {
         // Who deals damage in this step: in a first-strike step, first and
         // double strikers; in the regular step after one, whoever has not
@@ -7476,38 +7500,41 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) 
             None => true,
         };
         let mut next = Vec::new();
-        for w in worlds {
+        for (w, order) in worlds {
             let power = |m: &Model| u32::try_from(w.pt_of(m).0.unwrap_or(0).max(0)).expect("non-negative");
             // Each branch is one assignment: (recipient, amount, source).
             let mut branches: Vec<Vec<(Target, u32, Src)>> = vec![Vec::new()];
             if let Some(am) = w.permanents.get(&a).filter(|m| deals(m) && power(m) > 0) {
                 let n = power(am);
-                match blocker {
-                    None => branches[0].push((Target::Player(P1), n, Src::Permanent(a))),
-                    Some(b) => match w.permanents.get(&b) {
-                        Some(bm) => {
-                            let lethal = if has(am, Keyword::Deathtouch) {
-                                1
-                            } else {
-                                u32::try_from(w.pt_of(bm).1.unwrap_or(0).max(0)).expect("non-negative").saturating_sub(bm.damage)
-                            };
-                            if has(am, Keyword::Trample) && n > lethal {
-                                branches = (lethal..=n)
-                                    .map(|x| vec![(Target::Object(b), x, Src::Permanent(a)), (Target::Player(P1), n - x, Src::Permanent(a))])
-                                    .collect();
-                            } else {
-                                branches[0].push((Target::Object(b), n, Src::Permanent(a)));
-                            }
-                        }
-                        None if has(am, Keyword::Trample) => branches[0].push((Target::Player(P1), n, Src::Permanent(a))),
-                        None => {}
-                    },
+                if blockers.is_empty() {
+                    branches[0].push((Target::Player(P1), n, Src::Permanent(a)));
+                } else {
+                    // The blockers still there, in the order announced, and
+                    // what is lethal to each: 1 from a deathtouch source
+                    // (702.2c), else its toughness less the damage it has.
+                    let there: Vec<(ObjectId, u32)> = order.iter()
+                        .filter_map(|b| w.permanents.get(b).map(|bm| (*b, if has(am, Keyword::Deathtouch) {
+                            1
+                        } else {
+                            u32::try_from(w.pt_of(bm).1.unwrap_or(0).max(0)).expect("non-negative").saturating_sub(bm.damage)
+                        })))
+                        .collect();
+                    let lethal: Vec<u32> = there.iter().map(|(_, l)| *l).collect();
+                    branches = divisions(n, &lethal, has(am, Keyword::Trample)).into_iter()
+                        .map(|(each, over)| there.iter().zip(each)
+                            .map(|((b, _), x)| (Target::Object(*b), x, Src::Permanent(a)))
+                            .chain(std::iter::once((Target::Player(P1), over, Src::Permanent(a))))
+                            .filter(|(_, x, _)| *x > 0)
+                            .collect())
+                        .collect();
                 }
             }
-            if let (Some(b), true) = (blocker, w.permanents.contains_key(&a)) {
-                if let Some(bm) = w.permanents.get(&b).filter(|m| deals(m) && power(m) > 0) {
-                    for branch in &mut branches {
-                        branch.push((Target::Object(a), power(bm), Src::Permanent(b)));
+            if w.permanents.contains_key(&a) {
+                for b in &order {
+                    if let Some(bm) = w.permanents.get(b).filter(|m| deals(m) && power(m) > 0) {
+                        for branch in &mut branches {
+                            branch.push((Target::Object(a), power(bm), Src::Permanent(*b)));
+                        }
                     }
                 }
             }
@@ -7645,14 +7672,21 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) 
                             }
                             let mut won = w.clone();
                             if won.permanents.contains_key(&id) {
-                                won.destroy(id);
+                                // Abattoir Ghoul's "dies" is any death,
+                                // this destruction too.
+                                let gains = won.gained_if_it_dies(id);
+                                if won.destroy(id) {
+                                    for (p, n) in gains {
+                                        won.life[p.0 as usize] += n;
+                                    }
+                                }
                                 won.state_based_actions();
                             }
                             vec![w, won]
                         })
                         .collect();
                 }
-                next.extend(drawn);
+                next.extend(drawn.into_iter().map(|d| (d, order.clone())));
             }
         }
         worlds = next;
@@ -7662,14 +7696,40 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blocker: Option<ObjectId>) 
     // before anyone has priority (704.3): a creature counting what left
     // shrinks, and one holding lethal damage dies (Scourge of Geier Reach,
     // counting Geist of Saint Traft's Angel, 704.5g).
-    for w in &mut worlds {
+    for (w, _) in &mut worlds {
         w.tokens.retain(|t| !t.exile_at_end_of_combat);
         for t in w.tokens.iter_mut().chain(w.permanents.values_mut()) {
             t.attacking = false;
         }
         w.state_based_actions();
     }
-    worlds
+    worlds.into_iter().map(|(w, _)| w).collect()
+}
+
+/// Every way a blocked attacker may divide `n` combat damage among the
+/// blockers still there, in the order announced, `lethal` being what is
+/// lethal to each (CR 510.1c-d): all of it assigned, a blocker assigned
+/// any only once each before it in the order has been assigned lethal
+/// damage, and with trample what is left once all have lethal free to go
+/// to the player (702.19b-c). With no blocker left, none of it is
+/// assigned, or all of it to the player with trample (509.1h, 702.19e).
+/// The amounts to each blocker, and to the player.
+fn divisions(n: u32, lethal: &[u32], trample: bool) -> Vec<(Vec<u32>, u32)> {
+    fn from(n: u32, lethal: &[u32], trample: bool) -> Vec<(Vec<u32>, u32)> {
+        let Some((&first, rest)) = lethal.split_first() else {
+            return if n == 0 || trample { vec![(Vec::new(), n)] } else { Vec::new() };
+        };
+        (0..=n).filter(|&x| x == n || x >= first)
+            .flat_map(|x| from(n - x, rest, trample).into_iter().map(move |(mut each, over)| {
+                each.insert(0, x);
+                (each, over)
+            }))
+            .collect()
+    }
+    if lethal.is_empty() {
+        return vec![(Vec::new(), if trample { n } else { 0 })];
+    }
+    from(n, lethal, trample)
 }
 
 /// What dealt combat damage: a permanent the engine numbered, or a token
@@ -7780,6 +7840,16 @@ fn arena(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(
 fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(&Printed, &Spec)>, standing: Option<((&Printed, &Spec), PlayerId)>)
     -> (GameState, World, ObjectId, Option<ObjectId>, Option<ObjectId>)
 {
+    let (state, world, a, b, s) = arena_of(registry, attacker, blocker.as_slice(), standing);
+    (state, world, a, b.first().copied(), s)
+}
+
+/// [`arena_with`], with each of `blockers` on the defending side, the
+/// first of them the one a standing Aura or Equipment of that side's is
+/// attached to.
+fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&Printed, &Spec)], standing: Option<((&Printed, &Spec), PlayerId)>)
+    -> (GameState, World, ObjectId, Vec<ObjectId>, Option<ObjectId>)
+{
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mut world = World {
         permanents: BTreeMap::new(),
@@ -7832,7 +7902,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
     }
     let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| place_face(state, &mut world, registry, card, spec, owner);
     let a = place(&mut state, attacker, P0);
-    let b = blocker.map(|b| place(&mut state, b, P1));
+    let b: Vec<ObjectId> = blockers.iter().map(|&b| place(&mut state, b, P1)).collect();
     let s = standing.map(|(c, side)| (place(&mut state, c, side), c, side));
     if let Some((id, (card, spec), side)) = s {
         let on_player = spec.enchants && spec.slots.first() == Some(&Slot::Player);
@@ -7840,7 +7910,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
             state.get_object_mut(id).expect("just placed").attached_to_player = Some(side);
             world.permanents.get_mut(&id).expect("just placed").attached = Some(Target::Player(side));
         } else if spec.enchants || card.type_line.contains("Equipment") {
-            if let Some(host) = if side == P0 { Some(a) } else { b } {
+            if let Some(host) = if side == P0 { Some(a) } else { b.first().copied() } {
                 state.attach(id, host);
                 world.permanents.get_mut(&id).expect("just placed").attached = Some(Target::Object(host));
             }
@@ -7917,8 +7987,11 @@ fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) 
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
-        if done.len() + todo.len() > 200 {
-            return Err("more than 200 ways to answer".to_string());
+        // A combat's divisions multiply (two blockers, a trampler of
+        // thirteen, triggers to order): it has more room.
+        let room = if matches!(scene, Scene::Combat(_)) { 1000 } else { 200 };
+        if done.len() + todo.len() > room {
+            return Err(format!("more than {room} ways to answer"));
         }
         match play_from(state, registry, None, Vec::new(), None, scene, &script)? {
             Played::Done(s) => done.push(*s),
@@ -8025,7 +8098,7 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         // blocker standing by, unblocked damage and what it sets off
         // (Balefire Dragon's) reach the board as well.
         combats += 1;
-        let want = combat_outcomes(world, a, None);
+        let want = combat_outcomes(world, a, &[]);
         let endings = combat_endings(state, registry, world, &(vec![(a, P1)], Vec::new()));
         if let Some(why) = disagreement(&want, &endings, registry) {
             failures.push(format!("{name} declining to block: {why}"));
@@ -8036,7 +8109,7 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         block.push((b, a));
     }
     combats += 1;
-    let want = combat_outcomes(world, a, b.filter(|_| !block.is_empty()));
+    let want = combat_outcomes(world, a, b.filter(|_| !block.is_empty()).as_slice());
     let endings = combat_endings(state, registry, world, &(vec![(a, P1)], block));
     if let Some(why) = disagreement(&want, &endings, registry) {
         failures.push(format!("{name}: {why}"));
@@ -9074,7 +9147,7 @@ fn every_attack_trigger_with_a_target_is_what_its_text_says() {
         for (first, second, which) in defenders {
             combats += 1;
             let (state, world, a, _, _) = arena_with(&registry, (card, spec), first, second.map(|c| (c, P1)));
-            let want = combat_outcomes(&world, a, None);
+            let want = combat_outcomes(&world, a, &[]);
             let endings = combat_endings(&state, &registry, &world, &(vec![(a, P1)], Vec::new()));
             if let Some(why) = disagreement(&want, &endings, &registry) {
                 failures.push(format!("{} attacking a defender with {which}: {why}", card.name));
@@ -9744,6 +9817,136 @@ fn probes<'a>(fighters: &[(&'a Printed, &'a Spec)]) -> Option<Vec<(&'a Printed, 
         probes.extend(kind.filter(|p| !probes.iter().any(|q| q.0.name == p.0.name)));
     }
     Some(probes)
+}
+
+/// Every creature the keyword test fights attacks again, blocked by two
+/// creatures at once: each pair of the probe blockers, two of one name
+/// among them, which only the order tells apart. The engine must let the
+/// two block it together exactly when each may, menace satisfied by two
+/// (CR 509.1b, 702.110b); ask for the damage assignment order and the
+/// division (509.2, 510.1c-d); and end the combat every way the reference
+/// does and no other: every order and division the attacking player may
+/// choose, each blocker needing lethal damage before the next is assigned
+/// any, trample over both, deathtouch lethal at 1 (702.2c, 702.19b-c),
+/// both blockers dealing their damage to it, a first striker among them
+/// dealing before the rest (510.4), and a blocker gone after the
+/// first-strike step leaving the other to take it all.
+#[test]
+fn every_double_block_ends_as_the_rules_say() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
+    let every = std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some();
+    let attackers = if every { fighters.clone() } else { kinds(&fighters) };
+    let pairs = double_blockers(&fighters, every);
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for &attacker in &attackers {
+        for &[first, second] in &pairs {
+            let (state, world, a, b, _) = arena_of(&registry, attacker, &[first, second], None);
+            let name = format!("{} attacking, {} and {} blocking", attacker.0.name, first.0.name, second.0.name);
+            let (n, why) = double_block(&registry, &state, &world, a, &b, &name);
+            combats += n;
+            failures.extend(why);
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} double blocks disagree with the rules:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// [`divisions`] by hand, as CR 510.1c-d and 702.19b-c state the rule: 3
+/// damage over two blockers of toughness 2 is all to the first, or lethal
+/// to it and the rest to the second; nothing reaches the player without
+/// trample, and with it only once both have lethal; deathtouch makes 1
+/// lethal; with every blocker gone, a trampler's damage all goes to the
+/// player and anything else's nowhere.
+#[test]
+fn the_division_reference_states_the_rule() {
+    let set = |n, lethal: &[u32], trample| divisions(n, lethal, trample).into_iter().collect::<BTreeSet<_>>();
+    assert_eq!(set(3, &[2, 2], false), BTreeSet::from([(vec![3, 0], 0), (vec![2, 1], 0)]));
+    assert_eq!(set(5, &[2, 2], true), BTreeSet::from([
+        (vec![5, 0], 0), (vec![4, 1], 0), (vec![3, 2], 0), (vec![2, 3], 0), (vec![2, 2], 1),
+    ]));
+    assert_eq!(set(2, &[1, 1], true), BTreeSet::from([(vec![2, 0], 0), (vec![1, 1], 0)]));
+    assert_eq!(set(3, &[1, 1], true), BTreeSet::from([(vec![3, 0], 0), (vec![2, 1], 0), (vec![1, 2], 0), (vec![1, 1], 1)]));
+    assert_eq!(set(1, &[2, 2], true), BTreeSet::from([(vec![1, 0], 0)]));
+    assert_eq!(set(4, &[], true), BTreeSet::from([(vec![], 4)]));
+    assert_eq!(set(4, &[], false), BTreeSet::from([(vec![], 0)]));
+}
+
+/// The pairs that block together in
+/// [`every_double_block_ends_as_the_rules_say`]. With every fight asked
+/// for, every two kinds of fighter. Otherwise every two of a vanilla
+/// creature, one with each keyword that changes what a blocker deals or
+/// is dealt (first strike, deathtouch) or who it may block (flying,
+/// reach), and each whose combat text acts on what it blocks or damages
+/// (Ashmouth Hound's damage, Abattoir Ghoul's life), each also with a
+/// second of its name; and a coin-flipper (Creepy Doll), whose every
+/// combat is fought over 32 seeds, with each that reads what it destroys
+/// (Abattoir Ghoul). Never two legendary creatures of one name, which do
+/// not stay together (CR 704.5j).
+fn double_blockers<'a>(fighters: &[(&'a Printed, &'a Spec)], every: bool) -> Vec<[(&'a Printed, &'a Spec); 2]> {
+    let pool: Vec<(&Printed, &Spec)> = if every {
+        kinds(fighters)
+    } else {
+        let mut pool: Vec<(&Printed, &Spec)> = Vec::new();
+        for k in [None, Some(Keyword::FirstStrike), Some(Keyword::Deathtouch), Some(Keyword::Flying), Some(Keyword::Reach)] {
+            let kind = fighters.iter().copied().find(|(c, s)| s.statics.is_empty() && s.combat == CombatText::default()
+                && k.map_or(c.keywords().is_empty(), |k| c.keywords() == [k]));
+            pool.extend(kind.filter(|p| !pool.iter().any(|q| q.0.name == p.0.name)));
+        }
+        pool.extend(fighters.iter().copied().filter(|(_, s)| s.combat.block_damage.is_some() || s.combat.gains_life_when_what_it_damaged_dies));
+        pool
+    };
+    let mut pairs: Vec<[(&Printed, &Spec); 2]> = pool.iter().enumerate()
+        .flat_map(|(i, &first)| pool[i..].iter().map(move |&second| [first, second]))
+        .filter(|[x, y]| x.0.name != y.0.name || !x.0.type_line.contains("Legendary"))
+        .collect();
+    if !every {
+        for &flipper in fighters.iter().filter(|(_, s)| s.combat.flips_to_destroy_what_it_damages) {
+            pairs.extend(fighters.iter().filter(|(_, s)| s.combat.gains_life_when_what_it_damaged_dies).map(|&reader| [reader, flipper]));
+        }
+    }
+    pairs
+}
+
+/// `a` attacking, blocked by both of `b` if both may block it: the engine
+/// must offer each the block exactly when evasion allows it, and end the
+/// combat every way the reference does. The number of combats compared,
+/// and what disagrees.
+fn double_block(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId, b: &[ObjectId], name: &str) -> (usize, Vec<String>) {
+    let mut failures = Vec::new();
+    let am = &world.permanents[&a];
+    let asked = combat_questions(state, registry, a);
+    // Whether it may attack at all is the keyword test's.
+    if !asked.eligible.contains(&a) {
+        return (0, failures);
+    }
+    let Some((legal_blocks, _)) = asked.blocks else {
+        failures.push(format!("{name}: no blockers were asked for"));
+        return (0, failures);
+    };
+    let mut all = true;
+    for id in b {
+        let may = legal_blocks.get(id).is_some_and(|v| v.contains(&a));
+        let allows = evasion_allows(am, &world.permanents[id]);
+        if may != allows {
+            failures.push(format!("{name}: {} may block {may}, and the text says {allows}", world.permanents[id].name.as_deref().unwrap_or("?")));
+            return (0, failures);
+        }
+        all &= may;
+    }
+    if !all {
+        return (0, failures);
+    }
+    let want = combat_outcomes(world, a, b);
+    let endings = combat_endings(state, registry, world, &(vec![(a, P1)], b.iter().map(|&id| (id, a)).collect()));
+    if let Some(why) = disagreement(&want, &endings, registry) {
+        failures.push(format!("{name}: {why}"));
+    }
+    (1, failures)
 }
 
 /// Every fight of [`every_keyword_creature_fights_as_its_keywords_say`]
