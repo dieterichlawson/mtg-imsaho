@@ -509,12 +509,36 @@ function concedeButton(state: LiveState, send: Send): Ui["buttons"][number] {
   } };
 }
 
+/**
+ * The heading for a priority the engine sent with no context: the pass the
+ * loop shows a watching seat (`LegalActions::observed_pass`), which is what
+ * `s` stops at. Worded as the engine words the priorities it does head
+ * (`legal_actions`' context), so a stop with a spell on the stack says what
+ * it is a stop over, and every other one names the step (#974).
+ */
+export function priorityHeading(view: GameView | null | undefined): string {
+  if (!view) return "";
+  const top = view.stack[view.stack.length - 1];
+  if (top) return `RESPOND TO ${top.controller === view.you ? "your" : `p${top.controller}'s`} ${top.name}`;
+  const names: Record<string, string> = {
+    PrecombatMain: "MAIN PHASE 1", PostcombatMain: "MAIN PHASE 2", BeginCombat: "BEGIN COMBAT",
+    EndCombat: "END COMBAT", Upkeep: "UPKEEP", EndStep: "END STEP", Draw: "DRAW",
+    DeclareAttackers: "AFTER ATTACKERS DECLARED", DeclareBlockers: "AFTER BLOCKERS DECLARED",
+    CombatDamage: view.first_strike_damage_step ? "FIRST-STRIKE COMBAT DAMAGE" : "COMBAT DAMAGE",
+    Untap: "UNTAP", Cleanup: "CLEANUP",
+  };
+  const step = names[view.step] ?? view.step;
+  return view.active_player === view.you ? step : `OPPONENT'S TURN: ${step}`;
+}
+
 function beginDecisionWidget(state: LiveState, send: Send): Ui {
   const d = state.decision;
   if (!d) throw new Error("no decision to begin");
   const legal = d.legal;
   const actions = legal.actions || [];
-  const ui = newUi("menu", legal.context || "");
+  // A priority with no context is the loop's pass shown to a watching seat;
+  // a resolution menu without one keeps the empty title it always had.
+  const ui = newUi("menu", legal.context || (actions.includes("PassPriority") ? priorityHeading(state.view) : ""));
   state.ui = ui;
   state.selected = null;
 

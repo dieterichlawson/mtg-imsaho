@@ -1200,10 +1200,12 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
     // Which game this is, and the score: a person back at the page could
     // not tell (#855).
     if (state.matchLine) { text(ctx, clip(ctx, state.matchLine, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#a0d0e0" }); ty += 9; }
-    if (state.autoPass) text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
+    const standing = standingModes(state);
+    if (standing) text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
     return;
   }
-  if (state.autoPass) { text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" }); ty += 9; }
+  const standing = standingModes(state);
+  if (standing) { text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" }); ty += 9; }
   const title = ui ? ui.title : "";
   // What is drawn here grows downwards and the buttons are anchored at the
   // foot, so the lines that can be long — the question beside a modal, the
@@ -1571,4 +1573,15 @@ export function render(ctx: Ctx, state: State): Hit[] {
     text(ctx, "LOG (l to close, wheel to scroll)", 4, H - 118, { font: "7px Silkscreen", color: "#ffe080" });
   }
   return hits;
+}
+
+/**
+ * The standing line for the page's two pass modes, or null. `f` always had
+ * one; `s` had only a notice the next send cleared, so a person who pressed
+ * it by accident met hundreds of stops with nothing saying why (#974).
+ */
+export function standingModes(state: Pick<State, "autoPass" | "stopAtPass">): string | null {
+  if (state.autoPass) return "AUTO-PASS on (f to stop)";
+  if (state.stopAtPass) return "STOPPING AT EVERY PRIORITY (s to stop)";
+  return null;
 }
