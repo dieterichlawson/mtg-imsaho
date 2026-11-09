@@ -569,6 +569,29 @@ enum Effect {
     /// "That player exiles N cards from their graveyard": of their choice,
     /// all of them when they have no more than N.
     ExileFromGraveyard { slot: usize, n: usize },
+    /// "That creature deals damage equal to its power to him", after the
+    /// source has dealt damage to the creature in `slot`: as much damage as
+    /// its power is then, to the source, a planeswalker losing that many
+    /// loyalty counters (CR 120.3c), and lifelink gaining the creature's
+    /// controller as much (702.15b).
+    ItsPowerToThis { slot: usize },
+    /// "Each player discards a card": each chooses one of their hand,
+    /// the active player first, and all are discarded at once (CR 101.4,
+    /// 701.9a).
+    EachPlayerDiscards,
+    /// "If you do, search your library for a creature card, reveal it, put
+    /// it into your hand, then shuffle", after "Sacrifice a creature": only
+    /// if a creature was sacrificed, and a search for a card of a stated
+    /// quality may find nothing (701.19b).
+    IfSacrificedSearchForCreatureCard,
+    /// "<creatures> gain K and get +X/+X until end of turn, where X is the
+    /// number of creature cards in your graveyard": X counted once, as it
+    /// resolves, and only the creatures there then (CR 608.2h, 611.2c).
+    PumpEachPerCreatureCard { filter: Filter, gains: Vec<Keyword> },
+    /// "Separate all permanents target player controls into two piles.
+    /// That player sacrifices all permanents in the pile of their choice":
+    /// any pile, the empty one too, may be the one that player sacrifices.
+    PilesSacrificed { slot: usize },
 }
 
 /// A card's text, read.
@@ -1099,6 +1122,80 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
         }
     }
     (!ability.spec.effects.is_empty()).then_some(ability)
+}
+
+/// A planeswalker face as the grammar reads it (CR 306): its loyalty
+/// abilities in the order printed, and "When ~ has N or fewer loyalty
+/// counters on him, transform him".
+#[derive(Debug, Clone, PartialEq)]
+struct Walker {
+    abilities: Vec<LoyaltyAbility>,
+    transforms_at: Option<u32>,
+}
+
+/// "+N: <effect>", "−N: <effect>" or "0: <effect>": the loyalty counters
+/// put on it or removed from it as the cost (CR 606.4), and what it does.
+#[derive(Debug, Clone, PartialEq)]
+struct LoyaltyAbility {
+    change: i32,
+    spec: Spec,
+}
+
+/// Read a planeswalker face. It names itself by its name or by its
+/// subtype ("Garruk deals 3 damage"), both read as `~`, and "him" or
+/// "her" (CR 201.5).
+fn read_planeswalker(card: &Printed) -> Result<Walker, String> {
+    if !card.has_type("Planeswalker") {
+        return Err("not a planeswalker".to_string());
+    }
+    let mut text = without_reminders(&card.oracle_text).replace(&card.name, "~");
+    for short in card.types().1 {
+        text = text.replace(&format!("{short} "), "~ ");
+    }
+    let mut walker = Walker { abilities: Vec::new(), transforms_at: None };
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let unread = || format!("cannot read {line:?}");
+        if let Some(n) = line.strip_prefix("When ~ has ").and_then(|r| r.strip_suffix(" or fewer loyalty counters on him, transform him.")) {
+            walker.transforms_at = Some(number(n).ok_or_else(unread)?);
+            continue;
+        }
+        let (cost, effect) = line.split_once(": ").ok_or_else(unread)?;
+        let change: i32 = match cost {
+            "0" => 0,
+            _ => match (cost.strip_prefix('+'), cost.strip_prefix('\u{2212}')) {
+                (Some(n), _) => n.parse().map_err(|_| unread())?,
+                (_, Some(n)) => -n.parse::<i32>().map_err(|_| unread())?,
+                _ => return Err(unread()),
+            },
+        };
+        let mut spec = Spec::default();
+        if effect == "Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice." {
+            let slot = spec.slot(Slot::Player);
+            spec.effects.push(Effect::PilesSacrificed { slot });
+        } else {
+            for sentence in effect.split_inclusive(". ") {
+                spec.sentence(sentence).ok_or_else(unread)?;
+            }
+        }
+        walker.abilities.push(LoyaltyAbility { change, spec });
+    }
+    if walker.abilities.is_empty() {
+        return Err("no loyalty abilities".to_string());
+    }
+    Ok(walker)
+}
+
+/// Each planeswalker face in the pool, read: the face, its front face if
+/// it is a back face, and its reading.
+fn planeswalker_faces() -> Vec<(Printed, Option<Printed>, Result<Walker, String>)> {
+    let mut faces = Vec::new();
+    for card in cached_oracle().values().filter(|c| c.has_type("Planeswalker")) {
+        faces.push((card.clone(), None, read_planeswalker(card)));
+        if let Some(back) = card.back.as_deref().filter(|b| b.has_type("Planeswalker")) {
+            faces.push((back.clone(), Some(card.clone()), read_planeswalker(back)));
+        }
+    }
+    faces
 }
 
 /// A static ability that changes power, toughness or keywords (CR 613.4c,
@@ -1734,6 +1831,12 @@ impl Spec {
             self.effects.push(Effect::SearchForCurseAttachedTo { player });
             return Some(());
         }
+        if s == "If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle"
+            && self.effects.last() == Some(&Effect::SacrificeACreature)
+        {
+            self.effects.push(Effect::IfSacrificedSearchForCreatureCard);
+            return Some(());
+        }
         if let Some((first, then)) = s.split_once(", then ") {
             self.sentence(&format!("{first}."))?;
             let mut chars = then.chars();
@@ -2012,6 +2115,25 @@ impl Spec {
             self.effects.push(Effect::SacrificeACreature);
             return Some(());
         }
+        if s == "Each player discards a card" {
+            self.effects.push(Effect::EachPlayerDiscards);
+            return Some(());
+        }
+        // A planeswalker names itself "him" or "her" (CR 201.5): "~ deals
+        // 3 damage to target creature. That creature deals damage equal to
+        // its power to him."
+        if matches!(s, "That creature deals damage equal to its power to him" | "That creature deals damage equal to its power to her") {
+            let Some(&Effect::Damage { slot, .. }) = self.effects.last() else { return None };
+            self.effects.push(Effect::ItsPowerToThis { slot });
+            return Some(());
+        }
+        if let Some((who, gains)) = s.strip_suffix(" and get +X/+X until end of turn, where X is the number of creature cards in your graveyard")
+            .and_then(|r| r.split_once(" gain "))
+        {
+            let gains = gains.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?;
+            self.effects.push(Effect::PumpEachPerCreatureCard { filter: filter(who)?, gains });
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
@@ -2168,7 +2290,10 @@ impl Spec {
                 self.effects.push(Effect::PlayerDiscards { slot, n });
                 return Some(());
             }
-            if let Some(who) = rest.strip_suffix(" sacrifices a creature of their choice") {
+            // "Target player sacrifices a creature": of that player's
+            // choice, as any sacrifice an effect asks a player for is
+            // (CR 701.21a).
+            if let Some(who) = rest.strip_suffix(" sacrifices a creature of their choice").or_else(|| rest.strip_suffix(" sacrifices a creature")) {
                 let slot = self.player_slot(who)?;
                 self.effects.push(Effect::SacrificeOfTheirChoice { slot });
                 return Some(());
@@ -3339,6 +3464,10 @@ struct World {
     /// The cards discarded at random, by name, one way it can go;
     /// [`random_choices`] lists them all.
     discarded: Vec<String>,
+    /// The card each player discards of their choice ("each player
+    /// discards a card"), by name, one way it can go; [`pay_choices`]
+    /// lists them.
+    each_discards: Vec<(PlayerId, String)>,
     /// Whether the controller of a spell countered "unless its controller
     /// pays" paid, one way it can go; [`pay_choices`] lists them.
     paid: bool,
@@ -3858,7 +3987,13 @@ impl World {
             let tokens_dying: Vec<bool> = self.tokens.iter().map(dies).collect();
             let falls = self.permanents.values()
                 .any(|m| matches!(m.attached, Some(Target::Object(a)) if !self.permanents.contains_key(&a)));
-            if dying.is_empty() && !tokens_dying.contains(&true) && !falls {
+            // A planeswalker with no loyalty goes to its owner's graveyard
+            // (CR 704.5i).
+            let spent: Vec<ObjectId> = self.permanents.iter()
+                .filter(|(_, m)| m.types.iter().any(|t| t == "planeswalker") && m.named_counters.get("loyalty").copied().unwrap_or(0) == 0)
+                .map(|(id, _)| *id)
+                .collect();
+            if dying.is_empty() && !tokens_dying.contains(&true) && !falls && spent.is_empty() {
                 if self.life.iter().all(|l| *l > 0) {
                     for (p, n) in gains {
                         self.life[p.0 as usize] += n;
@@ -3880,6 +4015,9 @@ impl World {
                 } else {
                     self.destroy(id);
                 }
+            }
+            for id in spent {
+                self.leave(id, Dest::Graveyard);
             }
             for (victim, gainer) in &before.damaged_by_life_gainers {
                 if let (Some(v), Some(g), false) = (before.permanents.get(victim), before.permanents.get(gainer), self.permanents.contains_key(victim)) {
@@ -3923,6 +4061,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        each_discards: Vec::new(),
         paid: false,
         sacrificed: None,
         picked: None,
@@ -4706,6 +4845,56 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 None => {}
             },
             Effect::EachPlayerChoosesACreature => {}
+            Effect::ItsPowerToThis { slot } => {
+                let creature = object(*slot).and_then(|id| w.permanents.get(&id)).cloned();
+                if let (Some(m), Some(source)) = (creature, world.source) {
+                    let p = u32::try_from(w.pt_of(&m).0.unwrap_or(0).max(0)).expect("non-negative");
+                    if p > 0 {
+                        if let Some(walker) = w.permanents.get_mut(&source) {
+                            let loyalty = walker.named_counters.entry("loyalty".to_string()).or_insert(0);
+                            *loyalty = loyalty.saturating_sub(p);
+                        }
+                        if has(&m, Keyword::Lifelink) {
+                            w.life[m.controller.0 as usize] += p as i32;
+                        }
+                    }
+                }
+            }
+            Effect::EachPlayerDiscards => {
+                for (p, name) in &world.each_discards {
+                    let hand = &mut w.hand[p.0 as usize];
+                    let at = hand.iter().position(|h| h == name).expect("a card in that hand");
+                    hand.remove(at);
+                    w.graveyard[p.0 as usize].push(name.clone());
+                }
+            }
+            Effect::IfSacrificedSearchForCreatureCard => {
+                if world.sacrificed.is_some() {
+                    if let Some((name, _)) = &world.found {
+                        let at = w.library[c].iter().position(|n| n == name).expect("found in the library");
+                        let card = w.library[c].remove(at);
+                        w.hand[c].push(card);
+                    }
+                    w.shuffled[c] = true;
+                }
+            }
+            Effect::PumpEachPerCreatureCard { filter, gains } => {
+                let x = i32::try_from(w.creature_cards_in_graveyard(caster)).expect("a few");
+                for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
+                    if m.is_creature() && m.matches(filter, caster) {
+                        until_end_of_turn(m, (x, x), gains);
+                    }
+                }
+            }
+            Effect::PilesSacrificed { slot } => {
+                let p = player(*slot).expect("a player target");
+                assert!(w.tokens.iter().all(|t| t.controller.0 as usize != p), "the reference divides only numbered permanents");
+                for id in &world.chosen {
+                    let creature = w.permanents.get(id).is_some_and(Model::is_creature);
+                    w.leave(*id, Dest::Graveyard);
+                    w.a_creature_died |= creature;
+                }
+            }
             Effect::DestroyTheRest => {
                 let doomed: Vec<ObjectId> = w.permanents.iter()
                     .filter(|(id, m)| m.is_creature() && !world.chosen.contains(id))
@@ -5190,6 +5379,19 @@ fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: Player
             .map(|found| World { found, ..world.clone() })
             .collect();
     }
+    // A search for a creature card, by name, or none found (CR 701.19b).
+    if spec.effects.contains(&Effect::IfSacrificedSearchForCreatureCard) {
+        let mut creatures: Vec<String> = world.library[caster.0 as usize].iter()
+            .filter(|n| cached_oracle().get(*n).is_some_and(|c| c.has_type("Creature")))
+            .cloned()
+            .collect();
+        creatures.sort();
+        creatures.dedup();
+        ways = ways.into_iter()
+            .flat_map(|w| std::iter::once(None).chain(creatures.iter().map(|c| Some((c.clone(), false))))
+                .map(move |found| World { found, ..w.clone() }))
+            .collect();
+    }
     for effect in &spec.effects {
         let Effect::SearchForBasicLand { of, to_battlefield, morbid_battlefield } = effect else { continue };
         let p = searcher(world, targets, *of, caster);
@@ -5213,7 +5415,9 @@ fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: Player
 /// player makes, each card a search can find.
 fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
     let mut ways = random_choices(spec, world, caster);
-    if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::PlayerExilesFromGraveyard { .. })) {
+    if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature
+        | Effect::PlayerExilesFromGraveyard { .. } | Effect::PilesSacrificed { .. }))
+    {
         ways = ways.iter()
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
             .collect();
@@ -5265,6 +5469,11 @@ fn sacrifice_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World>
         .collect();
     victims.extend(world.tokens.iter().enumerate().filter(|(_, t)| t.controller == caster && t.is_creature()).map(|(i, _)| Src::Token(i)));
     victims.extend((0..made).map(|k| Src::Token(world.tokens.len() + k)));
+    // With no creature to sacrifice, none is (CR 701.21a), and what "if
+    // you do" asks for does not happen.
+    if victims.is_empty() {
+        return vec![World { sacrificed: None, ..world.clone() }];
+    }
     victims.into_iter().map(|v| World { sacrificed: Some(v), ..world.clone() }).collect()
 }
 
@@ -5292,6 +5501,25 @@ fn pay_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<World> {
                 hand.dedup();
                 if !hand.is_empty() {
                     ways = ways.into_iter().flat_map(|w| hand.iter().map(move |h| World { discarded: vec![h.clone()], ..w.clone() })).collect();
+                }
+            }
+            // Each player with a card in hand discards one of them, by
+            // name; one with none discards nothing.
+            Effect::EachPlayerDiscards => {
+                for p in [P0, P1] {
+                    let mut hand = world.hand[p.0 as usize].clone();
+                    hand.sort();
+                    hand.dedup();
+                    if hand.is_empty() {
+                        continue;
+                    }
+                    ways = ways.into_iter()
+                        .flat_map(|w| hand.iter().map(move |h| {
+                            let mut each_discards = w.each_discards.clone();
+                            each_discards.push((p, h.clone()));
+                            World { each_discards, ..w.clone() }
+                        }))
+                        .collect();
                 }
             }
             _ => {}
@@ -5379,7 +5607,7 @@ fn lasts_the_turn(spec: &Spec) -> bool {
         Effect::Damage { .. } | Effect::DamageEach { .. } | Effect::DamageX { .. } | Effect::Pump { .. } | Effect::PumpEach { .. }
         | Effect::PumpX { .. } | Effect::Fight { .. } | Effect::Tap { .. } | Effect::Regenerate { .. } | Effect::RegenerateAll { .. }
         | Effect::GainControl { .. } | Effect::PumpPerCount { .. } | Effect::CantBlockThisTurn { .. }
-        | Effect::PreventCombatDamageExcept { .. }))
+        | Effect::PreventCombatDamageExcept { .. } | Effect::PumpEachPerCreatureCard { .. }))
 }
 
 /// Every way the players can make the choices `spec` asks for as it
@@ -5399,6 +5627,17 @@ fn resolution_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<Vec
             },
             Effect::PlayerExilesFromGraveyard { slot } => match &targets[*slot] {
                 Target::Player(p) => world.yard.iter().filter(|(_, m)| m.owner == *p).map(|(id, _)| vec![*id]).collect(),
+                _ => continue,
+            },
+            // The pile sacrificed: any of the player's permanents, as the
+            // piles are made, the empty pile and the whole of them too.
+            Effect::PilesSacrificed { slot } => match &targets[*slot] {
+                Target::Player(p) => {
+                    let theirs: Vec<Target> = world.permanents.iter().filter(|(_, m)| m.controller == *p).map(|(id, _)| Target::Object(*id)).collect();
+                    subsets(&theirs, theirs.len()).into_iter()
+                        .map(|set| set.into_iter().map(|t| match t { Target::Object(id) => id, _ => unreachable!() }).collect())
+                        .collect()
+                }
                 _ => continue,
             },
             Effect::EachPlayerChoosesACreature => {
@@ -6201,6 +6440,37 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
+            // Liliana of the Veil's piles: every division of the permanents
+            // into a pile and the rest, then either pile.
+            Some(ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. }) => {
+                return match script.next() {
+                    Some(Answer::Objects(ids)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(ids.clone()) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to a division into piles"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        let as_targets: Vec<Target> = permanents.iter().map(|id| Target::Object(*id)).collect();
+                        unanswered = Some(subsets(&as_targets, as_targets.len()).into_iter()
+                            .map(|s| Answer::Objects(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect()))
+                            .collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
+            Some(ResolutionChoiceKind::ChoosePile { .. }) => {
+                return match script.next() {
+                    Some(Answer::Index(i, label)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(*i, label.clone()) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to a choice of pile"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        unanswered = Some(vec![Answer::Index(0, "Pile A".to_string()), Answer::Index(1, "Pile B".to_string())]);
+                        Action::AbandonGame
+                    }
+                };
+            }
             Some(ResolutionChoiceKind::PayOrNot { .. }) => {
                 return match script.next() {
                     Some(Answer::YesNo(pay)) => Action::ResolveChoice { choice: ResolvedChoice::PayDecision(*pay) },
@@ -6269,8 +6539,10 @@ fn every_ending_keeping(state: &GameState, registry: &CardRegistry, spell: Optio
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
-        if done.len() + todo.len() > 500 {
-            return Err("more than 500 ways to answer".to_string());
+        // Room for Liliana of the Veil's piles: nine permanents divided
+        // and a pile chosen are 1,024 ways.
+        if done.len() + todo.len() > 1100 {
+            return Err("more than 1,100 ways to answer".to_string());
         }
         match play_from(state, registry, spell, targets.to_vec(), first.clone(), Scene::Main, &script)? {
             Played::Done(s) => done.push(*s),
@@ -6286,8 +6558,10 @@ fn every_ending_casting(state: &GameState, registry: &CardRegistry, spell: Objec
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
-        if done.len() + todo.len() > 500 {
-            return Err("more than 500 ways to answer".to_string());
+        // Room for Liliana of the Veil's piles: nine permanents divided
+        // and a pile chosen are 1,024 ways.
+        if done.len() + todo.len() > 1100 {
+            return Err("more than 1,100 ways to answer".to_string());
         }
         match play_from(state, registry, Some(spell), targets.to_vec(), first.clone(), Scene::Main, &script)? {
             Played::Done(s) => done.push(*s),
@@ -6310,8 +6584,10 @@ fn every_ending_choosing(state: &GameState, registry: &CardRegistry, spell: Opti
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
-        if done.len() + todo.len() > 500 {
-            return Err("more than 500 ways to answer".to_string());
+        // Room for Liliana of the Veil's piles: nine permanents divided
+        // and a pile chosen are 1,024 ways.
+        if done.len() + todo.len() > 1100 {
+            return Err("more than 1,100 ways to answer".to_string());
         }
         match play_from(state, registry, spell, Vec::new(), first.clone(), Scene::Main, &script)? {
             Played::Done(s) => done.push(*s),
@@ -7095,6 +7371,192 @@ fn counter_named(kind: &str) -> CounterType {
         .unwrap_or_else(|| panic!("no {kind} counter in the engine"))
 }
 
+/// A planeswalker of `card`'s on the battlefield for `owner`, its back face
+/// up if `back`, with `loyalty` loyalty counters (CR 306.5b, 122.1):
+/// placed in the engine and in the reference alike.
+fn place_walker(state: &mut GameState, world: &mut World, registry: &CardRegistry, card: &Printed, back: bool, loyalty: u32, owner: PlayerId) -> ObjectId {
+    let id = named_permanent(state, registry, &card.name, owner);
+    let obj = state.get_object_mut(id).expect("just placed");
+    obj.counters.insert(CounterType::Loyalty, loyalty);
+    obj.is_transformed = back;
+    let mut m = Model {
+        other_face: card.back.as_deref().map(|b| Box::new(Model::printed(b, owner))),
+        ..Model::printed(card, owner)
+    };
+    m.named_counters.insert("loyalty".to_string(), loyalty);
+    if back {
+        m.transform();
+    }
+    world.permanents.insert(id, m);
+    id
+}
+
+/// Every planeswalker face in the pool is read, each of its loyalty
+/// abilities and its transform; nothing on one is left unread.
+#[test]
+fn every_planeswalker_is_read() {
+    let faces = planeswalker_faces();
+    assert!(faces.len() >= 3, "only {} planeswalker faces", faces.len());
+    let unread: Vec<String> = faces.iter()
+        .filter_map(|(face, _, walker)| walker.as_ref().err().map(|why| format!("{}: {why}", face.name)))
+        .collect();
+    assert!(unread.is_empty(), "planeswalker faces the grammar cannot read:\n  {}", unread.join("\n  "));
+}
+
+/// Every loyalty ability of every planeswalker face in the pool, on the
+/// board, with the planeswalker's printed loyalty and one more, one counter
+/// short of a cost and exactly enough. The engine must:
+///
+/// - give each face its abilities in the order printed, each costing the
+///   loyalty its text prints (CR 606.4);
+/// - offer each at exactly the targets its text allows when its cost can
+///   be paid, and not when it would remove more counters than there are
+///   (606.6), nor with a spell on the stack (606.3);
+/// - resolve it every way the text allows and no other: its cost paid as
+///   it is activated, a planeswalker with no loyalty left going to its
+///   owner's graveyard before the ability resolves (704.5i), damage dealt
+///   to it removing loyalty (120.3c), and "When ~ has two or fewer
+///   loyalty counters on him, transform him" turning it over once it does
+///   (603.8);
+/// - offer no loyalty ability of it again that turn (606.3).
+#[test]
+fn every_loyalty_ability_does_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (face, front, walker) in planeswalker_faces() {
+        let Ok(walker) = walker else { continue };
+        let card = front.as_ref().unwrap_or(&face);
+        let card_id = registry.get_id_by_name(&card.name).expect("a card in the pool");
+        let behavior = registry.get(card_id).expect("a card in the pool");
+        let printed = behavior.starting_loyalty().expect("a planeswalker's printed loyalty");
+        for (k, ability) in walker.abilities.iter().enumerate() {
+            let need = u32::try_from(-ability.change).unwrap_or(0);
+            // One more than printed, too, so that the damage a creature of
+            // power 2 deals back leaves exactly two (Garruk's transform).
+            let mut loyalties = vec![printed, printed + 1, need.saturating_sub(1), need];
+            loyalties.retain(|l| *l > 0);
+            loyalties.sort_unstable();
+            loyalties.dedup();
+            for loyalty in loyalties {
+                checked += 1;
+                let name = format!("{}'s ability {k} at {loyalty} loyalty", face.name);
+                let (mut state, mut world) = board(&registry, &cache);
+                let id = place_walker(&mut state, &mut world, &registry, card, front.is_some(), loyalty, P0);
+                world.refresh();
+                let defs = behavior.loyalty_abilities(&state, id);
+                if defs.len() != walker.abilities.len() {
+                    failures.push(format!("{name}: the engine gives it {} loyalty abilities, the text {}", defs.len(), walker.abilities.len()));
+                    continue;
+                }
+                let def = &defs[k];
+                if def.loyalty_change != ability.change {
+                    failures.push(format!("{name}: costs {:+} loyalty, the text {:+}", def.loyalty_change, ability.change));
+                    continue;
+                }
+                world.source = Some(id);
+                let key = |t: &Vec<Target>| t.iter().map(target_key).collect::<Vec<_>>();
+                let mut expected = if loyalty >= need { target_sets(&ability.spec, &world, P0) } else { Vec::new() };
+                expected.sort_by_key(key);
+                let offers = |state: &GameState| -> Vec<Vec<Target>> {
+                    engine::legal_actions(state, &registry).actions.into_iter()
+                        .filter_map(|a| match a {
+                            Action::ActivateLoyaltyAbility { object_id, ability_index, targets } if object_id == id && ability_index == def.ability_index => Some(targets),
+                            _ => None,
+                        })
+                        .collect()
+                };
+                let mut offered = offers(&state);
+                offered.sort_by_key(key);
+                if offered != expected {
+                    failures.push(format!("{name}: offered at {offered:?}, the text allows {expected:?}"));
+                    continue;
+                }
+                let (mut busy, mut busy_world) = (state.clone(), world.clone());
+                the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
+                if !offers(&busy).is_empty() {
+                    failures.push(format!("{name}: offered with a spell on the stack"));
+                }
+                for targets in &expected {
+                    let act = Action::ActivateLoyaltyAbility { object_id: id, ability_index: def.ability_index, targets: targets.clone() };
+                    // The cost, paid as it is activated, and the state-based
+                    // actions before anyone has priority again.
+                    let mut paid = world.clone();
+                    let m = paid.permanents.get_mut(&id).expect("the planeswalker");
+                    m.named_counters.insert("loyalty".to_string(), loyalty.checked_add_signed(ability.change).expect("affordable, as offered"));
+                    paid.state_based_actions();
+                    let want: Vec<World> = resolution_ways(&ability.spec, &paid, targets, P0).into_iter()
+                        .map(|w| {
+                            let mut after = apply(&ability.spec, &w, targets, P0);
+                            after.state_based_actions();
+                            if let (Some(n), Some(m)) = (walker.transforms_at, after.permanents.get_mut(&id)) {
+                                if !m.transformed && m.named_counters.get("loyalty").copied().unwrap_or(0) <= n {
+                                    m.transform();
+                                }
+                            }
+                            after.refresh();
+                            after
+                        })
+                        .collect();
+                    let at = format!("{name} at {targets:?}");
+                    let endings = every_ending_from(&state, &registry, None, Some(act));
+                    if let Some(why) = disagreement(&want, &endings, &registry) {
+                        failures.push(format!("{at}: {why}"));
+                        continue;
+                    }
+                    let endings = endings.expect("compared");
+                    // As a set of endings, the piles hide who chose: every
+                    // pile is reachable whoever picks. So one division,
+                    // the first permanent against the rest: the target
+                    // player choosing either pile sacrifices that pile.
+                    if let ([Effect::PilesSacrificed { .. }], [Target::Player(p)]) = (&ability.spec.effects[..], &targets[..]) {
+                        let theirs: Vec<ObjectId> = paid.permanents.iter().filter(|(_, m)| m.controller == *p).map(|(id, _)| *id).collect();
+                        let (first, rest) = theirs.split_first().expect("a permanent to divide");
+                        for (pile, sacrificed) in [(0, vec![*first]), (1, rest.to_vec())] {
+                            let script = [Answer::Objects(vec![*first]), Answer::Index(pile, String::new())];
+                            let want = {
+                                let mut after = apply(&ability.spec, &World { chosen: sacrificed, ..paid.clone() }, targets, P0);
+                                after.state_based_actions();
+                                after
+                            };
+                            let got = match play_from(&state, &registry, None, Vec::new(), Some(Action::ActivateLoyaltyAbility {
+                                object_id: id, ability_index: def.ability_index, targets: targets.clone() }), Scene::Main, &script) {
+                                Ok(Played::Done(e)) => Ok(vec![*e]),
+                                Ok(Played::Asks(_)) => Err("asked more than the division and the pile".to_string()),
+                                Err(why) => Err(why),
+                            };
+                            if let Some(why) = disagreement(&[want], &got, &registry) {
+                                failures.push(format!("{at}, the first permanent a pile of its own, pile {pile} chosen: {why}"));
+                            }
+                        }
+                    }
+                    if let Some(again) = endings.iter().find(|e| engine::legal_actions(e, &registry).actions.iter()
+                        .any(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, .. } if *object_id == id)))
+                    {
+                        failures.push(format!("{at}: a loyalty ability of it is offered again the same turn, with {} loyalty",
+                            again.get_counter_count(id, CounterType::Loyalty)));
+                    }
+                    // Played on into the opponent's turn, where what lasted
+                    // this one is gone (CR 514.2).
+                    if lasts_the_turn(&ability.spec) {
+                        if let ([after], [w]) = (&endings[..], &want[..]) {
+                            let mut after = after.clone();
+                            after.num_spells_cast_this_turn = BTreeMap::from([(P0, 1)]);
+                            let next = next_turn_outcomes(&Spec::default(), w, id, P1);
+                            if let Some(why) = disagreement(&next, &every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain)), &registry) {
+                                failures.push(format!("{at}, in the next turn: {why}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} disagreements across {checked} loyalty abilities and loyalties:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// Every werewolf the grammar reads, and the two on the board with it: at
 /// the beginning of an upkeep after a turn in which no spells were cast,
 /// each transforms to its back face, keeping what has happened to it; at
@@ -7863,6 +8325,7 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        each_discards: Vec::new(),
         paid: false,
         sacrificed: None,
         picked: None,
@@ -7988,8 +8451,9 @@ fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) 
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
         // A combat's divisions multiply (two blockers, a trampler of
-        // thirteen, triggers to order): it has more room.
-        let room = if matches!(scene, Scene::Combat(_)) { 1000 } else { 200 };
+        // thirteen, triggers to order), and so do piles: nine permanents
+        // divided and a pile chosen are 1,024 ways.
+        let room = 1100;
         if done.len() + todo.len() > room {
             return Err(format!("more than {room} ways to answer"));
         }
@@ -10530,5 +10994,37 @@ fn the_grammar_reads_its_templates() {
     assert!(bat.trigger.optional && bat.trigger.pay == mana_cost("{2}{B}{B}") && bat.trigger.spec.effects == [Effect::TransformThis { slot: 0 }]);
 }
 
-
-
+/// The planeswalker grammar reads what it is meant to, on text written out
+/// here: the loyalty costs, the transform, and each template the pool's
+/// two planeswalkers use, the search only after a sacrifice.
+#[test]
+fn the_grammar_reads_the_planeswalker_templates() {
+    let walker = |subtype: &str, text: &str| Printed {
+        name: format!("{subtype} of the Test"),
+        mana_cost: "{2}".to_string(),
+        type_line: format!("Legendary Planeswalker \u{2014} {subtype}"),
+        oracle_text: text.to_string(),
+        power: None,
+        toughness: None,
+        back: None,
+        color_indicator: Vec::new(),
+    };
+    let w = read_planeswalker(&walker("Ajani", "When Ajani has two or fewer loyalty counters on him, transform him.\n+1: Each player discards a card.\n\u{2212}2: Target player sacrifices a creature.\n0: Ajani deals 3 damage to target creature. That creature deals damage equal to its power to him.")).unwrap();
+    assert_eq!(w.transforms_at, Some(2));
+    assert_eq!(w.abilities.iter().map(|a| a.change).collect::<Vec<_>>(), vec![1, -2, 0]);
+    assert_eq!(w.abilities[0].spec.effects, vec![Effect::EachPlayerDiscards]);
+    assert_eq!(w.abilities[1].spec.slots, vec![Slot::Player]);
+    assert_eq!(w.abilities[1].spec.effects, vec![Effect::SacrificeOfTheirChoice { slot: 0 }]);
+    assert_eq!(w.abilities[2].spec.effects, vec![Effect::Damage { amount: 3, slot: 0 }, Effect::ItsPowerToThis { slot: 0 }]);
+    let w = read_planeswalker(&walker("Bob", "\u{2212}1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.\n\u{2212}3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.\n\u{2212}6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.")).unwrap();
+    assert_eq!(w.transforms_at, None);
+    assert_eq!(w.abilities[0].spec.effects, vec![Effect::SacrificeACreature, Effect::IfSacrificedSearchForCreatureCard]);
+    assert!(matches!(&w.abilities[1].spec.effects[..], [Effect::PumpEachPerCreatureCard { gains, .. }] if *gains == vec![Keyword::Trample]));
+    assert_eq!(w.abilities[2].spec.slots, vec![Slot::Player]);
+    assert_eq!(w.abilities[2].spec.effects, vec![Effect::PilesSacrificed { slot: 0 }]);
+    // "If you do" reads only after the sacrifice it asks about.
+    assert!(read_planeswalker(&walker("Bob", "+1: If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.")).is_err());
+    // A cost the grammar does not know is not read as another.
+    assert!(read_planeswalker(&walker("Bob", "X: Each player discards a card.")).is_err());
+    assert!(read_planeswalker(&Printed { type_line: "Sorcery".to_string(), ..walker("Bob", "Each player discards a card.") }).is_err());
+}
