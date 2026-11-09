@@ -255,7 +255,9 @@ pub struct GameState {
     #[serde(default, skip)]
     pub resolving_trigger_from_back_face: Option<bool>,
 
-    /// Who activated the activated ability currently resolving (CR 602.2a).
+    /// The controller of the ability currently resolving: who activated an
+    /// activated ability (CR 602.2a), and who controlled a triggered
+    /// ability's source as it triggered (603.3a).
     ///
     /// An ability's controller is fixed when it is put on the stack and does
     /// not follow its source. Reading the source's `controller` at resolution
@@ -263,7 +265,8 @@ pub struct GameState {
     /// response — the case Olivia Voldaren's ruling is about: "if you activate
     /// Olivia Voldaren's last ability, and before that ability resolves you
     /// lose control of Olivia Voldaren, the ability will resolve with no
-    /// effect."
+    /// effect." A trigger's "you" was read the same way until it was set
+    /// here too: a Sturmgeist taken in response drew for the taker.
     #[serde(default, skip)]
     pub resolving_ability_activator: Option<PlayerId>,
 

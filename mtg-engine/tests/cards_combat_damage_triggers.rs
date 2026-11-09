@@ -671,6 +671,33 @@ fn sturmgeists_defining_ability_works_outside_the_battlefield() {
     assert_eq!(state.effective_toughness(sturmgeist, &reg), Some(3));
 }
 
+/// A triggered ability's controller is the player who controlled its source
+/// as it triggered, and stays so (CR 603.3a): Sturmgeist's draw is its
+/// controller's even once Olivia Voldaren has taken Sturmgeist in response.
+/// The draw went to whoever controlled the Sturmgeist as it resolved.
+#[test]
+fn sturmgeists_draw_stays_its_controllers_when_it_is_taken_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let sturmgeist = named_permanent(&mut state, &reg, "Sturmgeist", P0);
+    stock_library(&mut state, &reg, P0, 2);
+    stock_library(&mut state, &reg, P1, 2);
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: sturmgeist,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 1,
+    });
+    triggers::collect_triggers(&mut state, &reg);
+    triggers::process_pending_trigger_pushes(&mut state, &reg);
+    assert_eq!(state.stack.len(), 1, "the draw is on the stack");
+    // Taken in response.
+    state.get_object_mut(sturmgeist).unwrap().controller = P1;
+    let (hand0, hand1) = (state.objects_in_zone(Zone::Hand, P0).len(), state.objects_in_zone(Zone::Hand, P1).len());
+    triggers::resolve_next_trigger(&mut state, &reg);
+    assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), hand0 + 1, "the trigger's controller draws");
+    assert_eq!(state.objects_in_zone(Zone::Hand, P1).len(), hand1, "and not the player who took Sturmgeist");
+}
+
 // ── Balefire Dragon ───────────────────────────────────────────────
 
 /// "it deals **that much** damage to each creature **that player** controls."

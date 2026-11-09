@@ -39,7 +39,7 @@ impl CardBehavior for BitterheartWitch {
     }
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], _registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // The player was targeted when the trigger went on the stack
         // (CR 603.3d). Remember which, so the search below knows where the
@@ -69,7 +69,7 @@ impl CardBehavior for BitterheartWitch {
             return;
         }
 
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
 
         // Search library for Curse cards, in library order. A loop, not a
         // filter collected: a filter hands out each item by an inner `find`

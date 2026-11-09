@@ -48,7 +48,7 @@ impl CardBehavior for CharmbreakerDevils {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         // Find instant or sorcery cards in graveyard.

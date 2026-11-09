@@ -48,7 +48,7 @@ impl CardBehavior for GutterGrime {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // Put a slime counter on Gutter Grime.
         state.add_counters(self_id, CounterType::Slime, 1);
         let slime_count = state.get_counter_count(self_id, CounterType::Slime);

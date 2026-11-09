@@ -974,6 +974,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // "its own" means the face it triggered from — which is not necessarily the
     // face that is up now.
     state.resolving_trigger_from_back_face = Some(source.from_back_face);
+    // CR 603.3a: the ability is its controller's as it triggered, whoever
+    // controls the source now. Its "you" was read off the source as it
+    // resolved, so a Sturmgeist Olivia Voldaren took in response drew for
+    // her controller. `helpers::ability_controller` reads this.
+    state.resolving_ability_activator = Some(source.controller);
     state.resolving_ability = Some(on_stack);
     match event {
         TriggerEvent::SelfEntered => {
@@ -1040,8 +1045,9 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
 
     state.resolving_trigger_from_back_face = None;
     // Finished, unless the hook asked something: then it resolves on until
-    // the answer's chain runs out (`choices.rs`).
+    // the answer's chain runs out (`choices.rs`), its "you" held with it.
     if state.awaiting_action.is_none() {
+        state.resolving_ability_activator = None;
         state.resolving_ability = None;
     }
     true

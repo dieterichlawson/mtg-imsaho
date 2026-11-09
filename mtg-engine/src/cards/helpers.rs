@@ -539,18 +539,20 @@ pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
     Target::Player(state.opponent(controller))
 }
 
-/// The controller of the activated ability currently resolving — the player
-/// its "you" refers to.
+/// The controller of the ability currently resolving — the player its "you"
+/// refers to.
 ///
-/// CR 602.2a: an ability's controller is the player who activated it, fixed
-/// when it went on the stack. That is not always the source's controller by
-/// the time it resolves: take the source in response and `controller_of` names
-/// the thief, so "you gain 2 life" paid the wrong player and "for as long as
-/// you control it" handed over the wrong permanent.
+/// CR 602.2a: an activated ability's controller is the player who activated
+/// it, and 603.3a: a triggered ability's is the player who controlled its
+/// source as it triggered; both are fixed when it went on the stack. That is
+/// not always the source's controller by the time it resolves: take the
+/// source in response and `controller_of` names the thief, so "you gain 2
+/// life" paid the wrong player, "for as long as you control it" handed over
+/// the wrong permanent, and Sturmgeist's "draw a card" drew for the taker.
 ///
-/// Falls back to the source's last known controller, which is the right answer
-/// for a triggered ability or an effect reached outside a resolving activated
-/// ability.
+/// Falls back to the source's last known controller outside a resolving
+/// ability: a spell's controller, which does not change on the stack, or a
+/// card's hook called directly, as a card proof calls it.
 #[must_use]
 pub fn ability_controller(state: &GameState, source_id: ObjectId) -> PlayerId {
     state.resolving_ability_activator

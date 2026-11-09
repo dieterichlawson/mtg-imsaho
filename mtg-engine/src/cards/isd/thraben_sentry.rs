@@ -77,7 +77,7 @@ impl CardBehavior for ThrabenSentry {
         if state.get_object(self_id).is_some_and(|o| o.is_transformed) {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // "You may transform Thraben Sentry" — present a choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

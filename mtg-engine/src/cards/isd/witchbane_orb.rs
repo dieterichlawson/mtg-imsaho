@@ -34,7 +34,7 @@ impl CardBehavior for WitchbaneOrb {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // Find all curses attached to the controller.
         let curses: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()

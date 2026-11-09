@@ -1077,6 +1077,41 @@ fn murder_of_crows_draws_and_then_discards_when_you_accept() {
     assert!(state.awaiting_action.is_none(), "nothing is left pending");
 }
 
+/// A triggered ability is its controller's as it triggered (CR 603.3a),
+/// across the question it asks too: a Murder of Crows taken in response
+/// asks its "you may draw" of the player it triggered for, who draws and
+/// discards. It asked the player who had taken it, and drew from their
+/// library.
+#[test]
+fn murder_of_crows_taken_in_response_still_asks_and_draws_for_its_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let crows = named_permanent(&mut state, &reg, "Murder of Crows", P0);
+    stock_library(&mut state, &reg, P0, 1);
+    stock_library(&mut state, &reg, P1, 1);
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, &reg);
+    triggers::collect_triggers(&mut state, &reg);
+    triggers::process_pending_trigger_pushes(&mut state, &reg);
+    assert_eq!(state.stack.len(), 1, "the trigger is on the stack");
+    // Taken in response.
+    state.get_object_mut(crows).unwrap().controller = P1;
+    triggers::resolve_next_trigger(&mut state, &reg);
+    assert!(matches!(state.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player: P0, .. })),
+        "the question is the trigger's controller's: {:?}", state.awaiting_action);
+
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::YesNoDecision(true));
+
+    assert!(state.get_player(P0).library_order.is_empty(), "the trigger's controller drew");
+    assert_eq!(state.objects_in_zone(Zone::Graveyard, P0).len(), 1, "and discarded what was drawn");
+    assert_eq!(state.get_player(P1).library_order.len(), 1, "and the player who took it drew nothing");
+    assert!(state.awaiting_action.is_none() && state.resolving_ability_activator.is_none(),
+        "nothing is left pending, nor a controller to read");
+}
+
 /// "**you may** draw" — declining does nothing at all. Without this, an
 /// implementation that ignored the answer and always drew would pass the
 /// accepting test above.

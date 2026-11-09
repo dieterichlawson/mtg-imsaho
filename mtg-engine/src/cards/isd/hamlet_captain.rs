@@ -55,7 +55,7 @@ impl HamletCaptain {
         // killing it in response to its own attack trigger cancelled the pump
         // for the rest of the team. Nothing in "other Humans you control get
         // +1/+1 until end of turn" is about the Captain.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
 
         // Find other Human creatures you control.
         //

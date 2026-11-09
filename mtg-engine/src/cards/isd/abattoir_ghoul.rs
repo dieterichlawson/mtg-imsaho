@@ -48,7 +48,7 @@ impl CardBehavior for AbattoirGhoul {
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // CR 603.6d: triggered ability resolves even if source has left
         // the battlefield (e.g. simultaneous death in combat).
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // Gain life equal to that creature's toughness (last-known information).
         let toughness = dead_toughness.max(0);
         if toughness > 0 {

@@ -46,7 +46,7 @@ impl CardBehavior for Sturmgeist {
         // The trigger resolves on the stack independently of where Sturmgeist is now.
         // Per MTG rules, a triggered ability that has already triggered continues to
         // resolve even if the source has since left the battlefield.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         let _ = crate::engine::draw_cards(state, controller, 1, registry);
     }
 }

@@ -48,7 +48,7 @@ impl CardBehavior for WoodlandSleuth {
         // The Sleuth may have left the battlefield by the time the trigger resolves
         // (e.g., it died in response). We still know who controlled it when it
         // entered, so accept the controller from any zone the object is in.
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // Find creature cards in graveyard.
         // In the graveyard's order, by a loop rather than a filter collected

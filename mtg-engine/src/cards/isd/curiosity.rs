@@ -64,7 +64,7 @@ impl CardBehavior for Curiosity {
         // the player who last controlled it, which is what `controller_of`
         // answers. Reading `o.controller` gave the owner in that one case,
         // because leaving the battlefield resets the field.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // "You may draw a card" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
@@ -80,7 +80,7 @@ impl CardBehavior for Curiosity {
         if !yes {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // Logged from what the draw did, not what was asked (issue #623).
         let msg = if draw_cards(state, controller, 1, registry) == 0 {
             "Curiosity: drew no card (empty library)"

@@ -45,7 +45,7 @@ impl CardBehavior for Ghoulraiser {
         // A Ghoulraiser that died on the way is itself a Zombie card in that
         // graveyard by the time the trigger resolves, so it is one of the
         // candidates to be returned at random.
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // Find Zombie cards in graveyard (not restricted to creatures).
         // In the graveyard's order, by a loop rather than a filter collected
