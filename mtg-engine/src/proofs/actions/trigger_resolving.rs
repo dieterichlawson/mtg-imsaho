@@ -99,8 +99,9 @@ enum Hook {
 
 /// What a hook was handed: which hook, the permanent it is on, the event's
 /// data as numbers, its target and how many, the face it resolved as
-/// from, and whether the ability was the one resolving.
-type Handed = (Hook, ObjectId, [u64; 5], Option<Target>, usize, Option<bool>, bool);
+/// from, whether the ability was the one resolving, and the controller
+/// `helpers::ability_controller` reads for its "you".
+type Handed = (Hook, ObjectId, [u64; 5], Option<Target>, usize, Option<bool>, bool, Option<PlayerId>);
 
 static mut HOOKED: Held<Option<Handed>> = Held::new(None, (&raw const HOOKED).cast());
 
@@ -110,7 +111,8 @@ fn hooked(state: &GameState, hook: Hook, self_id: ObjectId, data: [u64; 5], targ
     // SAFETY: as in `answer`.
     let h = unsafe { &mut *std::ptr::addr_of_mut!(HOOKED.value) };
     assert!(h.is_none(), "one hook, called once");
-    *h = Some((hook, self_id, data, targets.first().cloned(), targets.len(), state.resolving_trigger_from_back_face, resolving));
+    *h = Some((hook, self_id, data, targets.first().cloned(), targets.len(), state.resolving_trigger_from_back_face, resolving,
+        state.resolving_ability_activator));
 }
 
 /// Where the list of what damaged the dead creature is, as the event is
@@ -285,12 +287,14 @@ fn event_of(kind: Kind) -> (TriggerEvent, Hook, [u64; 5], bool) {
 /// ability's source, or does not meet what the card asks), it does
 /// nothing; otherwise the hook for its event, and only that one, is
 /// called once, on the ability's source, with the event's data and the
-/// target as chosen, while the ability is the one resolving and as from
-/// the face it triggered from. Either way it leaves the stack, and nothing
-/// is left resolving after. For a source either player's, on the
-/// battlefield or gone (113.7a: the ability resolves without it), of
-/// either face, and, for an event a targeted trigger in the pool is on, no
-/// target or one, a creature either player's.
+/// target as chosen, while the ability is the one resolving, as from
+/// the face it triggered from, and with the player it triggered for as
+/// its controller, whoever controls its source now (603.3a). Either way
+/// it leaves the stack, and nothing is left resolving after, nor a
+/// controller to read. For a trigger either player's, its source either
+/// player's, on the battlefield or gone (113.7a: the ability resolves
+/// without it), of either face, and, for an event a targeted trigger in
+/// the pool is on, no target or one, a creature either player's.
 fn resolving(kind: Kind) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
@@ -299,7 +303,9 @@ fn resolving(kind: Kind) {
     let target = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, Some(1), Some(1));
     assert!(target == ObjectId(1));
     let controller = PlayerId(u8::from(kani::any::<bool>()));
-    let source = state.create_object(card, controller, if kani::any() { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
+    // Its controller now, taken in response or not.
+    let holder = PlayerId(u8::from(kani::any::<bool>()));
+    let source = state.create_object(card, holder, if kani::any() { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
     if matches!(kind, Kind::State) {
         state.get_object_mut(source).expect("just created").state_trigger_on_stack = true;
     }
@@ -328,16 +334,17 @@ fn resolving(kind: Kind) {
     let h = unsafe { &*std::ptr::addr_of!(HOOKED.value) };
     assert!(state.stack.is_empty());
     if legal {
-        let Some((called, on, handed, chosen, n, face, while_resolving)) = h else { panic!("a hook called") };
+        let Some((called, on, handed, chosen, n, face, while_resolving, you)) = h else { panic!("a hook called") };
         // Element by element: arrays compared whole are a `memcmp`, a loop
         // over each of their bytes.
         let same = (0..5).all(|i| handed[i] == data[i]);
         assert!(*called == hook && *on == source && same && *chosen == targeted.then_some(Target::Object(target))
-            && *n == usize::from(targeted) && *face == Some(from_back) && *while_resolving);
+            && *n == usize::from(targeted) && *face == Some(from_back) && *while_resolving && *you == Some(controller));
     } else {
         assert!(h.is_none());
     }
-    assert!(state.resolving_ability.is_none() && state.resolving_trigger_from_back_face.is_none());
+    assert!(state.resolving_ability.is_none() && state.resolving_trigger_from_back_face.is_none()
+        && state.resolving_ability_activator.is_none());
     std::mem::forget((registry, state, c));
 }
 
