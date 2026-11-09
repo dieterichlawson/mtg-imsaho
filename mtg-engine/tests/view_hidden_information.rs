@@ -113,3 +113,51 @@ fn no_view_shows_what_the_other_player_draws() {
             "p{}'s view changed with what p{} held and drew", viewer.0, other.0);
     }
 }
+
+/// The other player asked a question about cards only they may see: which
+/// card of their hand to discard (CR 402.3), what to do with the top card
+/// of their library they looked at (Delver of Secrets: "look at", not
+/// "reveal", CR 701.16), and which card of their library a search finds
+/// (701.19). The viewer's view must be the same whatever those cards are,
+/// and the asked player's must name them.
+#[test]
+fn no_view_names_the_cards_of_a_question_put_to_the_other_player() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    let registry = registry();
+    let others_hand: [&str; 3] = ["Delver of Secrets", "Daybreak Ranger", "Forest"];
+    let others_library: [&str; 4] = ["Daybreak Ranger", "Delver of Secrets", "Plains", "Mountain"];
+    for viewer in [P0, P1] {
+        let other = PlayerId(1 - viewer.0);
+        let asking = |state: &GameState, kind: usize| {
+            let mut state = state.clone();
+            let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, other).iter().map(|o| o.id).collect();
+            let library = state.get_player(other).library_order.clone();
+            let source = state.objects_in_zone(Zone::Battlefield, other)[0].id;
+            let choice = match kind {
+                0 => ResolutionChoiceKind::ChooseCardFromHand {
+                    description: "choose a card to discard".into(), player: other, cards: hand,
+                    discard_immediately: true, remaining: 1,
+                },
+                1 => ResolutionChoiceKind::ChooseFromLookedAt { description: "the top card".into(), looked_at: vec![library[0]] },
+                _ => ResolutionChoiceKind::ChooseFromLibrary {
+                    description: "search".into(), options: library, searcher: other, source_id: source,
+                    destination: Zone::Hand, tapped: false,
+                },
+            };
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: other, source, choice });
+            state
+        };
+        let mut hands: [&[&str]; 2] = [&HAND, &HAND];
+        let mut libraries: [&[&str]; 2] = [&LIBRARY, &LIBRARY];
+        let before = board(&registry, hands, libraries);
+        hands[other.0 as usize] = &others_hand;
+        libraries[other.0 as usize] = &others_library;
+        let after = board(&registry, hands, libraries);
+        for (kind, what) in ["a discard", "a look at the top card", "a search"].iter().enumerate() {
+            assert_eq!(view(&asking(&after, kind), &registry, viewer), view(&asking(&before, kind), &registry, viewer),
+                "p{}'s view named the cards of {what} put to p{}", viewer.0, other.0);
+            assert!(!GameView::for_player(&asking(&after, kind), other, &registry).revealed_names.is_empty(),
+                "p{}, asked {what}, is told the names of what they choose among", other.0);
+        }
+    }
+}
