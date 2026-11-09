@@ -1073,6 +1073,31 @@ those 22 casts. Each is a
 template, or a board, to add; `READ` lists the cards read, and a change
 that stops reading any of them fails and names it.
 
+### Hidden information
+
+A player is shown nothing of what they cannot see: a library's order
+from everyone (CR 401.2), a hand from all but its owner (402.3), what a
+player looks at or searches through from the other (701.16, 701.19). So
+a player's view, as every seat is sent it, is a function of what that
+player may see alone, and changing anything else must leave it the same:
+a noninterference property, checked two ways.
+
+- `mtg-engine/tests/view_hidden_information.rs`, on boards of its own:
+  each library reordered; the other player's hand and library holding
+  other cards, double-faced ones among them; the game played on through
+  the other player's draw; and the other player asked to choose a card
+  of their hand to discard, what to do with the top card they looked at,
+  and what a search of their library finds. Each view is compared whole,
+  serialized.
+- The fuzz runner, at every decision of every invariant-checked game:
+  each player's view against the same view with every library reversed.
+  553 games, 88,732 decisions, no failure; with defect 37's fix undone,
+  the first decision of the first game is flagged.
+
+It found defects 37 and 38: a player's own library listed in the order it
+lies, and the names of the cards of a question put to one player sent to
+both.
+
 ### Cards proved with Kani
 
 `mtg-engine/src/proofs/cards/` and `proofs/actions/`. A card proof runs
