@@ -7573,11 +7573,20 @@ fn every_loyalty_ability_does_what_its_text_says() {
             loyalties.retain(|l| *l > 0);
             loyalties.sort_unstable();
             loyalties.dedup();
-            for loyalty in loyalties {
+            // Each loyalty with the planeswalker its controller's own card,
+            // and with it the other player's: what its "you" does is its
+            // controller's (CR 606.3, 602.2a), and where it goes when it
+            // leaves is its owner's (400.3).
+            for (loyalty, borrowed) in loyalties.into_iter().flat_map(|l| [false, true].map(move |b| (l, b))) {
                 checked += 1;
-                let name = format!("{}'s ability {k} at {loyalty} loyalty", face.name);
+                let name = format!("{}'s ability {k} at {loyalty} loyalty{}", face.name,
+                    if borrowed { ", its owner the other player" } else { "" });
                 let (mut state, mut world) = board(&registry, &cache);
                 let id = place_walker(&mut state, &mut world, &registry, card, front.is_some(), loyalty, P0);
+                if borrowed {
+                    state.get_object_mut(id).expect("just placed").owner = P1;
+                    world.permanents.get_mut(&id).expect("just placed").owner = P1;
+                }
                 world.refresh();
                 let defs = behavior.loyalty_abilities(&state, id);
                 if defs.len() != walker.abilities.len() {
