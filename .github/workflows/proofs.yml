@@ -92,9 +92,9 @@ jobs:
   # for in a debug build: every board of up to three mana sources, up to
   # two mana floating and every cost shape, the autotap planner held to
   # tapping by hand; every Equipment and Aura the card grammar reads on
-  # every creature it reads, fought against every other; and every creature
-  # it fights with blocked by every pair of kinds of them (scripts/prove.sh
-  # exhaustive). GREEN means no board in that space breaks the planner's
+  # every creature it reads, fought against every other; every creature it
+  # fights with blocked by every pair of kinds of them; and every two kinds
+  # of them attacking together (scripts/prove.sh exhaustive). GREEN means no board in that space breaks the planner's
   # contract, and no such combat disagrees with the cards' text.
   exhaustive:
     runs-on: ubuntu-latest

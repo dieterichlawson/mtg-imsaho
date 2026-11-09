@@ -19,8 +19,9 @@
 #   up to three sources with up to two mana floating (about 30 million
 #   boards, a few minutes), every Equipment and Aura the card grammar
 #   reads on every creature it reads, against every other (about 100,000
-#   combats), and every creature it fights with blocked by every pair of
-#   kinds of them (about 100,000 double blocks, six minutes).
+#   combats), every creature it fights with blocked by every pair of kinds
+#   of them (about 100,000 double blocks, six minutes), and every two kinds
+#   of them attacking together (about 8,000 combats).
 #
 # A proof is a theorem over every input it quantifies over, not a sample:
 # GREEN means no input breaks the property. A Verus proof holds for every
@@ -93,6 +94,8 @@ check_exhaustively() {
         cargo test --release -p mtg-engine --test card_semantics reaches_the_combats
     CARD_SEMANTICS_EVERY_FIGHT=1 \
         cargo test --release -p mtg-engine --test card_semantics every_double_block
+    CARD_SEMANTICS_EVERY_FIGHT=1 \
+        cargo test --release -p mtg-engine --test card_semantics every_two_attackers
 }
 
 case "$what" in
