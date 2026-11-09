@@ -361,3 +361,154 @@ impl<'a, K> IntoIterator for &'a VecSet<K> {
         self.keys.iter()
     }
 }
+
+/// `VecMap` and `VecSet` against `BTreeMap` and `BTreeSet`, under `cargo
+/// test`. The Kani proofs in `proofs::vec_map` hold them to an ordered map
+/// for one operation from any map of three keys; these play long random
+/// sequences of every operation over more keys, so a change to the maps is
+/// caught by every test run and not only by the proofs, which run in their
+/// own job (and for the weekly mutation sweep, which runs only `cargo
+/// test`).
+#[cfg(test)]
+mod tests {
+    use super::{VecMap, VecSet};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    /// Distinct keys the sequences draw from: enough that a map holds some
+    /// and lacks others at every step, and that a key goes in before, between
+    /// and after the ones there.
+    const KEYS: u8 = 12;
+    const SEEDS: u64 = 64;
+    const STEPS: usize = 400;
+
+    /// The map holds what the reference holds, read every way the map is.
+    fn agrees(map: &VecMap<u8, String>, reference: &BTreeMap<u8, String>, what: &str) {
+        let entries: Vec<(&u8, &String)> = map.iter().collect();
+        let expected: Vec<(&u8, &String)> = reference.iter().collect();
+        assert_eq!(entries, expected, "{what}: entries");
+        assert_eq!(map.into_iter().collect::<Vec<_>>(), expected, "{what}: entries by `for`");
+        assert_eq!(map.keys().collect::<Vec<_>>(), reference.keys().collect::<Vec<_>>(), "{what}: keys");
+        assert_eq!(map.values().collect::<Vec<_>>(), reference.values().collect::<Vec<_>>(), "{what}: values");
+        assert_eq!(map.len(), reference.len(), "{what}: len");
+        assert_eq!(map.is_empty(), reference.is_empty(), "{what}: is_empty");
+        for k in 0..KEYS {
+            assert_eq!(map.get(&k), reference.get(&k), "{what}: get {k}");
+            assert_eq!(map.contains_key(&k), reference.contains_key(&k), "{what}: contains_key {k}");
+        }
+    }
+
+    /// Every operation, in random sequences, answers as `BTreeMap` does and
+    /// leaves the map holding what `BTreeMap` holds. The values are strings,
+    /// each its own allocation, so an entry moved by `exchange` and read
+    /// twice or not at all is a double free or a value lost, not a quiet
+    /// copy of bytes.
+    #[test]
+    fn a_vec_map_answers_every_operation_as_a_btree_map_does() {
+        for seed in 0..SEEDS {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let mut map: VecMap<u8, String> = VecMap::new();
+            let mut reference: BTreeMap<u8, String> = BTreeMap::new();
+            for step in 0..STEPS {
+                let k = rng.gen_range(0..KEYS);
+                let v = format!("{seed}.{step}");
+                let what = format!("seed {seed} step {step}");
+                match rng.gen_range(0..10) {
+                    0..=2 => assert_eq!(map.insert(k, v.clone()), reference.insert(k, v), "{what}: insert {k}"),
+                    3 | 4 => assert_eq!(map.remove(&k), reference.remove(&k), "{what}: remove {k}"),
+                    5 => {
+                        let (got, want) = (map.get_mut(&k), reference.get_mut(&k));
+                        assert_eq!(got.is_some(), want.is_some(), "{what}: get_mut {k}");
+                        if let (Some(got), Some(want)) = (got, want) {
+                            got.push('m');
+                            want.push('m');
+                        }
+                    }
+                    6 => {
+                        map.entry(k).or_insert(v.clone()).push('e');
+                        reference.entry(k).or_insert(v).push('e');
+                    }
+                    7 => {
+                        map.entry(k).or_default().push('d');
+                        reference.entry(k).or_default().push('d');
+                    }
+                    8 => {
+                        // Each written through on its own: zipped, a
+                        // `values_mut` that yields nothing writes to neither.
+                        for v in map.values_mut() {
+                            v.push('v');
+                        }
+                        for v in reference.values_mut() {
+                            v.push('v');
+                        }
+                    }
+                    _ if rng.gen_range(0..8) == 0 => {
+                        map.clear();
+                        reference.clear();
+                    }
+                    _ => map.reserve(usize::from(k)),
+                }
+                agrees(&map, &reference, &what);
+            }
+        }
+    }
+
+    /// Keys looked up by what they borrow as, as the engine looks up a card
+    /// name held as a `String` by a `&str`.
+    #[test]
+    fn a_vec_map_of_strings_is_looked_up_by_str() {
+        let mut map: VecMap<String, u32> = VecMap::new();
+        let mut reference: BTreeMap<String, u32> = BTreeMap::new();
+        for (n, name) in ["Moon Heron", "Forest", "Brimstone Volley", "Swamp", "Forest", "Abattoir Ghoul"].into_iter().enumerate() {
+            let n = u32::try_from(n).expect("a few");
+            assert_eq!(map.insert(name.to_string(), n), reference.insert(name.to_string(), n), "insert {name}");
+        }
+        for name in ["Abattoir Ghoul", "Forest", "Island", "Moon Heron", "Zombie"] {
+            assert_eq!(map.get(name), reference.get(name), "get {name}");
+            assert_eq!(map.contains_key(name), reference.contains_key(name), "contains_key {name}");
+        }
+        if let Some(n) = map.get_mut("Swamp") {
+            *n += 10;
+        }
+        *reference.get_mut("Swamp").expect("there") += 10;
+        assert_eq!(map.remove("Forest"), reference.remove("Forest"));
+        assert_eq!(map.remove("Island"), reference.remove("Island"));
+        assert_eq!(map.iter().map(|(k, v)| (k.as_str(), *v)).collect::<Vec<_>>(),
+            reference.iter().map(|(k, v)| (k.as_str(), *v)).collect::<Vec<_>>());
+    }
+
+    /// Every operation of `VecSet`, in random sequences, answers as
+    /// `BTreeSet` does and leaves the set holding what it holds; `is_subset`
+    /// against a second set built alongside.
+    #[test]
+    fn a_vec_set_answers_every_operation_as_a_btree_set_does() {
+        for seed in 0..SEEDS {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let (mut set, mut other) = (VecSet::new(), VecSet::new());
+            let (mut reference, mut other_reference) = (BTreeSet::new(), BTreeSet::new());
+            for step in 0..STEPS {
+                let k = rng.gen_range(0..KEYS);
+                let what = format!("seed {seed} step {step}");
+                match rng.gen_range(0..8) {
+                    0..=2 => assert_eq!(set.insert(k), reference.insert(k), "{what}: insert {k}"),
+                    3 | 4 => assert_eq!(set.remove(&k), reference.remove(&k), "{what}: remove {k}"),
+                    5 => assert_eq!(other.insert(k), other_reference.insert(k), "{what}: insert {k} into the other"),
+                    6 => assert_eq!(other.remove(&k), other_reference.remove(&k), "{what}: remove {k} from the other"),
+                    _ if rng.gen_range(0..8) == 0 => {
+                        set.clear();
+                        reference.clear();
+                    }
+                    _ => set.reserve(usize::from(k)),
+                }
+                assert_eq!(set.iter().collect::<Vec<_>>(), reference.iter().collect::<Vec<_>>(), "{what}: keys");
+                assert_eq!((&set).into_iter().collect::<Vec<_>>(), reference.iter().collect::<Vec<_>>(), "{what}: keys by `for`");
+                assert_eq!((set.len(), set.is_empty()), (reference.len(), reference.is_empty()), "{what}: len");
+                for k in 0..KEYS {
+                    assert_eq!(set.contains(&k), reference.contains(&k), "{what}: contains {k}");
+                }
+                assert_eq!(set.is_subset(&other), reference.is_subset(&other_reference), "{what}: is_subset");
+                assert_eq!(other.is_subset(&set), other_reference.is_subset(&reference), "{what}: is_subset the other way");
+            }
+        }
+    }
+}
