@@ -9186,12 +9186,14 @@ fn every_flashback_spell_does_what_its_text_says() {
                     })
                     .collect();
                 let first = cast_for(spell, if asks { Vec::new() } else { targets.clone() }, Some(flashback));
-                let endings = if is_random(spec) {
+                let (endings, asked) = questions_asked(|| if is_random(spec) {
                     over_seeds(&state, |s| every_ending_casting(s, &registry, spell, &targets, Some(first.clone())))
                 } else {
                     every_ending_casting(&state, &registry, spell, &targets, Some(first.clone()))
-                };
-                if let Some(why) = disagreement(&want, &endings, &registry) {
+                });
+                if let Some(why) = disagreement(&want, &endings, &registry)
+                    .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
+                {
                     failures.push(format!("{name} at {targets:?}: {why}"));
                 }
             }
@@ -10589,8 +10591,10 @@ fn every_granted_ability_does_what_its_text_says() {
                         after
                     })
                     .collect();
-                let endings = every_ending_from(&state, &registry, None, Some(act));
-                if let Some(why) = disagreement(&want, &endings, &registry) {
+                let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act)));
+                if let Some(why) = disagreement(&want, &endings, &registry)
+                    .or_else(|| wrong_chooser(&ability.spec, full, &world, P0, bears, &asked))
+                {
                     failures.push(format!("{name} at {full:?}: {why}"));
                     continue;
                 }
