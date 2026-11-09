@@ -497,24 +497,72 @@ fn ids_named(line: &str) -> impl Iterator<Item = mtg_engine::ids::ObjectId> + '_
 /// across the game), as a creature returned to its owner's hand has. The
 /// view checks cannot see this: a view and its copy with the hands dealt
 /// anew share one log.
-fn log_names_no_hidden_card(prev: &GameState, cur: &GameState, seen: &std::collections::HashSet<mtg_engine::ids::ObjectId>) -> Vec<String> {
+///
+/// A line names a card by its id (`Name (#12)`), or by its name alone
+/// (Delver's look is written so). A name is flagged only if no card
+/// bearing it has been in view (`seen_names`, kept across the game, with
+/// the names a line says were revealed), after the line's seen names are
+/// taken out, longest first ("Kessig Wolf Run" is not "Kessig Wolf"), and
+/// what it quotes, a name chosen aloud (Nevermore's) being a name and not
+/// a card. So a hidden card that shares its name with one in view is not
+/// seen by name, only by id.
+fn log_names_no_hidden_card(prev: &GameState, cur: &GameState, seen: &std::collections::HashSet<mtg_engine::ids::ObjectId>,
+                            seen_names: &mut std::collections::HashSet<String>) -> Vec<String> {
     fn hidden(s: &GameState, id: mtg_engine::ids::ObjectId) -> Option<&mtg_engine::state::GameObject> {
         use mtg_engine::types::Zone;
         s.get_object(id).filter(|o| matches!(o.zone, Zone::Hand | Zone::Library))
     }
     let cast = |s: &GameState, id| s.pending_spell_cast.as_ref().is_some_and(|c| c.object_id == id);
+    // The cards no one has seen, at both decisions, by name.
+    let unseen: Vec<&mtg_engine::state::GameObject> = cur.objects.values()
+        .filter(|o| !seen.contains(&o.id) && !cast(prev, o.id) && !cast(cur, o.id))
+        .filter(|o| hidden(cur, o.id).is_some() && hidden(prev, o.id).is_some())
+        .collect();
+    // A name some card in view bears at either decision is seen: the line
+    // may be about that card ("p0 played Mountain (#12)"). So is the name of
+    // the card being cast, announced as it was (CR 601.2a), though a cast
+    // waiting on its X keeps the card in hand: "Corpse Lunge (#12): cast
+    // cancelled" is about it, not about another Corpse Lunge in a library.
+    for s in [prev, cur] {
+        for o in s.objects.values() {
+            if hidden(s, o.id).is_none() || cast(s, o.id) {
+                seen_names.insert(o.name.clone());
+            }
+        }
+    }
     let mut out = Vec::new();
     for entry in cur.game_log.iter().skip(prev.game_log.len()) {
-        if entry.level <= mtg_engine::state::LogLevel::Private || entry.message.contains("revealed") {
+        if entry.level <= mtg_engine::state::LogLevel::Private {
+            continue;
+        }
+        if entry.message.contains("reveal") {
+            for o in &unseen {
+                if entry.message.contains(o.name.as_str()) {
+                    seen_names.insert(o.name.clone());
+                }
+            }
             continue;
         }
         for id in ids_named(&entry.message) {
-            if seen.contains(&id) || cast(prev, id) || cast(cur, id) {
-                continue;
+            if let Some(is) = unseen.iter().find(|o| o.id == id) {
+                out.push(format!("the shared log names {} (#{}), in p{}'s {:?} before and after and never seen (CR 400.2): {:?}",
+                    is.name, id.0, is.owner.0, is.zone, entry.message));
             }
-            if let (Some(was), Some(is)) = (hidden(prev, id), hidden(cur, id)) {
-                out.push(format!("the shared log names {} (#{}), in p{}'s {:?} before and {:?} after and never seen (CR 400.2): {:?}",
-                    is.name, id.0, is.owner.0, was.zone, is.zone, entry.message));
+        }
+        // The line with every seen name taken out, longest first, so that
+        // "Kessig Wolf Run" is not read as "Kessig Wolf", and with what it
+        // quotes taken out: a name chosen aloud (Nevermore's) is a name,
+        // not a card.
+        let mut rest: String = entry.message.split('"').step_by(2).collect::<Vec<_>>().join(" ");
+        let mut names: Vec<&String> = seen_names.iter().collect();
+        names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+        for n in names {
+            rest = rest.replace(n.as_str(), " ");
+        }
+        for o in &unseen {
+            if !seen_names.contains(&o.name) && rest.contains(o.name.as_str()) {
+                out.push(format!("the shared log names {}, a name no one has seen, in p{}'s {:?} (CR 400.2): {:?}",
+                    o.name, o.owner.0, o.zone, entry.message));
             }
         }
     }
@@ -1040,6 +1088,7 @@ stops here — pass --save {path} to keep writing it");
     // Every object found in a public zone at a decision, for
     // `log_names_no_hidden_card`: a card once seen may be named.
     let mut seen_public: std::collections::HashSet<mtg_engine::ids::ObjectId> = std::collections::HashSet::new();
+    let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let registry_ref = &registry;
     // High-water mark of engine log entries already streamed to --log
@@ -1221,11 +1270,12 @@ stops here — pass --save {path} to keep writing it");
             };
             if let Some((prev, act)) = &last_decision {
                 violations.extend(mtg_engine::invariants::check_transition(prev, Some(act), game_state, registry_ref));
-                violations.extend(log_names_no_hidden_card(prev, game_state, &seen_public));
+                violations.extend(log_names_no_hidden_card(prev, game_state, &seen_public, &mut seen_names));
             }
             for obj in game_state.objects.values() {
                 if !matches!(obj.zone, mtg_engine::types::Zone::Hand | mtg_engine::types::Zone::Library) {
                     seen_public.insert(obj.id);
+                    seen_names.insert(obj.name.clone());
                 }
             }
             violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
@@ -1919,4 +1969,23 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
     }
 
     Decklist { entries }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ids_named;
+    use mtg_engine::ids::ObjectId;
+
+    /// The ids a log line names, as the engine writes objects (`Name (#12)`)
+    /// and stack entries (`spell #3`); a `#` with no digits after it names
+    /// nothing.
+    #[test]
+    fn a_log_line_names_the_ids_after_each_hash() {
+        let ids = |line| ids_named(line).collect::<Vec<_>>();
+        assert_eq!(ids("p1 searched their library and revealed Island (#48)"), vec![ObjectId(48)]);
+        assert_eq!(ids("Lightning Bolt (#12) deals 3 damage to Grizzly Bears (#7)"), vec![ObjectId(12), ObjectId(7)]);
+        assert_eq!(ids("resolving spell #3"), vec![ObjectId(3)]);
+        assert_eq!(ids("p0 drew a card"), Vec::<ObjectId>::new());
+        assert_eq!(ids("a # alone, and #x"), Vec::<ObjectId>::new());
+    }
 }
