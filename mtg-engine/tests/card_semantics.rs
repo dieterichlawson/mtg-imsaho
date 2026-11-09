@@ -4722,7 +4722,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 destroyed = doomed.into_iter().filter(|id| w.destroy(*id)).count();
             }
             Effect::GainControl { slot, until_end_of_turn } => {
-                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                // "For as long as you control ~": with ~ gone, or another's,
+                // by the time it resolves, the duration is already over and
+                // nothing is gained (CR 611.2b), as Olivia Voldaren's ruling
+                // says.
+                let lasts = *until_end_of_turn
+                    || w.source.and_then(|s| w.permanents.get(&s)).is_some_and(|src| src.controller == caster);
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)).filter(|_| lasts) {
                     if m.controller != caster {
                         if *until_end_of_turn {
                             m.stolen_from = Some(m.controller);
@@ -4807,7 +4813,9 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::ExchangeLifeWithToughness { slot } => {
-                if let Some(id) = object(*slot) {
+                // A creature gone has no toughness to exchange, and nothing
+                // is exchanged (CR 608.2b, 701.12a).
+                if let Some(id) = object(*slot).filter(|id| w.permanents.contains_key(id)) {
                     let t = w.pt_of(&w.permanents[&id]).1.unwrap_or(0);
                     let life = w.life[c];
                     let m = w.permanents.get_mut(&id).expect("the source");
@@ -7333,6 +7341,9 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 if ability.mana.symbols.contains(&ManaSymbol::X) {
                     ways = ways.iter().flat_map(|w| (0..=X_FLOAT).map(|x| World { x, pool: x_left(w, x), ..w.clone() })).collect();
                 }
+                // The board with its costs paid, before any answer of the
+                // resolution is chosen.
+                let paid_ways = ways.clone();
                 ways = ways.iter().flat_map(|w| resolution_ways(&ability.spec, w, full, P0)).collect();
                 let resolve = |w: World| {
                     // A target gone by the time it resolves: it does
@@ -7377,6 +7388,31 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     mtg_engine::cards::helpers::apply_transform(&mut held, id, &registry);
                     if let Some(why) = disagreement(&answered, &every_ending(&held, &registry, None), &registry) {
                         failures.push(format!("{at}, its source transformed in response: {why}"));
+                    }
+                }
+                // Its source exiled in response: the ability resolves all
+                // the same (CR 113.7a), reading the source as it last
+                // existed (608.2h), and what it does to the source itself
+                // does nothing. Not when the source paid for it by leaving.
+                if !ability.sacrifice_self && *sac != Some(id) {
+                    // Gone before the resolution's own answers are chosen
+                    // among what is left.
+                    let answered: Vec<World> = paid_ways.iter().cloned()
+                        .flat_map(|mut w| {
+                            w.leave(id, Dest::Exile);
+                            w.refresh();
+                            resolution_ways(&ability.spec, &w, full, P0)
+                        })
+                        .map(resolve)
+                        .collect();
+                    // One that asks its X first is on the stack only once
+                    // it is answered, and is left out.
+                    let mut held = engine::submit_action(&state, &act, &registry);
+                    if held.stack.len() == 1 && held.priority_player == Some(P0) {
+                        held.move_object(id, Zone::Exile, &registry);
+                        if let Some(why) = disagreement(&answered, &every_ending(&held, &registry, None), &registry) {
+                            failures.push(format!("{at}, its source exiled in response: {why}"));
+                        }
                     }
                 }
                 // Played on into the opponent's turn, where what lasted
