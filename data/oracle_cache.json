@@ -1187,6 +1187,7 @@
       "oracle_text": "When Garruk has two or fewer loyalty counters on him, transform him.\n0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.\n0: Create a 2/2 green Wolf creature token.",
       "power": null,
       "toughness": null,
+      "loyalty": "3",
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed?utm_source=api",
       "cached_at": "2026-04-01",
@@ -1798,6 +1799,7 @@
       "oracle_text": "+1: Each player discards a card.\n−2: Target player sacrifices a creature.\n−6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.",
       "power": null,
       "toughness": null,
+      "loyalty": "3",
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/105/liliana-of-the-veil?utm_source=api",
       "cached_at": "2026-04-01"

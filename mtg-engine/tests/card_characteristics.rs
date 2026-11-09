@@ -3,10 +3,11 @@
 //! For each card in the registry, each face's `CardData` is compared field by
 //! field with that face's record in `data/oracle_cache.json` (Scryfall's
 //! Oracle data): name, mana cost, colour indicator, supertypes, card types,
-//! subtypes, power and toughness, rules text (reminder text aside), the
-//! keyword abilities the engine models that the text prints on a line of
-//! their own, and the flashback cost the text prints (CR 109.3, 202.1, 204,
-//! 205, 207.2a, 208, 702.34a, 712.8).
+//! subtypes, power and toughness, a planeswalker's printed loyalty, rules
+//! text (reminder text aside), the keyword abilities the engine models that
+//! the text prints on a line of their own, and the flashback cost the text
+//! prints (CR 109.3, 202.1, 204, 205, 207.2a, 208, 209.1, 306.5b, 702.34a,
+//! 712.8).
 //!
 //! Both sides are finite and fixed, and every card is compared, so this is
 //! a complete check of every card's characteristics, not a sample: a card
@@ -27,6 +28,8 @@ struct Face {
     oracle_text: String,
     power: Option<String>,
     toughness: Option<String>,
+    /// A planeswalker's printed loyalty (CR 209.1).
+    loyalty: Option<String>,
     color_indicator: Vec<String>,
 }
 
@@ -39,6 +42,7 @@ fn face(v: &serde_json::Value, name: &str) -> Face {
         oracle_text: s("oracle_text").unwrap_or_default(),
         power: s("power"),
         toughness: s("toughness"),
+        loyalty: s("loyalty"),
         color_indicator: v["color_indicator"].as_array().into_iter().flatten()
             .filter_map(|c| c.as_str().map(str::to_string))
             .collect(),
@@ -215,6 +219,15 @@ fn every_card_prints_what_its_oracle_record_prints() {
         compared += 1;
         for why in disagreements(&behavior.card_data(), front, true) {
             failures.push(format!("{name}: {why}"));
+        }
+        // The loyalty it enters with is the loyalty printed on its front
+        // face (CR 306.5b); a back face prints none (712.8).
+        let printed = front.loyalty.as_deref().map(|l| l.parse::<u32>().expect("a number"));
+        if behavior.starting_loyalty() != printed {
+            failures.push(format!("{name}: loyalty: the engine has {:?}, the Oracle {printed:?}", behavior.starting_loyalty()));
+        }
+        if let Some(l) = back.as_ref().and_then(|b| b.loyalty.as_ref()) {
+            failures.push(format!("{name}'s back face: prints loyalty {l}, which nothing reads"));
         }
         match (behavior.back_face_data(), back) {
             (Some(data), Some(face)) => {
