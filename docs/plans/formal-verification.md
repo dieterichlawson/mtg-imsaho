@@ -2138,6 +2138,27 @@ so each night starts from everything the last one reached.
 
 Each has a regression test that fails without its fix.
 
+Known and not fixed:
+
+- An ability's source that left the battlefield and came back before the
+  ability resolved, reachable only through a return at instant speed
+  (Grimoire of the Dead's activation, Moldgraf Monstrosity's random
+  return), is a new object (CR 400.7), and what the ability does
+  to "this creature" should do nothing; the engine does it to the object
+  that came back, whose id is the old one's. Mikaeus, the Lunarch's
+  "{T}: put a +1/+1 counter on Mikaeus", with Mikaeus sacrificed and
+  returned in response, puts the counter on the Mikaeus that returned.
+  Defect 36's record of each target's zone changes is the pattern a fix
+  would follow, stamped for the source as `source_transforms` is (defect
+  7); what it would have to reach is every effect a card applies to its
+  own source, counters and until-end-of-turn effects among them, most of
+  them written by the cards themselves.
+- A death watcher's face is read off the dying object after its move has
+  turned it face up: a Thraben Militia dying beside another creature, in
+  any combat, raises Thraben Sentry's trigger, which then does nothing
+  but sit on the stack (defect 33). No back face in the pool watches
+  deaths, so no trigger is lost.
+
 ### What the proofs catch that the tests do not
 
 `reports/verification-mutants.md`: 29 mutants of the payment and combat
