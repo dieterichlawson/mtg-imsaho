@@ -7155,19 +7155,29 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     Some(died) => !died || a.morbid,
                     None => a.spec.slots.iter().any(|s| matches!(s, Slot::Any | Slot::PlayerOrPlaneswalker)),
                 })
-                .map(move |b| (a, c, k.clone(), b)));
-        for (ability, count, already, board_of) in variants {
+                .map(move |b| (a, c, k.clone(), b)))
+            // And with its source its controller's but the other player's
+            // card, as after Traitorous Blood: its "you" is the player who
+            // activated it (CR 602.2a), and what leaves goes to its owner's
+            // graveyard or hand (108.3, 404.2).
+            .flat_map(|(a, c, k, b)| [false, true].map(move |borrowed| (a, c, k.clone(), b, borrowed)));
+        for (ability, count, already, board_of, borrowed) in variants {
             checked += 1;
-            let name = format!("{}'s ability {}{}{}{}", card.name, ability.index,
+            let name = format!("{}'s ability {}{}{}{}{}", card.name, ability.index,
                 count.map_or(String::new(), |c| format!(" with {c} of its controller's")),
                 already.as_ref().map_or(String::new(), |(kind, n)| format!(" with {n} {kind} counters on it")),
-                match board_of { Some(true) => " after a death", None => " beside planeswalkers", Some(false) => "" });
+                match board_of { Some(true) => " after a death", None => " beside planeswalkers", Some(false) => "" },
+                if borrowed { ", its owner the other player" } else { "" });
             let (mut state, mut world) = match board_of {
                 Some(true) => board_after_a_death(&registry, &cache),
                 None => board_with_planeswalkers(&registry, &cache),
                 Some(false) => board(&registry, &cache),
             };
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            if borrowed {
+                state.get_object_mut(id).expect("just placed").owner = P1;
+                world.permanents.get_mut(&id).expect("just placed").owner = P1;
+            }
             // A 0/0 but for the counters it enters with (Mikaeus) is
             // placed with two, as placing it gives it none.
             if spec.enters_with_x_counters {
