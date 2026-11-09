@@ -817,6 +817,24 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   enters attacking attacks the player or the planeswalker, as its
   controller chooses (508.4b). This found defect 30: Creepy Doll flipped
   its coin for, and could destroy, a Garruk it damaged.
+- **Two attackers**: every two of a probe of each keyword and each
+  fighter whose combat text or statics act on combat (Rakish Heir,
+  Undead Alchemist, Wildblood Pack and the rest) attack together, both
+  unblocked, one blocked by a vanilla creature, a first striker or a
+  deathtoucher, and each blocked by one of its own (2,895 combats;
+  `scripts/prove.sh exhaustive` takes every two kinds of fighter, about
+  8,000). All their damage is dealt at once in each step, one
+  first-strike step shared (CR 510.2, 510.4), each attacker divided
+  among its own blockers, and what the damage sets off is seen as it is
+  dealt: a watcher the state-based actions take after the step still
+  sees it (603.2, 603.10). The reference was wrong twice before the
+  engine was: it looked for Rakish Heir after the actions had taken it,
+  and played the end of combat after a lethal attack had ended the game
+  (104.2a). Then the engine: defect 31, Undead Alchemist dying beside the
+  mill its own replacement made, and the milled creature card left where
+  it fell; and, with the reference reading what damage sets off as it is
+  dealt, defect 32 in the Aura fights: Curiosity's creature dying of the
+  step in which it damaged an opponent drew nothing.
 
 All 268 of the pool's instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and its two planeswalkers, and all agree.
@@ -827,8 +845,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 210
-mutants, 207 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 212
+mutants, 209 caught, one missed for want of a change of control between
 activation and resolution, two equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its
@@ -2078,6 +2096,8 @@ so each night starts from everything the last one reached.
 | 28 | a creature card that chooses what it enters as, returned with others at once (Grimoire of the Dead, Moldgraf Monstrosity), was asked once the others had entered, and offered them as copies, though Evil Twin's ruling allows only "a creature that's already on the battlefield" (CR 614.12b) | reading Grimoire of the Dead's return with an Evil Twin card in a graveyard into the `card_semantics` reference | an Evil Twin card in a graveyard that Grimoire of the Dead or Moldgraf Monstrosity returns from |
 | 29 | Grimoire of the Dead's "They're black Zombies" was never given to the card whose entry waited on that choice: the return moved on past it, and it entered, as itself or a copy, neither black nor a Zombie (CR 613.1d-e) | the same | as 28, for Grimoire of the Dead |
 | 30 | "Whenever this creature deals combat damage to a creature" was raised for combat damage to any object, a planeswalker among them: Creepy Doll attacking Garruk Relentless flipped its coin, and a won flip destroyed him (CR 510.1a-c) | the `card_semantics` reference's attacks on a planeswalker, whose Doll flips only for a creature it damages | Creepy Doll, the one card printing such a trigger, attacking an opponent's planeswalker and not blocked |
+| 31 | a creature card milled while Undead Alchemist was on the battlefield set off nothing when the state-based actions took the Alchemist after the same step: the collector looked for watchers on the battlefield once they were done, not as the card was milled, though the damage collector beside it had looked back (CR 603.2) | the `card_semantics` reference's two attackers in the exhaustive run: Makeshift Mauler and Undead Alchemist attacking, Typhoid Rats blocking the Alchemist, Moon Heron milled and left in the graveyard with no Zombie made | Undead Alchemist killed in the combat damage step in which another Zombie's damage is milled instead |
+| 32 | Curiosity's draw was not offered when the creature it enchants dealt damage to an opponent and died in the same step: its condition asked for the Aura on the battlefield when the triggers were collected, after the state-based actions had put it into the graveyard beside its creature (CR 603.10) | the `card_semantics` reference's Aura fights, once the reference read what combat damage sets off as it is dealt: Festerhide Boar with Curiosity trampling over Ambush Viper | a creature with Curiosity dying in the step in which it damages an opponent: a trampler, or one blocked by a first striker it also hits |
 
 Each has a regression test that fails without its fix.
 

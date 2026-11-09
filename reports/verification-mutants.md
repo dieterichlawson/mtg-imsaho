@@ -499,3 +499,31 @@ printed loyalty as well. And as a set of endings the piles cannot show
 who chose one: Liliana's controller may make any pile, so every pile is
 reachable whichever the target player picks; one division, the first
 permanent against the rest, is now played with each pile chosen.
+
+## The cards: two attackers — 2026-11-09
+
+The combat reference took one attacker; it takes a list, each with its
+blockers and what it attacks, and deals their damage together
+(`every_two_attackers_fight_together_as_the_rules_say`). Two mutants,
+two caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| watchers | a combat damage watcher must still be on the battlefield once the state-based actions are done (the engine) | the two-attacker test, 8 of 2,056, and the standing fights, 5 of 37,347 |
+| milled cards | a milled card's watcher must still be on the battlefield (the engine as it was: defect 31) | **only** the two-attacker test, 5 of 2,895, once Undead Alchemist joined its default pool |
+
+The reference was wrong twice before the engine was. It counted Rakish
+Heir's "whenever a Vampire you control deals combat damage to a player"
+after the state-based actions had taken a Heir blocked and killed in the
+same step, though the trigger is seen as the damage is dealt (CR 603.2);
+an Aura's draw and a Curse's counters were read the same way and are now
+read with it. And it played the end of combat after an attack had killed
+the defending player, removing Wildblood Pack's bonus from the attackers
+of a game that had already ended (104.2a). Then the sweep found the
+engine's own: defect 31, which the default run reaches only since Undead
+Alchemist and the attacking-creature anthems joined its pool. And reading
+the Aura's draw at damage time turned the Aura fights up a second, defect
+32: Curiosity on Festerhide Boar trampling over Ambush Viper drew nothing,
+the Aura asked for on the battlefield after it had followed the Boar into
+the graveyard. Both had passed every fight before: the reference was
+wrong the same way the engine was.
