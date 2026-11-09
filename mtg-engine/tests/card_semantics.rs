@@ -8969,7 +8969,23 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
 /// has: the questions they ask on its behalf. None for a card the grammar
 /// does not read whole, or a face it cannot look up by name.
 fn triggers_of(m: &Model) -> Option<Spec> {
-    let card = cached_oracle().get(m.name.as_deref()?)?;
+    thread_local! {
+        /// Each name read once: the exhaustive run fights a hundred
+        /// thousand combats over the same few dozen cards.
+        static READ_BY_NAME: std::cell::RefCell<BTreeMap<String, Option<Spec>>> = const { std::cell::RefCell::new(BTreeMap::new()) };
+    }
+    let name = m.name.as_deref()?;
+    if let Some(known) = READ_BY_NAME.with(|r| r.borrow().get(name).cloned()) {
+        return known;
+    }
+    let read = triggers_read(name);
+    READ_BY_NAME.with(|r| r.borrow_mut().insert(name.to_string(), read.clone()));
+    read
+}
+
+/// [`triggers_of`] for the card of `name`, read afresh.
+fn triggers_read(name: &str) -> Option<Spec> {
+    let card = cached_oracle().get(name)?;
     let spec = if card.has_type("Creature") && !card.type_line.contains("//") {
         read_creature(card)
     } else if card.has_type("Enchantment") {
