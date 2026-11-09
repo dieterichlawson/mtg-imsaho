@@ -18,12 +18,17 @@ each configuration takes; the mean deck game win rate of the cards taken
 circular yardstick, since the guide is written from those numbers); and
 the cards each guide takes more and less often. The changed picks go to
 `DIR/changed.json`.
+
+A pick the runner substituted (`"fallback": true`: the seat's answer could
+not be used) is no answer, and its position is left out and named.
 """
 import collections
 import json
 import os
 import re
 import sys
+
+from answered import answered
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 D = sys.argv[1]
@@ -43,13 +48,23 @@ removal = listed(r"1\. Cheap removal: (.*?)\. Take")
 skip = listed(r"Skip: (.*?)\. Delver")
 skip = {re.sub(r"^and ", "", s) for s in skip} - {"Cloistered Youth over a flier", "Makeshift Mauler as a second copy"}
 
-ans = {}
+ans, substituted = {}, {}
 for c in CONFIGS:
-    ans[c] = {}
+    ans[c], substituted[c] = {}, set()
     for l in open(f"{D}/{c}.jsonl"):
         r = json.loads(l)
-        if r.get("action"):
+        if answered(r):
             ans[c][int(r["position"])] = r["action"]
+        elif r.get("fallback"):
+            substituted[c].add(int(r["position"]))
+# A pick the runner substituted is not the seat's answer: the position is
+# left out unless a later row (a resumed run asked it again) answered it.
+for c in CONFIGS:
+    substituted[c] -= set(ans[c])
+if any(substituted.values()):
+    print("left out, the runner substituted the pick (no answer from the seat): "
+          + "; ".join(f"{c} {len(s)} ({', '.join(f'{i:04d}' for i in sorted(s))})"
+                      for c, s in substituted.items() if s))
 
 ids = sorted(set.intersection(*(set(a) for a in ans.values())))
 settled = [i for i in ids if ans["none-a"][i] == ans["none-b"][i]]

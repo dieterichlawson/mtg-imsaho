@@ -279,7 +279,8 @@ export function autoPassNotice(declined, stillOn) {
         return `Auto-pass on — it declined ${what(declined)} at that prompt, and passes to your next Main Phase 1. Press f again to turn it off.`;
     if (declined === 0)
         return null;
-    return `Auto-pass has stopped. When it was turned on it declined ${what(declined)}.`;
+    // Said after "Auto-pass off: <why>", so it does not say it stopped again (#973).
+    return `When it was turned on it declined ${what(declined)}.`;
 }
 /**
  * The letter a colour or mana type is written with: W U B R G, and C for

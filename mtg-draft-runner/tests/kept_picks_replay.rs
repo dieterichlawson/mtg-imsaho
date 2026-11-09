@@ -60,6 +60,10 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
     for r in &replayed {
         assert_eq!(r["chosen"], r["live"], "position {} was asked as another prompt: {r}", r["id"]);
         assert_eq!(r["usage"]["calls"], 1, "one call a pick: {r}");
+        // Whether the live pick was the runner's substitution goes with it,
+        // so a substituted live pick is not read as the seat's (#1010's review).
+        // The stub answers every pick, so none was substituted live.
+        assert_eq!(r["live_substituted"], false, "{r}");
     }
     assert!(!String::from_utf8_lossy(&replay.stderr).contains("not the live one"),
         "the same set file says nothing: {}", String::from_utf8_lossy(&replay.stderr));

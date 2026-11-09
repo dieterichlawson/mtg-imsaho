@@ -13,8 +13,9 @@ game did (`save_files.rs` pins that) — and stops. One JSON line per
 position and sample goes to `<out>/<name>.jsonl`: the action chosen, the
 tokens every call of the decision recorded (a cast and its target are two
 calls), and the bytes of the system prompt and first prompt. A position
-already in the file is skipped, so an interrupted run picks up where it
-stopped. `compare.py` reads the files. A position the runner says it
+already answered in the file is skipped, so an interrupted run picks up
+where it stopped; one that failed or that the harness answered in the
+seat's place (`"fallback": true`) is asked again. `compare.py` reads the files. A position the runner says it
 resumed under another system prompt than the live one (another
 MTG_LLM_HISTORY, MTG_CLAUDE_CODE_ANSWERS or MTG_LLM_PASS_UNTIL) carries
 `unlike_live` in its row, and the run ends with a WARN counting them.
@@ -32,6 +33,7 @@ import subprocess
 import sys
 
 import runstamp
+from answered import answered
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # What mtg-runner --resume says of a position whose system prompt it cannot
@@ -70,6 +72,22 @@ def usage(log):
     return total
 
 
+# The lines a game seat logs when the action sent is not the seat's own:
+# `log_rejected` (MALFORMED, or NO_ANSWER when the call itself failed) is
+# the harness's fallback, and a target-set or object-set VALIDATION is an
+# answer it trimmed or filled. An exile-choice VALIDATION sends the seat's
+# answer as given (the engine cancels the cast), and BLOCKER_VALIDATION and
+# API_ERROR are said per attempt, where a re-ask or a retry can still get
+# the seat's own answer; when none does, log_rejected says so (#1010's
+# review: NO_ANSWER was missed, and those were not).
+SUBSTITUTED = re.compile(r"\t(MALFORMED|NO_ANSWER) \[|\tVALIDATION \[[^\]]*\]\t(target-set|object-set):")
+
+
+def substituted(log):
+    """Whether the decision logged in `log` was answered by the harness."""
+    return bool(SUBSTITUTED.search(log))
+
+
 def run_one(args, position, sample, logdir):
     base = os.path.basename(position)[: -len(".save")]
     log = os.path.join(logdir, f"{base}.s{sample}.log")
@@ -104,7 +122,7 @@ def run_one(args, position, sample, logdir):
         "system_bytes": system_bytes(text),
         "prompt_bytes": len(prompts[0].encode()) if prompts else None,
         "prompts": len(prompts),
-        "fallback": bool(re.search(r"\t(MALFORMED|VALIDATION|BLOCKER_VALIDATION|API_ERROR)", text)),
+        "fallback": substituted(text),
         **({"unlike_live": unlike} if unlike else {}),
     }
 
@@ -142,7 +160,8 @@ def main():
     if os.path.exists(result_path):
         for line in open(result_path):
             r = json.loads(line)
-            if r.get("action") is not None:
+            # A substituted answer is asked again, as a failed call is (#1010).
+            if answered(r):
                 done.add((r["position"], r["sample"]))
     todo = [(p, s) for p in positions for s in range(args.samples)
             if (os.path.basename(p)[:-5], s) not in done]

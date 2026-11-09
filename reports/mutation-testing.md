@@ -1396,3 +1396,29 @@ harness added there is not filed either.
   pips. When the hand needs the colour, the pips key already holds the
   coloured source back. What is left is a choice among sources nothing
   else needs, and every such order funds X correctly.
+
+## 2026-11-07 run 42383051542 (issues #1005, #1008)
+
+### Shard 7 (issue #1008): `invariants/stack.rs` `check_core`, killed
+
+`replace && with || in check_core` is line 258, the `resolving_ability`
+clause (`awaiting_action.is_none() && result.is_none()`). Under `||` the
+checker reports every ability that is resolving while it asks its question,
+the very case #833 shows it for. That makes a false report at every trigger or
+ability that asks something, which aborts a fuzz game and files an issue. It is an
+oracle clause (bucket 3 of "Fix these"). No test had set `resolving_ability`
+at all. Killed by
+`invariant_families::a_resolving_ability_is_flagged_only_without_its_question`.
+That test is quiet over a pending question, and flags the same state with none.
+
+### Shard 1 (issue #1005): `GameState::resolving_source_name`, killed
+
+`replace match guard *source_id == id with true`: every object named while
+an activated ability resolves would take that ability's stack name. Garruk's
+search would call the creature it found "Garruk, the Veil-Cursed (#n)".
+The three callers today pass the ability's own source, so no game shows it.
+The function's contract does say that only that source is renamed, though, and a
+prompt headed with the wrong card is what #980 was. Killed by one assertion
+of the contract in `cards_transforming_permanents::garruks_ability_keeps_the_veil_cursed_name_after_his_cost_kills_him`:
+while the ability resolves, another object is named as itself. A correct
+rewrite of the function still passes.

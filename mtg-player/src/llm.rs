@@ -5065,7 +5065,13 @@ impl LlmPlayer {
             view, options, min, max, description, verb, cancel) else {
             return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
         };
-        chosen.truncate(max);
+        // Trimmed as target-set trims, and said as it is: a replay reads this
+        // line as an answer the harness changed (#1010's review).
+        if chosen.len() > max {
+            self.log("VALIDATION", &format!(
+                "object-set: chose {} of at most {max}; keeping the first {max}", chosen.len()));
+            chosen.truncate(max);
+        }
         if chosen.len() < min {
             self.log("VALIDATION", &format!(
                 "object-set: chose {} but required at least {min}; filling from the options",
@@ -8918,6 +8924,42 @@ pub(crate) mod tests {
                 assert_eq!(cancelled, cancel && cancellable, "{name}, cancel = {cancel}: {chosen:?}");
             }
         }
+    }
+
+    /// #1010's review: an object set answered with more than it holds is
+    /// trimmed to its first `max`, as a target set is, and the trim is
+    /// said. A replay reads the target-set/object-set VALIDATION line as an
+    /// answer the harness changed (`scripts/decision-eval/replay.py`), and
+    /// the object set trimmed without a word, so the trimmed answer was
+    /// scored as the seat's own.
+    #[test]
+    fn an_object_set_trimmed_to_its_max_is_logged() {
+        use mtg_engine::actions::ResolvedChoice;
+        use mtg_engine::state::{PendingEffect, ResolutionChoiceKind};
+        let dir = std::env::temp_dir().join(format!("mtg-object-set-trim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::game_log::init(dir.join("game.log").to_str().unwrap()).unwrap();
+        crate::game_log::buffer_here();
+        let legal = mtg_engine::engine::LegalActions {
+            resolution_prompt: Some(ResolutionChoiceKind::ChooseObjectSet {
+                description: "choose a card".to_string(),
+                options: vec![ObjectId(501), ObjectId(502)], min: 0, max: 1,
+                effect: PendingEffect::Destroy { source_name: "Curse".to_string() },
+            }),
+            ..x_funding_offer()
+        };
+        let mut p = LlmPlayer::for_prompt_tests("Seat-trim").with_pass_until(false);
+        p.backend = Box::new(SchemaRecorder {
+            reply: serde_json::json!({"thoughts": "t", "indices": [0, 1]}),
+            schemas: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+        });
+        let chosen = p.choose_action(&empty_view(), &legal);
+        let log = crate::game_log::take_buffered();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(matches!(&chosen, Action::ResolveChoice { choice: ResolvedChoice::ChosenObjectSet(ids) }
+            if ids == &vec![ObjectId(501)]), "trimmed to the first one: {chosen:?}");
+        assert!(log.contains("\tVALIDATION [Seat-trim]\tobject-set: chose 2 of at most 1; keeping the first 1"),
+            "the trim is said:\n{log}");
     }
 
     /// #990: a cancel with every list left empty is the answer a seat

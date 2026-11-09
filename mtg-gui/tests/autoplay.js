@@ -123,7 +123,7 @@ function snapshot(page) {
           seq: m.decision.seq, kind, mode: ui && ui.mode, title: ui && ui.title, turn: m.view.turn_number, step: m.view.step,
           options: clickable(["perm", "hand", "player", "stack", "card"]), rows: clickable(["row"]), buttons: clickable(["button"]),
           popover: !!m.popover, min: ui && ui.min, max: ui && ui.max, marked: ui ? ui.marked.length : 0, canPass: !!(ui && ui.canPass),
-          verbs: ui && ui.verbs ? [...ui.verbs.keys()] : [], hasCancel: !!(ui && ui.onCancel), maxX: ui && ui.mode === "number" ? ui.max : null,
+          verbs: ui && ui.verbs ? [...ui.verbs.keys()] : [], hasCancel: !!(ui && ui.onCancel), maxX: ui && ui.mode === "number" ? ui.max : null, minX: ui && ui.mode === "number" ? (ui.min ?? 0) : null,
           notice: m.notice, lastSent: m.lastSent ? JSON.stringify(m.lastSent.action) : null,
         };
       });
@@ -232,7 +232,10 @@ async function step(page, s) {
       return true;
     }
     case "number": {
-      const x = Math.floor(rnd() * ((s.maxX || 0) + 1));
+      // Within the widget's own range: below a damage amount's lethal
+      // minimum is refused, and three refusals in a row read as stuck.
+      const lo = s.minX || 0;
+      const x = lo + Math.floor(rnd() * Math.max(1, (s.maxX || 0) - lo + 1));
       await page.keyboard.type(String(x));
       await page.keyboard.press("Enter");
       return true;

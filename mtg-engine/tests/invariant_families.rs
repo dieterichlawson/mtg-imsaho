@@ -296,6 +296,29 @@ fn trigger_queue_and_resolution_bookkeeping_are_checked() {
     flags_core(&s, &reg, "survived past a trigger's hook");
 }
 
+/// CR 608.2n (#833): the ability resolving now is shown while it asks its
+/// question, and only then. The clause has to stay quiet over the question
+/// it exists for: a resolving ability with its choice pending is the normal
+/// case, and a report there would abort a fuzz game at every trigger that asks.
+#[test]
+fn a_resolving_ability_is_flagged_only_without_its_question() {
+    let (mut state, reg) = base();
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let trigger = mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(bear, state.get_object(bear).unwrap().card_id, P0, "t"),
+        mtg_engine::triggers::TriggerEvent::SelfEntered,
+    );
+    let mut s = state.clone();
+    s.resolving_ability = Some(mtg_engine::state::StackEntry::Trigger(trigger));
+    s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: bear,
+        choice: ResolutionChoiceKind::YesNo { description: "d".into(), source_card: bear },
+    });
+    quiet_core_about(&as_collected(&s), &reg, "resolving_ability set with no choice pending");
+    s.awaiting_action = None;
+    flags_core(&s, &reg, "resolving_ability set with no choice pending");
+}
+
 #[test]
 fn a_cast_in_progress_is_checked_against_its_prompt_and_zones() {
     let (mut state, reg) = base();
