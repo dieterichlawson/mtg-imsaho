@@ -10639,6 +10639,75 @@ fn every_double_block_ends_as_the_rules_say() {
     assert!(failures.is_empty(), "{} of {combats} double blocks disagree with the rules:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// The double blocks again with each Equipment and Aura the grammar reads
+/// on the attacker or on the first of its blockers: a probe of each
+/// keyword attacking, blocked by every two of a vanilla creature, a first
+/// striker and a deathtoucher, wherever what stands by changes a
+/// combatant or watches the fight. What it gives (first strike, lifelink,
+/// a bonus to a Human, "can't be blocked by"), what it does as its
+/// creature fights (a stake, a coin) and what it does once its creature
+/// dies (704.5m-n) must reach both blockers and every division between
+/// them, as the reference deals it.
+#[test]
+fn every_double_block_beside_what_stands_by() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
+    let every = std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some();
+    let attackers = if every { kinds(&fighters) } else { probes(&fighters).expect("probes when not every fight") };
+    let mut pool: Vec<(&Printed, &Spec)> = Vec::new();
+    for k in [None, Some(Keyword::FirstStrike), Some(Keyword::Deathtouch)] {
+        pool.extend(fighters.iter().copied().find(|(c, s)| s.statics.is_empty() && s.combat == CombatText::default()
+            && k.map_or(c.keywords().is_empty(), |k| c.keywords() == [k])));
+    }
+    let pairs: Vec<[(&Printed, &Spec); 2]> = pool.iter().enumerate()
+        .flat_map(|(i, &x)| pool[i..].iter().map(move |&y| [x, y]))
+        .collect();
+    let standing: Vec<(&Printed, &Spec)> = cards.iter()
+        .filter(|(c, s)| (c.type_line.contains("Equipment") || (s.enchants && s.slots.first() != Some(&Slot::Player)))
+            && (!s.statics.is_empty() || s.combat != CombatText::default()))
+        .map(|(c, s)| (c, s))
+        .collect();
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for &by in &standing {
+        for side in [P0, P1] {
+            for &attacker in &attackers {
+                for &[first, second] in &pairs {
+                    let (state, mut world, a, b, s) = arena_of(&registry, attacker, &[first, second], Some((by, side)));
+                    let id = s.expect("standing by");
+                    world.state_based_actions();
+                    if !world.permanents.contains_key(&a) || b.iter().any(|x| !world.permanents.contains_key(x)) {
+                        continue;
+                    }
+                    let mut without = world.clone();
+                    without.permanents.remove(&id);
+                    without.refresh();
+                    let changed = |x: ObjectId| {
+                        let (m, n) = (&world.permanents[&x], &without.permanents[&x]);
+                        m.boost != n.boost || m.granted != n.granted || m.restricted != n.restricted
+                            || m.granted_not_blocked_by != n.granted_not_blocked_by
+                    };
+                    let watches = by.1.combat != CombatText::default()
+                        && matches!(world.permanents[&id].attached, Some(Target::Object(o)) if o == a || b.contains(&o));
+                    if !(changed(a) || b.iter().copied().any(changed) || watches) {
+                        continue;
+                    }
+                    let name = format!("{} attacking, {} and {} blocking, {} on player {}'s", attacker.0.name, first.0.name, second.0.name, by.0.name, side.0);
+                    let (n, why) = double_block(&registry, &state, &world, a, &b, &name);
+                    combats += n;
+                    failures.extend(why);
+                }
+            }
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} double blocks beside an Equipment or Aura disagree with the rules:\n  {}", failures.len(), failures.join("\n  "));
+    println!("{combats} double blocks beside an Equipment or Aura agree with the rules");
+}
+
 /// [`divisions`] by hand, as CR 510.1c-d and 702.19b-c state the rule: 3
 /// damage over two blockers of toughness 2 is all to the first, or lethal
 /// to it and the rest to the second; nothing reaches the player without
