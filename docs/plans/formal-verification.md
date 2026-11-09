@@ -1110,7 +1110,7 @@ a noninterference property, checked two ways.
   decision in 32 to them, at 7% (15.0 s), inside the nightly shard's 90
   minutes; a leak that shows at all shows on most decisions of a game,
   and defect 37 undone is flagged at the 32nd. As it ships: 553 games,
-  87,828 decisions, no failure.
+  87,828 decisions, then 1,818 games, 301,531 decisions, no failure.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
