@@ -1096,7 +1096,9 @@ a noninterference property, checked two ways.
   more, 92,919 decisions, with both: no failure. With defect 37's fix
   undone, the first decision of the first game is flagged, and a view
   leaking the other's first card through its hand size is flagged at the
-  fourth.
+  fourth. What the acting player is offered, with no question pending,
+  is held to the same two changes: 553 games, 93,052 decisions, no
+  failure; a menu naming the other's top card is flagged at the fourth.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
