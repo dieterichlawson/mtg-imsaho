@@ -273,7 +273,9 @@ enum Watched {
 /// "Whenever another creature dies" (CR 603.6c, 603.10a): a creature
 /// dying raises a watcher's ability, under its controller, exactly when
 /// the watcher was on the battlefield as it died (on it still, or gone
-/// from it in the same event) and its condition holds; never the dying
+/// from it in the same event, under the controller it had then, either
+/// player and not only its owner: a stolen Falkenrath Noble's was given to
+/// its owner, CR 603.3a) and its condition holds; never the dying
 /// creature's own watching ability. The dying creature a watcher itself,
 /// either player's; the other watcher either player's, where `was` says,
 /// a constant in each harness: left to the solver, with the event's batch
@@ -284,7 +286,13 @@ fn another_dying(was: Watched) {
     state.active_player = anyone();
     let on = was == Watched::OnTheBattlefield;
     let watcher = state.create_object(cards[0], anyone(), if on { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
-    let last_controller = state.get_object(watcher).expect("just created").controller;
+    let last_controller = if was == Watched::DiedWithIt {
+        let stolen_or_not = anyone();
+        state.get_object_mut(watcher).expect("just created").last_controller = Some(stolen_or_not);
+        stolen_or_not
+    } else {
+        state.get_object(watcher).expect("just created").controller
+    };
     let controller = anyone();
     let dead = state.create_object(cards[0], controller, Zone::Graveyard, Some(2), Some(2));
     let event = GameEvent::CreatureDied {

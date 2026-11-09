@@ -770,6 +770,33 @@ fn falkenrath_noble_triggers_on_opponent_creature_death() {
         "Falkenrath Noble should drain opponent when any creature dies");
 }
 
+/// A Falkenrath Noble its owner's opponent has taken, dying beside another
+/// creature: both its triggers are its controller's as it died (CR 603.3a,
+/// 608.2g), the one for its own death and the one for the other's. The
+/// collector gave the second to the Noble's owner, its `controller` reset
+/// by the move, so the owner chose the target and gained the life.
+#[test]
+fn a_stolen_falkenrath_noble_dying_beside_a_creature_triggers_for_its_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P1);
+    state.get_object_mut(noble).unwrap().controller = P0;
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.get_object_mut(noble).unwrap().damage_marked = 2;
+    state.get_object_mut(bears).unwrap().damage_marked = 2;
+    check_state_based_actions(&mut state, &reg);
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    let noble_triggers: Vec<_> = state.pending_trigger_pushes_ap.iter().chain(&state.pending_trigger_pushes_nap)
+        .filter(|t| t.source.id == noble)
+        .collect();
+    assert_eq!(noble_triggers.len(), 2, "one for each death");
+    assert!(noble_triggers.iter().all(|t| t.source.controller == P0),
+        "both are the controller's as it died: {:?}", noble_triggers.iter().map(|t| t.source.controller).collect::<Vec<_>>());
+}
+
 /// Falkenrath Noble SHOULD trigger when your own creature dies.
 #[test]
 fn falkenrath_noble_triggers_on_own_creature_death() {
