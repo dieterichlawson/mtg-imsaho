@@ -1150,7 +1150,15 @@ a noninterference property, checked two ways.
   shares its name with one in view is seen by id only. Both passes cost
   4 to 5% of a game (30 games in 15.8 to 16.0 s against 15.2), so they
   are held at every decision. 608 games, 101,128 decisions, with the
-  pass by id, then 608 games, 96,757 decisions, with both: no failure.
+  pass by id, then 608 games, 96,757 decisions, with both, then the
+  1,818 games of the campaign above, 301,531 decisions: no failure. The
+  check is the engine's (`invariants::shared_log`), so the libFuzzer
+  target holds every input to it as the runner holds every game, and
+  `mtg-engine/tests/invariant_shared_log.rs` holds it on boards of its
+  own: a card drawn and named, by id and by name, kept `Private` or
+  revealed; a look named by name, and a name a card in view bears; a
+  quoted name and one inside a longer name in view; a card seen and
+  returned to its owner's hand; a cast announced and cancelled.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
