@@ -4,8 +4,8 @@ Each loyalty ability is tried with its planeswalker the other player's
 card, and each question the engine asks on a card's behalf is held to
 the player its text has answer it (`choosers` in
 `mtg-engine/tests/card_semantics.rs`): as a set, the endings hide who
-chose. Fourteen mutants, each moving one question, or one "you", to the
-wrong player.
+chose. Sixteen mutants, each moving one question, or one "you", to the
+wrong player or the wrong turn.
 
 | family | mutant | caught by |
 |---|---|---|
@@ -23,6 +23,8 @@ wrong player.
 | trigger order | the active player orders the other player's triggers (the engine) | the double-block test, 75 of 1,092, and the equipment and aura tests: each player orders their own (CR 603.3b) |
 | replacements | which of two damage replacements applies is chosen by the damage source's controller, not the player dealt it (the engine) | the aura test, 9 of 37,347 combats (Undead Alchemist beside Ghostly Possession), and the equipment test (CR 616.1) |
 | trigger targets | a trigger's target is chosen by the other player as it goes on the stack (the engine) | the spell, upkeep and end-step tests (Bloodgift Demon, Reaper from the Abyss): its controller chooses (CR 603.3d) |
+| turn order | Divine Reckoning asks the other player to keep a creature before the active player (the engine) | the spell test, 2 of 5,269 casts (CR 101.4) |
+| turn order | Liliana of the Veil's +1 asks the other player to discard before the active player (the engine) | the loyalty test, 8 of 44, once the other player holds two cards; before, nothing, their discard forced |
 
 The first round missed three, and each became a fix in the reference.
 Graveyard Shovel's and Tribute to Hunger's choices asked of the caster
