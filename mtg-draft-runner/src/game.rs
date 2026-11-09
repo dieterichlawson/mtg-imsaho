@@ -21,6 +21,12 @@ use mtg_player::Player;
 use crate::draft_log;
 use crate::llm_client;
 
+/// Whether the game loop shows these seats every pass it would otherwise
+/// make for them: when one of them is a browser page (#974).
+fn watches_every_submit(a: &GameSeat, b: &GameSeat) -> bool {
+    matches!(a, GameSeat::Gui(_)) || matches!(b, GameSeat::Gui(_))
+}
+
 /// A seat at a tournament game.
 pub enum GameSeat {
     Llm(LlmPlayer),
@@ -457,6 +463,12 @@ fn play_game(
     };
 
     let mut state = engine::setup_game(&config, registry);
+    // A browser seat decides for itself whether to stop at a priority with
+    // nothing to do (the page's `s`), so it has to be shown those passes,
+    // as `mtg-runner` shows them (#645). Left to the loop they were passed
+    // before the seat was asked, and `s` had nothing to stop at in a hosted
+    // match (#974). An LLM seat answers an observed pass itself.
+    state.observe_every_submit = watches_every_submit(p1, p2);
 
     // Re-initialize conversations for this game (fresh context per game).
     // The context is fresh, so whatever the seat is to know about the match
@@ -872,5 +884,27 @@ mod shown_cards_tests {
         let twin = state.create_object(outcasts, PlayerId(0), Zone::Battlefield, Some(4), Some(4));
         state.get_object_mut(twin).unwrap().copy_grantor = registry.get_id_by_name("Evil Twin");
         assert_eq!(shown_cards(&state, &registry)[0], vec!["Evil Twin".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod watched_passes_tests {
+    use super::{watches_every_submit, GameSeat};
+
+    /// #974: a hosted match with a browser seat shows it the passes the
+    /// loop would make itself, so the page's `s` has something to stop at;
+    /// a match of model seats does not, so nothing is spent on them.
+    #[test]
+    fn a_browser_seat_is_shown_every_pass_and_model_seats_are_not() {
+        std::env::set_var(mtg_player::gui::WEB_DIR_ENV,
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui"));
+        if std::env::var("ANTHROPIC_API_KEY").is_err() {
+            std::env::set_var("ANTHROPIC_API_KEY", "dummy");
+        }
+        let gui = || GameSeat::Gui(mtg_player::gui::GuiPlayer::new("gui", Some(0)).expect("the seat binds a port"));
+        let llm = || GameSeat::Llm(mtg_player::llm::LlmPlayer::new("llm"));
+        assert!(watches_every_submit(&gui(), &llm()));
+        assert!(watches_every_submit(&llm(), &gui()));
+        assert!(!watches_every_submit(&llm(), &llm()));
     }
 }
