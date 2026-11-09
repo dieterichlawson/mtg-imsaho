@@ -6533,6 +6533,31 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                 trouble = Some(format!("the engine asked p{} the {kind} of p{}'s attack", player.0, s.active_player.0));
                 return Action::AbandonGame;
             }
+            // Triggers that trigger together go on the stack the active
+            // player's first, each player ordering their own (CR 101.4,
+            // 603.3b).
+            if let ResolutionChoiceKind::ChooseTriggerOrder { ap_queue, indices, .. } = prompt {
+                let queue = if *ap_queue { &s.pending_trigger_pushes_ap } else { &s.pending_trigger_pushes_nap };
+                let whose = if *ap_queue { s.active_player } else { s.opponent(s.active_player) };
+                if *player != whose || indices.iter().any(|&i| queue.get(i).is_none_or(|t| t.source.controller != *player)) {
+                    trouble = Some(format!("the engine asked p{} to order triggers of the {} queue, not all theirs",
+                        player.0, if *ap_queue { "active player's" } else { "other player's" }));
+                    return Action::AbandonGame;
+                }
+            }
+            // Which of two replacements applies to damage is the affected
+            // player's choice, or the affected permanent's controller's
+            // (CR 616.1).
+            if let ResolutionChoiceKind::ChooseDamageEffect { target, .. } = prompt {
+                let affected = match target {
+                    mtg_engine::events::DamageTarget::Player(p) => Some(*p),
+                    mtg_engine::events::DamageTarget::Object(id) => s.get_object(*id).map(|o| o.controller),
+                };
+                if affected != Some(*player) {
+                    trouble = Some(format!("the engine asked p{} which replacement applies to damage dealt to {target:?}", player.0));
+                    return Action::AbandonGame;
+                }
+            }
             ASKED.with(|a| a.borrow_mut().push(Question { kind, player: *player, source: *source }));
         }
         match &legal.resolution_prompt {
