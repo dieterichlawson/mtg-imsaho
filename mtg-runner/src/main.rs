@@ -407,10 +407,12 @@ fn every_view(state: &GameState, registry: &CardRegistry) -> Vec<serde_json::Val
 /// And what a player is shown of the other's hand: its size alone (CR
 /// 402.3). The cards of each other player's hand dealt anew among its
 /// objects (each object taking the next one's card), the viewer's view
-/// must be the same. Not while a question is pending, which may name the
-/// cards of a hand to the player it reveals them to (Night Terrors).
+/// must be the same. Not while a resolution's question is pending, which
+/// may name the cards of a hand to the player it reveals them to (Night
+/// Terrors); a mulligan, a declaration or a discard to hand size is held
+/// to it.
 fn views_hide_other_hands(state: &GameState, registry: &CardRegistry) -> Vec<String> {
-    if state.awaiting_action.is_some() {
+    if matches!(state.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. })) {
         return Vec::new();
     }
     let seen = every_view(state, registry);
@@ -440,13 +442,13 @@ fn views_hide_other_hands(state: &GameState, registry: &CardRegistry) -> Vec<Str
     out
 }
 
-/// What a player is offered at a decision with no question pending — the
+/// What a player is offered at a decision with no resolution's question pending — the
 /// spells, abilities, targets and costs on their menu — must no more read
 /// what they cannot see than their view does: the same with every library
 /// reversed (CR 401.2), and with each other player's hand dealt anew among
 /// its objects (402.3).
 fn offers_hide_what_is_hidden(state: &GameState, acting: PlayerId, registry: &CardRegistry) -> Vec<String> {
-    if state.awaiting_action.is_some() {
+    if matches!(state.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. })) {
         return Vec::new();
     }
     // Computed afresh rather than taken from the seat, which may have been
