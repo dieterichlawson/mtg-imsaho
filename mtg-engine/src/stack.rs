@@ -392,27 +392,15 @@ pub(crate) fn still_the_object(state: &GameState, target: &Target, recorded: &[u
 
 /// Resolve a spell from the stack.
 fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
-    let (card_id, mut targets, caster) = match state.get_object(object_id) {
-        Some(obj) => (obj.card_id, obj.targets.clone(), obj.controller),
+    let (card_id, targets, recorded, caster) = match state.get_object(object_id) {
+        Some(obj) => (obj.card_id, obj.targets.clone(), obj.target_zone_changes.clone(), obj.controller),
         None => return,
     };
-    // A target that has changed zones since the spell was cast is a new
-    // object and no longer its target (CR 400.7, 608.2b): illegal, as the
-    // re-check below takes an `Illegal` to be. A creature that died and was
-    // returned in response (Altar's Reap, then Grimoire of the Dead) was
-    // pumped by the Giant Growth cast on the creature it had been.
-    if let Some(recorded) = state.get_object(object_id).map(|o| o.target_zone_changes.clone()) {
-        for (i, t) in targets.iter_mut().enumerate() {
-            if !still_the_object(state, t, &recorded, i) {
-                *t = Target::Illegal;
-            }
-        }
-    }
-    resolve_spell_as(state, registry, object_id, card_id, targets, caster);
+    resolve_spell_as(state, registry, object_id, card_id, targets, &recorded, caster);
 }
 
-/// [`resolve_spell`] once its card, its targets and its controller are
-/// read off the spell.
+/// [`resolve_spell`] once its card, its targets, the zone changes they had
+/// had as it was cast and its controller are read off the spell.
 ///
 /// Its own function so that each half is proved apart
 /// (`proofs::actions::resolving`): read back off the spell's object, the
@@ -426,8 +414,21 @@ pub(crate) fn resolve_spell_as(
     object_id: crate::ids::ObjectId,
     card_id: crate::ids::CardId,
     mut targets: Vec<Target>,
+    recorded: &[u32],
     caster: crate::ids::PlayerId,
 ) {
+    // A target that has changed zones since the spell was cast is a new
+    // object and no longer its target (CR 400.7, 608.2b): illegal, as the
+    // re-check below takes an `Illegal` to be. A creature that died and was
+    // returned in response (Altar's Reap, then Grimoire of the Dead) was
+    // pumped by the Giant Growth cast on the creature it had been. Here and
+    // not as the list is read off the spell, whose length a proof does not
+    // see: walked there, it ran the read's proof out of memory.
+    for (i, t) in targets.iter_mut().enumerate() {
+        if !still_the_object(state, t, recorded, i) {
+            *t = Target::Illegal;
+        }
+    }
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
     // This now checks hexproof at resolution time (not just at cast time).
