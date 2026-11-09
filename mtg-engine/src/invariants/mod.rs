@@ -22,6 +22,9 @@
 //! - [`check_legal`] looks at the legal action set offered at a decision
 //!   point: nothing the rules forbid is on the menu, and what they require
 //!   is.
+//! - The runner's `views_hide_library_order` holds each player's view to
+//!   what they can see: it does not change when every library is reversed
+//!   (CR 401.2). It is the runner's, which serializes views already.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;

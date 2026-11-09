@@ -390,6 +390,41 @@ fn flag_value<'a>(values: &'a [(String, String)], flag: &str) -> Option<&'a Stri
     values.iter().rev().find(|(f, _)| f == flag).map(|(_, v)| v)
 }
 
+/// The view of `state` each player would be sent, whole.
+fn every_view(state: &GameState, registry: &CardRegistry) -> Vec<serde_json::Value> {
+    state.players.iter()
+        .map(|p| serde_json::to_value(GameView::for_player(state, p.id, registry)).unwrap_or(serde_json::Value::Null))
+        .collect()
+}
+
+/// What a player is shown of what they cannot see: nothing. A library's
+/// order is hidden from every player (CR 401.2), so with every library
+/// reversed each player's view, as every seat is sent it, must be the
+/// same; one message for each view that changes, naming its fields that
+/// did. `mtg-engine/tests/view_hidden_information.rs` holds the hands and
+/// the questions put to the other player to the same rule on boards of
+/// its own.
+fn views_hide_library_order(state: &GameState, registry: &CardRegistry) -> Vec<String> {
+    let mut reversed = state.clone();
+    for p in &mut reversed.players {
+        p.library_order.reverse();
+    }
+    let (seen, after) = (every_view(state, registry), every_view(&reversed, registry));
+    seen.iter().zip(&after).enumerate()
+        .filter(|(_, (a, b))| a != b)
+        .map(|(p, (a, b))| {
+            let fields: Vec<&str> = match (a, b) {
+                (serde_json::Value::Object(a), serde_json::Value::Object(b)) => a.iter()
+                    .filter(|(k, v)| b.get(*k) != Some(*v))
+                    .map(|(k, _)| k.as_str())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            format!("p{p}'s view reads the order of a library (CR 401.2): its {} change when every library is reversed", fields.join(", "))
+        })
+        .collect()
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -1089,6 +1124,7 @@ stops here — pass --save {path} to keep writing it");
                 violations.extend(mtg_engine::invariants::check_transition(prev, Some(act), game_state, registry_ref));
             }
             violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
+            violations.extend(views_hide_library_order(game_state, registry_ref));
 
             let mut counts = vec![0usize; game_state.players.len()];
             for obj in game_state.objects.values() {
