@@ -782,6 +782,43 @@ fn curiosity_draw_on_enchanted_creature_combat_damage() {
     assert_eq!(hand_after, hand_before + 1, "Should have drawn 1 card from Curiosity");
 }
 
+/// Curiosity's creature dealing damage to an opponent and dying in the same
+/// step, as a trampler over a deathtoucher does: both it and the Aura were
+/// on the battlefield as the damage was dealt, so the draw is still offered
+/// once the state-based actions have put them into the graveyard (CR
+/// 603.10). Its condition used to ask for the Aura on the battlefield then,
+/// and found it gone. Found by the card reference's Aura fights, once the
+/// reference read what combat damage sets off as the damage was dealt.
+#[test]
+fn curiosity_offers_its_draw_when_its_creature_dies_with_the_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let curiosity_card_id = reg.get_id_by_name("Curiosity").unwrap();
+    let curiosity = state.create_object(curiosity_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(curiosity).unwrap().name = "Curiosity".into();
+    state.get_object_mut(curiosity).unwrap().attached_to = Some(creature);
+
+    // The damage to the opponent, and the creature dying of what its
+    // blocker dealt it at the same time, the Aura going with it.
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: creature,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2,
+    });
+    state.get_object_mut(creature).unwrap().damage_marked = 2;
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(curiosity).unwrap().zone, Zone::Graveyard, "the Aura goes with it (CR 704.5m)");
+
+    triggers::process_triggers(&mut state, &reg);
+    assert!(matches!(&state.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player, choice: mtg_engine::state::ResolutionChoiceKind::YesNo { .. }, .. }) if *player == P0),
+        "Curiosity's controller is asked whether to draw");
+}
+
 /// Curiosity does NOT draw a card when the player declines.
 #[test]
 fn curiosity_decline_draw() {

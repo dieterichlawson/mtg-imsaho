@@ -173,9 +173,13 @@ card_proof! {
 
 card_proof! {
     /// Curiosity: triggers for damage dealt to a player by the creature it
-    /// enchants, on the battlefield, when that player is an opponent of its
-    /// controller, and no other; resolving, its controller is asked
-    /// whether to draw ("you may"), and on yes draws a card. Nothing else.
+    /// enchants, when that player is an opponent of its controller, and no
+    /// other; an Aura gone to a graveyard since is read as it last was,
+    /// what it enchanted and its controller then (CR 603.10: the collector
+    /// asks only of watchers on the battlefield as the damage was dealt,
+    /// and one the state-based actions took beside its creature still saw
+    /// it). Resolving, its controller is asked whether to draw ("you
+    /// may"), and on yes draws a card. Nothing else.
     fn curiosity_may_draw_when_its_creature_damages_an_opponent() {
         let curiosity = crate::cards::isd::curiosity::Curiosity;
         assert!(triggers(&curiosity) == [(TriggerKind::AnyDamageToPlayer, None)]);
@@ -184,9 +188,8 @@ card_proof! {
         let behavior = registry.get(card).expect("registered");
         let source = if kani::any() { creature } else { aura };
         let damaged = PlayerId(u8::from(kani::any::<bool>()));
-        let on = state.get_object(aura).expect("on the board").zone == Zone::Battlefield;
         assert!(behavior.should_trigger_on_damage_to_player(&state, aura, source, damaged, &registry)
-            == (on && source == creature && damaged != you));
+            == (source == creature && damaged != you));
         let before = Snapshot::of(&state);
         behavior.on_any_damage_to_player(&mut state, aura, creature, damaged, 1, &registry);
         let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
