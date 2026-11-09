@@ -2092,7 +2092,15 @@ same steps (the machine, not the code), and the rest of the pass is then
 the code being merged. Of the 2,080 harnesses, 1,885 proved at 3.5 GB
 (the eight delayed exiles among them, 85 to 159 s) and 195 ran out of
 memory there; each of those is run alone at 7 GB and then at 12, and
-`scripts/kani/expected-open.txt` lists the ones that do not prove. No
+`scripts/kani/expected-open.txt` lists the ones that do not prove. With
+the 7 GB pass done, the 12 GB pass under way, and what defects 34 to 36
+touch run again at their fixes, the merged results (a later result for a
+harness replacing an earlier one) leave 70 of the 2,087 open, from 171:
+967 of the 990 card harnesses prove, and of the 23 that do not, 15 are
+still queued at 12 GB and 8, cards whose hooks defect 34 changed, ran
+out at 3.5 GB where they proved alone at 7 before and are queued alone
+at 7 again, with the trigger collector's 19 (the same pattern) and the
+mana abilities' 12. No
 harness failed but Mentor of the Meek's two may-pay proofs, which still
 asserted the question is always asked, where master's #940 asks it only
 when a payment can be planned: their proof now holds the question to the

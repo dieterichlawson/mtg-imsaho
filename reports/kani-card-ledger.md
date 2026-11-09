@@ -1,29 +1,23 @@
-# Card proofs at 782c4ed
+# Card proofs at 617e92c
 
-Every card harness, in one pass over every harness the proofs define,
-three lanes at 3.5 GB each. The pass began at 156d7ad and moved to
-782c4ed after 896 harnesses, 84 of them card harnesses: card proofs at
-156d7ad were running a third slower than in the run before (final7, the
-same steps: the machine, not the code), and the rest of the pass is the
-code being merged. Between the two the engine changed in what a
-trigger's log line names and when, in combat's first-strike check, a
-modal spell's targets and the declared blocks' log line (each written
-without `flatten`), in the trigger order answer and in the autotap
-planner. The 84 are all `cards::activated`'s, activated abilities' own
-code with paying stood in for, and reach none of those. Mentor of the Meek's
-two may-pay harnesses are at 321bcd4, where their proof was brought up to
-#940 (asked only when a payment can be planned).
+Every card harness's last result, merged from: the pass over every
+harness the proofs define (three lanes at 3.5 GB, begun at 156d7ad and
+moved to 782c4ed after 896 harnesses), the solo passes of what ran out of
+memory there (alone at 7 GB, then at 12 GB, still under way), and the
+harnesses run again at the fixes of defects 34 to 36 (3.5 GB, at
+1e5f16b-b55a3a6). A later result for a harness replaces an earlier one.
 
-Not proved below means out of memory at 3.5 GB. Each of the 96 such card
-harnesses proved alone, at 7 or 12 GB, in the run before; they are being
-run alone again at 321bcd4, and this ledger is refreshed from that.
-`docs/plans/formal-verification.md` says what each proof is over and what
-its bounds are.
+Not proved below means out of memory at the cap of its last run. Of the
+23 such card harnesses, 15 are still queued at 12 GB, and 8 are cards
+whose hooks defect 34 changed, which ran out at 3.5 GB and are queued
+alone at 7 GB, where they proved before. This ledger is refreshed from
+those. `docs/plans/formal-verification.md` says what each proof is over
+and what its bounds are.
 
-989 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
+990 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
 
-- OOM: 96
-- SUCCESSFUL: 893
+- OOM: 23
+- SUCCESSFUL: 967
 
 | card | harnesses | proved | not proved |
 |---|---|---|---|
@@ -35,14 +29,14 @@ its bounds are.
 | armored_skaab | 2 | 2 |  |
 | army_of_the_damned | 1 | 1 |  |
 | ashmouth_hound | 1 | 1 |  |
-| avacynian_priest | 3 | 2 | `avacynian_priest_targets_a_non_human_creature` (OOM) |
+| avacynian_priest | 3 | 3 |  |
 | avacyns_pilgrim | 1 | 1 |  |
 | back_from_the_brink | 9 | 9 |  |
-| balefire_dragon | 1 | 0 | `balefire_dragon_deals_that_much_to_each_of_their_creatures` (OOM) |
+| balefire_dragon | 1 | 1 |  |
 | battleground_geist | 1 | 1 |  |
 | bitterheart_witch | 12 | 11 | `bitterheart_witch_attaches_the_curse_to_its_target` (OOM) |
-| blasphemous_act | 1 | 0 | `blasphemous_act_costs_less_and_deals_thirteen_to_each_creature` (OOM) |
-| blazing_torch | 3 | 2 | `blazing_torch_gives_its_creature_a_sacrifice_to_deal_two` (OOM) |
+| blasphemous_act | 1 | 1 |  |
+| blazing_torch | 3 | 3 |  |
 | bloodcrazed_neonate | 1 | 1 |  |
 | bloodgift_demon | 1 | 1 |  |
 | bloodline_keeper | 10 | 10 |  |
@@ -55,7 +49,7 @@ its bounds are.
 | burning_vengeance | 1 | 1 |  |
 | butchers_cleaver | 2 | 2 |  |
 | cackling_counterpart | 1 | 1 |  |
-| caravan_vigil | 40 | 39 | `caravan_vigil_of_the_second_player_with_morbid_puts_the_land_into_hand_on_no` (OOM) |
+| caravan_vigil | 40 | 40 |  |
 | cellar_door | 10 | 10 |  |
 | champion_of_the_parish | 1 | 1 |  |
 | charmbreaker_devils | 2 | 1 | `charmbreaker_devils_returns_an_instant_or_sorcery_at_random` (OOM) |
@@ -66,7 +60,7 @@ its bounds are.
 | cobbled_wings | 2 | 2 |  |
 | corpse_lunge | 1 | 1 |  |
 | counterspell | 2 | 2 |  |
-| creeping_renaissance | 3 | 1 | `creeping_renaissance_returns_every_creature_card` (OOM), `creeping_renaissance_returns_every_land_card` (OOM) |
+| creeping_renaissance | 3 | 3 |  |
 | creepy_doll | 1 | 1 |  |
 | crossway_vampire | 2 | 2 |  |
 | curiosity | 3 | 3 |  |
@@ -105,33 +99,33 @@ its bounds are.
 | feral_ridgewolf | 2 | 2 |  |
 | festerhide_boar | 1 | 1 |  |
 | fiend_hunter | 3 | 3 |  |
-| forbidden_alchemy | 16 | 4 | `forbidden_alchemy_over_two_keeping_the_second` (OOM), `forbidden_alchemy_over_three_keeping_the_first` (OOM), `forbidden_alchemy_over_three_keeping_the_second` (OOM), `forbidden_alchemy_over_four_keeping_the_first` (OOM), `forbidden_alchemy_over_four_keeping_the_second` (OOM), `forbidden_alchemy_over_four_keeping_the_third` (OOM), `forbidden_alchemy_over_four_keeping_the_fourth` (OOM), `forbidden_alchemy_over_five_keeping_the_first` (OOM), `forbidden_alchemy_over_five_keeping_the_second` (OOM), `forbidden_alchemy_over_five_keeping_the_third` (OOM), `forbidden_alchemy_over_five_keeping_the_fourth` (OOM), `forbidden_alchemy_over_five_answering_the_fifth_not_looked_at` (OOM) |
+| forbidden_alchemy | 16 | 16 |  |
 | forest | 1 | 1 |  |
-| frightful_delusion | 14 | 12 | `frightful_delusion_against_the_first_players_spell_paid_for_with_two_cards_in_hand` (OOM), `frightful_delusion_against_the_second_players_spell_paid_for_with_two_cards_in_hand` (OOM) |
+| frightful_delusion | 14 | 13 | `frightful_delusion_against_the_second_players_spell_paid_for_with_two_cards_in_hand` (OOM) |
 | full_moons_rise | 10 | 10 |  |
 | furor_of_the_bitten | 2 | 2 |  |
 | gallows_warden | 1 | 1 |  |
 | galvanic_juggernaut | 1 | 1 |  |
-| garruk_relentless | 30 | 25 | `garruk_relentless_fights_his_target` (OOM), `garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_creature_card_and_their_creature_token` (OOM), `garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_a_card_in_a_graveyard_and_their_creature_token` (OOM), `garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_creature_card_and_their_creature_token` (OOM), `garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_a_card_in_a_graveyard_and_their_creature_token` (OOM) |
+| garruk_relentless | 30 | 30 |  |
 | gatstaf_shepherd | 1 | 1 |  |
 | gavony_township | 3 | 3 |  |
 | geist_honored_monk | 1 | 0 | `geist_honored_monk_counts_your_creatures_and_brings_two_spirits` (OOM) |
 | geist_of_saint_traft | 1 | 1 |  |
 | geistcatchers_rig | 2 | 2 |  |
 | geistflame | 2 | 2 |  |
-| ghost_quarter | 13 | 9 | `ghost_quarter_destroys_the_first_players_card_and_offers_the_forest_on_top` (OOM), `ghost_quarter_destroys_the_first_players_card_and_offers_the_forest_under_a_land` (OOM), `ghost_quarter_destroys_the_second_players_card_and_offers_the_forest_on_top` (OOM), `ghost_quarter_destroys_the_second_players_card_and_offers_the_forest_under_a_land` (OOM) |
+| ghost_quarter | 13 | 13 |  |
 | ghostly_possession | 2 | 2 |  |
 | ghoulcallers_bell | 2 | 2 |  |
-| ghoulcallers_chant | 1 | 0 | `ghoulcallers_chant_returns_its_targets_to_hand` (OOM) |
+| ghoulcallers_chant | 1 | 1 |  |
 | ghoulraiser | 2 | 1 | `ghoulraiser_returns_a_zombie_card_at_random` (OOM) |
 | giant_growth | 1 | 1 |  |
 | glorious_anthem | 1 | 1 |  |
 | gnaw_to_the_bone | 1 | 1 |  |
 | grasp_of_phantoms | 1 | 1 |  |
 | grave_bramble | 1 | 1 |  |
-| graveyard_shovel | 2 | 1 | `graveyard_shovel_exiles_a_card_and_gains_life_for_a_creature` (OOM) |
-| grimgrin_corpse_born | 4 | 3 | `grimgrin_destroys_a_defending_creature_and_grows` (OOM) |
-| grimoire_of_the_dead | 21 | 19 | `grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_first_player` (OOM), `grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_second_player` (OOM) |
+| graveyard_shovel | 2 | 2 |  |
+| grimgrin_corpse_born | 4 | 4 |  |
+| grimoire_of_the_dead | 22 | 20 | `grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_first_player` (OOM), `grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_second_player` (OOM) |
 | grizzled_outcasts | 1 | 1 |  |
 | gruesome_deformity | 2 | 2 |  |
 | gutter_grime | 1 | 1 |  |
@@ -160,7 +154,7 @@ its bounds are.
 | lantern_spirit | 2 | 2 |  |
 | lava_axe | 2 | 2 |  |
 | lightning_bolt | 2 | 2 |  |
-| liliana_of_the_veil | 116 | 113 | `liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_two_neither_lost` (OOM), `liliana_of_the_veil_makes_the_first_player_sacrifice_a_creature` (OOM), `liliana_of_the_veil_makes_the_second_player_sacrifice_a_creature` (OOM) |
+| liliana_of_the_veil | 116 | 116 |  |
 | lost_in_the_mist | 1 | 1 |  |
 | ludevics_test_subject | 4 | 4 |  |
 | lumberknot | 1 | 1 |  |
@@ -171,33 +165,33 @@ its bounds are.
 | mausoleum_guard | 1 | 1 |  |
 | maw_of_the_mire | 1 | 1 |  |
 | mayor_of_avabruck | 2 | 2 |  |
-| memorys_journey | 1 | 0 | `memorys_journey_shuffles_its_targets_into_their_library` (OOM) |
+| memorys_journey | 1 | 1 |  |
 | mentor_of_the_meek | 5 | 5 |  |
 | midnight_haunting | 1 | 1 |  |
 | mikaeus_the_lunarch | 3 | 2 | `mikaeus_the_lunarch_puts_counters_on_itself_or_on_your_other_creatures` (OOM) |
 | mindshrieker | 5 | 5 |  |
-| mirror_mad_phantasm | 2 | 1 | `mirror_mad_phantasm_reveals_until_a_phantasm_card` (OOM) |
+| mirror_mad_phantasm | 2 | 2 |  |
 | moan_of_the_unhallowed | 1 | 1 |  |
 | moldgraf_monstrosity | 2 | 0 | `moldgraf_monstrosity_in_its_graveyard_exiles_itself_and_returns_two_at_random` (OOM), `moldgraf_monstrosity_gone_to_exile_returns_two_at_random` (OOM) |
 | moment_of_heroism | 1 | 1 |  |
-| moonmist | 16 | 5 | `moonmist_over_a_card_neither_human_nor_wolf_and_a_human_wolf_token` (OOM), `moonmist_over_a_human_card_and_a_token_neither_human_nor_wolf` (OOM), `moonmist_over_a_human_card_and_a_human_token` (OOM), `moonmist_over_a_human_card_and_a_wolf_token` (OOM), `moonmist_over_a_human_card_and_a_human_wolf_token` (OOM), `moonmist_over_a_wolf_card_and_a_human_token` (OOM), `moonmist_over_a_wolf_card_and_a_human_wolf_token` (OOM), `moonmist_over_a_human_wolf_card_and_a_token_neither_human_nor_wolf` (OOM), `moonmist_over_a_human_wolf_card_and_a_human_token` (OOM), `moonmist_over_a_human_wolf_card_and_a_wolf_token` (OOM), `moonmist_over_a_human_wolf_card_and_a_human_wolf_token` (OOM) |
-| moorland_haunt | 17 | 9 | `moorland_haunt_of_the_first_player_with_its_creature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_first_player_with_a_noncreature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_first_player_with_the_others_creature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_first_player_with_the_others_noncreature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_second_player_with_the_others_creature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_second_player_with_the_others_noncreature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_second_player_with_its_creature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM), `moorland_haunt_of_the_second_player_with_a_noncreature_card_exiles_a_creature_card_and_makes_a_spirit` (OOM) |
+| moonmist | 16 | 16 |  |
+| moorland_haunt | 17 | 17 |  |
 | morkrut_banshee | 2 | 2 |  |
 | mountain | 1 | 1 |  |
-| mulch | 6 | 1 | `mulch_over_a_library_of_one` (OOM), `mulch_over_a_library_of_two` (OOM), `mulch_over_a_library_of_three` (OOM), `mulch_over_a_library_of_four` (OOM), `mulch_over_a_library_of_five` (OOM) |
+| mulch | 6 | 6 |  |
 | murder_of_crows | 8 | 8 |  |
 | naturalize | 2 | 2 |  |
 | nephalia_drownyard | 2 | 2 |  |
 | nevermore | 6 | 6 |  |
 | night_revelers | 1 | 1 |  |
-| night_terrors | 7 | 6 | `night_terrors_over_grizzly_bears_and_grizzly_bears` (OOM) |
+| night_terrors | 7 | 7 |  |
 | nightbirds_clutches | 1 | 1 |  |
 | olivia_voldaren | 3 | 3 |  |
 | one_eyed_scarecrow | 1 | 1 |  |
 | orchard_spirit | 1 | 1 |  |
 | pacifism | 2 | 2 |  |
 | parallel_lives | 1 | 1 |  |
-| paraselene | 1 | 0 | `paraselene_destroys_all_enchantments_and_gains_a_life_for_each` (OOM) |
+| paraselene | 1 | 1 |  |
 | past_in_flames | 16 | 16 |  |
 | pitchburn_devils | 1 | 1 |  |
 | plains | 1 | 1 |  |
@@ -207,7 +201,7 @@ its bounds are.
 | rakish_heir | 1 | 1 |  |
 | rally_the_peasants | 1 | 1 |  |
 | rangers_guile | 1 | 1 |  |
-| reaper_from_the_abyss | 2 | 1 | `reaper_from_the_abyss_triggers_after_a_death_targeting_a_non_demon` (OOM) |
+| reaper_from_the_abyss | 2 | 2 |  |
 | rebuke | 2 | 2 |  |
 | reckless_waif | 1 | 1 |  |
 | rolling_temblor | 1 | 0 | `rolling_temblor_deals_two_to_each_creature_without_flying` (OOM) |
@@ -231,7 +225,7 @@ its bounds are.
 | skirsdag_high_priest | 3 | 3 |  |
 | slayer_of_the_wicked | 2 | 2 |  |
 | smite_the_monstrous | 2 | 2 |  |
-| snapcaster_mage | 2 | 1 | `snapcaster_mage_gives_its_target_flashback_at_its_mana_cost` (OOM) |
+| snapcaster_mage | 2 | 2 |  |
 | sol_ring | 1 | 1 |  |
 | somberwald_spider | 1 | 1 |  |
 | spare_from_evil | 1 | 1 |  |
@@ -239,8 +233,8 @@ its bounds are.
 | spider_spawning | 1 | 1 |  |
 | spidery_grasp | 1 | 1 |  |
 | splinterfright | 1 | 1 |  |
-| stensia_bloodhall | 2 | 1 | `stensia_bloodhall_deals_two_to_its_target` (OOM) |
-| stitchers_apprentice | 5 | 1 | `stitchers_apprentice_of_the_first_player_makes_a_homunculus_then_sacrifices_a_creature` (OOM), `stitchers_apprentice_of_the_second_player_makes_a_homunculus_then_sacrifices_a_creature` (OOM), `stitchers_apprentice_gone_makes_the_first_player_a_homunculus_then_sacrifices_a_creature` (OOM), `stitchers_apprentice_gone_makes_the_second_player_a_homunculus_then_sacrifices_a_creature` (OOM) |
+| stensia_bloodhall | 2 | 2 |  |
+| stitchers_apprentice | 5 | 5 |  |
 | stony_silence | 1 | 1 |  |
 | stromkirk_noble | 1 | 1 |  |
 | stromkirk_patrol | 1 | 1 |  |
@@ -256,7 +250,7 @@ its bounds are.
 | travelers_amulet | 5 | 5 |  |
 | tree_of_redemption | 2 | 2 |  |
 | trepanation_blade | 10 | 10 |  |
-| tribute_to_hunger | 3 | 0 | `tribute_to_hunger_makes_them_choose_a_creature_to_sacrifice` (OOM), `tribute_to_hunger_sacrifices_the_card_they_chose_and_you_gain_its_toughness` (OOM), `tribute_to_hunger_sacrifices_the_token_they_chose_and_you_gain_its_toughness` (OOM) |
+| tribute_to_hunger | 3 | 3 |  |
 | ulvenwald_mystics | 4 | 4 |  |
 | unbreathing_horde | 1 | 1 |  |
 | unburial_rites | 1 | 1 |  |
