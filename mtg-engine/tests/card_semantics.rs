@@ -3143,6 +3143,21 @@ fn board_with_exiled_cards(registry: &CardRegistry, cache: &BTreeMap<String, Pri
     (state, world)
 }
 
+/// The board with a planeswalker on each side at its printed loyalty:
+/// Garruk Relentless the caster's, Liliana of the Veil the opponent's. What
+/// "any target" and "target player or planeswalker" may also be, and what
+/// "target creature" and "each creature" must leave alone (CR 115.4,
+/// 120.3c).
+fn board_with_planeswalkers(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = board(registry, cache);
+    for (name, owner) in [("Garruk Relentless", P0), ("Liliana of the Veil", P1)] {
+        let loyalty = registry.get(registry.get_id_by_name(name).expect("in the pool")).and_then(|b| b.starting_loyalty()).expect("printed");
+        place_walker(&mut state, &mut world, registry, &cache[name], false, loyalty, owner);
+    }
+    world.refresh();
+    (state, world)
+}
+
 /// The board with a second Zombie card in the caster's graveyard, Diregraf
 /// Ghoul beside Walking Corpse: what a mode that returns two Zombie cards
 /// is read against.
@@ -4015,6 +4030,9 @@ impl World {
                         self.life[p.0 as usize] += n;
                     }
                 }
+                // And the planeswalkers' state triggers, which the next
+                // player to have priority sees resolve (CR 603.8).
+                self.walker_triggers();
                 return;
             }
             let before = self.clone();
@@ -4277,9 +4295,15 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         .filter(|(_, m)| m.is_creature())
         .map(|(id, _)| Target::Object(*id))
         .collect::<Vec<_>>();
+    let planeswalkers = || world.permanents.iter()
+        .filter(|(_, m)| m.types.iter().any(|t| t == "planeswalker"))
+        .map(|(id, _)| Target::Object(*id))
+        .collect::<Vec<_>>();
+    // "Any target" is a creature, a player or a planeswalker (CR 115.4).
     let mut out = match slot {
-        Slot::Any => [creatures(), players(&|_| true)].concat(),
-        Slot::PlayerOrPlaneswalker | Slot::Player => players(&|_| true),
+        Slot::Any => [creatures(), planeswalkers(), players(&|_| true)].concat(),
+        Slot::PlayerOrPlaneswalker => [planeswalkers(), players(&|_| true)].concat(),
+        Slot::Player => players(&|_| true),
         Slot::Opponent => players(&|p| p != caster),
         // Hexproof: not a target of what its controller's opponents
         // control (CR 702.11b).
@@ -4504,6 +4528,13 @@ fn until_end_of_turn(m: &mut Model, (power, toughness): (i32, i32), gains: &[Key
 /// 615.1). Whether damage was dealt, which deathtouch and lifelink read.
 fn deal(m: &mut Model, n: u32) -> bool {
     if n == 0 {
+        return false;
+    }
+    // Damage to a planeswalker removes that many loyalty counters, and is
+    // marked on nothing (CR 120.3c).
+    if m.types.iter().any(|t| t == "planeswalker") {
+        let loyalty = m.named_counters.entry("loyalty".to_string()).or_insert(0);
+        *loyalty = loyalty.saturating_sub(n);
         return false;
     }
     if m.statics.contains(&Static::DamageRemovesACounterInstead) {
@@ -6775,8 +6806,9 @@ fn every_readable_card_does_what_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut casts = 0;
-    let boards: [(&str, Build); 5] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
-        (" with exiled cards", board_with_exiled_cards), (" with two Zombie cards", board_with_two_zombie_cards)];
+    let boards: [(&str, Build); 6] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
+        (" with exiled cards", board_with_exiled_cards), (" with two Zombie cards", board_with_two_zombie_cards),
+        (" beside planeswalkers", board_with_planeswalkers)];
     // A name chosen among hundreds is checked on its own
     // (`every_name_ban_is_what_its_text_says`).
     for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
@@ -6786,7 +6818,8 @@ fn every_readable_card_does_what_its_text_says() {
         let boards: Vec<&(&str, Build)> = boards.iter().enumerate()
             .filter(|(i, _)| *i == 0 || (*i == 1 && spec.reads_morbid()) || (*i == 2 && reads_names)
                 || (*i == 3 && spec.slots.iter().any(|s| matches!(s, Slot::ExiledCard { .. })))
-                || (*i == 4 && !spec.modes.is_empty()))
+                || (*i == 4 && !spec.modes.is_empty())
+                || *i == 5)
             .map(|(_, b)| b)
             .collect();
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
@@ -7116,14 +7149,24 @@ fn every_readable_activated_ability_does_what_its_text_says() {
             .filter(|a| !a.pays_the_exiled_cards_cost && !a.spec.effects.contains(&Effect::ShuffleIntoLibraryRevealUntilNamed))
             .flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c))))
             .flat_map(|(a, c)| std::iter::once((a, c, None)).chain(counted(a).into_iter().flatten().map(move |k| (a, c, Some(k)))))
-            .flat_map(|(a, c, k)| [false, true].into_iter().filter(move |died| !died || a.morbid).map(move |died| (a, c, k.clone(), died)));
-        for (ability, count, already, died) in variants {
+            // And beside planeswalkers, for one that may target one (CR 115.4).
+            .flat_map(|(a, c, k)| [Some(false), Some(true), None].into_iter()
+                .filter(move |b| match b {
+                    Some(died) => !died || a.morbid,
+                    None => a.spec.slots.iter().any(|s| matches!(s, Slot::Any | Slot::PlayerOrPlaneswalker)),
+                })
+                .map(move |b| (a, c, k.clone(), b)));
+        for (ability, count, already, board_of) in variants {
             checked += 1;
             let name = format!("{}'s ability {}{}{}{}", card.name, ability.index,
                 count.map_or(String::new(), |c| format!(" with {c} of its controller's")),
                 already.as_ref().map_or(String::new(), |(kind, n)| format!(" with {n} {kind} counters on it")),
-                if died { " after a death" } else { "" });
-            let (mut state, mut world) = if died { board_after_a_death(&registry, &cache) } else { board(&registry, &cache) };
+                match board_of { Some(true) => " after a death", None => " beside planeswalkers", Some(false) => "" });
+            let (mut state, mut world) = match board_of {
+                Some(true) => board_after_a_death(&registry, &cache),
+                None => board_with_planeswalkers(&registry, &cache),
+                Some(false) => board(&registry, &cache),
+            };
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
             // A 0/0 but for the counters it enters with (Mikaeus) is
             // placed with two, as placing it gives it none.
@@ -7512,7 +7555,6 @@ fn every_loyalty_ability_does_what_its_text_says() {
                         .map(|w| {
                             let mut after = apply(&ability.spec, &w, targets, P0);
                             after.state_based_actions();
-                            after.walker_triggers();
                             after.refresh();
                             after
                         })
@@ -8168,7 +8210,6 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId], defe
                     }
                 }
                 w2.state_based_actions();
-                w2.walker_triggers();
                 let mut drawn = vec![w2];
                 for p in may_draw {
                     drawn = drawn.into_iter()
