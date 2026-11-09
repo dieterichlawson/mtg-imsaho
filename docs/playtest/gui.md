@@ -265,6 +265,17 @@ random game happened to reach.
   after the seat moved on; exactly one answer landed every time, and a genuine
   close-and-reopen gets the pending decision back. What broke was everything
   around the drop (#515, #516), so re-probe the surroundings, not the rule.
+  [2026-11-09] Re-probed the surroundings with the opponent a second gui
+  seat, so the page waits between questions: **the notice is the hole**
+  (#1012). The waiting branch of `render.ts` never draws `state.notice`, and
+  a new decision does not clear it, so "Answered in another tab." is never
+  seen when it is said and is then drawn in red over the seat's next,
+  unanswered MAIN PHASE 1. Any key pressed while waiting does the same: `f`
+  during the opponent's turn is refused invisibly and the refusal appears on
+  your own next main phase. `twotabs.js` cannot see it because it reads
+  `window.mtg.notice`, not the frame. Next time, screenshot every tab after
+  every step; and after #1012 is fixed, press `s`, `f`, `l` and `g` while
+  waiting and read both the waiting frame and the next question's.
 
 - G16 [proposed 2026-09-17, from #524, #520 and #518] the destructive default:
   for every widget, ask what Enter does when the player has touched nothing.
@@ -370,6 +381,18 @@ random game happened to reach.
   equipped creature, a cursed player, a stack ability, a card in exile.
   Everything the CLI's `i` screen shows should be here; #333, #468,
   #501, #504 list what has been missing before.
+  [2026-11-09] **Holds** for copies. Every `PermanentView` field the CLI's
+  `permanent_detail_lines` reads is read somewhere on the page. On a random
+  game of Evil Twin, Cackling Counterpart, Walking Corpse and Moon Heron
+  (seed 1010, `--stop-after 70 --save`, resumed with `--p1 gui:0`), an Evil
+  Twin copying Walking Corpse says Copy, Color: Black, Summoning sick and its
+  granted `{U}{B}, {T}` line, and the token copies say Token. Two
+  differences, both checked and judged deliberate: a token copy says only
+  "Token" (the CLI says Token and Copy), and the granted line has no "gained
+  as it entered as a copy" note. Note for staging: `--stop-after N` counts
+  only the decisions a seat is shown, so a random-v-random game has ~100,
+  not its 500 actions; pick N under that. Not yet hovered: a cursed player,
+  an exiled card, a stack ability with targets.
 - G11 art and names: a card whose art file is missing renders a
   placeholder, never blank; a stack ability shows its source's art.
   [2026-11-04] **Holds.** All 290 `name:` definitions under
