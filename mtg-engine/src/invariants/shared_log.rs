@@ -65,7 +65,7 @@ impl SharedLog {
     /// names.
     pub fn check(&mut self, prev: Option<&GameState>, cur: &GameState) -> Vec<String> {
         let out = prev.map(|prev| self.lines(prev, cur)).unwrap_or_default();
-        for obj in cur.objects.values() {
+        for obj in cur.each_object() {
             if !matches!(obj.zone, Zone::Hand | Zone::Library) {
                 self.seen.insert(obj.id);
                 self.seen_names.insert(obj.name.clone());
@@ -76,7 +76,7 @@ impl SharedLog {
 
     fn lines(&mut self, prev: &GameState, cur: &GameState) -> Vec<String> {
         // The cards no one has seen, at both decisions.
-        let unseen: Vec<&GameObject> = cur.objects.values()
+        let unseen: Vec<&GameObject> = cur.each_object()
             .filter(|o| !self.seen.contains(&o.id) && !being_cast(prev, o.id) && !being_cast(cur, o.id))
             .filter(|o| hidden(cur, o.id).is_some() && hidden(prev, o.id).is_some())
             .collect();
@@ -86,7 +86,7 @@ impl SharedLog {
         // cast cancelled" is about it, not about another Corpse Lunge in a
         // library.
         for s in [prev, cur] {
-            for o in s.objects.values() {
+            for o in s.each_object() {
                 if hidden(s, o.id).is_none() || being_cast(s, o.id) {
                     self.seen_names.insert(o.name.clone());
                 }
