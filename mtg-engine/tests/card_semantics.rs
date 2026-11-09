@@ -8965,16 +8965,47 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
     asked
 }
 
+/// What a permanent's own triggers do, read from its card by the name it
+/// has: the questions they ask on its behalf. None for a card the grammar
+/// does not read whole, or a face it cannot look up by name.
+fn triggers_of(m: &Model) -> Option<Spec> {
+    let card = cached_oracle().get(m.name.as_deref()?)?;
+    let spec = if card.has_type("Creature") && !card.type_line.contains("//") {
+        read_creature(card)
+    } else if card.has_type("Enchantment") {
+        read_enchantment(card)
+    } else if card.has_type("Artifact") {
+        read_artifact(card)
+    } else if card.has_type("Land") {
+        read_land(card)
+    } else {
+        return None;
+    };
+    spec.ok().map(|s| triggers_text(&s))
+}
+
 /// [`every_combat_ending`], over 32 seeds when a combatant flips a coin
-/// (CR 705), so that each flip goes both ways.
+/// (CR 705), so that each flip goes both ways; and what each permanent on
+/// the board asks as it fights, dies or watches held to the player its
+/// text has answer it, its controller as the combat began unless the text
+/// names another (CR 608.2d).
 fn combat_endings(state: &GameState, registry: &CardRegistry, world: &World, combat: &Combat) -> Result<Vec<GameState>, String> {
     let random = combat.0.iter().map(|(a, _)| *a).chain(combat.1.iter().map(|(b, _)| *b))
         .any(|id| world.permanents.get(&id).is_some_and(|m| m.combat.flips_to_destroy_what_it_damages));
-    if random {
+    let (endings, asked) = questions_asked(|| if random {
         over_seeds(state, |s| every_combat_ending(s, registry, combat))
     } else {
         every_combat_ending(state, registry, combat)
+    });
+    let sources: BTreeSet<ObjectId> = asked.iter().map(|q| q.source).collect();
+    for source in sources {
+        let Some(m) = world.permanents.get(&source) else { continue };
+        let Some(text) = triggers_of(m) else { continue };
+        if let Some(why) = wrong_chooser(&text, &[], world, m.controller, source, &asked) {
+            return Err(format!("{}: {why}", m.name.as_deref().unwrap_or("a token")));
+        }
     }
+    endings
 }
 
 /// Every game a combat can end in: each damage assignment it asks for
