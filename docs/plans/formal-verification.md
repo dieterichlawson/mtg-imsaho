@@ -801,6 +801,17 @@ opponent's creatures tapped.
   placing the blockers in the order declared rather than the order
   chosen (320), and the reference without the Ghoul's gain on a
   destruction (9 of 1,092).
+- **Attacks on a planeswalker**: every kind of fighter attacks each
+  planeswalker face in the pool instead of its controller, at its printed
+  loyalty, unblocked and against each probe as a lone blocker (1,110
+  combats). The engine must offer it as what may be attacked (CR 508.1a);
+  combat damage to it removes loyalty (120.3c), a trampler's excess over
+  its blocker reaches it (702.19c), nothing it is dealt counts as damage
+  to its controller, a planeswalker left with none goes to the graveyard
+  (704.5i), Garruk transforms at two or fewer (603.8), and a token that
+  enters attacking attacks the player or the planeswalker, as its
+  controller chooses (508.4b). This found defect 30: Creepy Doll flipped
+  its coin for, and could destroy, a Garruk it damaged.
 
 All 268 of the pool's instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and its two planeswalkers, and all agree.
@@ -2061,6 +2072,7 @@ so each night starts from everything the last one reached.
 | 27 | the state-based actions read each dying creature's last known information just before its own move, after the moves of those dying with it, so a toughness that counts the creature cards in a graveyard counted one dying beside it, and indestructible was read after the creatures of no toughness had gone (CR 704.3, 608.2h) | Abattoir Ghoul in the `card_semantics` reference's every-fight run: attacking into a first-striking blocker under Wreath of Geists, both dying, it gained 4 for a blocker that died a 3/3 | Abattoir Ghoul's life, the one trigger that reads a dead creature's toughness, for a creature dying beside a creature card that counts towards it; and indestructible from a creature dying of no toughness in the same pass |
 | 28 | a creature card that chooses what it enters as, returned with others at once (Grimoire of the Dead, Moldgraf Monstrosity), was asked once the others had entered, and offered them as copies, though Evil Twin's ruling allows only "a creature that's already on the battlefield" (CR 614.12b) | reading Grimoire of the Dead's return with an Evil Twin card in a graveyard into the `card_semantics` reference | an Evil Twin card in a graveyard that Grimoire of the Dead or Moldgraf Monstrosity returns from |
 | 29 | Grimoire of the Dead's "They're black Zombies" was never given to the card whose entry waited on that choice: the return moved on past it, and it entered, as itself or a copy, neither black nor a Zombie (CR 613.1d-e) | the same | as 28, for Grimoire of the Dead |
+| 30 | "Whenever this creature deals combat damage to a creature" was raised for combat damage to any object, a planeswalker among them: Creepy Doll attacking Garruk Relentless flipped its coin, and a won flip destroyed him (CR 510.1a-c) | the `card_semantics` reference's attacks on a planeswalker, whose Doll flips only for a creature it damages | Creepy Doll, the one card printing such a trigger, attacking an opponent's planeswalker and not blocked |
 
 Each has a regression test that fails without its fix.
 
