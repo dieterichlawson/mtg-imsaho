@@ -1105,6 +1105,11 @@ a noninterference property, checked two ways.
   failure; a menu naming the other's top card is flagged at the fourth.
   Then all three, mulligans, declarations and discards to hand size
   among the decisions held: 553 games, 94,325 decisions, no failure.
+  Held at every decision they made a fuzz game nearly five times as
+  slow (30 games in 66.8 s against 14.0 s), so the runner holds one
+  decision in 32 to them, at 7% (15.0 s), inside the nightly shard's 90
+  minutes; a leak that shows at all shows on most decisions of a game,
+  and defect 37 undone is flagged at the 32nd.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
