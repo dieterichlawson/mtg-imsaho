@@ -769,7 +769,7 @@ else.
   survey of the 172,000 questions the suite asks found none put to the
   wrong player, and two never asked, now asked: Curse of Oblivion's
   choice and Frightful Delusion's discard, each forced by a board that
-  held exactly what was owed. The check keeps it so: sixteen mutants,
+  held exactly what was owed. The check keeps it so: seventeen mutants,
   each moving one question or one "you" to the other player, or asking
   the other player first, all caught.
 - **Triggers on spells cast and creatures entering**: with the watcher on
@@ -905,8 +905,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 239
-mutants, 233 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 240
+mutants, 234 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, one
 for want of a spell that reads its target's controller, three
 equivalent), and the failure names the
