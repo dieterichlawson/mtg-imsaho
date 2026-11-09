@@ -704,8 +704,11 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   sacrificed (701.19b), +X/+X for the creature cards in the graveyard as
   it resolves (608.2h), and Liliana's piles: every division, either pile,
   and one division played with each pile chosen, since as a set of
-  endings every pile is reachable whoever chooses it. A planeswalker's
-  printed loyalty is now in the Oracle cache too, and
+  endings every pile is reachable whoever chooses it. Each ability is
+  played again with its planeswalker exiled in response: it resolves all
+  the same (CR 113.7a), Garruk's 3 damage dealt and the creature's damage
+  back to him dealt to nothing, its lifelink gaining nothing (120.1). A
+  planeswalker's printed loyalty is now in the Oracle cache too, and
   `card_characteristics` holds `starting_loyalty` to it. And every card
   read, and every activated ability that may target one, is cast beside
   Garruk on the caster's side and Liliana on the opponent's: "any target"
@@ -874,8 +877,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 220
-mutants, 215 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 221
+mutants, 216 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, three
 equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check

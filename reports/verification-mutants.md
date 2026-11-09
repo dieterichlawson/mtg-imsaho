@@ -555,17 +555,20 @@ creature that fights gains life by dealing damage.
 
 ## The cards: an ability's source gone in response — 2026-11-09
 
-Each activated ability, but one whose source paid for it by leaving, is
-played again with its source exiled while it waits on the stack. One
-mutant, caught.
+Each activated ability, but one whose source paid for it by leaving, and
+each loyalty ability, is played again with its source exiled while it
+waits on the stack. Two mutants, both caught.
 
 | family | mutant | caught by |
 |---|---|---|
 | sources gone | Skirsdag Cultist's damage needs the Cultist on the battlefield (the engine) | the activated-ability test, every target of the Cultist's ability, its source exiled in response |
+| sources gone | Garruk Relentless's 0 does nothing once Garruk is gone (the engine) | the loyalty test, 22 of 22 of Garruk's first ability with Garruk exiled in response |
 
 The reference was wrong twice first, and the engine right: it read Tree
 of Redemption's toughness off a Tree no longer there, and it let Olivia
 Voldaren's "for as long as you control" steal outlast Olivia (CR 611.2b).
 It had also chosen the resolution's answers before the source left, so
-that Stitcher's Apprentice sacrificed an Apprentice already gone.
+that Stitcher's Apprentice sacrificed an Apprentice already gone; and it
+gained Garruk's target's lifelink for damage dealt to a Garruk no longer
+there.
 
