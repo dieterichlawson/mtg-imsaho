@@ -533,7 +533,7 @@ wrong the same way the engine was.
 Every kind of fighter attacks its owner under the other player's control
 (`every_borrowed_fighter_attacks_its_owner`, 802 combats), each
 activated ability, upkeep and end-step permanent, and enter and cast
-watcher is tried as the other player's card. Seven mutants, five caught, and the one missed at first was defect 34.
+watcher is tried as the other player's card, and every card that targets is cast on a board with a creature on each side the other's. Nine mutants, six caught, and the one missed at first was defect 34.
 
 | family | mutant | caught by |
 |---|---|---|
@@ -543,6 +543,8 @@ watcher is tried as the other player's card. Seven mutants, five caught, and the
 | control, activated abilities | `last_known_controller` answers a permanent's owner, each activated ability tried with its source the other player's card (the engine) | `every_readable_activated_ability_does_what_its_text_says`, 54 of 130 abilities |
 | control, upkeep and end step | the step trigger collector reads a permanent's owner as the player whose upkeep or end step it is (the engine) | the turn tests with each permanent the other player's card: 23 of 72 upkeeps, 12 of 40 end steps |
 | control, enter watchers | the creature-entering collector gives the watcher's trigger to its owner (the engine) | the enter-watcher test with the watcher the other player's card, 1 of 12 casts |
+| control, every card | the battlefield of a player read as what they own rather than control (the engine) | `every_readable_card_does_what_its_text_says` on the board with a creature on each side the other player's card, 22 of 5,269 casts, and none on any other board |
+| control, every card | `last_known_controller` answers a permanent's owner (the engine) | not caught by the card sweep: no card cast there reads a target's controller |
 | control, cast watchers | the spell-cast collector gives the watcher's trigger to its owner (the engine) | not caught: the pool's two cast watchers pump themselves (Charmbreaker Devils) or deal damage to any target (Burning Vengeance), whose endings are the same whoever chooses the target; whether "you cast" holds is read apart |
 
 The second was missed because no card read the trigger's controller:

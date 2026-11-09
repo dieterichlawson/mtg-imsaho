@@ -622,7 +622,11 @@ to a board described by its cards' Oracle data, state-based actions
 included; and the engine is held to it on a board of fifteen permanents
 and six graveyard cards chosen for their differences, and on variants of
 it: after a death, with a second permanent of a name, with one of the
-opponent's creatures tapped, and beside a planeswalker on each side.
+opponent's creatures tapped, beside a planeswalker on each side, and,
+for a card that targets or reads whose a creature is, with a creature on
+each side the other player's card. A battlefield read by owner rather
+than controller is caught there in 22 of the 5,269 casts, and nowhere
+else.
 
 - **Instants and sorceries**: damage to a target or to each of a group;
   pumps of a target or a group (subtype-qualified too); destroy, destroy
@@ -877,9 +881,10 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 221
-mutants, 216 caught, one missed for want of a change of control between
-activation and resolution, one for want of a lifelinker with power, three
+(`reports/verification-mutants.md` lists the rounds: of the latest 223
+mutants, 217 caught, one missed for want of a change of control between
+activation and resolution, one for want of a lifelinker with power, one
+for want of a spell that reads its target's controller, three
 equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its
