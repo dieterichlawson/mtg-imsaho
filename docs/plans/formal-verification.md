@@ -837,6 +837,15 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   it fell; and, with the reference reading what damage sets off as it is
   dealt, defect 32 in the Aura fights: Curiosity's creature dying of the
   step in which it damaged an opponent drew nothing.
+- **Borrowed attackers**: every kind of fighter attacks its own owner
+  under the other player's control, as after Traitorous Blood, unblocked
+  and against each probe (802 combats). Its damage goes to its owner,
+  what it does for "you" it does for its controller, and what dies goes
+  to its owner's graveyard (CR 108.3, 109.4, 404.2). A controller read
+  as the owner is caught in 70 of them, and a combat damage trigger
+  given to the owner in 9. That one went uncaught at first, because no
+  trigger hook read its trigger's controller: defect 34. Lifelink paying
+  the owner is not caught, the fighters' one lifelinker being a 0/1.
 
 All 268 of the pool's instants, sorceries, creatures, enchantments,
 lands and artifacts are read, and its two planeswalkers, and all agree.
@@ -847,9 +856,10 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 212
-mutants, 209 caught, one missed for want of a change of control between
-activation and resolution, two equivalent), and the failure names the
+(`reports/verification-mutants.md` lists the rounds: of the latest 215
+mutants, 211 caught, one missed for want of a change of control between
+activation and resolution, one for want of a lifelinker with power, two
+equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its
 text", the opponent's Vampire, the declarations test, the opponent
@@ -2101,6 +2111,8 @@ so each night starts from everything the last one reached.
 | 31 | a creature card milled while Undead Alchemist was on the battlefield set off nothing when the state-based actions took the Alchemist after the same step: the collector looked for watchers on the battlefield once they were done, not as the card was milled, though the damage collector beside it had looked back (CR 603.2) | the `card_semantics` reference's two attackers in the exhaustive run: Makeshift Mauler and Undead Alchemist attacking, Typhoid Rats blocking the Alchemist, Moon Heron milled and left in the graveyard with no Zombie made | Undead Alchemist killed in the combat damage step in which another Zombie's damage is milled instead |
 | 32 | Curiosity's draw was not offered when the creature it enchants dealt damage to an opponent and died in the same step: its condition asked for the Aura on the battlefield when the triggers were collected, after the state-based actions had put it into the graveyard beside its creature (CR 603.10) | the `card_semantics` reference's Aura fights, once the reference read what combat damage sets off as it is dealt: Festerhide Boar with Curiosity trampling over Ambush Viper | a creature with Curiosity dying in the step in which it damages an opponent: a trampler, or one blocked by a first striker it also hits |
 | 33 | a death watcher that left the battlefield in the same event as the creature it saw die raised its trigger under its owner, not the controller it had: a Falkenrath Noble its owner's opponent had taken, dying beside another creature, gave its owner the drain for that death (CR 603.3a, 608.2g) | reading the trigger collectors for the last-known-information slips defects 31 and 32 were | a creature-death watcher under its owner's opponent's control (Olivia Voldaren, Traitorous Blood) dying beside another creature. The face is still read off the moved object: a Thraben Militia dying so raises Thraben Sentry's trigger, which then does nothing |
+| 34 | a triggered ability's "you" was its source's controller as it resolved, not the player who controlled the source as it triggered: Sturmgeist taken in response to its draw drew for the player who had taken it, and Murder of Crows asked them its "you may draw" (CR 603.3a). An activated ability's controller was already set for its resolution; a trigger's was never set, and 32 cards' trigger hooks read their source's controller | the `card_semantics` reference's borrowed attackers: a mutant giving a combat damage trigger to its source's owner went uncaught, because Sturmgeist's hook read its controller again as it resolved | a source changing controllers between its trigger and its resolution: Olivia Voldaren taking it in response (after making it a Vampire), or leaving the battlefield and handing back what she took |
+| 35 | Tree of Redemption's "exchange your life total with this creature's toughness" exchanged the life of the Tree's controller as it resolved, not its activator's: a Tree taken in response exchanged the taker's life (CR 602.2a) | the same sweep of what each card's resolution reads as "you", made for defect 34 | the Tree changing controllers between activation and resolution, by Olivia Voldaren once it is a Vampire |
 
 Each has a regression test that fails without its fix.
 

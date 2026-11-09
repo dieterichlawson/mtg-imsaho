@@ -527,3 +527,23 @@ the Aura's draw at damage time turned the Aura fights up a second, defect
 the Aura asked for on the battlefield after it had followed the Boar into
 the graveyard. Both had passed every fight before: the reference was
 wrong the same way the engine was.
+
+## The cards: borrowed attackers — 2026-11-09
+
+Every kind of fighter attacks its owner under the other player's control
+(`every_borrowed_fighter_attacks_its_owner`, 802 combats). Three mutants,
+two caught, and the one missed at first was defect 34.
+
+| family | mutant | caught by |
+|---|---|---|
+| control | `last_known_controller` answers a permanent's owner (the engine) | the borrowed test, 70 of 802 |
+| combat damage triggers | the trigger of "whenever this creature deals combat damage to a player" is controlled by its source's owner (the engine) | the borrowed test, 9 of 802, since defect 34's fix; before it, nothing |
+| lifelink | lifelink gains its source's owner life (the engine) | not caught: the fighters' one lifelinker, Markov Patrician, has power 0 |
+
+The second was missed because no card read the trigger's controller:
+each hook read its source's controller again as it resolved, so who the
+trigger was given to decided nothing. That is defect 34 (CR 603.3a): a
+Sturmgeist taken in response drew for the player who took it. With the
+engine setting a trigger's controller around its hook and the hooks
+reading it, the mutant shows. The third is a gap in the pool: no
+creature that fights gains life by dealing damage.
