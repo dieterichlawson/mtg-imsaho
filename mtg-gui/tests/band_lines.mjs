@@ -62,5 +62,18 @@ const last = band(["p0 tapped Forest (#12) for mana", "p0 cast Grizzly Bears (#2
   [{ ...bears }]);
 if (last[0] === last[1].replace(/^\+\d+ · /, "")) fail(`the last line twice: ${JSON.stringify(last)}`);
 
+// Two removals in one unseen run (#975, seed 32): the second is the second
+// row, not your own draw after it.
+const geist = { object_id: 20, name: "Chapel Geist", controller: 0, owner: 0, card_types: ["Creature"] };
+const lions = { object_id: 17, name: "Savannah Lions", controller: 0, owner: 0, card_types: ["Creature"] };
+const run = ["p0 passed", "p1 cast Swords to Plowshares (#69) targeting Chapel Geist (#20)", "Chapel Geist (#20) was exiled",
+  "── Turn 11 (p1) ──", "p1 cast Doom Blade (#76) targeting Savannah Lions (#17)", "Savannah Lions (#17) died",
+  "── Turn 12 (p0) ──", "p0 drew a card"];
+const rv = view(["older"].concat(run), [geist]);
+rv.graveyards = [[0, [lions]], [1, []]];
+const r2 = R.bandLogLines({ view: rv, index: P.indexView(rv), logSince: 1 });
+if (r2[0] !== "p1 cast Swords to Plowshares (#69) targeting Chapel Geist (#20)") fail(`the first removal leads: ${JSON.stringify(r2)}`);
+if (r2[1] !== `+${run.length - 2} · p1 cast Doom Blade (#76) targeting Savannah Lions (#17)`) fail(`the second removal is the second row: ${JSON.stringify(r2)}`);
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: the band leads with what the opponent did to you");

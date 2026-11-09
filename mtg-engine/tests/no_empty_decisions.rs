@@ -108,3 +108,31 @@ fn a_player_with_priority_can_always_pass_or_concede() {
             "concede at {step:?}");
     }
 }
+
+/// The two questions callers ask of an offer, as the game loops and the
+/// seats depend on them: `offers_nothing` is what the loops skip a callback
+/// on, and `is_observed_pass` is what a watching seat answers exactly as the
+/// loop would have (#956). Each holds for its own shape and no other.
+#[test]
+fn an_offer_says_whether_it_is_empty_or_an_observed_pass() {
+    use mtg_engine::engine::LegalActions;
+    let pass = LegalActions::observed_pass();
+    assert!(pass.is_observed_pass());
+    assert!(!pass.offers_nothing(), "a pass and a concession are two things to answer");
+
+    let mut empty = LegalActions::observed_pass();
+    empty.actions.clear();
+    assert!(empty.offers_nothing(), "no actions and no prompt is nothing to answer");
+    assert!(!empty.is_observed_pass(), "and not a pass");
+
+    let mut explained = LegalActions::observed_pass();
+    explained.context = Some("Declare blockers".into());
+    assert!(!explained.is_observed_pass(),
+        "a pass the engine explains is a decision the seat sees, not the loop's own pass");
+
+    let mut prompted = LegalActions::observed_pass();
+    prompted.resolution_prompt = Some(ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+        description: String::new(), attacker: ObjectId(1), remaining: vec![], options: vec![],
+    });
+    assert!(!prompted.is_observed_pass());
+}

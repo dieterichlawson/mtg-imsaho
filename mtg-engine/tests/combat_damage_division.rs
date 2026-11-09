@@ -310,3 +310,93 @@ fn check_division(power: u32, blockers: &[(ObjectId, u32)], trample: bool) {
     }
     assert_eq!(reached, legal, "the divisions the prompts reach are the legal ones: {what}");
 }
+
+/// The open division prompt's description.
+fn division_description(state: &GameState) -> String {
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::AssignCombatDamage { description, .. }, ..
+        }) => description.clone(),
+        other => panic!("no division prompt is open: {other:?}"),
+    }
+}
+
+/// CR 510.4: an attacker without first or double strike deals no damage in
+/// the first-strike step, so it has nothing to divide there. A first-strike
+/// *blocker* makes the step happen; the attacker's division is asked once,
+/// in the regular step.
+#[test]
+fn an_attacker_without_first_strike_divides_only_in_the_regular_step() {
+    let reg = registry();
+    let (mut state, attacker, blockers) = blocked(5, &[2, 2], &[], &reg);
+    grant_keyword(&mut state, blockers[0], Keyword::FirstStrike);
+    enter_damage_step(&mut state, &reg);
+    assert!(division_prompt(&state).is_none(),
+        "the first-strike step asked the attacker how to divide damage it does not deal: {:?}",
+        state.awaiting_action);
+    assert_eq!(marked(&state, attacker), 1, "the first-striking blocker dealt its damage");
+
+    state.priority_player = None;
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    let (_, blocker, min, max, _, first_strike) = division_prompt(&state)
+        .expect("the regular step asks the division");
+    assert!(!first_strike);
+    assert_eq!((blocker, min, max), (blockers[0], 2, 5));
+}
+
+/// The question says where a surplus goes: on to the next blocker in the
+/// order, and past the last one to what a trampler attacks. The least
+/// amount, and only it, is the lethal row.
+#[test]
+fn the_division_prompt_names_where_the_rest_goes() {
+    let reg = registry();
+    let (mut state, _, blockers) = blocked(6, &[2, 2, 2], &[], &reg);
+    enter_damage_step(&mut state, &reg);
+    let (_, blocker, min, _, options, _) = division_prompt(&state).expect("a surplus to place");
+    assert_eq!(blocker, blockers[0]);
+    let next = state.obj_name(blockers[1]);
+    let description = division_description(&state);
+    assert!(description.ends_with(&format!("the rest goes on to {next}")),
+        "the rest goes to the second blocker: {description}");
+    assert!(options.iter().all(|o| o.ends_with(&format!("on to {next}"))), "{options:?}");
+    for (amount, option) in (min..).zip(&options) {
+        assert_eq!(option.contains("(lethal)"), amount == min, "{options:?}");
+    }
+
+    let (mut state, _, _) = blocked(5, &[2], &[Keyword::Trample], &reg);
+    enter_damage_step(&mut state, &reg);
+    let description = division_description(&state);
+    assert!(description.ends_with("the rest goes on to p1"),
+        "past its last blocker a trampler's rest goes to the defending player: {description}");
+}
+
+/// Two blockers that read the same in the order prompt are told apart by
+/// their ids; a blocker whose label is already unique is not cluttered
+/// with one. Every label carries the P/T it is ordered by.
+#[test]
+fn only_blockers_that_read_alike_carry_an_id_in_the_order_prompt() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 6, 6);
+    let twins = [ready_creature(&mut state, P1, 2, 2), ready_creature(&mut state, P1, 2, 2)];
+    let odd = ready_creature(&mut state, P1, 1, 3);
+    for &b in &twins {
+        state.get_object_mut(b).unwrap().name = "Twin".into();
+    }
+    state.get_object_mut(odd).unwrap().name = "Odd".into();
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(twins[0], attacker), (twins[1], attacker), (odd, attacker)], &reg);
+    let (remaining, options) = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseDamageAssignmentOrder { remaining, options, .. }, ..
+        }) => (remaining.clone(), options.clone()),
+        other => panic!("three blockers are an order to announce: {other:?}"),
+    };
+    for (id, label) in remaining.iter().zip(&options) {
+        if *id == odd {
+            assert_eq!(label, "Odd 1/3", "a unique label needs no id: {options:?}");
+        } else {
+            assert_eq!(label, &format!("Twin 2/2 [#{}]", id.0), "{options:?}");
+        }
+    }
+}

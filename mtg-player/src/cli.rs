@@ -7114,7 +7114,7 @@ return",
             // The last refusal, held until this attempt is answered (#291).
             paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
-                "  Attack (numbers/all/none, enter=none)> ", &|| { draw(); });
+                Self::attack_prompt(!must_attack.is_empty()), &|| { draw(); });
 
             // Info panes (issue #120): show, then repaint this prompt.
             match input.as_str() {
@@ -8386,15 +8386,27 @@ impl CliPlayer {
         pick.max >= pick.rows.len()
     }
 
+    /// The attack prompt's line. Where a creature must attack, attacking
+    /// with none is refused, so "none" is not offered as an answer (#1002's
+    /// sibling, found by its propagation review).
+    fn attack_prompt(forced: bool) -> &'static str {
+        if forced { "  Attack (numbers/all)> " } else { "  Attack (numbers/all/none, enter=none)> " }
+    }
+
     /// How to answer a set screen: `SET_HOW_TO`, without `[a=all]` where
     /// marking every row cannot be an answer, and with the cancel key where
     /// the choice can be abandoned.
     fn set_how_to(pick: &SetPick) -> String {
-        let how = if Self::set_takes_all(pick) {
+        let mut how = if Self::set_takes_all(pick) {
             SET_HOW_TO.to_string()
         } else {
             SET_HOW_TO.replace("[a=all] ", "")
         };
+        // `n` unmarks every row. Where nothing marked is no answer ("Mark 2
+        // of the 6 cards below") it is a way to start over, not "none" (#1002).
+        if pick.min > 0 {
+            how = how.replace("[n=none]", "[n=clear]");
+        }
         match pick.cancel {
             Some(label) => format!("{how} [c={label}]"),
             None => how,
@@ -12800,14 +12812,20 @@ Wolves or Werewolves is prevented".into()];
             rows, min: 1, max: 1, cancel: None };
         assert!(!CliPlayer::set_takes_all(&pick));
         let how = CliPlayer::set_how_to(&pick);
-        assert!(!how.contains("[a=all]") && how.contains("[n=none]"), "{how}");
+        assert!(!how.contains("[a=all]") && how.contains("[n=clear]") && !how.contains("[n=none]"),
+            "nothing marked is no answer here, so `n` clears (#1002): {how}");
         // "Up to 8 of 8" and "exactly 8" take every row, and say so.
         pick.min = 0;
         pick.max = 8;
         assert!(CliPlayer::set_takes_all(&pick));
         assert!(CliPlayer::set_how_to(&pick).contains("[a=all]"));
+        assert!(CliPlayer::set_how_to(&pick).contains("[n=none]"), "with no minimum, none is an answer");
         pick.cancel = Some("cancel");
         assert!(CliPlayer::set_how_to(&pick).ends_with("[c=cancel]"));
+
+        assert!(!CliPlayer::attack_prompt(true).contains("none"),
+            "a forced attack offers no none: {}", CliPlayer::attack_prompt(true));
+        assert!(CliPlayer::attack_prompt(false).contains("enter=none"));
 
         assert_eq!(CliPlayer::set_count_line(1, 1), "  1 of 1 marked");
         assert_eq!(CliPlayer::set_count_line(8, 1), "  8 marked \u{2014} 7 more than the 1 this takes");

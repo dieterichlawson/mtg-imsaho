@@ -904,7 +904,30 @@ export function bandLogLines(state) {
         return log.slice(-2);
     if (fresh.length <= 2)
         return fresh;
-    return [bandHeadline(state, fresh.slice(0, -1)), `+${fresh.length - 2} · ${fresh[fresh.length - 1]}`];
+    // The second row is the interval's last line, unless something else was
+    // done to you after the headline: two removals in one unseen run named
+    // the first and gave the second's slot to your own draw (#975).
+    const head = bandHeadline(state, fresh.slice(0, -1));
+    const after = fresh.slice(fresh.indexOf(head) + 1);
+    const second = [...after].reverse().find(l => doneToYou(state, l)) ?? fresh[fresh.length - 1];
+    return [head, `+${fresh.length - 2} · ${second}`];
+}
+/** A line an opponent wrote that names you or something of yours. */
+function doneToYou(state, l) {
+    const you = state.view.you;
+    const m = /^p(\d+)\b/.exec(l);
+    if (!m || Number(m[1]) === you)
+        return false;
+    return lineAboutYou(state, l);
+}
+/** Whether a log line names you, or an object you own or control. */
+function lineAboutYou(state, l) {
+    const you = state.view.you;
+    const yours = (id) => {
+        const e = state.index.get(id);
+        return e !== undefined && (e.owner === you || e.obj.owner === you || e.obj.controller === you);
+    };
+    return new RegExp(`\\bp${you}\\b`).test(l) || [...l.matchAll(/#(\d+)/g)].some(m => yours(Number(m[1])));
 }
 /**
  * Which line of an interval the band leads with, when it cannot show them
@@ -925,15 +948,8 @@ export function bandLogLines(state) {
 export function bandHeadline(state, lines) {
     const you = state.view.you;
     const author = (l) => { const m = /^p(\d+)\b/.exec(l); return m ? Number(m[1]) : null; };
-    const yours = (id) => {
-        const e = state.index.get(id);
-        return e !== undefined && (e.owner === you || e.obj.owner === you || e.obj.controller === you);
-    };
-    const aboutYou = (l) => new RegExp(`\\bp${you}\\b`).test(l)
-        || [...l.matchAll(/#(\d+)/g)].some(m => yours(Number(m[1])));
-    const byOpponent = (l) => { const a = author(l); return a !== null && a !== you; };
-    return lines.find(l => byOpponent(l) && aboutYou(l))
-        ?? lines.find(l => author(l) !== you && !aboutYou(l))
+    return lines.find(l => doneToYou(state, l))
+        ?? lines.find(l => author(l) !== you && !lineAboutYou(state, l))
         ?? lines[0];
 }
 /** Lines from each stack item to what it targets. */
@@ -1365,12 +1381,14 @@ function promptArea(ctx, hits, state, x, y, w, h) {
             text(ctx, clip(ctx, state.matchLine, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#a0d0e0" });
             ty += 9;
         }
-        if (state.autoPass)
-            text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
+        const standing = standingModes(state);
+        if (standing)
+            text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
         return;
     }
-    if (state.autoPass) {
-        text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" });
+    const standing = standingModes(state);
+    if (standing) {
+        text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" });
         ty += 9;
     }
     const title = ui ? ui.title : "";
@@ -1793,4 +1811,16 @@ export function render(ctx, state) {
         text(ctx, "LOG (l to close, wheel to scroll)", 4, H - 118, { font: "7px Silkscreen", color: "#ffe080" });
     }
     return hits;
+}
+/**
+ * The standing line for the page's two pass modes, or null. `f` always had
+ * one; `s` had only a notice the next send cleared, so a person who pressed
+ * it by accident met hundreds of stops with nothing saying why (#974).
+ */
+export function standingModes(state) {
+    if (state.autoPass)
+        return "AUTO-PASS on (f to stop)";
+    if (state.stopAtPass)
+        return "STOPPING AT EVERY PRIORITY (s to stop)";
+    return null;
 }

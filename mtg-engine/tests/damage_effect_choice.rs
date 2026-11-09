@@ -546,3 +546,24 @@ fn the_damage_effect_prompt_does_not_grow_with_the_board() {
     assert_eq!(options.len(), 2,
         "two distinct answers on a board of seven effects: {options:?}");
 }
+
+/// Three effects whose order matters are as much a question as two: a
+/// Flail and Ghostly Possession on the Corpse, an Undead Alchemist across
+/// the table. Prevention first saves the library; the mill first spends it.
+#[test]
+fn three_effects_whose_order_matters_are_asked() {
+    let (mut state, reg) = possession_and_alchemist();
+    let corpse = state.objects.values().find(|o| o.name == "Walking Corpse").unwrap().id;
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+    state.get_object_mut(flail).unwrap().attached_to = Some(corpse);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    let (player, options, _) = effect_prompt(&state)
+        .expect("three effects, and the order decides between a mill and nothing");
+    assert_eq!(player, P1);
+    assert_eq!(options.len(), 3, "{options:?}");
+    let milled = choose(&state, &reg, "Undead Alchemist");
+    assert_eq!(library_size(&milled, P1), 8);
+    let prevented = choose(&state, &reg, "Ghostly Possession");
+    assert_eq!(library_size(&prevented, P1), 10);
+}

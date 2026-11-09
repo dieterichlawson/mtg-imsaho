@@ -1501,3 +1501,51 @@ fn daybreak_rangers_two_damage_stays_two_damage_when_it_transforms_in_response()
         "the front face's 2 damage was dealt: {:?}",
         state.game_log.iter().rev().take(8).map(|l| &l.message).collect::<Vec<_>>());
 }
+
+/// CR 701.28f names whose ability it is: an ability "of a permanent that
+/// isn't a delayed triggered ability of that permanent". Another
+/// permanent's ability, or a delayed trigger of this one, transforms it
+/// however often it has flipped since that ability went on the stack. No
+/// card in the pool has either today (every ability that transforms
+/// transforms its own source), so the resolving entry is set by hand, with
+/// a stamp the Alpha's transform count has already moved past.
+#[test]
+fn only_the_permanents_own_undelayed_ability_is_refused_a_second_transform() {
+    use mtg_engine::cards::helpers::{transform_quietly, TransformResult};
+    use mtg_engine::state::StackEntry;
+    use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    let other = named_permanent(&mut state, &reg, "Moon Heron", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    let stale = Some(state.get_object(mayor).unwrap().transforms - 1);
+    let card = state.get_object(mayor).unwrap().card_id;
+    let other_card = state.get_object(other).unwrap().card_id;
+
+    let ability = |source_id| StackEntry::Ability {
+        source_id, ability_index: 0, behavior_card_id: other_card, targets: vec![],
+        activator: P0, x_value: None, target_requirement: None, sacrificed: None,
+        sacrificed_toughness: None, loyalty: false, source_transforms: stale, source_name: None,
+    };
+    let trigger = |id, card_id, event| {
+        let mut source = TriggerSource::new(id, card_id, P0, "test");
+        source.source_transforms = stale;
+        StackEntry::Trigger(PendingTrigger { source, event, ordered: false })
+    };
+    let cases = [
+        ("its own activated ability", ability(mayor), false),
+        ("another permanent's activated ability", ability(other), true),
+        ("its own triggered ability", trigger(mayor, card, TriggerEvent::SelfDies), false),
+        ("another permanent's triggered ability", trigger(other, other_card, TriggerEvent::SelfDies), true),
+        ("its own delayed triggered ability",
+            trigger(mayor, card, TriggerEvent::DelayedTokenExile { target_id: mayor }), true),
+    ];
+    for (what, entry, transforms) in cases {
+        let mut s = state.clone();
+        s.resolving_ability = Some(entry);
+        let result = transform_quietly(&mut s, mayor, &reg);
+        assert_eq!(result == TransformResult::Transformed, transforms,
+            "{what}: {result:?}");
+    }
+}
