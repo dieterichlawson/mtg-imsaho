@@ -684,16 +684,13 @@ fn apply_effect(state: &mut GameState, index: usize, effect: &DamageEffect, regi
     let combat = if pd.kind == DamageKind::Combat { "combat " } else { "" };
     let amount = pd.amount;
     match effect {
-        DamageEffect::PreventAll(prevention) => {
+        DamageEffect::PreventAll(_) => {
             // Said out loud — a silent damage step read as the engine
             // forgetting combat, not as prevention working (issue #137) —
             // and with the amount and the source, so that three points off
             // a Brimstone Volley and six off a blocked attacker do not
             // print the same line (issue #299).
-            let by = match prevention {
-                Prevention::Protection => "protection".to_string(),
-                _ => effect_name(state, effect),
-            };
+            let by = effect_name(state, effect);
             state.log(LogLevel::Event, format!(
                 "{target}: {amount} {combat}damage from {source_name} prevented by {by}"));
             state.pending_damage.remove(index);
