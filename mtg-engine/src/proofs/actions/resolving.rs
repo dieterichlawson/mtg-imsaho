@@ -149,8 +149,10 @@ fn resolved_with(hook: Hook, expected: &[Option<Target>; 2], n: usize) -> bool {
 
 /// What [`a_spell_on_top`] finds the engine hands the rest of a spell's
 /// resolution: the spell, its card, its targets (the first two, and how
-/// many) and its controller.
-static mut HANDED: Held<Option<(ObjectId, crate::ids::CardId, [Option<Target>; 2], usize, PlayerId)>> = Held::new(None, (&raw const HANDED).cast());
+/// many), their zone changes as it was cast (the first two, and how many)
+/// and its controller.
+type Handed = (ObjectId, crate::ids::CardId, [Option<Target>; 2], usize, [Option<u32>; 2], usize, PlayerId);
+static mut HANDED: Held<Option<Handed>> = Held::new(None, (&raw const HANDED).cast());
 
 /// Stands in for `stack::resolve_spell_as`: records what it is handed.
 #[allow(dead_code)] // named only by `kani::stub`
@@ -160,23 +162,26 @@ fn resolve_spell_as(
     object_id: ObjectId,
     card_id: crate::ids::CardId,
     targets: Vec<Target>,
+    recorded: &[u32],
     caster: PlayerId,
 ) {
-    assert!(targets.len() <= 2, "no more targets than this proof gives");
+    assert!(targets.len() <= 2 && recorded.len() <= 2, "no more targets than this proof gives");
     let held = [targets.first().cloned(), targets.get(1).cloned()];
+    let counts = [recorded.first().copied(), recorded.get(1).copied()];
     // SAFETY: as in `answer`.
     let handed = unsafe { &mut *std::ptr::addr_of_mut!(HANDED.value) };
     assert!(handed.is_none(), "handed once");
-    *handed = Some((object_id, card_id, held, targets.len(), caster));
+    *handed = Some((object_id, card_id, held, targets.len(), counts, recorded.len(), caster));
     std::mem::forget(targets);
 }
 
 /// A spell on top of the stack resolving: it leaves the stack, and the
 /// rest of its resolution (`stack::resolve_spell_as`, the proof below) is
 /// handed the spell, its card, the targets it was cast with, in order,
-/// and its controller. For a spell either player's with `n` targets, each
-/// target either player's. With [`a_spell_resolving`], what a spell
-/// resolving does.
+/// their zone changes as it was cast, in order (none, as a saved game's
+/// may have), and its controller. For a spell either player's with `n`
+/// targets, each target either player's, its zone changes any count. With
+/// [`a_spell_resolving`], what a spell resolving does.
 fn a_spell_on_top(n: usize) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
@@ -185,32 +190,53 @@ fn a_spell_on_top(n: usize) {
     let (ids, targets) = targets_of(&mut state, blank, n);
     let controller = PlayerId(u8::from(kani::any::<bool>()));
     let spell = state.create_object(card, controller, Zone::Stack, None, None);
-    state.get_object_mut(spell).expect("just created").targets = targets;
+    let recorded: bool = kani::any();
+    let counts: [u32; 2] = [kani::any(), kani::any()];
+    {
+        let o = state.get_object_mut(spell).expect("just created");
+        o.targets = targets;
+        // Room for both, whether or not any is recorded.
+        o.target_zone_changes = Vec::with_capacity(2);
+        if recorded {
+            for &z in &counts[..n] {
+                o.target_zone_changes.push(z);
+            }
+        }
+    }
     state.stack.push(StackEntry::Spell(spell));
 
     crate::stack::resolve_top_of_stack(&mut state, &registry);
 
     let mut chosen = [None, None];
-    for (c, &id) in chosen.iter_mut().zip(&ids[..n]) {
-        *c = Some(Target::Object(id));
+    let mut seen = [None, None];
+    for (i, &id) in ids[..n].iter().enumerate() {
+        chosen[i] = Some(Target::Object(id));
+        if recorded {
+            seen[i] = Some(counts[i]);
+        }
     }
+    let k = if recorded { n } else { 0 };
     // SAFETY: as in `answer`.
     let handed = unsafe { &*std::ptr::addr_of!(HANDED.value) };
     assert!(state.stack.is_empty());
-    assert!(handed.as_ref().is_some_and(|(o, c, held, m, p)| *o == spell && *c == card && *held == chosen && *m == n && *p == controller));
+    assert!(handed.as_ref().is_some_and(|(o, c, held, m, z, j, p)| *o == spell && *c == card && *held == chosen && *m == n
+        && *z == seen && *j == k && *p == controller));
     std::mem::forget((registry, state));
 }
 
 /// The rest of a spell's resolution (CR 608.2b), from its card, its
 /// targets and its controller (read off it as [`a_spell_on_top`] shows):
-/// with targets, none still legal (none meeting its requirement, able to
-/// be targeted by it and meeting the card's), it is countered by the
-/// rules, its effect not happening, and leaves the stack; otherwise it
-/// resolves, its card's resolution handed
-/// each target as it was chosen or, where it may no longer be targeted,
-/// as illegal, its other targets kept in place, and it then leaves the
+/// with targets, none still legal (none still the object it was as it was
+/// cast, meeting its requirement, able to be targeted by it and meeting
+/// the card's), it is countered by the rules, its effect not happening,
+/// and leaves the stack; otherwise it resolves, its card's resolution
+/// handed each target as it was chosen or, where it has changed zones
+/// since (CR 400.7: a new object) or may no longer be targeted, as
+/// illegal, its other targets kept in place, and it then leaves the
 /// stack. A spell with none resolves. For a spell either player's with
-/// `n` targets, each target either player's.
+/// `n` targets, each target either player's and gone and back since or
+/// not, its zone changes as it was cast recorded or, as a saved game's
+/// may be, not.
 ///
 /// Proved apart from the read: read back off the spell's object, the
 /// targets are a list whose length symbolic execution does not see, and
@@ -226,14 +252,28 @@ fn a_spell_resolving(n: usize) {
     let controller = PlayerId(u8::from(kani::any::<bool>()));
     let spell = state.create_object(card, controller, Zone::Stack, None, None);
     let events = state.events.len();
+    let recorded: bool = kani::any();
+    let mut counts = Vec::with_capacity(2);
+    let mut gone = [false; 2];
+    for (g, &id) in gone.iter_mut().zip(&ids[..n]) {
+        if recorded {
+            counts.push(0);
+        }
+        *g = kani::any();
+        if *g {
+            state.get_object_mut(id).expect("a target").zone_change_count = 2;
+        }
+    }
 
-    crate::stack::resolve_spell_as(&mut state, &registry, spell, card, targets, controller);
+    crate::stack::resolve_spell_as(&mut state, &registry, spell, card, targets, &counts, controller);
 
     let chosen = &ids[..n];
-    let any_legal = chosen.iter().any(|&id| answer(id, Asked::Legal) && answer(id, Asked::Targetable) && answer(id, Asked::Valid));
+    let new_object = |i: usize| recorded && gone[i];
+    let any_legal = chosen.iter().enumerate()
+        .any(|(i, &id)| !new_object(i) && answer(id, Asked::Legal) && answer(id, Asked::Targetable) && answer(id, Asked::Valid));
     let mut handed = [None, None];
-    for (h, &id) in handed.iter_mut().zip(chosen) {
-        *h = Some(if answer(id, Asked::Targetable) { Target::Object(id) } else { Target::Illegal });
+    for (i, (h, &id)) in handed.iter_mut().zip(chosen).enumerate() {
+        *h = Some(if !new_object(i) && answer(id, Asked::Targetable) { Target::Object(id) } else { Target::Illegal });
     }
     // SAFETY: as in `answer`.
     let (none, moved) = unsafe { ((*std::ptr::addr_of!(RESOLVED.value)).is_none(), *std::ptr::addr_of!(MOVED.value)) };
@@ -285,12 +325,14 @@ each_resolution! {
 }
 
 /// An activated ability resolving (CR 608.2b, 602.2a): with targets, none
-/// still legal (each may still be targeted by its source, meets the
+/// still legal (each still the object it was as the ability went on the
+/// stack, CR 400.7, may still be targeted by its source, meets the
 /// requirement the ability declared, if `required`, and what the card
 /// asks), it does nothing; otherwise its card's resolution (a loyalty
 /// ability's own, if `loyalty`, 606.5) is handed each target as chosen or,
 /// where it is no longer legal, as illegal. Either way it leaves the
-/// stack. For an ability either player activated with `n` targets.
+/// stack. For an ability either player activated with `n` targets, each
+/// gone and back since or not, their zone changes recorded or not.
 fn an_ability_resolving((n, required, loyalty): (usize, bool, bool)) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
@@ -299,9 +341,21 @@ fn an_ability_resolving((n, required, loyalty): (usize, bool, bool)) {
     let (ids, targets) = targets_of(&mut state, blank, n);
     let activator = PlayerId(u8::from(kani::any::<bool>()));
     let source = state.create_object(card, activator, Zone::Battlefield, None, None);
+    let recorded: bool = kani::any();
+    let mut counts = Vec::with_capacity(2);
+    let mut gone = [false; 2];
+    for (g, &id) in gone.iter_mut().zip(&ids[..n]) {
+        if recorded {
+            counts.push(0);
+        }
+        *g = kani::any();
+        if *g {
+            state.get_object_mut(id).expect("a target").zone_change_count = 2;
+        }
+    }
     state.stack.push(StackEntry::Ability {
         source_id: source, ability_index: 0, behavior_card_id: card, targets, activator,
-        x_value: None, target_requirement: required.then_some(TargetRequirement::Creature), target_zone_changes: Vec::new(),
+        x_value: None, target_requirement: required.then_some(TargetRequirement::Creature), target_zone_changes: counts,
         sacrificed: None, sacrificed_toughness: None, loyalty, source_transforms: None, source_name: None,
     });
 
@@ -309,8 +363,9 @@ fn an_ability_resolving((n, required, loyalty): (usize, bool, bool)) {
 
     let mut handed = [None, None];
     let mut any_legal = false;
-    for (h, &id) in handed.iter_mut().zip(&ids[..n]) {
-        let legal = answer(id, Asked::Targetable) && (!required || answer(id, Asked::Legal)) && answer(id, Asked::Valid);
+    for (i, (h, &id)) in handed.iter_mut().zip(&ids[..n]).enumerate() {
+        let legal = !(recorded && gone[i])
+            && answer(id, Asked::Targetable) && (!required || answer(id, Asked::Legal)) && answer(id, Asked::Valid);
         any_legal |= legal;
         *h = Some(if legal { Target::Object(id) } else { Target::Illegal });
     }
@@ -591,7 +646,7 @@ fn a_spell_ending(ending: u8) {
     let caster = PlayerId(u8::from(kani::any::<bool>()));
     let spell = state.create_object(card, caster, Zone::Stack, None, None);
 
-    crate::stack::resolve_spell_as(&mut state, &registry, spell, card, Vec::new(), caster);
+    crate::stack::resolve_spell_as(&mut state, &registry, spell, card, Vec::new(), &[], caster);
 
     // SAFETY: as in `answer`.
     let moved = unsafe { *std::ptr::addr_of!(MOVED.value) };

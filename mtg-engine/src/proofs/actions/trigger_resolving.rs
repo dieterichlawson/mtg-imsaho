@@ -282,9 +282,10 @@ fn event_of(kind: Kind) -> (TriggerEvent, Hook, [u64; 5], bool) {
 }
 
 /// A triggered ability of the event `kind` resolving (CR 608.2, 113.7a,
-/// 603.4): with its one target no longer legal (it does not meet the
-/// requirement it was chosen under, may no longer be targeted by the
-/// ability's source, or does not meet what the card asks), it does
+/// 603.4): with its one target no longer legal (it has changed zones since
+/// the trigger went on the stack, and is a new object, 400.7; it does not
+/// meet the requirement it was chosen under, may no longer be targeted by
+/// the ability's source, or does not meet what the card asks), it does
 /// nothing; otherwise the hook for its event, and only that one, is
 /// called once, on the ability's source, with the event's data and the
 /// target as chosen, while the ability is the one resolving, as from
@@ -294,7 +295,8 @@ fn event_of(kind: Kind) -> (TriggerEvent, Hook, [u64; 5], bool) {
 /// controller to read. For a trigger either player's, its source either
 /// player's, on the battlefield or gone (113.7a: the ability resolves
 /// without it), of either face, and, for an event a targeted trigger in
-/// the pool is on, no target or one, a creature either player's.
+/// the pool is on, no target or one, a creature either player's, gone and
+/// back since or not, its zone changes recorded or not.
 fn resolving(kind: Kind) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
@@ -321,15 +323,24 @@ fn resolving(kind: Kind) {
     let mut trigger = c.ap.pop().expect("just emitted");
     trigger.source.controller = controller;
     let targeted = may_target && kani::any::<bool>();
+    let (recorded, gone): (bool, bool) = (kani::any(), kani::any());
     if targeted {
         trigger.source.chosen_targets = Vec::with_capacity(1);
         trigger.source.chosen_targets.push(Target::Object(target));
+        trigger.source.target_zone_changes = Vec::with_capacity(1);
+        if recorded {
+            trigger.source.target_zone_changes.push(0);
+        }
+        if gone {
+            state.get_object_mut(target).expect("the target").zone_change_count = 2;
+        }
     }
     state.stack.push(StackEntry::Trigger(trigger));
 
     assert!(crate::triggers::resolve_next_trigger(&mut state, &registry));
 
-    let legal = !targeted || (answer(target, Asked::Legal) && answer(target, Asked::Targetable) && answer(target, Asked::Valid));
+    let legal = !targeted || (!(recorded && gone)
+        && answer(target, Asked::Legal) && answer(target, Asked::Targetable) && answer(target, Asked::Valid));
     // SAFETY: as in `answer`.
     let h = unsafe { &*std::ptr::addr_of!(HOOKED.value) };
     assert!(state.stack.is_empty());

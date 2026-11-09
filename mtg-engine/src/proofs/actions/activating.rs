@@ -344,8 +344,10 @@ each_sacrifice! {
 /// matched as every requirement there is), under its activator, not a
 /// loyalty ability, and carrying what its costs left to resolve with: the
 /// X announced, the creature sacrificed and that creature's toughness as
-/// last read (`costs_paid`), how often its source had transformed, and
-/// its source's name as it went on. For an activator either player, the source theirs on
+/// last read (`costs_paid`), how often its source had transformed, its
+/// source's name as it went on, and its target's zone changes so far, by
+/// which a target gone and back by the time it resolves is a new object
+/// (CR 400.7). For an activator either player, the source theirs on
 /// the battlefield or already sacrificed to the graveyard, and any of
 /// each.
 fn pushing(required: bool) {
@@ -377,9 +379,10 @@ fn pushing(required: bool) {
 
     assert!(matches!(state.stack.as_slice(), [StackEntry::Ability {
         source_id, ability_index, behavior_card_id, targets, activator: by, x_value, target_requirement,
-        sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_name,
+        target_zone_changes, sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_name,
     }] if *source_id == source && *ability_index == index && *behavior_card_id == blank && *by == activator
         && matches!(targets.as_slice(), [Target::Object(o)] if *o == other)
+        && matches!(target_zone_changes.as_slice(), [z] if Some(*z) == state.get_object(other).map(|o| o.zone_change_count))
         && matches!(target_requirement, Some(TargetRequirement::Creature)) == required
         && target_requirement.is_some() == required
         && *x_value == x && *s == sacrificed && *t == toughness
