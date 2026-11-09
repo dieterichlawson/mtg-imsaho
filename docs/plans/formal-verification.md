@@ -757,7 +757,8 @@ else.
   answering is reached whoever is asked. So each question the engine
   asks on a card's behalf, in every test that casts, activates or
   triggers it (spells, activated, loyalty and granted abilities, flashback,
-  enter, dies, upkeep, end-step, death, cast and enter watchers), is held
+  enter, dies, upkeep, end-step, death, cast and enter watchers, and every
+  combat), is held
   to the player its text has answer it:
   its controller, "you" (CR 608.2d); the target player who discards,
   sacrifices or exiles from their graveyard; each player; the countered
@@ -772,7 +773,7 @@ else.
   survey of the 172,000 questions the suite asks found none put to the
   wrong player, and two never asked, now asked: Curse of Oblivion's
   choice and Frightful Delusion's discard, each forced by a board that
-  held exactly what was owed. The check keeps it so: seventeen mutants,
+  held exactly what was owed. The check keeps it so: eighteen mutants,
   each moving one question or one "you" to the other player, or asking
   the other player first, all caught.
 - **Triggers on spells cast and creatures entering**: with the watcher on
@@ -908,8 +909,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 240
-mutants, 234 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 241
+mutants, 235 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, one
 for want of a spell that reads its target's controller, three
 equivalent), and the failure names the
