@@ -161,3 +161,31 @@ fn no_view_names_the_cards_of_a_question_put_to_the_other_player() {
         }
     }
 }
+
+/// What the acting player is offered is held to the same as their view:
+/// the same with every library reversed and whatever the other player
+/// holds and will draw, with mana enough to cast what is in their hand,
+/// so that the menu has spells and their targets on it. The fuzz runner
+/// holds every game to this on one decision in 32; this holds it on every
+/// pull request.
+#[test]
+fn no_offer_depends_on_what_the_player_cannot_see() {
+    let registry = registry();
+    let others_hand: [&str; 3] = ["Delver of Secrets", "Daybreak Ranger", "Forest"];
+    let others_library: [&str; 4] = ["Daybreak Ranger", "Delver of Secrets", "Plains", "Mountain"];
+    let offered = |state: &GameState| serde_json::to_value(mtg_engine::engine::legal_actions(state, &registry)).expect("a menu serializes");
+    let with_mana = |mut state: GameState| {
+        add_mana(&mut state, P0, &[(ManaType::Red, 3), (ManaType::Blue, 2)]);
+        state
+    };
+    let state = with_mana(board(&registry, [&HAND, &HAND], [&LIBRARY, &LIBRARY]));
+    let menu = offered(&state);
+    assert!(menu["castable_spells"].as_array().is_some_and(|c| !c.is_empty()), "the menu has spells on it: {menu}");
+    let mut reversed = state.clone();
+    for p in [P0, P1] {
+        reversed.get_player_mut(p).library_order.reverse();
+    }
+    assert_eq!(offered(&reversed), menu, "p0's offers changed when every library was reversed");
+    let other = with_mana(board(&registry, [&HAND, &others_hand], [&LIBRARY, &others_library]));
+    assert_eq!(offered(&other), menu, "p0's offers changed with p1's hand and library");
+}
