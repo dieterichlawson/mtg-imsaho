@@ -3293,9 +3293,11 @@ struct Model {
     /// Who controlled it before an effect that gives it back in the
     /// cleanup step took it (CR 514.2).
     stolen_from: Option<PlayerId>,
-    /// A token that entered attacking (CR 508.4), and whether its text
-    /// exiles it at end of combat.
+    /// A token that entered attacking (CR 508.4), what it attacks, a
+    /// player or a planeswalker, and whether its text exiles it at end of
+    /// combat.
     attacking: bool,
+    attacks: Option<Target>,
     exile_at_end_of_combat: bool,
 }
 
@@ -3338,6 +3340,7 @@ impl Model {
             temp_restricted: Vec::new(),
             stolen_from: None,
             attacking: false,
+            attacks: None,
             exile_at_end_of_combat: false,
         }
     }
@@ -3950,6 +3953,19 @@ impl World {
         true
     }
 
+    /// Each planeswalker's state trigger once the state-based actions are
+    /// done (CR 603.8): "When ~ has N or fewer loyalty counters on him,
+    /// transform him", read from its card, turning it over.
+    fn walker_triggers(&mut self) {
+        for m in self.permanents.values_mut().filter(|m| !m.transformed && m.types.iter().any(|t| t == "planeswalker")) {
+            let card = m.name.as_ref().and_then(|n| cached_oracle().get(n));
+            let at = card.and_then(|c| read_planeswalker(c).ok()).and_then(|w| w.transforms_at);
+            if at.is_some_and(|n| m.named_counters.get("loyalty").copied().unwrap_or(0) <= n) {
+                m.transform();
+            }
+        }
+    }
+
     /// What Abattoir Ghoul's triggers gain if `victim` dies now: for each
     /// Ghoul on the battlefield that dealt it damage this turn, its
     /// controller gains the victim's toughness as it last existed (CR
@@ -4427,6 +4443,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
+        attacks: None,
         exile_at_end_of_combat: false,
         ..m.clone()
     }
@@ -4470,6 +4487,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
+        attacks: None,
         exile_at_end_of_combat: false,
     }
 }
@@ -6200,8 +6218,9 @@ enum Answer {
     Objects(Vec<ObjectId>),
 }
 
-/// A combat to declare: who attacks whom, and who blocks whom.
-type Combat = (Vec<(ObjectId, PlayerId)>, Vec<(ObjectId, ObjectId)>);
+/// A combat to declare: who attacks whom, a player or a planeswalker
+/// (CR 506.3, 508.1b), and who blocks whom.
+type Combat = (Vec<(ObjectId, Target)>, Vec<(ObjectId, ObjectId)>);
 
 /// How far a scripted game is played.
 #[derive(Clone, Copy)]
@@ -6291,7 +6310,10 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                 _ => (Vec::new(), Vec::new()),
             };
             return match prompt {
-                CombatPrompt::ChooseAttackers { .. } => Action::DeclareAttackers { attackers, planeswalker_attacks: Vec::new() },
+                CombatPrompt::ChooseAttackers { .. } => Action::DeclareAttackers {
+                    attackers: attackers.iter().filter_map(|(a, t)| match t { Target::Player(p) => Some((*a, *p)), _ => None }).collect(),
+                    planeswalker_attacks: attackers.iter().filter_map(|(a, t)| match t { Target::Object(w) => Some((*a, *w)), _ => None }).collect(),
+                },
                 CombatPrompt::ChooseBlockers { .. } => Action::DeclareBlockers { assignments: blocks },
             };
         }
@@ -7490,11 +7512,7 @@ fn every_loyalty_ability_does_what_its_text_says() {
                         .map(|w| {
                             let mut after = apply(&ability.spec, &w, targets, P0);
                             after.state_based_actions();
-                            if let (Some(n), Some(m)) = (walker.transforms_at, after.permanents.get_mut(&id)) {
-                                if !m.transformed && m.named_counters.get("loyalty").copied().unwrap_or(0) <= n {
-                                    m.transform();
-                                }
-                            }
+                            after.walker_triggers();
                             after.refresh();
                             after
                         })
@@ -7841,7 +7859,7 @@ fn protected(to: &Model, source: &Model) -> bool {
 /// "whenever this creature deals combat damage to a player" that the step
 /// set off resolves (603.3), and state-based actions again. An attacker
 /// without vigilance taps to attack (508.1f, 702.20b).
-fn combat_outcomes(world: &World, a: ObjectId, blockers: &[ObjectId]) -> Vec<World> {
+fn combat_outcomes(world: &World, a: ObjectId, blockers: &[ObjectId], defender: &Target) -> Vec<World> {
     let mut w = world.clone();
     w.refresh();
     if !has(&w.permanents[&a], Keyword::Vigilance) {
@@ -7859,17 +7877,17 @@ fn combat_outcomes(world: &World, a: ObjectId, blockers: &[ObjectId]) -> Vec<Wor
             trigger_outcomes(&trigger, &put, P0).into_iter()
                 .flat_map(|mut after| {
                     after.source = w.source;
-                    combat_after_attacking(after, a, blockers)
+                    combat_after_attacking(after, a, blockers, defender)
                 })
                 .collect()
         }
-        None => combat_after_attacking(w, a, blockers),
+        None => combat_after_attacking(w, a, blockers, defender),
     }
 }
 
 /// [`combat_outcomes`] from `a` attacking, its targeted attack trigger
 /// resolved.
-fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> Vec<World> {
+fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId], defender: &Target) -> Vec<World> {
     // Its attack trigger: tokens that enter tapped and attacking, never
     // having been declared attackers (CR 508.4).
     if let Some(t) = w.permanents[&a].combat.on_attack_tokens.clone() {
@@ -7945,11 +7963,29 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> V
     let any_fast = w.permanents.get(&a).is_some_and(fast) || blockers.iter().any(|b| w.permanents.get(b).is_some_and(fast))
         || w.tokens.iter().any(|t| t.attacking && fast(t));
     let steps: &[Option<bool>] = if any_fast { &[Some(true), Some(false)] } else { &[None] };
+    // What each token that entered attacking attacks: the defending player
+    // or a planeswalker they control, as its controller chooses (CR 508.4b).
+    let defenders: Vec<Target> = std::iter::once(Target::Player(P1))
+        .chain(w.permanents.iter().filter(|(_, m)| m.controller == P1 && m.types.iter().any(|t| t == "planeswalker")).map(|(id, _)| Target::Object(*id)))
+        .collect();
+    let mut starts = vec![w];
+    for i in 0..starts[0].tokens.len() {
+        if !starts[0].tokens[i].attacking {
+            continue;
+        }
+        starts = starts.into_iter()
+            .flat_map(|s| defenders.iter().map(move |d| {
+                let mut s = s.clone();
+                s.tokens[i].attacks = Some(d.clone());
+                s
+            }))
+            .collect();
+    }
     // The damage assignment order the attacking player announces for its
     // blockers, each it may, standing for both damage steps (CR 509.2,
     // 510.4): each world goes with its order.
-    let mut worlds: Vec<(World, Vec<ObjectId>)> = permutations(blockers.len()).into_iter()
-        .map(|order| (w.clone(), order.into_iter().map(|i| blockers[i]).collect()))
+    let mut worlds: Vec<(World, Vec<ObjectId>)> = starts.iter()
+        .flat_map(|w| permutations(blockers.len()).into_iter().map(move |order| (w.clone(), order.into_iter().map(|i| blockers[i]).collect())))
         .collect();
     for &step in steps {
         // Who deals damage in this step: in a first-strike step, first and
@@ -7968,8 +8004,16 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> V
             let mut branches: Vec<Vec<(Target, u32, Src)>> = vec![Vec::new()];
             if let Some(am) = w.permanents.get(&a).filter(|m| deals(m) && power(m) > 0) {
                 let n = power(am);
+                // What it attacks, a planeswalker no longer there taking
+                // nothing (CR 506.4).
+                let attacked_there = match defender {
+                    Target::Object(pw) => w.permanents.contains_key(pw),
+                    _ => true,
+                };
                 if blockers.is_empty() {
-                    branches[0].push((Target::Player(P1), n, Src::Permanent(a)));
+                    if attacked_there {
+                        branches[0].push((defender.clone(), n, Src::Permanent(a)));
+                    }
                 } else {
                     // The blockers still there, in the order announced, and
                     // what is lethal to each: 1 from a deathtouch source
@@ -7985,7 +8029,7 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> V
                     branches = divisions(n, &lethal, has(am, Keyword::Trample)).into_iter()
                         .map(|(each, over)| there.iter().zip(each)
                             .map(|((b, _), x)| (Target::Object(*b), x, Src::Permanent(a)))
-                            .chain(std::iter::once((Target::Player(P1), over, Src::Permanent(a))))
+                            .chain(std::iter::once((defender.clone(), over, Src::Permanent(a))).filter(|_| attacked_there))
                             .filter(|(_, x, _)| *x > 0)
                             .collect())
                         .collect();
@@ -8000,10 +8044,15 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> V
                     }
                 }
             }
-            // The tokens attacking, unblocked.
+            // The tokens attacking, unblocked, each at what it attacks, a
+            // planeswalker no longer there taking nothing.
             for (i, t) in w.tokens.iter().enumerate().filter(|(_, t)| t.attacking && deals(t) && power(t) > 0) {
+                let at = t.attacks.clone().unwrap_or(Target::Player(P1));
+                if matches!(at, Target::Object(pw) if !w.permanents.contains_key(&pw)) {
+                    continue;
+                }
                 for branch in &mut branches {
-                    branch.push((Target::Player(P1), power(t), Src::Token(i)));
+                    branch.push((at.clone(), power(t), Src::Token(i)));
                 }
             }
             // A Zombie's damage to a player that a permanent mills instead
@@ -8052,6 +8101,13 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> V
                         _ => n,
                     };
                     match to {
+                        // Damage to a planeswalker removes that many loyalty
+                        // counters (CR 120.3c); deathtouch and what reads a
+                        // creature's damage do not apply to it.
+                        Target::Object(id) if w2.permanents[id].types.iter().any(|t| t == "planeswalker") => {
+                            let loyalty = w2.permanents.get_mut(id).expect("attacked").named_counters.entry("loyalty".to_string()).or_insert(0);
+                            *loyalty = loyalty.saturating_sub(n);
+                        }
                         Target::Object(id) => {
                             let m = w2.permanents.get_mut(id).expect("in combat");
                             if deal(m, n) {
@@ -8112,6 +8168,7 @@ fn combat_after_attacking(mut w: World, a: ObjectId, blockers: &[ObjectId]) -> V
                     }
                 }
                 w2.state_based_actions();
+                w2.walker_triggers();
                 let mut drawn = vec![w2];
                 for p in may_draw {
                     drawn = drawn.into_iter()
@@ -8389,12 +8446,15 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
 struct Asked {
     eligible: Vec<ObjectId>,
     must_attack: Vec<ObjectId>,
+    /// The planeswalkers the defending player controls, each of which may
+    /// be attacked instead (CR 508.1a).
+    planeswalkers: Vec<ObjectId>,
     blocks: Option<(std::collections::HashMap<ObjectId, Vec<ObjectId>>, std::collections::HashMap<ObjectId, u32>)>,
 }
 
 fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> Asked {
     let mut state = state.clone();
-    let mut asked = Asked { eligible: Vec::new(), must_attack: Vec::new(), blocks: None };
+    let mut asked = Asked { eligible: Vec::new(), must_attack: Vec::new(), planeswalkers: Vec::new(), blocks: None };
     let mut decisions = 0;
     let turn = state.turn_number;
     // This turn's combat only: with no creature able to attack, the engine
@@ -8404,9 +8464,10 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
         decisions += 1;
         match &legal.combat_prompt {
             _ if decisions > 40 || s.turn_number != turn || s.step == Step::PostcombatMain => Action::AbandonGame,
-            Some(CombatPrompt::ChooseAttackers { eligible, must_attack, .. }) => {
+            Some(CombatPrompt::ChooseAttackers { eligible, must_attack, defending_planeswalkers, .. }) => {
                 asked.eligible.clone_from(eligible);
                 asked.must_attack.clone_from(must_attack);
+                asked.planeswalkers.clone_from(defending_planeswalkers);
                 if eligible.contains(&a) {
                     Action::DeclareAttackers { attackers: vec![(a, P1)], planeswalker_attacks: Vec::new() }
                 } else {
@@ -8562,8 +8623,8 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         // blocker standing by, unblocked damage and what it sets off
         // (Balefire Dragon's) reach the board as well.
         combats += 1;
-        let want = combat_outcomes(world, a, &[]);
-        let endings = combat_endings(state, registry, world, &(vec![(a, P1)], Vec::new()));
+        let want = combat_outcomes(world, a, &[], &Target::Player(P1));
+        let endings = combat_endings(state, registry, world, &(vec![(a, Target::Player(P1))], Vec::new()));
         if let Some(why) = disagreement(&want, &endings, registry) {
             failures.push(format!("{name} declining to block: {why}"));
         }
@@ -8573,8 +8634,8 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         block.push((b, a));
     }
     combats += 1;
-    let want = combat_outcomes(world, a, b.filter(|_| !block.is_empty()).as_slice());
-    let endings = combat_endings(state, registry, world, &(vec![(a, P1)], block));
+    let want = combat_outcomes(world, a, b.filter(|_| !block.is_empty()).as_slice(), &Target::Player(P1));
+    let endings = combat_endings(state, registry, world, &(vec![(a, Target::Player(P1))], block));
     if let Some(why) = disagreement(&want, &endings, registry) {
         failures.push(format!("{name}: {why}"));
     }
@@ -9611,8 +9672,8 @@ fn every_attack_trigger_with_a_target_is_what_its_text_says() {
         for (first, second, which) in defenders {
             combats += 1;
             let (state, world, a, _, _) = arena_with(&registry, (card, spec), first, second.map(|c| (c, P1)));
-            let want = combat_outcomes(&world, a, &[]);
-            let endings = combat_endings(&state, &registry, &world, &(vec![(a, P1)], Vec::new()));
+            let want = combat_outcomes(&world, a, &[], &Target::Player(P1));
+            let endings = combat_endings(&state, &registry, &world, &(vec![(a, Target::Player(P1))], Vec::new()));
             if let Some(why) = disagreement(&want, &endings, &registry) {
                 failures.push(format!("{} attacking a defender with {which}: {why}", card.name));
             }
@@ -10169,6 +10230,73 @@ fn every_keyword_creature_fights_as_its_keywords_say() {
     assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every kind of fighter attacks the opponent's planeswalker instead of
+/// the opponent: each planeswalker face in the pool at its printed
+/// loyalty, unblocked and against each probe as a lone blocker. The engine
+/// must offer the planeswalker as what may be attacked (CR 508.1a) and end
+/// the combat every way the reference does and no other: damage dealt to
+/// it removing that many loyalty counters (120.3c), a trampler's excess
+/// over its blocker going to it (702.19c), none to its controller and so
+/// nothing that combat damage to a player sets off, lifelink still gaining
+/// (702.15b), a planeswalker left with no loyalty going to its owner's
+/// graveyard (704.5i), and Garruk transforming at two or fewer (603.8).
+#[test]
+fn every_attack_on_a_planeswalker_is_what_the_rules_say() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
+    let every = std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some();
+    let attackers = if every { fighters.clone() } else { kinds(&fighters) };
+    let blockers: Vec<Option<(&Printed, &Spec)>> = std::iter::once(None)
+        .chain(probes(&fighters).unwrap_or_else(|| kinds(&fighters)).into_iter().map(Some))
+        .collect();
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for (face, front, walker) in planeswalker_faces() {
+        if walker.is_err() {
+            continue;
+        }
+        let card = front.as_ref().unwrap_or(&face);
+        let loyalty = registry.get(registry.get_id_by_name(&card.name).expect("in the pool")).and_then(|b| b.starting_loyalty()).expect("printed");
+        for &attacker in &attackers {
+            for blocker in &blockers {
+                let (mut state, mut world, a, b, _) = arena_of(&registry, attacker, blocker.as_slice(), None);
+                let pw = place_walker(&mut state, &mut world, &registry, card, front.is_some(), loyalty, P1);
+                world.refresh();
+                let name = format!("{} attacking {}{}", attacker.0.name, face.name, blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)));
+                let asked = combat_questions(&state, &registry, a);
+                // Whether it may attack at all is the keyword test's.
+                if !asked.eligible.contains(&a) {
+                    continue;
+                }
+                if !asked.planeswalkers.contains(&pw) {
+                    failures.push(format!("{name}: the planeswalker is not offered to attack"));
+                    continue;
+                }
+                // A blocker blocks when it may block it alone; declining is
+                // the unblocked attack's.
+                let am = &world.permanents[&a];
+                let blocking: Vec<ObjectId> = b.iter().copied()
+                    .filter(|id| evasion_allows(am, &world.permanents[id]) && !has(am, Keyword::Menace))
+                    .collect();
+                if b.len() != blocking.len() {
+                    continue;
+                }
+                combats += 1;
+                let want = combat_outcomes(&world, a, &blocking, &Target::Object(pw));
+                let endings = combat_endings(&state, &registry, &world, &(vec![(a, Target::Object(pw))], blocking.iter().map(|&id| (id, a)).collect()));
+                if let Some(why) = disagreement(&want, &endings, &registry) {
+                    failures.push(format!("{name}: {why}"));
+                }
+            }
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} attacks on a planeswalker disagree with the rules:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// The fights [`every_keyword_creature_fights_as_its_keywords_say`] has,
 /// again with each of `standing` on either side, out of combat: a creature,
 /// or an Equipment or Aura on that side's combatant or player. Only the
@@ -10405,8 +10533,8 @@ fn double_block(registry: &CardRegistry, state: &GameState, world: &World, a: Ob
     if !all {
         return (0, failures);
     }
-    let want = combat_outcomes(world, a, b);
-    let endings = combat_endings(state, registry, world, &(vec![(a, P1)], b.iter().map(|&id| (id, a)).collect()));
+    let want = combat_outcomes(world, a, b, &Target::Player(P1));
+    let endings = combat_endings(state, registry, world, &(vec![(a, Target::Player(P1))], b.iter().map(|&id| (id, a)).collect()));
     if let Some(why) = disagreement(&want, &endings, registry) {
         failures.push(format!("{name}: {why}"));
     }
