@@ -2269,24 +2269,9 @@ so each night starts from everything the last one reached.
 | 37 | a player's view listed their own library in the order it lies, top first, so every seat was sent its next draw, and the browser page's library overlay, headed "order unknown", showed it (CR 401.2); the terminal counts the library by name and the LLM seat only looks names up in it | a test that a player's view is the same however each library is ordered and whatever the other player holds or draws (`mtg-engine/tests/view_hidden_information.rs`), written to check that hidden information stays hidden | every game, every seat: the list is now by name |
 | 38 | the names of the cards a pending question chose among were put in both players' views, whoever was asked: while one player chose the card of their hand to discard (Liliana of the Veil, Frightful Delusion, Murder of Crows), looked at the top of their library (Delver of Secrets) or searched it, the other seat was sent those cards' names (CR 402.3, 701.16, 701.19) | the same test, with each kind of question put to the other player | every game where one player discards from a hand of two or more, looks or searches: the names now go to the player asked alone |
 | 39 | a death watcher that left the battlefield in the same event as the creature it saw die was read on the face it had in the graveyard, not the one it had on the battlefield: leaving turns a double-faced card face up (CR 712.8a), so a Thraben Militia dying beside another creature, in any combat or to a board wipe, raised Thraben Sentry's "whenever another creature you control dies", which sat on the stack doing nothing (603.10a) | the known-and-not-fixed list defect 33 left, worked | a transformed death watcher dying with another creature: Thraben Militia, the pool's one back face of a death watcher's card |
+| 40 | an ability whose source left and came back before it resolved acted on the object that came back, whose id is the old one's: Champion of the Parish's trigger put its counter on a Champion exiled by Fiend Hunter and returned by the Hunter's death in response, Mikaeus, the Lunarch's "{T}: put a +1/+1 counter on Mikaeus" on a Mikaeus sacrificed and returned, Darkthicket Wolf's pump on the Wolf back, a werewolf's upkeep trigger transformed the one back, and Moldgraf Monstrosity's "exile it" exiled one that had died, come back and died again (CR 400.7) | the known-and-not-fixed list defect 36 left, worked: each ability's entry now carries its source's zone change count as it went on the stack, as it carries the targets' (`GameState::is_new_source`); the counters, shields, taps, untaps, transforms and until-end-of-turn effects an ability puts on its source each refuse a new object, and Fiend Hunter keeps no link on one | a source returned at instant speed while its ability waits: Fiend Hunter's exile undone by its death, Grimoire of the Dead's activation, Moldgraf Monstrosity's random return |
 
 Each has a regression test that fails without its fix.
-
-Known and not fixed:
-
-- An ability's source that left the battlefield and came back before the
-  ability resolved, reachable only through a return at instant speed
-  (Grimoire of the Dead's activation, Moldgraf Monstrosity's random
-  return), is a new object (CR 400.7), and what the ability does
-  to "this creature" should do nothing; the engine does it to the object
-  that came back, whose id is the old one's. Mikaeus, the Lunarch's
-  "{T}: put a +1/+1 counter on Mikaeus", with Mikaeus sacrificed and
-  returned in response, puts the counter on the Mikaeus that returned.
-  Defect 36's record of each target's zone changes is the pattern a fix
-  would follow, stamped for the source as `source_transforms` is (defect
-  7); what it would have to reach is every effect a card applies to its
-  own source, counters and until-end-of-turn effects among them, most of
-  them written by the cards themselves.
 
 ### What the proofs catch that the tests do not
 
