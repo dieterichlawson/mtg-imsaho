@@ -7114,7 +7114,7 @@ return",
             // The last refusal, held until this attempt is answered (#291).
             paint_notice(notice.as_deref(), r);
             let input = Self::read_line_redrawing(
-                "  Attack (numbers/all/none, enter=none)> ", &|| { draw(); });
+                Self::attack_prompt(!must_attack.is_empty()), &|| { draw(); });
 
             // Info panes (issue #120): show, then repaint this prompt.
             match input.as_str() {
@@ -8384,6 +8384,13 @@ impl CliPlayer {
     /// `a` is offered and accepted (#997).
     fn set_takes_all(pick: &SetPick) -> bool {
         pick.max >= pick.rows.len()
+    }
+
+    /// The attack prompt's line. Where a creature must attack, attacking
+    /// with none is refused, so "none" is not offered as an answer (#1002's
+    /// sibling, found by its propagation review).
+    fn attack_prompt(forced: bool) -> &'static str {
+        if forced { "  Attack (numbers/all)> " } else { "  Attack (numbers/all/none, enter=none)> " }
     }
 
     /// How to answer a set screen: `SET_HOW_TO`, without `[a=all]` where
@@ -12815,6 +12822,10 @@ Wolves or Werewolves is prevented".into()];
         assert!(CliPlayer::set_how_to(&pick).contains("[n=none]"), "with no minimum, none is an answer");
         pick.cancel = Some("cancel");
         assert!(CliPlayer::set_how_to(&pick).ends_with("[c=cancel]"));
+
+        assert!(!CliPlayer::attack_prompt(true).contains("none"),
+            "a forced attack offers no none: {}", CliPlayer::attack_prompt(true));
+        assert!(CliPlayer::attack_prompt(false).contains("enter=none"));
 
         assert_eq!(CliPlayer::set_count_line(1, 1), "  1 of 1 marked");
         assert_eq!(CliPlayer::set_count_line(8, 1), "  8 marked \u{2014} 7 more than the 1 this takes");
