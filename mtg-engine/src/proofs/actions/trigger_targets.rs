@@ -67,7 +67,8 @@ fn board(controller: PlayerId, active: PlayerId) -> (CardRegistry, GameState, Pe
 
 /// A trigger going on the stack (CR 603.3c-d): one that does not target,
 /// as it is; one that does, with no target allowed, not at all (603.3c);
-/// with one, holding it; with two, not yet: it waits at the front of its
+/// with one, holding it and its zone changes so far (400.7); with two,
+/// not yet: it waits at the front of its
 /// controller's queue (the active player's or the other's, 603.3b) while
 /// its controller is asked to choose between exactly those, the answer
 /// attaching it (`attach`). For a trigger either player's on either
@@ -82,7 +83,10 @@ fn pushing((targets, controller, active): (Option<usize>, PlayerId, PlayerId)) {
     let on_stack = |n: usize| matches!(state.stack.as_slice(), [StackEntry::Trigger(t)]
         if t.source.id == source && t.source.controller == controller
             && (0..n).all(|i| t.source.chosen_targets.get(i) == Some(&Target::Object(ObjectId(i as u64 + 1))))
-            && t.source.chosen_targets.len() == n);
+            && t.source.chosen_targets.len() == n
+            && (0..n).all(|i| t.source.target_zone_changes.get(i).copied()
+                == state.get_object(ObjectId(i as u64 + 1)).map(|o| o.zone_change_count))
+            && t.source.target_zone_changes.len() == n);
     match targets {
         None => { assert!(on_stack(0) && state.awaiting_action.is_none()); }
         Some(0) => { assert!(state.stack.is_empty() && state.awaiting_action.is_none()); }
@@ -108,7 +112,8 @@ fn pushing((targets, controller, active): (Option<usize>, PlayerId, PlayerId)) {
 /// The answer to a trigger's target prompt (CR 603.3d): the trigger
 /// waiting at the front of its controller's queue (the other queue empty,
 /// as the active player's empties before the other's is begun, 603.3b)
-/// goes on the stack holding the target chosen, and nothing else waits.
+/// goes on the stack holding the target chosen and its zone changes so
+/// far (400.7), and nothing else waits.
 /// For a trigger either player's on either player's turn, and either of
 /// the two creatures chosen.
 fn attach((controller, active): (PlayerId, PlayerId)) {
@@ -126,7 +131,9 @@ fn attach((controller, active): (PlayerId, PlayerId)) {
 
     assert!(state.pending_trigger_pushes_ap.is_empty() && state.pending_trigger_pushes_nap.is_empty());
     assert!(matches!(state.stack.as_slice(), [StackEntry::Trigger(t)]
-        if t.source.id == source && t.source.controller == controller && t.source.chosen_targets.as_slice() == [chosen.clone()]));
+        if t.source.id == source && t.source.controller == controller && t.source.chosen_targets.as_slice() == [chosen.clone()]
+            && matches!((t.source.target_zone_changes.as_slice(), &chosen), ([z], Target::Object(id))
+                if Some(*z) == state.get_object(*id).map(|o| o.zone_change_count))));
     std::mem::forget((registry, state));
 }
 

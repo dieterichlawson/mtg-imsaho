@@ -49,7 +49,9 @@ fn no_reserve(_: &GameState, _: &CardRegistry, _: PlayerId, _: Option<ObjectId>)
 
 /// A spell cast from its caster's hand at a creature (CR 601.2a-i): with
 /// the targets it names legal, it moves to the stack (601.2a), holding
-/// exactly those targets (601.2c) and the zone it was cast from, goes on
+/// exactly those targets (601.2c), each one's zone changes so far (by
+/// which one gone and back by the time it resolves is a new object, 400.7)
+/// and the zone it was cast from, goes on
 /// top of the stack, and its casting is the one event (601.2i); with them
 /// not, the cast is refused before anything is done (no move, nothing on
 /// the stack, no event, and the card still holds no targets). Cast, it is
@@ -88,6 +90,8 @@ fn casting() {
         assert!(asked_for(&[Act::Move(spell, Zone::Stack)]));
         assert!(matches!(state.stack.as_slice(), [StackEntry::Spell(s)] if *s == spell));
         assert!(matches!(obj.targets.as_slice(), [Target::Object(t)] if *t == creature));
+        assert!(matches!(obj.target_zone_changes.as_slice(), [z]
+            if Some(*z) == state.get_object(creature).map(|o| o.zone_change_count)));
         assert!(obj.cast_from_zone == Some(Zone::Hand) && !obj.cast_with_flashback);
         assert!(matches!(&state.events[events..], [GameEvent::SpellCast { player, object }] if *player == caster && *object == spell));
     } else {
