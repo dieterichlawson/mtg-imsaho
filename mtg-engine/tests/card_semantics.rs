@@ -4906,13 +4906,16 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 let creature = object(*slot).and_then(|id| w.permanents.get(&id)).cloned();
                 if let (Some(m), Some(source)) = (creature, world.source) {
                     let p = u32::try_from(w.pt_of(&m).0.unwrap_or(0).max(0)).expect("non-negative");
+                    // Dealt only to a planeswalker still on the battlefield:
+                    // one gone in response is dealt nothing, and lifelink
+                    // gains nothing for damage not dealt (CR 120.1, 702.15b).
                     if p > 0 {
                         if let Some(walker) = w.permanents.get_mut(&source) {
                             let loyalty = walker.named_counters.entry("loyalty".to_string()).or_insert(0);
                             *loyalty = loyalty.saturating_sub(p);
-                        }
-                        if has(&m, Keyword::Lifelink) {
-                            w.life[m.controller.0 as usize] += p as i32;
+                            if has(&m, Keyword::Lifelink) {
+                                w.life[m.controller.0 as usize] += p as i32;
+                            }
                         }
                     }
                 }
@@ -7606,12 +7609,38 @@ fn every_loyalty_ability_does_what_its_text_says() {
                         })
                         .collect();
                     let at = format!("{name} at {targets:?}");
-                    let endings = every_ending_from(&state, &registry, None, Some(act));
+                    let endings = every_ending_from(&state, &registry, None, Some(act.clone()));
                     if let Some(why) = disagreement(&want, &endings, &registry) {
                         failures.push(format!("{at}: {why}"));
                         continue;
                     }
                     let endings = endings.expect("compared");
+                    // The planeswalker exiled in response, when its cost has
+                    // not already put it into the graveyard: the ability
+                    // resolves all the same (CR 113.7a), its answers chosen
+                    // among what is left, and what it does to or by the
+                    // planeswalker itself reads it as it last existed
+                    // (608.2h).
+                    if paid.permanents.contains_key(&id) {
+                        let mut gone = paid.clone();
+                        gone.leave(id, Dest::Exile);
+                        gone.refresh();
+                        let want: Vec<World> = resolution_ways(&ability.spec, &gone, targets, P0).into_iter()
+                            .map(|w| {
+                                let mut after = apply(&ability.spec, &w, targets, P0);
+                                after.state_based_actions();
+                                after.refresh();
+                                after
+                            })
+                            .collect();
+                        let mut held = engine::submit_action(&state, &act, &registry);
+                        if held.stack.len() == 1 && held.priority_player == Some(P0) {
+                            held.move_object(id, Zone::Exile, &registry);
+                            if let Some(why) = disagreement(&want, &every_ending(&held, &registry, None), &registry) {
+                                failures.push(format!("{at}, the planeswalker exiled in response: {why}"));
+                            }
+                        }
+                    }
                     // As a set of endings, the piles hide who chose: every
                     // pile is reachable whoever picks. So one division,
                     // the first permanent against the rest: the target
