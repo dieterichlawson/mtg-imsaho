@@ -74,7 +74,12 @@ codebase:
   seconds; six inserts did not finish in five minutes. Most of the engine's
   state (`GameState`, `ManaPool`, `CombatState`) is `BTreeMap`s; a Kani
   build keeps the objects in a `VecMap` and the counters and mana pools in
-  a `KindMap` instead, each proved an ordered map (below).
+  a `KindMap` instead, each proved an ordered map (below), and each also
+  held to `BTreeMap` by unit tests, on random sequences of hundreds of
+  operations past the proofs' bounds, so that `cargo test` and the weekly
+  mutation sweep see them (`reports/mutation-testing.md`, "The proofs'
+  stand-ins"). The card-name `NameList` that stands in for a `HashMap` is
+  held to one the same way.
 - **`flatten` and `flat_map` asked for their items one at a time: out of
   proportion.** Kani follows `Flatten::next` through every round its loop
   is unwound to, for every item asked for, so a `for` loop, a `zip` or a
