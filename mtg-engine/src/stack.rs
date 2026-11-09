@@ -258,7 +258,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             // it asks is asked under it (#833).
             let on_stack = state.stack.pop();
             let Some(StackEntry::Ability { source_id, ability_index, behavior_card_id, ref targets, x_value, activator,
-                ref target_requirement, sacrificed, sacrificed_toughness, loyalty, .. }) = on_stack
+                ref target_requirement, ref target_zone_changes, sacrificed, sacrificed_toughness, loyalty, .. }) = on_stack
             else {
                 unreachable!("the top of the stack is an ability")
             };
@@ -303,10 +303,12 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             // that no longer matched its own wording.
             let chosen = targets;
             let mut any_newly_illegal = false;
-            let targets: Vec<Target> = chosen.iter()
-                .map(|t| match *t {
+            let targets: Vec<Target> = chosen.iter().enumerate()
+                .map(|(i, t)| match *t {
+                    // A new object since, as for a spell (CR 400.7).
                     Target::Object(id)
-                        if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
+                        if !still_the_object(state, t, target_zone_changes, i)
+                            || !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
                             || !target_requirement.as_ref().is_none_or(|req|
                                     is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
                             || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) => {
@@ -361,12 +363,51 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
     }
 }
 
+/// The `zone_change_count` of each of `targets`' objects as they are now,
+/// a player's place held by 0: what each target is as it is locked in. An
+/// object id outlives the object's zone changes, and the object does not
+/// (CR 400.7): one that leaves and comes back is a new object, which what
+/// targeted the old one does not target.
+#[must_use]
+pub(crate) fn zone_changes_of(state: &GameState, targets: &[Target]) -> Vec<u32> {
+    targets.iter()
+        .map(|t| match t {
+            Target::Object(id) => state.get_object(*id).map_or(0, |o| o.zone_change_count),
+            _ => 0,
+        })
+        .collect()
+}
+
+/// Whether the `i`th of a list of targets is still the object it was as
+/// it was locked in, by the counts `zone_changes_of` recorded: a player is,
+/// and so is a target with no count recorded (an entry made before counts
+/// were, as a saved game's may be).
+#[must_use]
+pub(crate) fn still_the_object(state: &GameState, target: &Target, recorded: &[u32], i: usize) -> bool {
+    match (target, recorded.get(i)) {
+        (Target::Object(id), Some(&then)) => state.get_object(*id).is_some_and(|o| o.zone_change_count == then),
+        _ => true,
+    }
+}
+
 /// Resolve a spell from the stack.
 fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
-    let (card_id, targets, caster) = match state.get_object(object_id) {
+    let (card_id, mut targets, caster) = match state.get_object(object_id) {
         Some(obj) => (obj.card_id, obj.targets.clone(), obj.controller),
         None => return,
     };
+    // A target that has changed zones since the spell was cast is a new
+    // object and no longer its target (CR 400.7, 608.2b): illegal, as the
+    // re-check below takes an `Illegal` to be. A creature that died and was
+    // returned in response (Altar's Reap, then Grimoire of the Dead) was
+    // pumped by the Giant Growth cast on the creature it had been.
+    if let Some(recorded) = state.get_object(object_id).map(|o| o.target_zone_changes.clone()) {
+        for (i, t) in targets.iter_mut().enumerate() {
+            if !still_the_object(state, t, &recorded, i) {
+                *t = Target::Illegal;
+            }
+        }
+    }
     resolve_spell_as(state, registry, object_id, card_id, targets, caster);
 }
 

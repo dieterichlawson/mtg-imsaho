@@ -44,6 +44,10 @@ pub struct TriggerSource {
     /// untargeted triggers.
     #[serde(default)]
     pub chosen_targets: Vec<Target>,
+    /// Each of `chosen_targets`' objects' `zone_change_count` as the trigger
+    /// went on the stack (`GameState::put_on_stack`, CR 400.7, 608.2b).
+    #[serde(default)]
+    pub target_zone_changes: Vec<u32>,
     /// Whether the permanent was on its back face when this triggered.
     ///
     /// A double-faced card's two faces have different abilities, and the
@@ -63,7 +67,7 @@ impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
         Self { id, card_id, controller, description: description.into(),
-               chosen_targets: Vec::new(), from_back_face: false, source_transforms: None }
+               chosen_targets: Vec::new(), target_zone_changes: Vec::new(), from_back_face: false, source_transforms: None }
     }
 
     /// Record which face this triggered from (CR 712.8 — the faces have
@@ -920,8 +924,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         // hexproof and not protection (CR 702.16b), so a creature given
         // protection from non-Human creatures by Spare from Evil in response
         // was destroyed by Reaper from the Abyss's ability anyway.
-        let any_legal = trigger.source.chosen_targets.iter().any(|t| {
-            crate::stack::is_target_legal(state, t, &target_req, controller, Some(trigger.source.id), registry)
+        let any_legal = trigger.source.chosen_targets.iter().enumerate().any(|(i, t)| {
+            // A new object since it went on the stack is not its target
+            // (CR 400.7), as for a spell.
+            crate::stack::still_the_object(state, t, &trigger.source.target_zone_changes, i)
+                && crate::stack::is_target_legal(state, t, &target_req, controller, Some(trigger.source.id), registry)
                 && match *t {
                     Target::Object(id) =>
                         crate::engine::can_be_targeted_by(state, id, controller, Some(trigger.source.id), registry),

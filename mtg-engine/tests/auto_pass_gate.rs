@@ -231,6 +231,7 @@ fn a_stack_drained_by_auto_passes_resolves_one_object_per_pass_round() {
     const ENTRIES: usize = 80;
     for _ in 0..ENTRIES {
         state.stack.push(StackEntry::Ability {
+            target_zone_changes: Vec::new(),
             source_id: grimgrin,
             ability_index: 0,
             behavior_card_id: card_id,

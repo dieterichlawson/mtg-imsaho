@@ -301,8 +301,8 @@ fn an_ability_resolving((n, required, loyalty): (usize, bool, bool)) {
     let source = state.create_object(card, activator, Zone::Battlefield, None, None);
     state.stack.push(StackEntry::Ability {
         source_id: source, ability_index: 0, behavior_card_id: card, targets, activator,
-        x_value: None, target_requirement: required.then_some(TargetRequirement::Creature), sacrificed: None,
-        sacrificed_toughness: None, loyalty, source_transforms: None, source_name: None,
+        x_value: None, target_requirement: required.then_some(TargetRequirement::Creature), target_zone_changes: Vec::new(),
+        sacrificed: None, sacrificed_toughness: None, loyalty, source_transforms: None, source_name: None,
     });
 
     crate::stack::resolve_top_of_stack(&mut state, &registry);
@@ -387,7 +387,7 @@ fn an_ability_resolving_with_its_costs(_: ()) {
         (kani::any::<bool>().then_some(7), kani::any::<bool>().then_some(other), kani::any::<bool>().then_some(5));
     state.stack.push(StackEntry::Ability {
         source_id: source, ability_index: 0, behavior_card_id: card, targets: Vec::new(), activator,
-        x_value: x, target_requirement: None, sacrificed, sacrificed_toughness: toughness,
+        x_value: x, target_requirement: None, target_zone_changes: Vec::new(), sacrificed, sacrificed_toughness: toughness,
         loyalty: false, source_transforms: None, source_name: None,
     });
 

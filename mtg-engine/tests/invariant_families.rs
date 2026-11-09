@@ -247,6 +247,7 @@ fn stack_entry_rules_are_checked() {
 
     let mut s = state.clone();
     s.stack.push(StackEntry::Ability {
+        target_zone_changes: Vec::new(),
         source_id: bear, ability_index: 0, behavior_card_id: s.get_object(bear).unwrap().card_id,
         targets: vec![Target::Object(bolt)], activator: P0, x_value: None, target_requirement: None,
         sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: None, source_name: None,
@@ -638,6 +639,7 @@ fn the_healthy_shapes_of_the_stack_are_not_flagged() {
     // "that creature's toughness" family).
     let mut s = state.clone();
     s.stack.push(StackEntry::Ability {
+        target_zone_changes: Vec::new(),
         source_id: bear,
         ability_index: 0,
         activator: P0,
@@ -2363,6 +2365,7 @@ fn the_costs_an_action_pays_are_checked_against_the_pool() {
             c.get_player_mut(P0).mana_pool.mana.insert(*t, *n);
         }
         c.stack.push(StackEntry::Ability {
+            target_zone_changes: Vec::new(),
             source_id: cathar, ability_index: 0, behavior_card_id: card_id,
             targets: vec![], activator: P0, x_value: None, target_requirement: None,
             sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: None, source_name: None,
@@ -2698,6 +2701,7 @@ fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
     p.pending_trigger_pushes_ap.clear();
     p.stack.push(StackEntry::Trigger(mtg_engine::triggers::PendingTrigger::new(
         mtg_engine::triggers::TriggerSource {
+            target_zone_changes: Vec::new(),
             id: bear, card_id: p.get_object(bear).unwrap().card_id, controller: P0,
             description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, source_transforms: None,
         },
@@ -4696,6 +4700,7 @@ fn the_target_arity_of_every_requirement_shape_is_checked() {
     let with = |req: R, n: usize| {
         let mut s = state.clone();
         s.stack.push(StackEntry::Ability {
+            target_zone_changes: Vec::new(),
             source_id: source, ability_index: 0, behavior_card_id: card_id,
             targets: creatures[..n].iter().map(|id| Target::Object(*id)).collect(),
             activator: P0, x_value: None, target_requirement: Some(req),

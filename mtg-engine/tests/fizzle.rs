@@ -959,3 +959,74 @@ fn a_spell_whose_only_target_gained_protection_from_it_is_countered() {
         "its only target illegal, the spell is countered, not resolved");
     assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
 }
+
+/// A target that leaves and comes back is a new object (CR 400.7), and the
+/// spell's target is gone (608.2b): a Giant Growth whose creature died and
+/// was returned to the battlefield in response, as by sacrificing it to
+/// Altar's Reap and then Grimoire of the Dead, is countered, and the
+/// creature that came back is not pumped.
+#[test]
+fn a_target_that_left_and_came_back_is_a_new_object_and_counters_the_spell() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let spell = castable_spell(&mut state, &reg, "Giant Growth", P0);
+    state = cast_onto_stack(&state, &reg, spell, vec![Target::Object(creature)]);
+    // Gone and back in response.
+    state.move_object(creature, Zone::Graveyard, &reg);
+    state.move_object(creature, Zone::Battlefield, &reg);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield, "test precondition");
+    state.events.clear();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!resolved(&state, spell), "its target is a new object, so it is countered (CR 400.7, 608.2b)");
+    assert_eq!(state.effective_power(creature, &reg), Some(2), "and the creature that came back is not pumped");
+}
+
+/// The same for an activated ability (CR 400.7, 608.2b): Skirsdag
+/// Cultist's 2 damage, its target returned to the battlefield in response,
+/// is dealt to nothing, and the creature that came back is not damaged.
+#[test]
+fn an_abilitys_target_that_left_and_came_back_is_not_its_target() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let cultist = named_permanent(&mut state, &reg, "Skirsdag Cultist", P0);
+    let fodder = ready_creature(&mut state, P0, 1, 1);
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1)]);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let action = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, targets, sacrifice: Some(s), .. }
+            if *object_id == cultist && *s == fodder && targets.as_slice() == [Target::Object(creature)]))
+        .cloned()
+        .expect("the Cultist's ability at the creature, sacrificing the 1/1");
+    state = mtg_engine::engine::submit_action(&state, &action, &reg);
+    // Gone and back in response.
+    state.move_object(creature, Zone::Graveyard, &reg);
+    state.move_object(creature, Zone::Battlefield, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.stack.is_empty(), "the ability left the stack");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0, "and the creature that came back was dealt nothing");
+}
+
+/// And for a triggered ability (CR 400.7, 608.2b): Fiend Hunter's "exile
+/// another target creature", its target returned to the battlefield in
+/// response, does nothing, and the creature that came back stays.
+#[test]
+fn a_triggers_target_that_left_and_came_back_is_not_its_target() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let victim = ready_creature(&mut state, P1, 3, 3);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+    state.events.push(GameEvent::EnteredBattlefield { object: hunter, controller: P0 });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert_eq!(state.stack.len(), 1, "test precondition: the enters trigger is on the stack, at the creature");
+    // Gone and back in response.
+    state.move_object(victim, Zone::Graveyard, &reg);
+    state.move_object(victim, Zone::Battlefield, &reg);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert!(state.awaiting_action.is_none(), "nothing is asked: the trigger's one target is gone");
+    assert_eq!(state.get_object(victim).unwrap().zone, Zone::Battlefield, "and the creature that came back stays");
+}

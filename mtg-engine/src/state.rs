@@ -31,6 +31,10 @@ pub enum StackEntry {
         /// `is_valid_target` — so an ability whose card restated nothing
         /// resolved against a target that had stopped satisfying it.
         target_requirement: Option<crate::cards::TargetRequirement>,
+        /// Each of `targets`' objects' `zone_change_count` as the ability was
+        /// put on the stack (CR 400.7, 608.2b), as for a spell.
+        #[serde(default)]
+        target_zone_changes: Vec<u32>,
         /// The creature sacrificed to pay this ability's cost, if any.
         ///
         /// Disciple of Griselbrand's "you gain life equal to the sacrificed
@@ -643,14 +647,24 @@ impl GameState {
     pub fn put_on_stack(&mut self, mut entry: StackEntry) {
         // CR 701.28f: "since the ability was put onto the stack" is measured
         // from here, so the source's transform count is recorded here.
+        // And what each target is (CR 400.7): the objects named, as they
+        // are now.
         match &mut entry {
-            StackEntry::Spell(_) => {}
+            StackEntry::Spell(id) => {
+                let id = *id;
+                let seen = self.get_object(id).map(|o| crate::stack::zone_changes_of(self, &o.targets)).unwrap_or_default();
+                if let Some(o) = self.get_object_mut(id) {
+                    o.target_zone_changes = seen;
+                }
+            }
             StackEntry::Trigger(t) => {
                 t.source.source_transforms = self.get_object(t.source.id).map(|o| o.transforms);
+                t.source.target_zone_changes = crate::stack::zone_changes_of(self, &t.source.chosen_targets);
             }
-            StackEntry::Ability { source_id, source_transforms, source_name, .. } => {
+            StackEntry::Ability { source_id, source_transforms, source_name, targets, target_zone_changes, .. } => {
                 *source_transforms = self.get_object(*source_id).map(|o| o.transforms);
                 *source_name = self.get_object(*source_id).map(|o| o.name.clone());
+                *target_zone_changes = crate::stack::zone_changes_of(self, targets);
             }
         }
         let controller = match &entry {
@@ -832,6 +846,7 @@ impl GameState {
             card_types: Vec::new(),
             subtypes: Vec::new(),
             targets: Vec::new(),
+            target_zone_changes: Vec::new(),
             attached_to: None,
             attached_to_player: None,
             last_attached_to_player: None,
@@ -1128,6 +1143,7 @@ impl GameState {
             card_types,
             subtypes,
             targets: Vec::new(),
+            target_zone_changes: Vec::new(),
             attached_to: None,
             attached_to_player: None,
             last_attached_to_player: None,
@@ -4442,6 +4458,12 @@ pub struct GameObject {
 
     // Targets chosen when this spell was cast (only relevant while on the stack).
     pub targets: Vec<crate::actions::Target>,
+    /// Each of `targets`' objects' `zone_change_count` as the spell was put
+    /// on the stack (`GameState::put_on_stack`): a target is that object
+    /// only while it stays where it is, and one that left and came back is
+    /// a new object the spell does not target (CR 400.7, 608.2b).
+    #[serde(default)]
+    pub target_zone_changes: Vec<u32>,
 
     // Aura/equipment: what this is attached to.
     pub attached_to: Option<ObjectId>,

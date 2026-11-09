@@ -58,8 +58,8 @@ fn transforming_turns_over_exactly_a_double_faced_permanent() {
     if since {
         state.resolving_ability = Some(StackEntry::Ability {
             source_id: id, ability_index: 0, behavior_card_id: two, targets: Vec::new(), activator: owner,
-            x_value: None, target_requirement: None, sacrificed: None, sacrificed_toughness: None, loyalty: false,
-            source_transforms: Some(transforms.wrapping_sub(1)), source_name: None,
+            x_value: None, target_requirement: None, target_zone_changes: Vec::new(), sacrificed: None, sacrificed_toughness: None,
+            loyalty: false, source_transforms: Some(transforms.wrapping_sub(1)), source_name: None,
         });
     }
     let before = Snapshot::of(&state);

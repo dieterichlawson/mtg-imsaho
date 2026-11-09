@@ -64,6 +64,8 @@ pub fn push_ability(
         activator,
         x_value: state.last_activated_x_value,
         target_requirement,
+        // Stamped by `put_on_stack`.
+        target_zone_changes: Vec::new(),
         sacrificed: state.last_activated_sacrifice,
         sacrificed_toughness: state.last_activated_sacrifice_toughness,
         loyalty: false,
@@ -96,6 +98,7 @@ pub fn push_loyalty_ability(
         activator,
         x_value: None,
         target_requirement,
+        target_zone_changes: Vec::new(),
         sacrificed: None,
         sacrificed_toughness: None,
         loyalty: true,
