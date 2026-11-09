@@ -6337,12 +6337,17 @@ struct Question {
     kind: String,
     player: PlayerId,
     source: ObjectId,
+    /// Which game it was asked in: each `play_from` is one.
+    run: usize,
+    active: PlayerId,
 }
 
 thread_local! {
     /// Every question [`play_from`] met on this thread, in the order met,
     /// for the test running on it to read back with [`questions_asked`].
     static ASKED: std::cell::RefCell<Vec<Question>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// How many games [`play_from`] has played on this thread.
+    static RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// What `play` returns, and every question asked while it played: the
@@ -6442,13 +6447,22 @@ fn triggers_text(spec: &Spec) -> Spec {
 /// The first question asked on behalf of `source` of a player the text
 /// does not have answer it.
 fn wrong_chooser(spec: &Spec, targets: &[Target], world: &World, you: PlayerId, source: ObjectId, asked: &[Question]) -> Option<String> {
-    asked.iter()
-        .filter(|a| a.source == source)
-        .find_map(|a| {
-            let who = choosers(spec, targets, world, you, &a.kind)?;
-            (!who.contains(&a.player)).then(|| format!("p{} is asked the {} question, which the text has {} answer",
-                a.player.0, a.kind, who.iter().map(|p| format!("p{}", p.0)).collect::<Vec<_>>().join(" or ")))
-        })
+    let mine: Vec<&Question> = asked.iter().filter(|a| a.source == source).collect();
+    let wrong = mine.iter().find_map(|a| {
+        let who = choosers(spec, targets, world, you, &a.kind)?;
+        (!who.contains(&a.player)).then(|| format!("p{} is asked the {} question, which the text has {} answer",
+            a.player.0, a.kind, who.iter().map(|p| format!("p{}", p.0)).collect::<Vec<_>>().join(" or ")))
+    });
+    // What each player chooses, the active player chooses first (CR
+    // 101.4): in no game is the other player asked such a question before
+    // the active player is.
+    let each = |kind: &str| all_effects(spec).iter().any(|e| matches!((kind, e),
+        ("ChooseCardFromHand", Effect::EachPlayerDiscards) | ("ChooseTarget", Effect::EachPlayerChoosesACreature)));
+    wrong.or_else(|| mine.iter().enumerate().find_map(|(i, later)| {
+        let early = mine[..i].iter().find(|q| q.run == later.run && q.kind == later.kind && q.player != q.active)?;
+        (each(&later.kind) && later.player == later.active)
+            .then(|| format!("p{} is asked the {} question before p{}, the active player (CR 101.4)", early.player.0, later.kind, later.active.0))
+    }))
 }
 
 /// Cast `spell` at `targets` and play on until the stack is empty, both
@@ -6463,6 +6477,7 @@ fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, tar
 /// activation, as the engine offered it.
 /// It is played as far as `scene` says.
 fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, scene: Scene, script: &[Answer]) -> Result<Played, String> {
+    RUNS.with(|r| r.set(r.get() + 1));
     let mut state = state.clone();
     // A spell that asks for its targets at cast time is cast bare, and each
     // question answered in turn as a player answers them: one target for a
@@ -6559,7 +6574,8 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     return Action::AbandonGame;
                 }
             }
-            ASKED.with(|a| a.borrow_mut().push(Question { kind, player: *player, source: *source }));
+            let run = RUNS.with(std::cell::Cell::get);
+            ASKED.with(|a| a.borrow_mut().push(Question { kind, player: *player, source: *source, run, active: s.active_player }));
         }
         match &legal.resolution_prompt {
             Some(ResolutionChoiceKind::ChooseTargetSet { max, .. }) if answering_cast => {
@@ -7787,6 +7803,12 @@ fn every_loyalty_ability_does_what_its_text_says() {
                 if borrowed {
                     state.get_object_mut(id).expect("just placed").owner = P1;
                     world.permanents.get_mut(&id).expect("just placed").owner = P1;
+                }
+                // "Each player discards a card" with a choice for each, so
+                // that who chooses first shows (CR 101.4).
+                if ability.spec.effects.contains(&Effect::EachPlayerDiscards) {
+                    spell_in_hand(&mut state, &registry, "Plains", P1);
+                    world.hand[1].push("Plains".to_string());
                 }
                 world.refresh();
                 let defs = behavior.loyalty_abilities(&state, id);
