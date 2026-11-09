@@ -22,9 +22,12 @@
 //! - [`check_legal`] looks at the legal action set offered at a decision
 //!   point: nothing the rules forbid is on the menu, and what they require
 //!   is.
-//! - The runner's `views_hide_library_order` holds each player's view to
-//!   what they can see: it does not change when every library is reversed
-//!   (CR 401.2). It is the runner's, which serializes views already.
+//! - The runner's `hidden_stays_hidden` and `log_names_no_hidden_card`
+//!   hold what each seat is sent to what its player may see: views and
+//!   menus that do not change when every library is reversed or another
+//!   player's hand is dealt anew (CR 401.2, 402.3), and a shared log that
+//!   names no card no one has seen (400.2). They are the runner's, which
+//!   serializes views already.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;

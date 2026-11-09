@@ -476,6 +476,51 @@ fn hidden_stays_hidden(state: &GameState, acting: PlayerId, legal: &engine::Lega
     out
 }
 
+/// The ids a log line names, as `obj_name` writes them (`Name (#12)`) and
+/// as the stack's lines do (`spell #12`): every run of digits after a `#`.
+fn ids_named(line: &str) -> impl Iterator<Item = mtg_engine::ids::ObjectId> + '_ {
+    line.split('#').skip(1).filter_map(|rest| {
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        digits.parse().ok().map(mtg_engine::ids::ObjectId)
+    })
+}
+
+/// What the shared log says of a card no one has seen: nothing. Every
+/// line above `Private` is in the log every seat is sent (`full_log`), so
+/// a line written between two decisions that names a card in a hand or a
+/// library at both (drawn, put back, looked at, searched for) tells the
+/// other seat what it is (CR 400.2, 401.2, 402.3), unless the card is
+/// known: the line says it was revealed (701.16a), it is the card being
+/// cast, which announcing put on the stack in view (601.2a, though the
+/// engine keeps a cast waiting on its X in its hand), or it has been seen
+/// in a public zone (`seen`, every object found in one at a decision, kept
+/// across the game), as a creature returned to its owner's hand has. The
+/// view checks cannot see this: a view and its copy with the hands dealt
+/// anew share one log.
+fn log_names_no_hidden_card(prev: &GameState, cur: &GameState, seen: &std::collections::HashSet<mtg_engine::ids::ObjectId>) -> Vec<String> {
+    fn hidden(s: &GameState, id: mtg_engine::ids::ObjectId) -> Option<&mtg_engine::state::GameObject> {
+        use mtg_engine::types::Zone;
+        s.get_object(id).filter(|o| matches!(o.zone, Zone::Hand | Zone::Library))
+    }
+    let cast = |s: &GameState, id| s.pending_spell_cast.as_ref().is_some_and(|c| c.object_id == id);
+    let mut out = Vec::new();
+    for entry in cur.game_log.iter().skip(prev.game_log.len()) {
+        if entry.level <= mtg_engine::state::LogLevel::Private || entry.message.contains("revealed") {
+            continue;
+        }
+        for id in ids_named(&entry.message) {
+            if seen.contains(&id) || cast(prev, id) || cast(cur, id) {
+                continue;
+            }
+            if let (Some(was), Some(is)) = (hidden(prev, id), hidden(cur, id)) {
+                out.push(format!("the shared log names {} (#{}), in p{}'s {:?} before and {:?} after and never seen (CR 400.2): {:?}",
+                    is.name, id.0, is.owner.0, was.zone, is.zone, entry.message));
+            }
+        }
+    }
+    out
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -992,6 +1037,9 @@ stops here — pass --save {path} to keep writing it");
     // The previous decision point and the action chosen there, for the
     // transition invariants (what one action may and must have done).
     let mut last_decision: Option<(GameState, mtg_engine::actions::Action)> = None;
+    // Every object found in a public zone at a decision, for
+    // `log_names_no_hidden_card`: a card once seen may be named.
+    let mut seen_public: std::collections::HashSet<mtg_engine::ids::ObjectId> = std::collections::HashSet::new();
 
     let registry_ref = &registry;
     // High-water mark of engine log entries already streamed to --log
@@ -1173,6 +1221,12 @@ stops here — pass --save {path} to keep writing it");
             };
             if let Some((prev, act)) = &last_decision {
                 violations.extend(mtg_engine::invariants::check_transition(prev, Some(act), game_state, registry_ref));
+                violations.extend(log_names_no_hidden_card(prev, game_state, &seen_public));
+            }
+            for obj in game_state.objects.values() {
+                if !matches!(obj.zone, mtg_engine::types::Zone::Hand | mtg_engine::types::Zone::Library) {
+                    seen_public.insert(obj.id);
+                }
             }
             violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
             if action_count % HIDDEN_EVERY == 0 {
