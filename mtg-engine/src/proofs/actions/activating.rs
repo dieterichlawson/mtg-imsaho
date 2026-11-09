@@ -345,9 +345,9 @@ each_sacrifice! {
 /// loyalty ability, and carrying what its costs left to resolve with: the
 /// X announced, the creature sacrificed and that creature's toughness as
 /// last read (`costs_paid`), how often its source had transformed, its
-/// source's name as it went on, and its target's zone changes so far, by
-/// which a target gone and back by the time it resolves is a new object
-/// (CR 400.7). For an activator either player, the source theirs on
+/// source's name as it went on, and its target's and its source's zone
+/// changes so far, by which a target or a source gone and back by the time
+/// it resolves is a new object (CR 400.7). For an activator either player, the source theirs on
 /// the battlefield or already sacrificed to the graveyard, and any of
 /// each.
 fn pushing(required: bool) {
@@ -358,10 +358,10 @@ fn pushing(required: bool) {
     let zone = if kani::any() { Zone::Battlefield } else { Zone::Graveyard };
     let source = state.create_object(blank, activator, zone, Some(1), Some(1));
     let other = state.create_object(blank, activator, Zone::Graveyard, Some(1), Some(1));
-    let (transforms, back): (u32, bool) = (kani::any(), kani::any());
+    let (transforms, back, changes): (u32, bool, u32) = (kani::any(), kani::any(), kani::any());
     {
         let o = state.get_object_mut(source).expect("just created");
-        (o.transforms, o.is_transformed) = (transforms, back);
+        (o.transforms, o.is_transformed, o.zone_change_count) = (transforms, back, changes);
     }
     let x: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
     let sacrificed = match kani::any::<u8>() % 3 {
@@ -379,7 +379,8 @@ fn pushing(required: bool) {
 
     assert!(matches!(state.stack.as_slice(), [StackEntry::Ability {
         source_id, ability_index, behavior_card_id, targets, activator: by, x_value, target_requirement,
-        target_zone_changes, sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_name,
+        target_zone_changes, sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms,
+        source_zone_changes, source_name,
     }] if *source_id == source && *ability_index == index && *behavior_card_id == blank && *by == activator
         && matches!(targets.as_slice(), [Target::Object(o)] if *o == other)
         && matches!(target_zone_changes.as_slice(), [z] if Some(*z) == state.get_object(other).map(|o| o.zone_change_count))
@@ -387,6 +388,7 @@ fn pushing(required: bool) {
         && target_requirement.is_some() == required
         && *x_value == x && *s == sacrificed && *t == toughness
         && *source_transforms == Some(transforms)
+        && *source_zone_changes == Some(changes)
         && source_name.as_deref() == state.get_object(source).map(|o| o.name.as_str())));
     std::mem::forget((registry, state));
 }

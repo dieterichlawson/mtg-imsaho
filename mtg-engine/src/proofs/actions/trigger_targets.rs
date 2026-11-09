@@ -43,9 +43,9 @@ fn allowed(_: &GameState, _: PlayerId, _: ObjectId, _: &TargetRequirement, _: &d
 }
 
 /// Two creatures (the board's objects 1 and 2, either player's) and the
-/// trigger's source (3), of `controller`'s, on a board whose active player
-/// is `active`; the trigger, built as the collector builds it, an upkeep
-/// trigger of the source's.
+/// trigger's source (3), of `controller`'s, having changed zones up to
+/// twice, on a board whose active player is `active`; the trigger, built
+/// as the collector builds it, an upkeep trigger of the source's.
 fn board(controller: PlayerId, active: PlayerId) -> (CardRegistry, GameState, PendingTrigger, ObjectId) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
@@ -56,6 +56,7 @@ fn board(controller: PlayerId, active: PlayerId) -> (CardRegistry, GameState, Pe
     }
     let source = state.create_object(blank, controller, Zone::Battlefield, Some(1), Some(1));
     assert!(source == ObjectId(3));
+    state.get_object_mut(source).expect("just created").zone_change_count = u32::from(kani::any::<u8>() % 3);
     state.pending_trigger_pushes_ap.reserve(1);
     state.pending_trigger_pushes_nap.reserve(1);
     let mut c = crate::triggers::collect::Collector::new(controller);
@@ -67,7 +68,9 @@ fn board(controller: PlayerId, active: PlayerId) -> (CardRegistry, GameState, Pe
 
 /// A trigger going on the stack (CR 603.3c-d): one that does not target,
 /// as it is; one that does, with no target allowed, not at all (603.3c);
-/// with one, holding it and its zone changes so far (400.7); with two,
+/// with one, holding it and its zone changes so far (400.7); either
+/// holding its source's zone changes so far, by which a source gone and
+/// back by the time it resolves is a new object (400.7); with two,
 /// not yet: it waits at the front of its
 /// controller's queue (the active player's or the other's, 603.3b) while
 /// its controller is asked to choose between exactly those, the answer
@@ -86,7 +89,8 @@ fn pushing((targets, controller, active): (Option<usize>, PlayerId, PlayerId)) {
             && t.source.chosen_targets.len() == n
             && (0..n).all(|i| t.source.target_zone_changes.get(i).copied()
                 == state.get_object(ObjectId(i as u64 + 1)).map(|o| o.zone_change_count))
-            && t.source.target_zone_changes.len() == n);
+            && t.source.target_zone_changes.len() == n
+            && t.source.source_zone_changes == state.get_object(source).map(|o| o.zone_change_count));
     match targets {
         None => { assert!(on_stack(0) && state.awaiting_action.is_none()); }
         Some(0) => { assert!(state.stack.is_empty() && state.awaiting_action.is_none()); }
@@ -113,7 +117,7 @@ fn pushing((targets, controller, active): (Option<usize>, PlayerId, PlayerId)) {
 /// waiting at the front of its controller's queue (the other queue empty,
 /// as the active player's empties before the other's is begun, 603.3b)
 /// goes on the stack holding the target chosen and its zone changes so
-/// far (400.7), and nothing else waits.
+/// far, and its source's (400.7), and nothing else waits.
 /// For a trigger either player's on either player's turn, and either of
 /// the two creatures chosen.
 fn attach((controller, active): (PlayerId, PlayerId)) {
@@ -133,7 +137,8 @@ fn attach((controller, active): (PlayerId, PlayerId)) {
     assert!(matches!(state.stack.as_slice(), [StackEntry::Trigger(t)]
         if t.source.id == source && t.source.controller == controller && t.source.chosen_targets.as_slice() == [chosen.clone()]
             && matches!((t.source.target_zone_changes.as_slice(), &chosen), ([z], Target::Object(id))
-                if Some(*z) == state.get_object(*id).map(|o| o.zone_change_count))));
+                if Some(*z) == state.get_object(*id).map(|o| o.zone_change_count))
+            && t.source.source_zone_changes == state.get_object(source).map(|o| o.zone_change_count)));
     std::mem::forget((registry, state));
 }
 

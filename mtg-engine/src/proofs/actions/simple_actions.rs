@@ -9,7 +9,9 @@
 //! place in a hand (`discard_card`, and `discard_cards` for N), a player's
 //! mana pool (`add_mana`), whether a player has lost (`player_loses`) and
 //! whether the game is over (`end_game`). A card proof's recorder stands
-//! in for each.
+//! in for each. The taps, untaps, counters and shields are each asked with
+//! an ability resolving whose own source may have come back as a new
+//! object since it went on the stack ([`resolving`]).
 
 use crate::events::{GameEvent, LossReason};
 use crate::ids::{ObjectId, PlayerId};
@@ -98,14 +100,16 @@ fn one_object() -> (crate::cards::CardRegistry, crate::state::GameState, ObjectI
 /// Tapping one taps it and announces it, once, and says it did; anything
 /// else (a tapped permanent, a card in a graveyard, hand or exile, an
 /// object no longer in the game) is left as it was, unannounced, and the
-/// answer is that nothing was tapped. Through `tap` and `tap_for`.
+/// answer is that nothing was tapped. Through `tap` and `tap_for`; nor is
+/// a resolving ability's own source tapped once it is a new object.
 fn tapping_taps_exactly_an_untapped_permanent() {
     let (registry, mut state, id, asked, zone, was_tapped) = one_object();
+    let new = resolving(&mut state, id);
     let before = Snapshot::of(&state);
 
     let tapped = if kani::any() { state.tap(asked) } else { state.tap_for(asked, "a source") };
 
-    let taps = asked == id && zone == Zone::Battlefield && !was_tapped;
+    let taps = asked == id && zone == Zone::Battlefield && !was_tapped && !new;
     assert!(tapped == taps);
     if taps {
         assert!(matches!(state.events.as_slice(), [GameEvent::Tapped { object }] if *object == id));
@@ -114,6 +118,7 @@ fn tapping_taps_exactly_an_untapped_permanent() {
         assert!(Snapshot::of(&state) == before);
     }
     kani::cover!(taps, "a permanent is tapped");
+    kani::cover!(asked == id && zone == Zone::Battlefield && !was_tapped && new, "its ability's source come back");
     std::mem::forget((registry, state));
 }
 
@@ -127,14 +132,16 @@ fn tapping_taps_exactly_an_untapped_permanent() {
 /// "Untap" (CR 701.21b, 110.5): only a tapped permanent is untapped.
 /// Untapping one untaps it and announces it, once, and says it did;
 /// anything else is left as it was, unannounced, and the answer is that
-/// nothing was untapped. Through `untap` and `untap_for`.
+/// nothing was untapped. Through `untap` and `untap_for`; nor is a
+/// resolving ability's own source untapped once it is a new object.
 fn untapping_untaps_exactly_a_tapped_permanent() {
     let (registry, mut state, id, asked, zone, was_tapped) = one_object();
+    let new = resolving(&mut state, id);
     let before = Snapshot::of(&state);
 
     let untapped = if kani::any() { state.untap(asked) } else { state.untap_for(asked, "a source") };
 
-    let untaps = asked == id && zone == Zone::Battlefield && was_tapped;
+    let untaps = asked == id && zone == Zone::Battlefield && was_tapped && !new;
     assert!(untapped == untaps);
     if untaps {
         assert!(matches!(state.events.as_slice(), [GameEvent::Untapped { object }] if *object == id));
@@ -143,6 +150,7 @@ fn untapping_untaps_exactly_a_tapped_permanent() {
         assert!(Snapshot::of(&state) == before);
     }
     kani::cover!(untaps, "a permanent is untapped");
+    kani::cover!(asked == id && zone == Zone::Battlefield && was_tapped && new, "its ability's source come back");
     std::mem::forget((registry, state));
 }
 
@@ -184,6 +192,47 @@ fn discarding_moves_exactly_a_card_in_a_hand_to_a_graveyard() {
     std::mem::forget((registry, state));
 }
 
+/// The ability resolving as an action on `id` is asked for: none, or an
+/// activated ability or a trigger of `id` or of another object, stamped
+/// with the zone change count `id` had as it went on the stack, with one
+/// from before its last zone change, or with none (an entry made before
+/// the count was kept, which is not checked); `id` having changed zones up
+/// to twice. Whether `id` is that ability's own source and has changed
+/// zones since, so that it is a new object the ability does not act on
+/// (CR 400.7, `GameState::is_new_source`).
+fn resolving(state: &mut crate::state::GameState, id: ObjectId) -> bool {
+    use crate::state::StackEntry;
+    let changes = u32::from(kani::any::<u8>() % 3);
+    let o = state.get_object_mut(id).expect("just created");
+    o.zone_change_count = changes;
+    let (card, controller) = (o.card_id, o.controller);
+    if kani::any() {
+        return false;
+    }
+    let source = if kani::any() { id } else { ObjectId(id.0 + 1) };
+    let stamp = match kani::any::<u8>() % 3 {
+        0 => None,
+        1 => Some(changes),
+        _ => Some(changes.wrapping_sub(1)),
+    };
+    state.resolving_ability = Some(if kani::any() {
+        StackEntry::Ability {
+            source_id: source, ability_index: 0, behavior_card_id: card, targets: Vec::new(), activator: controller,
+            x_value: None, target_requirement: None, target_zone_changes: Vec::new(), sacrificed: None,
+            sacrificed_toughness: None, loyalty: false, source_transforms: None, source_zone_changes: stamp, source_name: None,
+        }
+    } else {
+        // Built where every trigger is (`tests/trigger_source_independence.rs`).
+        let mut c = crate::triggers::collect::Collector::new(controller);
+        c.emit(source, card, controller, String::new(), crate::triggers::TriggerEvent::Upkeep);
+        let mut trigger = c.ap.pop().expect("just emitted");
+        std::mem::forget(c);
+        trigger.source.source_zone_changes = stamp;
+        StackEntry::Trigger(trigger)
+    });
+    source == id && stamp.is_some_and(|then| then != changes)
+}
+
 /// Any kind of counter the engine has.
 fn any_counter_kind() -> CounterType {
     match kani::any::<u8>() % 6 {
@@ -219,15 +268,17 @@ fn with_counters(state: &mut crate::state::GameState, id: ObjectId) -> (CounterT
 /// else (a card off the battlefield, an object no longer in the game), and
 /// for N = 0, nothing changes at all. Through `add_counters` and
 /// `add_counters_quiet`, which says whether they landed; for every kind,
-/// N up to 3, and up to 3 of any one kind there already.
+/// N up to 3, and up to 3 of any one kind there already. None land on a
+/// resolving ability's own source once it is a new object.
 fn counters_go_on_a_permanent_and_only_of_their_kind() {
     let (registry, mut state, id, asked, zone, _) = one_object();
     let (had, had_n) = with_counters(&mut state, id);
+    let new = resolving(&mut state, id);
     let (kind, n) = (any_counter_kind(), kani::any::<u32>());
     kani::assume(n <= 3);
     let before = Snapshot::of(&state);
 
-    let lands = asked == id && zone == Zone::Battlefield && n > 0;
+    let lands = asked == id && zone == Zone::Battlefield && n > 0 && !new;
     if kani::any() {
         state.add_counters(asked, kind, n);
     } else {
@@ -241,6 +292,7 @@ fn counters_go_on_a_permanent_and_only_of_their_kind() {
         assert!(Snapshot::of(&state) == before);
     }
     kani::cover!(lands && old > 0, "counters join counters of their kind");
+    kani::cover!(asked == id && zone == Zone::Battlefield && n > 0 && new, "its ability's source come back");
     std::mem::forget((registry, state));
 }
 
@@ -255,23 +307,26 @@ fn counters_go_on_a_permanent_and_only_of_their_kind() {
 /// kind come off, or every one if it has fewer, and it is left with none
 /// of the kind listed rather than a count of 0; no other kind changes.
 /// For every kind, N up to 4, and up to 3 of any one kind there, on an
-/// object anywhere or no longer in the game.
+/// object anywhere or no longer in the game; and none come off a resolving
+/// ability's own source once it is a new object.
 fn removing_counters_removes_up_to_that_many_of_their_kind() {
     let (registry, mut state, id, asked, _, _) = one_object();
     let (had, had_n) = with_counters(&mut state, id);
+    let new = resolving(&mut state, id);
     let (kind, n) = (any_counter_kind(), kani::any::<u32>());
     kani::assume(n <= 4);
     let before = Snapshot::of(&state);
 
     state.remove_counters(asked, kind, n);
 
-    if asked == id && kind == had {
+    if asked == id && kind == had && !new {
         assert!(Snapshot::of(&state) == before.with_counters(id, kind, had_n.saturating_sub(n)));
         assert!(had_n > n || !state.get_object(id).expect("still there").counters.contains_key(&kind));
     } else {
         assert!(Snapshot::of(&state) == before);
     }
     kani::cover!(asked == id && kind == had && had_n > 0 && had_n <= n, "every counter of the kind comes off");
+    kani::cover!(asked == id && kind == had && had_n > 0 && new, "its ability's source come back");
     std::mem::forget((registry, state));
 }
 
@@ -329,20 +384,23 @@ fn attaching_puts_it_onto_that_object_from_wherever_it_was() {
 /// "Regenerate it" (CR 701.15a) sets up a shield on a permanent: it has
 /// one more regeneration shield, and nothing else changes; anything else
 /// (a card off the battlefield, which would carry the shield through a
-/// graveyard and back, an object no longer in the game) gets none. For a
+/// graveyard and back, an object no longer in the game) gets none, nor
+/// does a resolving ability's own source once it is a new object. For a
 /// permanent with up to two shields already.
 fn a_regeneration_shield_goes_on_a_permanent() {
     let (registry, mut state, id, asked, zone, _) = one_object();
     let shields = u32::from(kani::any::<u8>() % 3);
     state.get_object_mut(id).expect("just created").regeneration_shields = shields;
+    let new = resolving(&mut state, id);
     let before = Snapshot::of(&state);
 
     state.add_regeneration_shield(asked);
 
-    let gets = asked == id && zone == Zone::Battlefield;
+    let gets = asked == id && zone == Zone::Battlefield && !new;
     assert!(state.get_object(id).expect("still there").regeneration_shields == shields + u32::from(gets));
     assert!(Snapshot::of(&state) == before);
     kani::cover!(gets && shields > 0, "a second shield");
+    kani::cover!(asked == id && zone == Zone::Battlefield && new, "its ability's source come back");
     std::mem::forget((registry, state));
 }
 

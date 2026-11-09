@@ -37,29 +37,37 @@ impl CardBehavior for TwoFaced {
 /// (701.28c); nor can a permanent whose card has one face, or one that is
 /// a copy by way of a card with one (Evil Twin copying a werewolf); nor
 /// one that has transformed since its own ability resolving now was put on
-/// the stack (701.28f). For a card of either face up, either card, either
-/// player's.
+/// the stack (701.28f); nor one that has left the battlefield and come
+/// back since then, which is a new object the ability does not act on and
+/// so no permanent of its (400.7). For a card of either face up, either
+/// card, either player's.
 fn transforming_turns_over_exactly_a_double_faced_permanent() {
     let (registry, mut state, blank, two) = board(Box::new(TwoFaced));
     let double: bool = kani::any();
     let on: bool = kani::any();
     let owner = PlayerId(u8::from(kani::any::<bool>()));
     let id = state.create_object(if double { two } else { blank }, owner, if on { Zone::Battlefield } else { Zone::Graveyard }, None, None);
-    let (token, back_up, copy, since): (bool, bool, bool, bool) = (kani::any(), kani::any(), kani::any(), kani::any());
+    let (token, back_up, copy, since, new): (bool, bool, bool, bool, bool) =
+        (kani::any(), kani::any(), kani::any(), kani::any(), kani::any());
     let transforms = u32::from(kani::any::<u8>() % 3);
+    let changes = u32::from(kani::any::<u8>() % 3);
     let o = state.get_object_mut(id).expect("just created");
     o.is_token = token;
     o.is_transformed = back_up;
     o.name = if back_up { "Back".into() } else { "Front".into() };
     o.transforms = transforms;
+    o.zone_change_count = changes;
     if copy {
         o.copy_grantor = Some(blank);
     }
-    if since {
+    if since || new {
         state.resolving_ability = Some(StackEntry::Ability {
             source_id: id, ability_index: 0, behavior_card_id: two, targets: Vec::new(), activator: owner,
             x_value: None, target_requirement: None, target_zone_changes: Vec::new(), sacrificed: None, sacrificed_toughness: None,
-            loyalty: false, source_transforms: Some(transforms.wrapping_sub(1)), source_name: None,
+            loyalty: false,
+            source_transforms: Some(if since { transforms.wrapping_sub(1) } else { transforms }),
+            source_zone_changes: Some(if new { changes.wrapping_sub(1) } else { changes }),
+            source_name: None,
         });
     }
     let before = Snapshot::of(&state);
@@ -70,6 +78,8 @@ fn transforming_turns_over_exactly_a_double_faced_permanent() {
         TransformResult::NotAPermanent
     } else if token {
         TransformResult::Token
+    } else if new {
+        TransformResult::NotAPermanent
     } else if !double || copy {
         TransformResult::SingleFaced
     } else if since {
@@ -87,6 +97,7 @@ fn transforming_turns_over_exactly_a_double_faced_permanent() {
         assert!(o.transforms == transforms && o.name == if back_up { "Back" } else { "Front" });
     }
     kani::cover!(result == TransformResult::Transformed && back_up, "back to its front");
+    kani::cover!(on && !token && double && !copy && new, "its own ability's source come back");
     std::mem::forget((registry, state));
 }
 
