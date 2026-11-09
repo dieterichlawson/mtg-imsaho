@@ -7717,9 +7717,13 @@ fn every_turn_begins_as_its_text_says() {
         let pays = spec.upkeep.as_ref().is_some_and(|u| u.trigger.pay.is_some());
         let tops: &[bool] = if looks { &[false, true] } else { &[false] };
         let swamps: &[bool] = if pays { &[false, true] } else { &[false] };
+        // And with it its controller's but the other player's card, as
+        // after Olivia Voldaren took it: "your upkeep" is its controller's
+        // (CR 109.5), and what leaves goes to its owner (108.3).
         let variants = [P0, P1].into_iter()
-            .flat_map(|a| tops.iter().flat_map(move |r| swamps.iter().map(move |w| (a, *r, *w))));
-        for (active, rotated, rich) in variants {
+            .flat_map(|a| tops.iter().flat_map(move |r| swamps.iter().map(move |w| (a, *r, *w))))
+            .flat_map(|(a, r, w)| [false, true].map(move |b| (a, r, w, b)));
+        for (active, rotated, rich, borrowed) in variants {
             let (mut state, mut world) = board(&registry, &cache);
             if rich {
                 for _ in 0..2 {
@@ -7758,6 +7762,10 @@ fn every_turn_begins_as_its_text_says() {
                 world.permanents.get_mut(&id).expect("just placed").tapped = tapped;
                 id
             };
+            if borrowed {
+                state.get_object_mut(id).expect("just placed").owner = P1;
+                world.permanents.get_mut(&id).expect("just placed").owner = P1;
+            }
             // Three of what the trigger counts, so that half of it rounds.
             let counted = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).filter_map(|e| match e {
                 Effect::Tokens { half_of: Some(Filter(clauses)), .. } => Some(clauses),
@@ -7785,8 +7793,9 @@ fn every_turn_begins_as_its_text_says() {
             // drop.
             let got = every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain));
             if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
-                failures.push(format!("{} in player {}'s turn{}{}: {why}", card.name, active.0,
-                    if rotated { ", a land on top of the library" } else { "" }, if rich { ", with two Swamps more" } else { "" }));
+                failures.push(format!("{} in player {}'s turn{}{}{}: {why}", card.name, active.0,
+                    if rotated { ", a land on top of the library" } else { "" }, if rich { ", with two Swamps more" } else { "" },
+                    if borrowed { ", its owner the other player" } else { "" }));
             }
         }
     }
@@ -7833,11 +7842,18 @@ fn every_turn_ends_as_its_text_says() {
         };
         let attacks: &[bool] = if spec.end_step.as_ref().is_some_and(|e| e.unless_attacked) { &[false, true] } else { &[false] };
         for (&(which, build), &attacked) in boards.iter().flat_map(|b| attacks.iter().map(move |a| (b, a))) {
-            for active in [P0, P1] {
+            // Its controller's and its owner's, and its controller's but
+            // the other player's card (CR 109.5, 108.3).
+            for (active, borrowed) in [P0, P1].into_iter().flat_map(|a| [false, true].map(move |b| (a, b))) {
                 ends += 1;
                 let (mut state, mut world) = build(&registry, &cache);
                 let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
-                let which = format!("{which}{}", if attacked { ", having attacked" } else { "" });
+                if borrowed {
+                    state.get_object_mut(id).expect("just placed").owner = P1;
+                    world.permanents.get_mut(&id).expect("just placed").owner = P1;
+                }
+                let which = format!("{which}{}{}", if attacked { ", having attacked" } else { "" },
+                    if borrowed { ", its owner the other player" } else { "" });
                 if attacked {
                     state.get_object_mut(id).expect("just placed").attacked_on_turn = Some(state.turn_number);
                 }
