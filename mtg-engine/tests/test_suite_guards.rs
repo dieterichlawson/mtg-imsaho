@@ -1721,22 +1721,26 @@ fn only_the_engine_names_a_keyword() {
     }
 }
 
-/// A triggered ability's "you" is read through `helpers::ability_controller`.
+/// An ability's "you" is read through `helpers::ability_controller`.
 ///
 /// CR 603.3a: a triggered ability's controller is the player who controlled
-/// its source as it triggered, and it stays theirs while it waits on the
+/// its source as it triggered, and 602.2a: an activated ability's is the
+/// player who activated it; either stays theirs while it waits on the
 /// stack. `controller_of` on the source answers who controls the source as
 /// the ability resolves, which is someone else once Olivia Voldaren has
-/// taken it in response: Sturmgeist drew for the taker and Murder of Crows
-/// asked the taker. The engine sets the ability's controller around the
-/// hook (`triggers::resolve_next_trigger`), and `ability_controller` reads
-/// it. So no hook the trigger dispatch calls reads its own source's
+/// taken it in response: Sturmgeist drew for the taker, Murder of Crows
+/// asked the taker, and Tree of Redemption exchanged the taker's life. The
+/// engine sets the ability's controller around the hook
+/// (`triggers::resolve_next_trigger`, `stack::resolve_top_of_stack`), and
+/// `ability_controller` reads it. So no hook the trigger dispatch or an
+/// activated or loyalty ability's resolution calls reads its own source's
 /// `controller_of`; a card whose entering hook is a choice made as it
 /// enters (CR 614.12, `chooses_as_it_enters`), not a trigger, is the one
 /// exception. A helper a hook calls is not followed.
 #[test]
-fn a_trigger_hooks_you_is_the_triggers_controller() {
-    const HOOKS: [&str; 19] = [
+fn an_abilitys_you_is_the_abilitys_controller() {
+    const HOOKS: [&str; 21] = [
+        "resolve_activated_ability", "on_loyalty_ability",
         "on_any_combat_damage_to_player", "on_any_creature_attacks", "on_any_creature_dies",
         "on_any_creature_enters", "on_any_damage_to_player", "on_attacks", "on_becomes_blocked",
         "on_blocks", "on_combat_damage_to_player", "on_creature_card_milled",
@@ -1776,10 +1780,10 @@ fn a_trigger_hooks_you_is_the_triggers_controller() {
             }
         }
     }
-    assert!(hooks_seen > 50, "the scan found only {hooks_seen} trigger hooks");
+    assert!(hooks_seen > 80, "the scan found only {hooks_seen} ability hooks");
     assert!(offenders.is_empty(),
-        "a trigger hook's \"you\" is the trigger's controller (CR 603.3a), which \
-         `helpers::ability_controller` reads; `controller_of` on the source is \
-         whoever controls it now:\n  {}",
+        "an ability's \"you\" is its controller as it went on the stack (CR 602.2a, \
+         603.3a), which `helpers::ability_controller` reads; `controller_of` on the \
+         source is whoever controls it now:\n  {}",
         offenders.join("\n  "));
 }
