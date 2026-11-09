@@ -6432,7 +6432,8 @@ fn choosers(spec: &Spec, targets: &[Target], world: &World, you: PlayerId, kind:
 /// What `spec`'s triggers do, as one text: the questions a permanent
 /// asks as its triggers resolve.
 fn triggers_text(spec: &Spec) -> Spec {
-    let triggers = spec.upkeep.iter().map(|u| &u.trigger)
+    let triggers = spec.etb.iter().chain(&spec.dies).map(|t| &**t)
+        .chain(spec.upkeep.iter().map(|u| &u.trigger))
         .chain(spec.end_step.iter().map(|e| &e.trigger))
         .chain(spec.watch.iter().map(|w| &w.trigger));
     Spec { effects: triggers.flat_map(|t| t.spec.effects.clone()).collect(), ..Spec::default() }
@@ -7084,12 +7085,14 @@ fn every_readable_card_does_what_its_text_says() {
                     })
                     .collect();
                 let random = spec.etb.as_ref().is_some_and(|t| is_random(&t.spec)) || spec.dies.as_ref().is_some_and(|t| is_random(&t.spec));
-                let endings = if random {
+                let (endings, asked) = questions_asked(|| if random {
                     over_seeds(&state, |s| every_ending(s, &registry, Some(spell)))
                 } else {
                     every_ending(&state, &registry, Some(spell))
-                };
-                if let Some(why) = disagreement(&entering, &endings, &registry) {
+                });
+                if let Some(why) = disagreement(&entering, &endings, &registry)
+                    .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, spell, &asked))
+                {
                     failures.push(format!("{name}: {why}"));
                     continue;
                 }
@@ -7153,17 +7156,19 @@ fn every_readable_card_does_what_its_text_says() {
                         let optional = spec.dies.as_ref().is_some_and(|t| t.optional) || spec.watch.as_ref().is_some_and(|w| w.trigger.optional);
                         for may in [None, Some(true), Some(false)].into_iter().filter(|m| m.is_none() || optional) {
                             let deaths = death_outcomes(spec, after_entering, P0, spell, &rs, may);
-                            let died = if random {
+                            let (died, asked) = questions_asked(|| if random {
                                 over_seeds(&dying, |s| every_ending_choosing(s, &registry, None, None, may))
                             } else {
                                 every_ending_choosing(&dying, &registry, None, None, may)
-                            };
+                            });
                             let policy = match may {
                                 None => "",
                                 Some(true) => ", taking every \"may\"",
                                 Some(false) => ", declining every \"may\"",
                             };
-                            if let Some(why) = disagreement(&deaths, &died, &registry) {
+                            if let Some(why) = disagreement(&deaths, &died, &registry)
+                                .or_else(|| wrong_chooser(&triggers_text(spec), &[], after_entering, P0, spell, &asked))
+                            {
                                 failures.push(format!("{name} {what}{policy}: {why}"));
                                 break;
                             }
