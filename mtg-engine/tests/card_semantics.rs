@@ -6440,7 +6440,9 @@ fn triggers_text(spec: &Spec) -> Spec {
     let triggers = spec.etb.iter().chain(&spec.dies).map(|t| &**t)
         .chain(spec.upkeep.iter().map(|u| &u.trigger))
         .chain(spec.end_step.iter().map(|e| &e.trigger))
-        .chain(spec.watch.iter().map(|w| &w.trigger));
+        .chain(spec.watch.iter().map(|w| &w.trigger))
+        .chain(spec.on_cast.iter().map(|w| &w.trigger))
+        .chain(spec.on_enter.iter().map(|w| &w.trigger));
     Spec { effects: triggers.flat_map(|t| t.spec.effects.clone()).collect(), ..Spec::default() }
 }
 
@@ -9259,13 +9261,15 @@ fn every_cast_watcher_sees_what_its_text_says() {
                     after
                 })
                 .collect();
-            let got = every_ending_casting(&state, &registry, spell, &[], Some(cast_for(spell, Vec::new(), flashback.as_ref())));
+            let (got, asked) = questions_asked(|| every_ending_casting(&state, &registry, spell, &[], Some(cast_for(spell, Vec::new(), flashback.as_ref()))));
             let what = format!("{} as its controller casts Think Twice{}{}", card.name, if from_graveyard { " by flashback" } else { "" },
                 if borrowed { ", the watcher the other player's card" } else { "" });
             // The engine puts the spell on the stack as well.
             let mut from = state.clone();
             from.stack_puts += 1;
-            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got))
+                .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, id, &asked))
+            {
                 failures.push(format!("{what}: {why}"));
             }
         }
@@ -9282,10 +9286,12 @@ fn every_cast_watcher_sees_what_its_text_says() {
         w.source = Some(id);
         let triggered = if names(bears, false) { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] };
         let want: Vec<World> = triggered.iter().flat_map(|w| creature_outcomes(&bears_spec, w, P0, bears, spell)).collect();
-        let got = every_ending(&state, &registry, Some(spell));
+        let (got, asked) = questions_asked(|| every_ending(&state, &registry, Some(spell)));
         let mut from = state.clone();
         from.stack_puts += 1;
-        if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+        if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got))
+            .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, id, &asked))
+        {
             failures.push(format!("{} as its controller casts Grizzly Bears: {why}", card.name));
         }
         // The opponent's, cast in the game loop, which collects what a cast
@@ -9381,10 +9387,12 @@ fn every_enter_watcher_sees_what_its_text_says() {
                     if entered { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] }
                 })
                 .collect();
-            let got = every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new())));
+            let (got, asked) = questions_asked(|| every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new()))));
             let mut from = state.clone();
             from.stack_puts += 1;
-            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got))
+                .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, watcher, &asked))
+            {
                 failures.push(format!("{} as player {} casts {creature}{}{}: {why}", card.name, caster.0, if broke { " with no mana left" } else { "" },
                     if borrowed { ", the watcher the other player's card" } else { "" }));
             }
