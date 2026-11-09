@@ -3229,6 +3229,10 @@ fn opponent_casts_a_spell(state: &mut GameState, world: &mut World, registry: &C
 /// to do and would let Giant Growth resolve for a caster whose only ability
 /// is activated as a sorcery.
 fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut World, registry: &CardRegistry, cache: &BTreeMap<String, Printed>) {
+    // Two cards left in their hand once it is cast, the Island and a
+    // Plains, so that "that player discards a card" is theirs to choose.
+    spell_in_hand(state, registry, "Plains", P1);
+    world.hand[1].push("Plains".to_string());
     let growth = spell_in_hand(state, registry, "Giant Growth", P1);
     fund(state, P1, &mana_cost("{G}").expect("a cost"), 0);
     let kindercatch = world.permanents.iter()
@@ -5242,8 +5246,14 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::ExileFromGraveyard { slot, n } => {
-                if let Some(p) = player(*slot) {
-                    assert!(w.graveyard[p].len() <= *n, "the reference exiles a whole graveyard, not a choice from it");
+                if let Some(p) = player(*slot).filter(|p| w.graveyard[*p].len() > *n) {
+                    let chosen: Vec<ObjectId> = w.chosen.iter().copied().filter(|id| w.yard.get(id).is_some_and(|m| m.owner.0 as usize == p)).collect();
+                    assert_eq!(chosen.len(), *n, "{n} chosen from the graveyard");
+                    for id in chosen {
+                        let card = w.leave_yard(id).expect("in the graveyard");
+                        w.exile[p].push(card.name.expect("a card has a name"));
+                    }
+                } else if let Some(p) = player(*slot) {
                     let ids: Vec<ObjectId> = w.yard.iter().filter(|(_, m)| m.owner.0 as usize == p).map(|(id, _)| *id).collect();
                     for id in ids {
                         let card = w.leave_yard(id).expect("in the graveyard");
@@ -5494,7 +5504,7 @@ fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: Player
 fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
     let mut ways = random_choices(spec, world, caster);
     if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature
-        | Effect::PlayerExilesFromGraveyard { .. } | Effect::PilesSacrificed { .. }))
+        | Effect::PlayerExilesFromGraveyard { .. } | Effect::PilesSacrificed { .. } | Effect::ExileFromGraveyard { .. }))
     {
         ways = ways.iter()
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
@@ -5705,6 +5715,20 @@ fn resolution_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<Vec
             },
             Effect::PlayerExilesFromGraveyard { slot } => match &targets[*slot] {
                 Target::Player(p) => world.yard.iter().filter(|(_, m)| m.owner == *p).map(|(id, _)| vec![*id]).collect(),
+                _ => continue,
+            },
+            // "That player exiles two cards from their graveyard": with
+            // more there, which two is theirs to choose, any two (CR
+            // 608.2d); with no more, there is nothing to choose.
+            Effect::ExileFromGraveyard { slot, n } => match &targets[*slot] {
+                Target::Player(p) if world.graveyard[p.0 as usize].len() > *n => {
+                    let theirs: Vec<Target> = world.yard.iter().filter(|(_, m)| m.owner == *p).map(|(id, _)| Target::Object(*id)).collect();
+                    assert_eq!(theirs.len(), world.graveyard[p.0 as usize].len(), "the reference chooses among graveyard cards it holds by id");
+                    subsets(&theirs, *n).into_iter()
+                        .filter(|set| set.len() == *n)
+                        .map(|set| set.into_iter().map(|t| match t { Target::Object(id) => id, _ => unreachable!() }).collect())
+                        .collect()
+                }
                 _ => continue,
             },
             // The pile sacrificed: any of the player's permanents, as the
@@ -6306,6 +6330,126 @@ enum Played {
     Asks(Vec<Answer>),
 }
 
+/// A question the engine asked as a game was played: of what kind, of
+/// whom, and on behalf of which object.
+#[derive(Clone, Debug)]
+struct Question {
+    kind: String,
+    player: PlayerId,
+    source: ObjectId,
+}
+
+thread_local! {
+    /// Every question [`play_from`] met on this thread, in the order met,
+    /// for the test running on it to read back with [`questions_asked`].
+    static ASKED: std::cell::RefCell<Vec<Question>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// What `play` returns, and every question asked while it played: the
+/// endings, as a set, hide who answered.
+fn questions_asked<T>(play: impl FnOnce() -> T) -> (T, Vec<Question>) {
+    ASKED.with(|a| a.borrow_mut().clear());
+    let played = play();
+    (played, ASKED.with(|a| std::mem::take(&mut *a.borrow_mut())))
+}
+
+/// Every effect of `spec`, its modes' and the ones it nests ("if a
+/// creature card was discarded this way, ...").
+fn all_effects(spec: &Spec) -> Vec<&Effect> {
+    let mut all = Vec::new();
+    for effect in spec.effects.iter().chain(spec.modes.iter().flat_map(|m| &m.effects)) {
+        all.push(effect);
+        match effect {
+            Effect::IfDiscardedCreature(inner) => all.extend(all_effects(inner)),
+            Effect::TokenIfCreatureCard(inner) => all.push(inner),
+            _ => {}
+        }
+    }
+    all
+}
+
+/// Who the text has answer a question of `kind` asked on behalf of the
+/// card: its controller, "you" (CR 608.2d), and the players its effects
+/// name to choose — the target player who discards, sacrifices or exiles
+/// from their graveyard, each player, the countered spell's controller who
+/// may pay (CR 118.12), the destroyed land's controller who may search.
+/// `None` for a question the text does not settle: the order of
+/// triggers, which each player puts on the stack for their own (603.3b),
+/// and which of two replacements applies, the affected player's (616.1).
+fn choosers(spec: &Spec, targets: &[Target], world: &World, you: PlayerId, kind: &str) -> Option<BTreeSet<PlayerId>> {
+    // A slot not given is a target chosen as a trigger went on the stack,
+    // which the caller does not know: either player.
+    let player = |slot: usize| match targets.get(slot) {
+        Some(Target::Player(p)) => vec![*p],
+        Some(_) => Vec::new(),
+        None => vec![P0, P1],
+    };
+    // A spell's controller, as it stood on the stack before this resolved.
+    let spells = |slot: usize| match targets.get(slot) {
+        Some(Target::Object(id)) => world.stack.iter().find(|(s, _, _)| s == id).map(|(_, m, _)| m.controller).into_iter().collect(),
+        Some(_) => Vec::new(),
+        None => vec![P0, P1],
+    };
+    let effects = all_effects(spec);
+    let mut who: BTreeSet<PlayerId> = BTreeSet::new();
+    let mut yours = true;
+    for effect in &effects {
+        let named = match (kind, effect) {
+            ("ChooseCardFromHand", Effect::ThatPlayerDiscards { slot }) => spells(*slot),
+            ("ChooseCardFromHand", Effect::PlayerDiscards { slot, .. }) => player(*slot),
+            ("ChooseCardFromHand", Effect::EachPlayerDiscards)
+            | ("ChooseTarget", Effect::EachPlayerChoosesACreature) => vec![P0, P1],
+            ("ChooseTarget", Effect::SacrificeOfTheirChoice { slot } | Effect::PlayerExilesFromGraveyard { slot }) => player(*slot),
+            ("ChooseTarget" | "ChooseFromLibrary" | "YesNo", Effect::SearchForBasicLand { of: Some(of), .. }) => match targets.get(*of) {
+                Some(_) => vec![searcher(world, targets, Some(*of), you)],
+                None => vec![P0, P1],
+            },
+            // Curse of Oblivion's "that player exiles two cards from their
+            // graveyard", that player's to choose.
+            ("ChooseObjectSet", Effect::ExileFromGraveyard { slot, .. }) => player(*slot),
+            ("PayOrNot", Effect::CounterUnlessPays { slot, .. }) => spells(*slot),
+            // Liliana of the Veil's controller divides; the target player
+            // picks the pile they sacrifice.
+            ("ChoosePile", Effect::PilesSacrificed { slot }) => player(*slot),
+            _ => continue,
+        };
+        // A question the text gives to players it names is theirs alone;
+        // the controller answers the ones it gives to no one.
+        yours = false;
+        who.extend(named);
+    }
+    match kind {
+        "ChooseTriggerOrder" | "ChooseDamageEffect" => None,
+        _ => {
+            if yours {
+                who.insert(you);
+            }
+            Some(who)
+        }
+    }
+}
+
+/// What `spec`'s triggers do, as one text: the questions a permanent
+/// asks as its triggers resolve.
+fn triggers_text(spec: &Spec) -> Spec {
+    let triggers = spec.upkeep.iter().map(|u| &u.trigger)
+        .chain(spec.end_step.iter().map(|e| &e.trigger))
+        .chain(spec.watch.iter().map(|w| &w.trigger));
+    Spec { effects: triggers.flat_map(|t| t.spec.effects.clone()).collect(), ..Spec::default() }
+}
+
+/// The first question asked on behalf of `source` of a player the text
+/// does not have answer it.
+fn wrong_chooser(spec: &Spec, targets: &[Target], world: &World, you: PlayerId, source: ObjectId, asked: &[Question]) -> Option<String> {
+    asked.iter()
+        .filter(|a| a.source == source)
+        .find_map(|a| {
+            let who = choosers(spec, targets, world, you, &a.kind)?;
+            (!who.contains(&a.player)).then(|| format!("p{} is asked the {} question, which the text has {} answer",
+                a.player.0, a.kind, who.iter().map(|p| format!("p{}", p.0)).collect::<Vec<_>>().join(" or ")))
+        })
+}
+
 /// Cast `spell` at `targets` and play on until the stack is empty, both
 /// players passing priority (CR 117.4, 608.1): the engine's own game loop,
 /// state-based actions and triggers and all. The questions asked after the
@@ -6376,6 +6520,20 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                 },
                 CombatPrompt::ChooseBlockers { .. } => Action::DeclareBlockers { assignments: blocks },
             };
+        }
+        // Who is asked, on behalf of what, for the test to read back
+        // ([`questions_asked`]); and a combat's damage, which is the
+        // attacking player's to order and assign (CR 509.2, 510.1), and
+        // only the active player attacks.
+        if let (Some(prompt), Some(AwaitingAction::ResolutionChoice { player, source, .. })) = (&legal.resolution_prompt, &s.awaiting_action) {
+            let kind = format!("{prompt:?}").split([' ', '{', '(']).next().unwrap_or_default().to_string();
+            if matches!(prompt, ResolutionChoiceKind::AssignCombatDamage { .. } | ResolutionChoiceKind::ChooseDamageAssignmentOrder { .. })
+                && *player != s.active_player
+            {
+                trouble = Some(format!("the engine asked p{} the {kind} of p{}'s attack", player.0, s.active_player.0));
+                return Action::AbandonGame;
+            }
+            ASKED.with(|a| a.borrow_mut().push(Question { kind, player: *player, source: *source }));
         }
         match &legal.resolution_prompt {
             Some(ResolutionChoiceKind::ChooseTargetSet { max, .. }) if answering_cast => {
@@ -7022,17 +7180,22 @@ fn every_readable_card_does_what_its_text_says() {
                     let want: Vec<World> = payable.iter().map(|p| resolve(spec, &pay(&world, p), &targets, P0, card, spell)).collect();
                     let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
                     let mut endings = Vec::new();
+                    let mut asked = Vec::new();
                     for sacrifice in casts_by_sacrifice {
                         let first = Action::CastSpell {
                             object_id: spell, targets: targets.clone(), sacrifice, exile_count: None,
                             exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         };
-                        match every_ending_from(&state, &registry, Some(spell), Some(first)) {
+                        let (played, these) = questions_asked(|| every_ending_from(&state, &registry, Some(spell), Some(first)));
+                        asked.extend(these);
+                        match played {
                             Ok(e) => endings.extend(e),
                             Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
                         }
                     }
-                    if let Some(why) = disagreement(&want, &Ok(endings), &registry) {
+                    if let Some(why) = disagreement(&want, &Ok(endings), &registry)
+                        .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
+                    {
                         failures.push(format!("{name} at {targets:?}: {why}"));
                     }
                 }
@@ -7048,12 +7211,14 @@ fn every_readable_card_does_what_its_text_says() {
                     let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
                         .map(|way| resolve(spec, way, &targets, P0, card, spell))
                         .collect();
-                    let endings = if is_random(spec) {
+                    let (endings, asked) = questions_asked(|| if is_random(spec) {
                         over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets))
                     } else {
                         every_ending_at(&state, &registry, spell, &targets)
-                    };
-                    if let Some(why) = disagreement(&want, &endings, &registry) {
+                    });
+                    if let Some(why) = disagreement(&want, &endings, &registry)
+                        .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
+                    {
                         failures.push(format!("{name} at {targets:?}: {why}"));
                         continue;
                     }
@@ -7384,10 +7549,13 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 };
                 let want: Vec<World> = ways.iter().cloned().map(resolve).collect();
                 let at = format!("{name} at {targets:?}{}", sac.map_or(String::new(), |v| format!(", sacrificing {v:?}")));
-                let endings = every_ending_from(&state, &registry, None, Some(act.clone()));
+                let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
                 if let Some(why) = disagreement(&want, &endings, &registry) {
                     failures.push(format!("{at}: {why}"));
                     continue;
+                }
+                if let Some(why) = wrong_chooser(&ability.spec, full, &world, P0, id, &asked) {
+                    failures.push(format!("{at}: {why}"));
                 }
                 // A double-faced source transformed in response, as by
                 // Moonmist: the ability on the stack is the face's it was
@@ -7433,7 +7601,10 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     let mut held = engine::submit_action(&state, &act, &registry);
                     if held.stack.len() == 1 && held.priority_player == Some(P0) {
                         held.move_object(id, Zone::Exile, &registry);
-                        if let Some(why) = disagreement(&answered, &every_ending(&held, &registry, None), &registry) {
+                        let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
+                        if let Some(why) = disagreement(&answered, &endings, &registry)
+                            .or_else(|| wrong_chooser(&ability.spec, full, &world, P0, id, &asked))
+                        {
                             failures.push(format!("{at}, its source exiled in response: {why}"));
                         }
                     }
@@ -7638,10 +7809,13 @@ fn every_loyalty_ability_does_what_its_text_says() {
                         })
                         .collect();
                     let at = format!("{name} at {targets:?}");
-                    let endings = every_ending_from(&state, &registry, None, Some(act.clone()));
+                    let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
                     if let Some(why) = disagreement(&want, &endings, &registry) {
                         failures.push(format!("{at}: {why}"));
                         continue;
+                    }
+                    if let Some(why) = wrong_chooser(&ability.spec, targets, &world, P0, id, &asked) {
+                        failures.push(format!("{at}: {why}"));
                     }
                     let endings = endings.expect("compared");
                     // The planeswalker exiled in response, when its cost has
@@ -7665,7 +7839,10 @@ fn every_loyalty_ability_does_what_its_text_says() {
                         let mut held = engine::submit_action(&state, &act, &registry);
                         if held.stack.len() == 1 && held.priority_player == Some(P0) {
                             held.move_object(id, Zone::Exile, &registry);
-                            if let Some(why) = disagreement(&want, &every_ending(&held, &registry, None), &registry) {
+                            let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
+                            if let Some(why) = disagreement(&want, &endings, &registry)
+                                .or_else(|| wrong_chooser(&ability.spec, targets, &world, P0, id, &asked))
+                            {
                                 failures.push(format!("{at}, the planeswalker exiled in response: {why}"));
                             }
                         }
@@ -7811,13 +7988,18 @@ fn every_turn_begins_as_its_text_says() {
         let pays = spec.upkeep.as_ref().is_some_and(|u| u.trigger.pay.is_some());
         let tops: &[bool] = if looks { &[false, true] } else { &[false] };
         let swamps: &[bool] = if pays { &[false, true] } else { &[false] };
+        // "That player exiles two cards from their graveyard", with a
+        // third there, so that which two is theirs to choose.
+        let exiles = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).any(|e| matches!(e, Effect::ExileFromGraveyard { .. }));
+        let fuller: &[bool] = if exiles { &[false, true] } else { &[false] };
         // And with it its controller's but the other player's card, as
         // after Olivia Voldaren took it: "your upkeep" is its controller's
         // (CR 109.5), and what leaves goes to its owner (108.3).
         let variants = [P0, P1].into_iter()
             .flat_map(|a| tops.iter().flat_map(move |r| swamps.iter().map(move |w| (a, *r, *w))))
-            .flat_map(|(a, r, w)| [false, true].map(move |b| (a, r, w, b)));
-        for (active, rotated, rich, borrowed) in variants {
+            .flat_map(|(a, r, w)| [false, true].map(move |b| (a, r, w, b)))
+            .flat_map(|(a, r, w, b)| fuller.iter().map(move |f| (a, r, w, b, *f)));
+        for (active, rotated, rich, borrowed, full) in variants {
             let (mut state, mut world) = board(&registry, &cache);
             if rich {
                 for _ in 0..2 {
@@ -7830,6 +8012,11 @@ fn every_turn_begins_as_its_text_says() {
                     state.players[p.0 as usize].library_order.rotate_left(1);
                     world.library[p.0 as usize].rotate_left(1);
                 }
+            }
+            if full {
+                let id = card_in_graveyard(&mut state, &registry, "Think Twice", P1);
+                world.yard.insert(id, Model::printed(&cache["Think Twice"], P1));
+                world.graveyard[1].push("Think Twice".to_string());
             }
             let curse = spec.upkeep.as_ref().is_some_and(|u| u.enchanted_player);
             let id = if curse {
@@ -7885,11 +8072,17 @@ fn every_turn_begins_as_its_text_says() {
             // The engine passes for a player with nothing to do, so the
             // first question after the draw is the active player's land
             // drop.
-            let got = every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain));
-            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
-                failures.push(format!("{} in player {}'s turn{}{}{}: {why}", card.name, active.0,
+            let (got, asked) = questions_asked(|| every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain)));
+            // Who answers what it asks: its controller, or the player its
+            // text names, the enchanted player for a Curse.
+            let targets = spec.upkeep.as_ref().map(|u| target_sets(&u.trigger.spec, &World { source: Some(id), ..world.clone() }, P0)).filter(|sets| sets.len() == 1).map(|mut sets| sets.remove(0)).unwrap_or_default();
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got))
+                .or_else(|| wrong_chooser(&triggers_text(spec), &targets, &world, P0, id, &asked))
+            {
+                failures.push(format!("{} in player {}'s turn{}{}{}{}: {why}", card.name, active.0,
                     if rotated { ", a land on top of the library" } else { "" }, if rich { ", with two Swamps more" } else { "" },
-                    if borrowed { ", its owner the other player" } else { "" }));
+                    if borrowed { ", its owner the other player" } else { "" },
+                    if full { ", a third card in the cursed player's graveyard" } else { "" }));
             }
         }
     }
@@ -7965,8 +8158,10 @@ fn every_turn_ends_as_its_text_says() {
                         next_turn_outcomes(now, &w, id, next)
                     })
                     .collect();
-                let got = every_scene_ending(&state, &registry, Scene::NextTurn(Step::PrecombatMain));
-                if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
+                let (got, asked) = questions_asked(|| every_scene_ending(&state, &registry, Scene::NextTurn(Step::PrecombatMain)));
+                if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got))
+                    .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, id, &asked))
+                {
                     failures.push(format!("{} in player {}'s turn{which}: {why}", card.name, active.0));
                 }
             }
@@ -9958,8 +10153,8 @@ fn every_death_watching_enchantment_is_what_its_text_says() {
                 dying.get_object_mut(r).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
             }
             let want = death_outcomes(spec, &world, P0, id, &rs, None);
-            let got = every_ending_choosing(&dying, &registry, None, None, None);
-            if let Some(why) = disagreement(&want, &got, &registry) {
+            let (got, asked) = questions_asked(|| every_ending_choosing(&dying, &registry, None, None, None));
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, id, &asked)) {
                 let names: Vec<&str> = rs.iter().map(|r| world.permanents[r].name.as_deref().unwrap_or("the Spirit token")).collect();
                 failures.push(format!("{} seeing {} die: {why}", card.name, names.join(" and ")));
             }
