@@ -674,3 +674,24 @@ mtg-engine/src/engine/actions/cast.rs: replace == with != in set_mode_phrase
 mtg-engine/src/cards/helpers.rs: replace && with || in exile_from_graveyard_for_ability
 mtg-engine/src/engine/legal/casting.rs: replace != with == in flashback
 mtg-engine/src/funding.rs: delete ! in order_around_demands
+# 2026-11-07 run 42383051542 (#1007, shard 2); reasons in reports/mutation-testing.md.
+mtg-engine/src/combat.rs: delete match arm 1 in ordinal
+mtg-engine/src/combat.rs: delete match arm 3 in ordinal
+mtg-engine/src/combat.rs: delete match arm 4 in ordinal
+mtg-engine/src/combat.rs: delete match arm 5 in ordinal
+mtg-engine/src/combat.rs: replace += with *= in declare_blockers_with_registry
+mtg-engine/src/combat.rs: replace < with <= in log_completed_order
+mtg-engine/src/combat.rs: replace < with == in log_completed_order
+mtg-engine/src/combat.rs: replace && with || in queue_damage_step
+mtg-engine/src/combat.rs: replace match guard walker_still_there with true in queue_damage_step
+mtg-engine/src/combat.rs: replace || with && in queue_damage_step
+mtg-engine/src/damage.rs: replace && with || in apply_chosen_effect
+mtg-engine/src/damage.rs: replace += with *= in process_pending_damage
+mtg-engine/src/damage.rs: replace == with != in effect_label
+mtg-engine/src/damage.rs: replace > with == in same_outcome_in_every_order
+mtg-engine/src/damage.rs: replace > with >= in same_outcome_in_every_order
+mtg-engine/src/engine.rs: replace && with || in mana_demands
+mtg-engine/src/engine.rs: replace < with <= in mana_demands
+mtg-engine/src/engine.rs: replace < with == in mana_demands
+mtg-engine/src/engine.rs: replace < with > in mana_demands
+mtg-engine/src/engine.rs: replace || with && in mana_demands

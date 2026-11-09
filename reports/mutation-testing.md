@@ -1422,3 +1422,94 @@ prompt headed with the wrong card is what #980 was. Killed by one assertion
 of the contract in `cards_transforming_permanents::garruks_ability_keeps_the_veil_cursed_name_after_his_cost_kills_him`:
 while the ability resolves, another object is named as itself. A correct
 rewrite of the function still passes.
+
+### Shard 5 (issue #1006): `transformed_since_its_own_ability_was_stacked`, killed
+
+All three survivors sit in the guards that read CR 701.28f's "an ability
+of a permanent that isn't a delayed triggered ability of that permanent".
+Every card in the pool that transforms a permanent does it from that
+permanent's own ability, so no game reaches another source's ability or a
+delayed trigger transforming something. The guards are the rule's wording,
+though, and a future card (or a refactor that dropped the source check)
+would refuse transforms the rules allow. As with #1005, one assertion of the
+contract kills them: `werewolf_cards::only_the_permanents_own_undelayed_ability_is_refused_a_second_transform`
+sets the resolving entry by hand, for each of five owners of the ability.
+Each mutant was applied by hand and turned it red.
+
+## 2026-11-07 run 42383051542, shard 2 (issue #1007)
+
+Killed (each watched failing under its mutant, applied by hand):
+
+- `ask_next_damage_division` `||` -> `&&`: an attacker that deals no damage
+  in the first-strike step (a first-strike *blocker* makes the step happen)
+  was asked to divide its damage there, a question with no effect, and
+  asked again in the regular step. Rule CR 510.4.
+  `combat_damage_division::an_attacker_without_first_strike_divides_only_in_the_regular_step`.
+- `ask_next_damage_division` `+` -> `*` and `==` -> `!=`: the prompt would
+  say the surplus goes "on to" the blocker being asked about, and mark the
+  wrong row "(lethal)". It is the sentence the decision is made from on all
+  four surfaces. `combat_damage_division::the_division_prompt_names_where_the_rest_goes`.
+- `damage_order_labels` (the P/T arm and all four comparison mutants): two
+  blockers that read alike in the order prompt would lose the id that tells
+  them apart, or every label would carry one.
+  `combat_damage_division::only_blockers_that_read_alike_carry_an_id_in_the_order_prompt`.
+- `same_outcome_in_every_order` `<` -> `>`: three effects whose order
+  matters (a Flail and Ghostly Possession on a Corpse, an Undead Alchemist
+  watching) would be applied in the fixed order and the defender never
+  asked (CR 616.1). `damage_effect_choice::three_effects_whose_order_matters_are_asked`.
+- `LegalActions::is_observed_pass` (-> true, -> false, `&&` -> `||`) and
+  `offers_nothing` -> false: contracts the game loops, the runner and the
+  LLM seat depend on (#956, #498), tested only from other crates, which
+  the mutants job does not run.
+  `no_empty_decisions::an_offer_says_whether_it_is_empty_or_an_observed_pass`.
+
+Deleted:
+
+- `apply_effect`'s `Prevention::Protection => "protection"` arm repeated
+  what `effect_name` already returns for protection. The arm is gone, and
+  the survivor `delete match arm Prevention::Protection in apply_effect`
+  with it.
+
+Accepted:
+
+- `ordinal` arms 1, 3, 4, 5: the word in "starting from the third" of a
+  partial damage-order heading. Display wording (bucket 5). Deleting arm 1
+  is also unreachable, since that heading is only written with one blocker
+  already placed. (#982 may remove the order prompt altogether.)
+- `declare_blockers_with_registry` `+=` -> `*=`: the count is read only by
+  the "only {n} blocked it" log line of a dropped under-minimum block. The
+  drop itself is `partition_under_minimum_blocks`, which is tested. Log
+  wording (bucket 5).
+- `log_completed_order` `<` -> `<=` / `==`: whether a one- or two-blocker
+  order is announced in the log. Log only (bucket 5).
+- `queue_damage_step` `&&` -> `||` (the `walker_still_there` closure),
+  guard `walker_still_there` -> true: a planeswalker that has left the
+  battlefield is not dealt the queued damage anyway (`can_be_dealt_damage`
+  removes it, CR 120.1). The controller half is unreachable, because the
+  pool's only steal effect (Traitorous Blood) takes a creature. The other
+  two `&&`s in the function were checked and are killed. Equivalent /
+  unreachable (buckets 1, 2).
+- `queue_damage_step` `||` -> `&&` in `was_blocked`: the snapshot `combat`
+  and `state.combat` agree on `blocked_attackers` at every damage step
+  (the set is written only in declare blockers). Equivalent (bucket 1).
+- `apply_chosen_effect` `&&` -> `||`: the first unsettled queued event is
+  by construction the one the prompt asked about. `process_pending_damage`
+  returns as it asks, and nothing settles or queues damage while
+  the prompt is open (the checker's "damage left waiting" clause, tested in
+  `damage_effect_choice`). The match is a guard for a state that cannot be
+  built. Equivalent on reachable states (bucket 1).
+- `process_pending_damage` `+=` -> `*=` (the `effects.is_empty()` arm): the
+  entry has just been marked settled, so the next pass steps over it with
+  the other, unmutated `+= 1`. One extra iteration, the same result.
+  Equivalent (bucket 6).
+- `effect_label` `==` -> `!=`: "your protection" vs "p1's protection" in an
+  option label. Display wording (bucket 5).
+- `same_outcome_in_every_order` `>` -> `==` / `>=` at 7: the cap past which
+  orders are not enumerated. `distinct_answers` collapses effects to one per
+  class, and the pool has fewer than seven classes that can reach one event.
+  Unreachable; also performance-only (buckets 2, 6).
+- `mana_demands` (five mutants in the "other costs payable" filter): what
+  the auto-tapper protects is a preference among plans that all pay
+  (bucket 3). The planner's contract (an offered plan pays, a `None` means
+  none would) is held by the `compute_autotap` property tests, whatever this
+  list contains.
