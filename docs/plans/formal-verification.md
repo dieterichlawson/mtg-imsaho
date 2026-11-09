@@ -1117,7 +1117,10 @@ a noninterference property, checked two ways.
   decision in 32 to them, at 7% (15.0 s), inside the nightly shard's 90
   minutes; a leak that shows at all shows on most decisions of a game,
   and defect 37 undone is flagged at the 32nd. As it ships: 553 games,
-  87,828 decisions, then 1,818 games, 301,531 decisions, no failure.
+  87,828 decisions, then 1,818 games, 301,531 decisions, no failure. The
+  checks are `mtg_player::hidden`'s, beside the progress watchdog both
+  fuzz harnesses share, so the libFuzzer target holds the same one
+  decision in 32 of every input to them.
 - The shared log, which neither check above sees: every line above
   `Private` is in the log both seats are sent (`full_log`), and a view
   and its copy with the hands dealt anew share one log. The fuzz runner
