@@ -1167,11 +1167,12 @@ pub(crate) fn discard<T>(value: T) {
 /// read back by position, was the solver's to choose. Nevermore, which
 /// lists the registry's names, ran out of memory in symbolic execution.
 /// The order a `HashMap` gives is no order at all, and nothing reads one
-/// but Nevermore, which sorts.
-#[cfg(kani)]
+/// but Nevermore, which sorts. Compiled for tests too, whose unit tests
+/// hold it to the `HashMap` it stands in for.
+#[cfg(any(kani, test))]
 struct NameList(Vec<(String, CardId)>);
 
-#[cfg(kani)]
+#[cfg(any(kani, test))]
 impl NameList {
     fn new() -> Self {
         // Room for every card a proof's board registers, so that no push
@@ -1911,4 +1912,47 @@ pub fn ability_granting_grantor(
     obj.copy_grantor
         .filter(|&g| g != obj.card_id)
         .filter(|&g| registry.get(g).is_some_and(|b| b.grants_abilities_to_copies()))
+}
+
+/// `NameList`, the proofs' name map, against the `HashMap` every other
+/// build keeps, under `cargo test`: the proofs read names through it but
+/// hold it to nothing, and no `cargo test` sees it otherwise.
+#[cfg(test)]
+mod name_list_tests {
+    use super::{CardId, CardRegistry, NameList};
+    use std::collections::{HashMap, HashSet};
+
+    /// Every card's name registered, as the registry registers them: each
+    /// looks up its card, a name never registered looks up nothing, and
+    /// the names and pairs listed are those registered, in that order.
+    #[test]
+    fn a_name_list_answers_as_the_hash_map_it_stands_in_for() {
+        let registry = CardRegistry::with_all_cards();
+        let mut names: Vec<String> = registry.all_names().iter().map(ToString::to_string).collect();
+        names.sort();
+        let (mut list, mut map) = (NameList::new(), HashMap::new());
+        for (i, name) in names.iter().enumerate() {
+            let id = CardId(u32::try_from(i).expect("a few hundred") + 1);
+            list.insert(name.clone(), id);
+            map.insert(name.clone(), id);
+        }
+        for name in names.iter().map(String::as_str).chain(["", "Forest ", "forest", "Grizzly Bears, Again"]) {
+            assert_eq!(list.get(name), map.get(name), "get {name:?}");
+        }
+        assert_eq!(list.keys().collect::<Vec<_>>(), names.iter().collect::<Vec<_>>(), "the names, in the order registered");
+        let pairs: HashSet<(&String, &CardId)> = list.iter().collect();
+        assert_eq!(pairs, map.iter().collect::<HashSet<_>>(), "the names with their cards");
+        assert_eq!(list.iter().count(), names.len(), "each once");
+    }
+
+    /// A name registered twice is refused, where a `HashMap` would quietly
+    /// put the second card in the first one's place.
+    #[test]
+    #[should_panic(expected = "a card name registered twice")]
+    fn a_name_list_refuses_a_name_registered_twice() {
+        let mut list = NameList::new();
+        list.insert("Forest".into(), CardId(1));
+        list.insert("Island".into(), CardId(2));
+        list.insert("Forest".into(), CardId(3));
+    }
 }
