@@ -1090,8 +1090,9 @@ a noninterference property, checked two ways.
   other cards, double-faced ones among them; the game played on through
   the other player's draw; and the other player asked to choose a card
   of their hand to discard, what to do with the top card they looked at,
-  and what a search of their library finds. Each view is compared whole,
-  serialized.
+  and what a search of their library finds; and what the acting player
+  is offered, with mana for their hand, under the same changes. Each view
+  and menu is compared whole, serialized.
 - The fuzz runner, at every decision of every invariant-checked game:
   each player's view against the same view with every library reversed,
   and, with no resolution's question pending (which may reveal a hand to
