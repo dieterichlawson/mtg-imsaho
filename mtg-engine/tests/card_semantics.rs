@@ -10488,6 +10488,45 @@ fn every_two_attackers_fight_together_as_the_rules_say() {
     assert!(failures.is_empty(), "{} of {combats} combats of two attackers disagree with the rules:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// Every kind of fighter attacks under a controller that is not its owner,
+/// as after Traitorous Blood or Olivia Voldaren: owned by the defending
+/// player, unblocked and against each probe as a lone blocker. Its damage
+/// goes to its owner, what it does for "you" it does for its controller
+/// (lifelink, a draw, counters), and a creature that dies goes to its
+/// owner's graveyard (CR 108.3, 109.4, 404.2): every ending the reference
+/// allows, and no other.
+#[test]
+fn every_borrowed_fighter_attacks_its_owner() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
+    let every = std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some();
+    let attackers = if every { fighters.clone() } else { kinds(&fighters) };
+    let blockers: Vec<Option<(&Printed, &Spec)>> = std::iter::once(None)
+        .chain(probes(&fighters).unwrap_or_else(|| kinds(&fighters)).into_iter().map(Some))
+        .collect();
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for &attacker in &attackers {
+        // A legendary creature's owner may hold a second of it; the arena
+        // holds none, so each is borrowed alike.
+        for &blocker in &blockers {
+            let (mut state, mut world, a, b) = arena(&registry, attacker, blocker);
+            state.get_object_mut(a).expect("the attacker").owner = P1;
+            world.permanents.get_mut(&a).expect("the attacker").owner = P1;
+            let name = format!("{} borrowed from its owner, attacking{}", attacker.0.name,
+                blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)));
+            let (n, why) = fight(&registry, &state, &world, a, b, &name);
+            combats += n;
+            failures.extend(why);
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats of a borrowed creature disagree with the rules:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// The fights [`every_keyword_creature_fights_as_its_keywords_say`] has,
 /// again with each of `standing` on either side, out of combat: a creature,
 /// or an Equipment or Aura on that side's combatant or player. Only the
