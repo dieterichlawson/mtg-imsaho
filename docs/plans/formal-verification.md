@@ -737,7 +737,9 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   the board, its controller casts an instant from hand and by flashback
   and a creature, and the opponent casts in the game loop, so that what a
   cast sets off is collected; a creature entering is judged as it is on
-  the battlefield (CR 601.2i, 603.6a).
+  the battlefield (CR 601.2i, 603.6a). Each watcher is tried again as
+  its controller's but the other player's card: "you cast" and "you
+  control" are its controller (109.5).
 - **Flashback**: every spell that has it cast from its owner's graveyard
   for its flashback cost, at exactly the targets the text allows, the
   card on the stack and not among them, resolving as from a hand and
