@@ -38,7 +38,7 @@ impl CaravanVigil {
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {land_name} put into hand"));
+                format!("Caravan Vigil: revealed {land_name}, put into hand"));
 
             crate::cards::helpers::shuffle_library(state, controller);
 
@@ -139,7 +139,7 @@ impl CardBehavior for CaravanVigil {
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {land_name} put into hand"));
+                format!("Caravan Vigil: revealed {land_name}, put into hand"));
         }
 
         // Shuffle library.

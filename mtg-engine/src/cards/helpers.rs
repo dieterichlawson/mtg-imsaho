@@ -1223,8 +1223,15 @@ pub fn finish_library_search(
         // rather than being tapped by anything (CR 614.1c).
         state.arrives_tapped(found);
     }
+    // Every search into a hand in the pool reveals the card it finds
+    // ("reveal it, put it into your hand": Traveler's Amulet, Garruk, the
+    // Veil-Cursed), so the line says so (CR 701.16a), and only a revealed
+    // card is named in the log every seat is sent; `card_semantics` holds
+    // the pool to it (`every_search_into_a_hand_reveals_what_it_finds`). A
+    // search that did not reveal would name its card at `Private`.
+    let found = if destination == Zone::Hand { "revealed" } else { "found" };
     state.log(crate::state::LogLevel::Event,
-        format!("p{} searched their library and found {name}", searcher.0));
+        format!("p{} searched their library and {found} {name}", searcher.0));
     shuffle_library(state, searcher);
 }
 

@@ -11525,6 +11525,36 @@ fn the_grammar_reads_at_least_as_many_cards_as_it_did() {
     }
 }
 
+/// What the engine's library search assumes of the pool: a search that puts
+/// what it finds into a hand reveals it (CR 701.16a), so the log every seat
+/// is sent names it as revealed (`helpers::finish_library_search`, Caravan
+/// Vigil). A card that searched into a hand without revealing would have to
+/// name its find to its searcher alone, and the fuzz runner's check of the
+/// shared log would flag it.
+#[test]
+fn every_search_into_a_hand_reveals_what_it_finds() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let mut searching = Vec::new();
+    for name in registry.all_names() {
+        let Some(card) = cache.get(name) else { continue };
+        for face in std::iter::once(card).chain(card.back.as_deref()) {
+            for sentence in face.oracle_text.split(['.', '\n']) {
+                let s = sentence.to_lowercase();
+                if s.contains("search") && s.contains("library") && (s.contains("into your hand") || s.contains("into their hand")) {
+                    searching.push((face.name.clone(), s.contains("reveal"), sentence.trim().to_string()));
+                }
+            }
+        }
+    }
+    let names: Vec<&str> = searching.iter().map(|(n, ..)| n.as_str()).collect();
+    for expected in ["Caravan Vigil", "Traveler's Amulet", "Garruk, the Veil-Cursed"] {
+        assert!(names.contains(&expected), "{expected} is read as searching into a hand: {names:?}");
+    }
+    let hidden: Vec<_> = searching.iter().filter(|(_, reveals, _)| !reveals).collect();
+    assert!(hidden.is_empty(), "a search into a hand that does not reveal what it finds: {hidden:?}");
+}
+
 /// The grammar reads what it is meant to, on text written out here, so a
 /// template that silently stopped matching is caught even if no card in the
 /// pool uses it any more.
