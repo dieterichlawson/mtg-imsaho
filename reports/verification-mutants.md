@@ -462,3 +462,35 @@ for deaths to damage, in the state-based actions. The default run now
 puts the Doll beside the Ghoul so that it is seen without the sweep. The
 sweep also turned up a legendary creature paired with itself, which the
 legend rule leaves alone (CR 704.5j); such pairs are not fought.
+
+## The cards: planeswalkers — 2026-11-09
+
+The reference had read no planeswalker; it reads Garruk Relentless, both
+faces, and Liliana of the Veil (`every_loyalty_ability_does_what_its_text_says`),
+and the Oracle cache now carries a planeswalker's printed loyalty, which
+`card_characteristics` holds the engine's starting loyalty to. Thirteen
+mutants, thirteen caught, two of them only by a check added for them.
+
+| family | mutant | caught by |
+|---|---|---|
+| printed loyalty | Liliana enters with 4 | `card_characteristics` |
+| Garruk Relentless | takes no damage back from the creature | the loyalty test, 11 of 14 |
+| | transforms at one or fewer, not two or fewer | **only** once Garruk is tried at four loyalty, a power-2 creature leaving exactly two |
+| Garruk, the Veil-Cursed | −3 counts every card in the graveyard | the loyalty test |
+| | +1's Wolf has no deathtouch | the loyalty test |
+| | −1 finds any card | the loyalty test |
+| | −1 puts the card onto the battlefield | the loyalty test |
+| Liliana of the Veil | +1: only the active player discards | the loyalty test |
+| | −2 targets only opponents | the loyalty test, its offers |
+| | the pile chosen is ignored, pile A always sacrificed | **only** by one division played with each pile chosen |
+| loyalty abilities | twice in a turn | the loyalty test, 13 of 14 |
+| | one counter short of the cost | the loyalty test, its offers |
+| the reference | no 704.5i: a planeswalker with no loyalty stays | the loyalty test, 12 of 22 |
+
+The two that first survived each became a check. No creature on the
+board has power 1, so Garruk at his printed three went to one or to none
+and never to exactly two; each ability is now tried at one more than the
+printed loyalty as well. And as a set of endings the piles cannot show
+who chose one: Liliana's controller may make any pile, so every pile is
+reachable whichever the target player picks; one division, the first
+permanent against the rest, is now played with each pile chosen.

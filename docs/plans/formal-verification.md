@@ -676,6 +676,25 @@ opponent's creatures tapped.
   permanent read, either face up, with mana for anything and what either
   face's abilities ask its controller to control, offers no ability its
   text does not print.
+- **Planeswalkers**, Garruk Relentless both faces and Liliana of the
+  Veil: each loyalty ability on the board at the printed loyalty, one
+  more, one short of its cost and exactly enough. Each face has its
+  abilities in the order printed, at the cost printed (CR 606.4), offered
+  at exactly the targets its text allows and only when the loyalty pays
+  for it (606.6), never with a spell on the stack and never twice in a
+  turn (606.3). It resolves every way its text allows: the cost paid as
+  it is activated, a planeswalker left with none going to its owner's
+  graveyard before the ability resolves (704.5i), damage dealt to it
+  removing loyalty (120.3c), "When Garruk has two or fewer loyalty
+  counters on him, transform him" turning him over (603.8), each player
+  discarding a card of their choice (101.4), a sacrifice of the target
+  player's choice, a search after "if you do" only when a creature was
+  sacrificed (701.19b), +X/+X for the creature cards in the graveyard as
+  it resolves (608.2h), and Liliana's piles: every division, either pile,
+  and one division played with each pile chosen, since as a set of
+  endings every pile is reachable whoever chooses it. A planeswalker's
+  printed loyalty is now in the Oracle cache too, and
+  `card_characteristics` holds `starting_loyalty` to it.
 - **Triggers on other deaths** ("whenever another creature you control
   dies"): once such a creature has entered, every creature on the board
   dies in turn and every two at once, it among them or not. The reference
@@ -784,15 +803,16 @@ opponent's creatures tapped.
   destruction (9 of 1,092).
 
 All 268 of the pool's instants, sorceries, creatures, enchantments,
-lands and artifacts are read, and all agree. Among the latest read is
+lands and artifacts are read, and its two planeswalkers, and all agree.
+Among the latest read is
 Frightful Delusion's "unless its controller pays {1}": the spell's
 controller paying, by tapping their Forest, and Giant Growth resolving
 after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 194
-mutants, 191 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 207
+mutants, 204 caught, one missed for want of a change of control between
 activation and resolution, two equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its
