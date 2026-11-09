@@ -3169,6 +3169,24 @@ fn board_with_two_zombie_cards(registry: &CardRegistry, cache: &BTreeMap<String,
     (state, world)
 }
 
+/// The board with a creature on each side the other player's card, as
+/// after Traitorous Blood or Olivia Voldaren: what "you control", "its
+/// controller" and "its owner's hand" are read against (CR 108.3, 109.4).
+fn board_with_borrowed_creatures(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = board(registry, cache);
+    for side in [P0, P1] {
+        let id = world.permanents.iter()
+            .find(|(_, m)| m.controller == side && m.is_creature() && m.name.is_some())
+            .map(|(id, _)| *id)
+            .expect("a creature on each side");
+        let other = if side == P0 { P1 } else { P0 };
+        state.get_object_mut(id).expect("on the board").owner = other;
+        world.permanents.get_mut(&id).expect("on the board").owner = other;
+    }
+    world.refresh();
+    (state, world)
+}
+
 /// The board, with a second Grizzly Bears, the opponent's: what a card that
 /// reads names is read against.
 fn board_with_twins(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
@@ -6817,9 +6835,9 @@ fn every_readable_card_does_what_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut casts = 0;
-    let boards: [(&str, Build); 6] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
+    let boards: [(&str, Build); 7] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins),
         (" with exiled cards", board_with_exiled_cards), (" with two Zombie cards", board_with_two_zombie_cards),
-        (" beside planeswalkers", board_with_planeswalkers)];
+        (" beside planeswalkers", board_with_planeswalkers), (" with a creature on each side the other's card", board_with_borrowed_creatures)];
     // A name chosen among hundreds is checked on its own
     // (`every_name_ban_is_what_its_text_says`).
     for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
@@ -6830,7 +6848,9 @@ fn every_readable_card_does_what_its_text_says() {
             .filter(|(i, _)| *i == 0 || (*i == 1 && spec.reads_morbid()) || (*i == 2 && reads_names)
                 || (*i == 3 && spec.slots.iter().any(|s| matches!(s, Slot::ExiledCard { .. })))
                 || (*i == 4 && !spec.modes.is_empty())
-                || *i == 5)
+                || *i == 5
+                // One that targets, or reads whose a creature is.
+                || (*i == 6 && (!spec.slots.is_empty() || format!("{:?}", spec.effects).contains("yours: Some"))))
             .map(|(_, b)| b)
             .collect();
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
