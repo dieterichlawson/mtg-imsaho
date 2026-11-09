@@ -797,7 +797,9 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   the order stands for the second step, so a blocker gone after the
   first leaves the other to take it all (510.4); a creature blocked by
   two has each of its block triggers once for each. 1,092 double blocks
-  agree; `scripts/prove.sh exhaustive` blocks every fighter with every
+  agree, and 1,622 more with each Equipment and Aura on the attacker or
+  on one of its blockers wherever it changes the fight (8,320 with every
+  fight asked for); `scripts/prove.sh exhaustive` blocks every fighter with every
   two kinds of fighter, about 100,000, which is how the reference was
   found missing Abattoir Ghoul's gain when Creepy Doll's coin destroys a
   creature the Ghoul damaged (its "dies" is any death, not only one to
