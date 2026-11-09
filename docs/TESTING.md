@@ -28,6 +28,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | replacement effects (CR 614) | `replacement_effects.rs`, `enters_tapped_replacement.rs` |
 | triggered abilities (CR 603) | `trigger_dispatch.rs`, `trigger_snapshots.rs`, `trigger_priority.rs`, `intervening_if.rs`, `enter_trigger_conditions.rs`, `empty_triggers.rs`, `phantom_triggers.rs`, `simultaneous_events.rs` |
 | a trigger outliving its source (CR 113.7a) | `trigger_source_independence.rs`, `trigger_independence.rs`, `ltb_controller.rs` |
+| an ability's source gone and back, a new object it does not act on (CR 400.7) | `ability_source_new_object.rs` |
 | trigger targets (CR 603.3d, 608.2b) | `trigger_targets_declared.rs`, `trigger_target_recheck.rs` |
 | whose upkeep / whose permanent a trigger watches (CR 603.2) | `your_upkeep_scope.rs`, `curse_and_equip_scope.rs` |
 | continuous effects (CR 611) | `continuous_effects.rs`, `snapshot_anthems.rs`, `attacking_creatures_anthem.rs`, `equipment_human_conditional.rs` |
