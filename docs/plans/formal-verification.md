@@ -675,7 +675,11 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   defines it, onto every creature the caster controls. And every
   permanent read, either face up, with mana for anything and what either
   face's abilities ask its controller to control, offers no ability its
-  text does not print.
+  text does not print. Each ability is tried again with its source the
+  other player's card, as after Traitorous Blood: its "you" is the
+  player who activated it (CR 602.2a), and what it sacrifices or returns
+  goes to its owner (108.3, 404.2). A controller read as the owner is
+  caught in 54 of the 130 abilities.
 - **Planeswalkers**, Garruk Relentless both faces and Liliana of the
   Veil: each loyalty ability on the board at the printed loyalty, one
   more, one short of its cost and exactly enough. Each face has its
@@ -856,8 +860,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 215
-mutants, 211 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 216
+mutants, 212 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, two
 equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
