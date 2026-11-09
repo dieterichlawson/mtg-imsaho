@@ -377,6 +377,34 @@ fn a_creature_card_a_search_puts_onto_the_battlefield_is_summoning_sick() {
     assert!(!state.can_pay_tap_cost(found, &reg));
 }
 
+/// An Alchemist that the state-based actions take after the mill still saw
+/// it (CR 603.2): its own replacement turns a Zombie's combat damage into a
+/// mill in the step in which a deathtoucher kills it, and the creature card
+/// milled is exiled for a Zombie all the same. The collector used to look
+/// for watchers on the battlefield once the actions were done, and found
+/// none. Found by the card reference's two attackers
+/// (`every_two_attackers_fight_together_as_the_rules_say`).
+#[test]
+fn undead_alchemist_dying_after_the_mill_still_exiles_and_makes_a_zombie() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let alchemist = named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let theirs = card_in_library(&mut state, &reg, "Walking Corpse", P1);
+
+    // The mill, then the Alchemist dying of the damage dealt beside it.
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.move_object(theirs, Zone::Graveyard, &reg);
+    state.get_object_mut(alchemist).unwrap().damage_marked = 2;
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(alchemist).unwrap().zone, Zone::Graveyard);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Exile,
+        "the Alchemist was there as the card was milled, so it exiled it");
+    assert_eq!(zombie_tokens(&state, &reg), 1, "and made a Zombie for it");
+}
+
 /// "Whenever a creature card is put into an **opponent's** graveyard from
 /// their library" — so an Alchemist watching its own controller's mill does
 /// nothing at all.

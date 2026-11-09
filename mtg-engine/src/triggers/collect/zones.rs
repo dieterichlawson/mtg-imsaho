@@ -164,7 +164,7 @@ pub(super) fn left_battlefield(
 
 pub(super) fn creature_card_milled(
     state: &mut GameState,
-    _events: &[GameEvent],
+    events: &[GameEvent],
     event: &GameEvent,
     registry: &CardRegistry,
     c: &mut Collector,
@@ -172,10 +172,15 @@ pub(super) fn creature_card_milled(
     let GameEvent::CreatureCardMilled { object, milled_player } = event else { return };
     let milled_obj = *object;
     let milled_player = *milled_player;
-    // Find watchers on the battlefield with CreatureCardMilled triggers.
+    // Watchers with CreatureCardMilled triggers that were on the battlefield
+    // as the card was milled, under the controller they had then (CR 603.2,
+    // 608.2g): one the state-based actions took after the same step still
+    // sees it. Undead Alchemist dying to a deathtoucher in the combat damage
+    // step in which its replacement milled a creature card used to set off
+    // nothing, the card left in the graveyard and no Zombie made.
     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
-        .filter(|o| o.zone == Zone::Battlefield)
-        .map(|o| (o.id, o.card_id, o.controller))
+        .filter(|o| super::was_on_the_battlefield(state, events, o.id))
+        .map(|o| (o.id, o.card_id, crate::cards::helpers::controller_of(state, o.id)))
         .collect();
     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
         // Only watchers who are opponents of the milled player.

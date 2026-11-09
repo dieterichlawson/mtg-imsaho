@@ -609,20 +609,37 @@ card_proof! {
     /// "Whenever a creature card is put into an opponent's graveyard from
     /// their library" (Undead Alchemist's, CR 603.2): a creature card
     /// milled raises a watcher's ability, under its controller, for that
-    /// card and that player, exactly when the watcher is on the
-    /// battlefield and its controller is an opponent of the player milled.
-    /// The watcher either player's, on the battlefield or in a graveyard;
-    /// the card either player's.
+    /// card and that player, exactly when the watcher was on the
+    /// battlefield as it was milled and its controller is an opponent of
+    /// the player milled. The watcher either player's, on the battlefield,
+    /// in a graveyard, or gone to one in the same check of the state-based
+    /// actions, under the controller it had (an Alchemist the deathtoucher
+    /// beside its mill killed; it used to raise nothing); the card either
+    /// player's.
     fn a_creature_card_milled_raises_an_opponents_watchers_ability() {
         let (registry, blank, cards) = registry_of(vec![Box::new(watching(TriggerKind::CreatureCardMilled))]);
         let mut state = crate::proofs::cards::new_game();
         state.active_player = anyone();
-        let watcher = state.create_object(cards[0], anyone(), somewhere(&[Zone::Battlefield, Zone::Graveyard]), None, None);
+        let left: bool = kani::any();
+        let zone = if left { Zone::Graveyard } else { somewhere(&[Zone::Battlefield, Zone::Graveyard]) };
+        let watcher = state.create_object(cards[0], anyone(), zone, None, None);
+        let last_controller = anyone();
+        if left {
+            state.get_object_mut(watcher).expect("just made").last_controller = Some(last_controller);
+        }
         let milled_player = anyone();
         let card = state.create_object(blank, milled_player, Zone::Graveyard, Some(1), Some(1));
-        let c = collect(&mut state, &[GameEvent::CreatureCardMilled { object: card, milled_player }], &registry);
+        // Each batch its own constant list (`collect` says why), the mill
+        // last, as it is the event collected.
+        let milled = GameEvent::CreatureCardMilled { object: card, milled_player };
+        let c = if left {
+            collect(&mut state, &[GameEvent::LeftBattlefield { object: watcher, to: Zone::Graveyard, last_controller }, milled], &registry)
+        } else {
+            collect(&mut state, &[milled], &registry)
+        };
         let o = state.get_object(watcher).expect("on the board");
-        let expected = [(watcher, o.controller, o.zone == Zone::Battlefield && o.controller != milled_player)];
+        let controller = if left { last_controller } else { o.controller };
+        let expected = [(watcher, controller, (left || o.zone == Zone::Battlefield) && controller != milled_player)];
         assert!(collected(&c, &expected, |_, e| matches!(e, TriggerEvent::CreatureCardMilled { milled_object, milled_player: p }
             if *milled_object == card && *p == milled_player)));
         std::mem::forget((registry, state, c, cards));
