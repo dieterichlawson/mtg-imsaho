@@ -864,9 +864,9 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 217
-mutants, 213 caught, one missed for want of a change of control between
-activation and resolution, one for want of a lifelinker with power, two
+(`reports/verification-mutants.md` lists the rounds: of the latest 219
+mutants, 214 caught, one missed for want of a change of control between
+activation and resolution, one for want of a lifelinker with power, three
 equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check
 or a board: the "may" policies, the stack count, "nothing beyond its

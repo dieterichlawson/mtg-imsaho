@@ -532,8 +532,8 @@ wrong the same way the engine was.
 
 Every kind of fighter attacks its owner under the other player's control
 (`every_borrowed_fighter_attacks_its_owner`, 802 combats), each
-activated ability and each upkeep and end-step permanent is tried as the
-other player's card. Five mutants, four caught, and the one missed at first was defect 34.
+activated ability, upkeep and end-step permanent, and enter and cast
+watcher is tried as the other player's card. Seven mutants, five caught, and the one missed at first was defect 34.
 
 | family | mutant | caught by |
 |---|---|---|
@@ -542,6 +542,8 @@ other player's card. Five mutants, four caught, and the one missed at first was 
 | lifelink | lifelink gains its source's owner life (the engine) | not caught: the fighters' one lifelinker, Markov Patrician, has power 0 |
 | control, activated abilities | `last_known_controller` answers a permanent's owner, each activated ability tried with its source the other player's card (the engine) | `every_readable_activated_ability_does_what_its_text_says`, 54 of 130 abilities |
 | control, upkeep and end step | the step trigger collector reads a permanent's owner as the player whose upkeep or end step it is (the engine) | the turn tests with each permanent the other player's card: 23 of 72 upkeeps, 12 of 40 end steps |
+| control, enter watchers | the creature-entering collector gives the watcher's trigger to its owner (the engine) | the enter-watcher test with the watcher the other player's card, 1 of 12 casts |
+| control, cast watchers | the spell-cast collector gives the watcher's trigger to its owner (the engine) | not caught: the pool's two cast watchers pump themselves (Charmbreaker Devils) or deal damage to any target (Burning Vengeance), whose endings are the same whoever chooses the target; whether "you cast" holds is read apart |
 
 The second was missed because no card read the trigger's controller:
 each hook read its source's controller again as it resolved, so who the
