@@ -41,7 +41,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | CR 400.7 zone-change memory and copy identity | `zone_change_memory.rs` |
 | the legend rule (CR 704.5j) | `legend_rule.rs` |
 | a save is a reproducible artifact (byte-identical for one state) | `save_reproducibility.rs` |
-| hidden information: a player's view is the same whatever they cannot see (CR 401.2, 402.3) | `view_hidden_information.rs` |
+| hidden information: a player's view is the same whatever they cannot see (CR 401.2, 402.3), and the log both seats are sent names no card no one has seen (400.2) | `view_hidden_information.rs`, `invariant_shared_log.rs` |
 | a save is resumed, not replayed: the game continues as the uninterrupted one would, and turn 1 starts once | `resume_game_loop.rs` |
 | destruction only reaches permanents (CR 701.7a) | `destroy_targets_permanents.rs` |
 | an ability's controller and requirement are fixed at activation (CR 602.2a, 601.2c) | `activation_controller.rs` |

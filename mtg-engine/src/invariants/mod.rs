@@ -22,12 +22,12 @@
 //! - [`check_legal`] looks at the legal action set offered at a decision
 //!   point: nothing the rules forbid is on the menu, and what they require
 //!   is.
-//! - The runner's `hidden_stays_hidden` and `log_names_no_hidden_card`
-//!   hold what each seat is sent to what its player may see: views and
-//!   menus that do not change when every library is reversed or another
-//!   player's hand is dealt anew (CR 401.2, 402.3), and a shared log that
-//!   names no card no one has seen (400.2). They are the runner's, which
-//!   serializes views already.
+//! - [`shared_log::SharedLog`] holds the log every seat is sent to naming no
+//!   card no one has seen (CR 400.2), from one decision to the next. The
+//!   runner's `hidden_stays_hidden` holds each view and menu to the same:
+//!   none changes when every library is reversed or another player's hand
+//!   is dealt anew (401.2, 402.3). It is the runner's, which serializes
+//!   views already.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
@@ -40,6 +40,7 @@ mod legal;
 mod objects;
 mod permanents;
 mod prompts;
+pub mod shared_log;
 mod stack;
 mod transition;
 mod turn;
