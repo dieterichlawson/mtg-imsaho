@@ -6348,13 +6348,19 @@ thread_local! {
     static ASKED: std::cell::RefCell<Vec<Question>> = const { std::cell::RefCell::new(Vec::new()) };
     /// How many games [`play_from`] has played on this thread.
     static RUNS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Whether a [`questions_asked`] is reading the questions back: only
+    /// then are they kept, or a combat test's hundreds of thousands of
+    /// questions pile up unread.
+    static RECORDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// What `play` returns, and every question asked while it played: the
 /// endings, as a set, hide who answered.
 fn questions_asked<T>(play: impl FnOnce() -> T) -> (T, Vec<Question>) {
     ASKED.with(|a| a.borrow_mut().clear());
+    RECORDING.with(|r| r.set(true));
     let played = play();
+    RECORDING.with(|r| r.set(false));
     (played, ASKED.with(|a| std::mem::take(&mut *a.borrow_mut())))
 }
 
@@ -6576,8 +6582,10 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     return Action::AbandonGame;
                 }
             }
-            let run = RUNS.with(std::cell::Cell::get);
-            ASKED.with(|a| a.borrow_mut().push(Question { kind, player: *player, source: *source, run, active: s.active_player }));
+            if RECORDING.with(std::cell::Cell::get) {
+                let run = RUNS.with(std::cell::Cell::get);
+                ASKED.with(|a| a.borrow_mut().push(Question { kind, player: *player, source: *source, run, active: s.active_player }));
+            }
         }
         match &legal.resolution_prompt {
             Some(ResolutionChoiceKind::ChooseTargetSet { max, .. }) if answering_cast => {
