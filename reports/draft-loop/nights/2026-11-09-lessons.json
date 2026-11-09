@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-09",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Guide says never take an off-colour flier over an on-colour one; I took Moon Heron, Murder of Crows and Stitched Drake, then ran WR with only Abbey Griffin and Voiceless Spirit as evasion.",
+    "Guide says aim for five removal; my WR ran four (Brimstone Volley, Urgent Exorcism, Ghostly Possession, Traitorous Blood) and lost 1-2 to RG and 0-2 to WG.",
+    "Guide says WR needs one flexible late card like Rally the Peasants; I had none, leaning on Scourge of Geier Reach and three Tormented Pariah through grinds of 38 and 18 turns."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 9219,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 5207,
+    "output_tokens_details": {
+     "thinking_tokens": 4971
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 9219
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 5207,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 9219,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 9219,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "RG",
+   "record": "2-1-0",
+   "lessons": [
+    "Red-green's four removal spells (Harvest Pyre, Prey Upon, Rolling Temblor, Spidery Grasp) carried a 2-1 record, so take flexible removal over filler like Cobbled Wings, which I took twice and never played.",
+    "Cutting black entirely left my RG deck without answers to the UB deck's two Claustrophobia and Victim of Night, which beat me 2-1, so keep one black or enchantment-proof answer.",
+    "Black flowed at this table, with seat 3's UB deck going 3-0, so before committing to red-green, take strong black removal over a marginal fifth green creature."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3309,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2224,
+    "output_tokens_details": {
+     "thinking_tokens": 2007
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3309
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2224,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3309,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3309,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Darkthicket Wolf at pick 2 led nowhere: Festerhide Boar, Kindercatch and Gnaw to the Bone were speculative picks that never made my WU deck, so commit to a lane by mid pack 1.",
+    "Tonight contradicted the guide's claim that WU spirits is the strongest archetype: my fliers went 1-2, losing 0-2 to UB's two Claustrophobia and 0-2 to WR's Elder Cathar and Tormented Pariah humans.",
+    "Armored Skaab and Stitcher's Apprentice need self-mill to work, as the guide warns, so they were dead weight in my non-UG deck; play playable fliers or two-drops instead."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4933,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2424,
+    "output_tokens_details": {
+     "thinking_tokens": 2179
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4933
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2424,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4933,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4933,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "3-0-0",
+   "lessons": [
+    "Blue-black fliers with two Claustrophobia and Victim of Night as removal went 3-0 here, so take cheap removal like Claustrophobia over a second Delver of Secrets, which I cut anyway.",
+    "Seat 1's RG deck (Prey Upon, 2x Reckless Waif, 2x Villagers of Estwald) ended one of my games in just 11 turns, so prioritise early blockers over a fourth expensive flier.",
+    "Black was crowded: seat 4 BR and seat 7 UB shared my colour, so take black removal earlier in pack 1 rather than relying on pack 3 picks like Victim of Night."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3266,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2699,
+    "output_tokens_details": {
+     "thinking_tokens": 2474
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3266
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2699,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3266,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3266,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "BR",
+   "record": "0-3-0",
+   "lessons": [
+    "Tonight's BR, with eight removal spells, went 0-3 in 18-to-32-turn grinds, contradicting the guide's removal-plus-bodies recipe; fliers and finishers must close.",
+    "Rotting Fensnake is on the skip list yet made my BR deck; cut it for a flier or removal spell, since my ground bodies won none of six games.",
+    "The guided 3-0 BR won with Sever the Bloodline and Into the Maw of Hell, cards my 0-3 BR never drafted; prioritise them over fillers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 9287,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4121,
+    "output_tokens_details": {
+     "thinking_tokens": 3930
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 9287
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4121,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 9287,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 9287,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight's games ran 11 to 22 turns, so card quality beat curve speed; take Smite the Monstrous and Into the Maw of Hell over marginal 2-drops.",
+    "Round three's 1-2 loss to UB, facing two Claustrophobia and Victim of Night, suggests a 15-creature board is fragile; keep the second Rage Thrower over a marginal 2-drop.",
+    "Round two's 19- and 22-turn wins were grindy, so prioritize fliers like Angel of Flight Alabaster and Angelic Overseer over ground filler when stalled boards decide games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3324,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3345,
+    "output_tokens_details": {
+     "thinking_tokens": 3134
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3324
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3345,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3324,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3324,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Rally the Peasants is absent from the guide's white commons, yet seat 5 beat me 2-0 with two copies; I took one and left it out of my deck, so play it in white decks.",
+    "The guide calls WR humans aggressive, but seat 5's deck won 19- and 22-turn games with Divine Reckoning, so expect longer games against white.",
+    "Avacyn's Pilgrim and cheap two-drops carried my WG deck to 2-1 with 4-2 in games, so prioritise cheap creatures over expensive top-end."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4948,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3565,
+    "output_tokens_details": {
+     "thinking_tokens": 3376
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4948
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3565,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4948,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4948,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Take hard removal for big green threats over tempo 2-drops: Sensory Deprivation, Grasp of Phantoms and Tribute to Hunger did not stop Boneyard Wurm or Scourge of Geier Reach, and the RG round went 29 and 22 turns.",
+    "Don't spend late picks on Dream Twist: I took two in pack 2 and cut both, so a playable creature or cheap interaction would have helped the deck more.",
+    "Count finishers before building blue-black tempo: Bloodgift Demon and Morkrut Banshee were my only real top end, and the 14- and 23-turn games show the deck needs more threats to close."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3271,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1591,
+    "output_tokens_details": {
+     "thinking_tokens": 1365
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3271
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1591,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3271,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3271,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
