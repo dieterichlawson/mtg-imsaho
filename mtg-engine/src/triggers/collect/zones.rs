@@ -178,9 +178,19 @@ pub(super) fn creature_card_milled(
     // sees it. Undead Alchemist dying to a deathtoucher in the combat damage
     // step in which its replacement milled a creature card used to set off
     // nothing, the card left in the graveyard and no Zombie made.
+    //
+    // `was_on_the_battlefield` and `last_known_controller` asked of each
+    // object, read off the object in hand rather than looked up again for
+    // each: the ids that left in this check gathered once.
+    let mut left: Vec<ObjectId> = Vec::with_capacity(events.len());
+    for e in events {
+        if let GameEvent::LeftBattlefield { object, .. } | GameEvent::CreatureDied { object, .. } = e {
+            left.push(*object);
+        }
+    }
     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
-        .filter(|o| super::was_on_the_battlefield(state, events, o.id))
-        .map(|o| (o.id, o.card_id, crate::cards::helpers::controller_of(state, o.id)))
+        .filter(|o| o.zone == Zone::Battlefield || left.contains(&o.id))
+        .map(|o| (o.id, o.card_id, if o.zone == Zone::Battlefield { o.controller } else { o.last_controller.unwrap_or(o.controller) }))
         .collect();
     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
         // Only watchers who are opponents of the milled player.
