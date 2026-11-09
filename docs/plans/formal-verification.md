@@ -761,11 +761,14 @@ else.
   spell's controller who may pay (118.12); the destroyed land's
   controller who may search; Liliana's controller who divides and the
   target player who picks the pile. A combat's damage is the attacking
-  player's to order and assign (509.2, 510.1), wherever it is asked. A
+  player's to order and assign (509.2, 510.1), triggers that trigger
+  together are ordered by their controller, the active player's first
+  (101.4, 603.3b), and which of two replacements applies to damage is
+  the affected player's (616.1), wherever they are asked. A
   survey of the 172,000 questions the suite asks found none put to the
   wrong player, and two never asked, now asked: Curse of Oblivion's
   choice and Frightful Delusion's discard, each forced by a board that
-  held exactly what was owed. The check keeps it so: eleven mutants,
+  held exactly what was owed. The check keeps it so: thirteen mutants,
   each moving one question or one "you" to the other player, all caught.
 - **Triggers on spells cast and creatures entering**: with the watcher on
   the board, its controller casts an instant from hand and by flashback
@@ -900,8 +903,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 234
-mutants, 228 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 236
+mutants, 230 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, one
 for want of a spell that reads its target's controller, three
 equivalent), and the failure names the
