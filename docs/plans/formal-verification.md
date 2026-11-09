@@ -679,7 +679,15 @@ opponent's creatures tapped, and beside a planeswalker on each side.
   other player's card, as after Traitorous Blood: its "you" is the
   player who activated it (CR 602.2a), and what it sacrifices or returns
   goes to its owner (108.3, 404.2). A controller read as the owner is
-  caught in 54 of the 130 abilities.
+  caught in 54 of the 130 abilities. And each, but one its source paid
+  for by leaving, is played again with its source exiled in response: it
+  resolves all the same (CR 113.7a), from the source as it last existed
+  (608.2h), its answers chosen among what is left; what it does to the
+  source does nothing, an exchange with the source's toughness exchanges
+  nothing (701.12a), and "for as long as you control" a source gone is
+  already over (611.2b). The reference was wrong twice before the engine
+  was: Tree of Redemption's exchange read a toughness that was gone, and
+  Olivia Voldaren's steal outlasted Olivia.
 - **Planeswalkers**, Garruk Relentless both faces and Liliana of the
   Veil: each loyalty ability on the board at the printed loyalty, one
   more, one short of its cost and exactly enough. Each face has its
@@ -866,8 +874,8 @@ after; declining, and Giant Growth countered; and the discard either
 way. Every template has been shown to catch a deliberate bug in a card
 that uses it, and the engine code under it, from Lightning Bolt dealing
 2 to the untap step untapping every player's permanents
-(`reports/verification-mutants.md` lists the rounds: of the latest 219
-mutants, 214 caught, one missed for want of a change of control between
+(`reports/verification-mutants.md` lists the rounds: of the latest 220
+mutants, 215 caught, one missed for want of a change of control between
 activation and resolution, one for want of a lifelinker with power, three
 equivalent), and the failure names the
 cast and the difference. Every mutant that first survived became a check

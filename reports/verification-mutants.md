@@ -552,3 +552,20 @@ Sturmgeist taken in response drew for the player who took it. With the
 engine setting a trigger's controller around its hook and the hooks
 reading it, the mutant shows. The third is a gap in the pool: no
 creature that fights gains life by dealing damage.
+
+## The cards: an ability's source gone in response — 2026-11-09
+
+Each activated ability, but one whose source paid for it by leaving, is
+played again with its source exiled while it waits on the stack. One
+mutant, caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| sources gone | Skirsdag Cultist's damage needs the Cultist on the battlefield (the engine) | the activated-ability test, every target of the Cultist's ability, its source exiled in response |
+
+The reference was wrong twice first, and the engine right: it read Tree
+of Redemption's toughness off a Tree no longer there, and it let Olivia
+Voldaren's "for as long as you control" steal outlast Olivia (CR 611.2b).
+It had also chosen the resolution's answers before the source left, so
+that Stitcher's Apprentice sacrificed an Apprentice already gone.
+
