@@ -1553,3 +1553,19 @@ files gives 115 mutants in the two map files alone.
   non-Kani `discard` still drops its argument at the end of the body, and
   `vec![]` is `Vec::new()`, so those two mutants are equivalent in every
   other build too.
+
+## The shared log's check — 2026-11-09
+
+`mtg-engine/src/invariants/shared_log.rs` (the check that the log every
+seat is sent names no card no one has seen) run against its own tests,
+`tests/invariant_shared_log.rs`: 29 mutants, 14 caught, 12 unviable, 3
+missed at first. The 3 were two gaps in the tests. Requiring a card hidden
+at only one of the two decisions (`&&` to `||` in the filter of what is
+unseen) was not seen because no test played a card out of a hand: a land
+played and named is flagged under the mutant, and
+`a_card_played_from_hand_may_be_named` kills it. And the names a reveal
+makes public were not followed past the reveal: the mutants that mark
+every hidden name revealed, or none, are killed by
+`a_name_revealed_is_seen_and_no_other` (Mulch reveals Moon Heron; a later
+line naming it is fine, one naming the unrevealed Delver beside it is
+not). With both: 17 of 17 viable mutants caught.

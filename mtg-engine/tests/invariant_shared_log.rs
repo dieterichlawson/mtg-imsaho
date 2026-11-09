@@ -126,3 +126,41 @@ fn a_cast_cancelled_may_name_its_card_and_its_name() {
     let found = said(&state, &waiting, LogLevel::Event, &format!("Devil's Play (#{}): cast cancelled", play.0));
     assert!(found.is_empty(), "{found:?}");
 }
+
+/// A card that left a hand between the two decisions, as a land played does,
+/// is in view now and may be named: only what is hidden at both is held to
+/// the check.
+#[test]
+fn a_card_played_from_hand_may_be_named() {
+    let registry = registry();
+    let before = game_at_step(Step::PrecombatMain, P0);
+    let mut before = before;
+    let forest = spell_in_hand(&mut before, &registry, "Forest", P0);
+    before.get_object_mut(forest).expect("in hand").name = "Forest".to_string();
+    let mut after = before.clone();
+    after.move_object(forest, Zone::Battlefield, &registry);
+    let found = said(&before, &after, LogLevel::Info, &format!("p0 played Forest (#{})", forest.0));
+    assert!(found.is_empty(), "{found:?}");
+}
+
+/// A name a line reveals is seen from then on, and only that name: Mulch's
+/// reveal names Moon Heron, so a later line naming it by name says nothing
+/// new, while one naming the Delver of Secrets beside it in the library
+/// does.
+#[test]
+fn a_name_revealed_is_seen_and_no_other() {
+    let (registry, mut state, _) = with_top_card("Moon Heron");
+    library_card(&mut state, &registry, P1, "Delver of Secrets");
+    let mut log = SharedLog::new();
+    assert!(log.check(None, &state).is_empty());
+    let mut revealed = state.clone();
+    revealed.log(LogLevel::Event, "Mulch revealed: Moon Heron".into());
+    assert!(log.check(Some(&state), &revealed).is_empty(), "a reveal is public (CR 701.16a)");
+    let mut later = revealed.clone();
+    later.log(LogLevel::Event, "Mulch: Moon Heron put into hand".into());
+    assert!(log.check(Some(&revealed), &later).is_empty(), "Moon Heron was revealed, so its name is known");
+    let mut leak = later.clone();
+    leak.log(LogLevel::Debug, "top card is Delver of Secrets".into());
+    let found = log.check(Some(&later), &leak);
+    assert_eq!(found.len(), 1, "Delver of Secrets was never revealed: {found:?}");
+}
