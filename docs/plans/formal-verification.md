@@ -1135,10 +1135,22 @@ a noninterference property, checked two ways.
   it: a card that searched into a hand without revealing would have to
   name its find to its searcher alone. With a draw writing the card's
   name, the first draw of the first game is flagged; with Delver of
-  Secrets's look written above `Private`, within eight seeds. It reads
-  ids only, so a line naming a hidden card by name alone, as Delver's
-  look does at `Private`, is not seen. 608 games, 101,128 decisions, no
-  failure.
+  Secrets's look written above `Private`, within eight seeds. A line
+  may name a card by its name alone, as Delver's look does at
+  `Private`, so the runner also flags a hidden card's name in a shared
+  line when no card bearing that name has been in view, with the line's
+  seen names taken out, longest first ("Kessig Wolf Run" is not "Kessig
+  Wolf"), and what it quotes, a name chosen aloud (Nevermore's). That
+  pass first flagged reveals written "reveals" (Delver's, Night
+  Terrors'), now read as reveals, and a cancelled cast's line naming its
+  card while another copy waited unseen in a library, the name of the
+  card being cast now counted as seen; it finds Delver's look written by
+  name above `Private` at the second seed, and the card Forbidden
+  Alchemy keeps named above `Private` at the second. A hidden card that
+  shares its name with one in view is seen by id only. Both passes cost
+  4 to 5% of a game (30 games in 15.8 to 16.0 s against 15.2), so they
+  are held at every decision. 608 games, 101,128 decisions, with the
+  pass by id, then 608 games, 96,757 decisions, with both: no failure.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
@@ -2245,6 +2257,7 @@ so each night starts from everything the last one reached.
 | 36 | a spell's, an activated ability's or a triggered ability's target that left its zone and came back before it resolved was still its target: an object id outlives the object's zone changes, and nothing compared the object with the one targeted, so a Giant Growth whose creature was sacrificed and returned in response pumped the creature that came back (CR 400.7, 608.2b) | reading the target re-checks beside the zone-change count the engine keeps for nothing but a staleness check no code made, after the source-gone sweep | a target returned to its zone at instant speed while what targets it waits: Grimoire of the Dead's activation after the creature is sacrificed or killed, or Moldgraf Monstrosity's random return |
 | 37 | a player's view listed their own library in the order it lies, top first, so every seat was sent its next draw, and the browser page's library overlay, headed "order unknown", showed it (CR 401.2); the terminal counts the library by name and the LLM seat only looks names up in it | a test that a player's view is the same however each library is ordered and whatever the other player holds or draws (`mtg-engine/tests/view_hidden_information.rs`), written to check that hidden information stays hidden | every game, every seat: the list is now by name |
 | 38 | the names of the cards a pending question chose among were put in both players' views, whoever was asked: while one player chose the card of their hand to discard (Liliana of the Veil, Frightful Delusion, Murder of Crows), looked at the top of their library (Delver of Secrets) or searched it, the other seat was sent those cards' names (CR 402.3, 701.16, 701.19) | the same test, with each kind of question put to the other player | every game where one player discards from a hand of two or more, looks or searches: the names now go to the player asked alone |
+| 39 | a death watcher that left the battlefield in the same event as the creature it saw die was read on the face it had in the graveyard, not the one it had on the battlefield: leaving turns a double-faced card face up (CR 712.8a), so a Thraben Militia dying beside another creature, in any combat or to a board wipe, raised Thraben Sentry's "whenever another creature you control dies", which sat on the stack doing nothing (603.10a) | the known-and-not-fixed list defect 33 left, worked | a transformed death watcher dying with another creature: Thraben Militia, the pool's one back face of a death watcher's card |
 
 Each has a regression test that fails without its fix.
 
@@ -2263,11 +2276,6 @@ Known and not fixed:
   7); what it would have to reach is every effect a card applies to its
   own source, counters and until-end-of-turn effects among them, most of
   them written by the cards themselves.
-- A death watcher's face is read off the dying object after its move has
-  turned it face up: a Thraben Militia dying beside another creature, in
-  any combat, raises Thraben Sentry's trigger, which then does nothing
-  but sit on the stack (defect 33). No back face in the pool watches
-  deaths, so no trigger is lost.
 
 ### What the proofs catch that the tests do not
 

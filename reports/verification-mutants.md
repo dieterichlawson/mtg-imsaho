@@ -60,15 +60,18 @@ over the campaigns the plan doc counts.
 
 The log every seat is sent (every line above `Private`) must name no card
 no one has seen. The fuzz runner reads each line written between two
-decisions for the objects it names and flags one in a hand or a library at
-both that was not revealed, not being cast and never in a public zone. Two
-mutants, each writing a hidden card into a shared line as the engine names
-objects, `Name (#id)`. Both caught; with neither, no failure over 608 games.
+decisions for the objects it names, by id or by a name no card in view
+bears, and flags one in a hand or a library at both that was not revealed,
+not being cast and never in a public zone. Four mutants, each writing a
+hidden card into a shared line. All caught; with none, no failure over the
+campaigns the plan doc counts.
 
 | family | mutant | caught by |
 |---|---|---|
-| draw | each card drawn named at `Debug` ("p1 drew Swamp (#48)") | the fuzz, at the first draw of the first game |
-| look | Delver of Secrets's look at the top card written at `Debug`, not `Private` | the fuzz, within eight seeds of a Delver deck |
+| draw | each card drawn named at `Debug` ("p1 drew Swamp (#48)") | the fuzz, by id, at the first draw of the first game |
+| look | Delver of Secrets's look at the top card written with its id at `Debug`, not `Private` | the fuzz, by id, within eight seeds of a Delver deck |
+| look | Delver's look as the engine writes it, by name alone, at `Debug` | the fuzz, by name, at the second seed |
+| look | the card a look keeps (Forbidden Alchemy's) named at `Event`, not `Private` | the fuzz, by id, at the second seed |
 
 # What the proofs catch that the tests do not — 2026-10-25
 
