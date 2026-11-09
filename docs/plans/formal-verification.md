@@ -1091,14 +1091,17 @@ a noninterference property, checked two ways.
   serialized.
 - The fuzz runner, at every decision of every invariant-checked game:
   each player's view against the same view with every library reversed,
-  and, with no question pending, with the other player's hand dealt anew
-  among its objects. 553 games, 88,732 decisions, with the first; 553
+  and, with no resolution's question pending (which may reveal a hand to
+  the player it asks), with the other player's hand dealt anew among its
+  objects. 553 games, 88,732 decisions, with the first; 553
   more, 92,919 decisions, with both: no failure. With defect 37's fix
   undone, the first decision of the first game is flagged, and a view
   leaking the other's first card through its hand size is flagged at the
   fourth. What the acting player is offered, with no question pending,
   is held to the same two changes: 553 games, 93,052 decisions, no
   failure; a menu naming the other's top card is flagged at the fourth.
+  Then all three, mulligans, declarations and discards to hand size
+  among the decisions held: 553 games, 94,325 decisions, no failure.
 
 It found defects 37 and 38: a player's own library listed in the order it
 lies, and the names of the cards of a question put to one player sent to
