@@ -1569,3 +1569,21 @@ every hidden name revealed, or none, are killed by
 `a_name_revealed_is_seen_and_no_other` (Mulch reveals Moon Heron; a later
 line naming it is fine, one naming the unrevealed Delver beside it is
 not). With both: 17 of 17 viable mutants caught.
+
+## An ability's source gone and back — 2026-11-09
+
+Defect 40's check (`GameState::is_new_source`, its guards in
+`add_counters_quiet` and `add_regeneration_shield`, `add_until_end_of_turn`,
+`helpers::still_on_battlefield` and `transform_quietly`'s battlefield arm)
+run against `tests/ability_source_new_object.rs`, `werewolf_cards.rs` and
+`cards_transforming_permanents.rs`: 23 mutants, 15 caught, 6 unviable, 2
+missed at first. The 2 replaced the match on the resolving ability's own
+source with `true`, for a trigger and for an activated ability, so that any
+object whose zone change count differs from the source's was refused. No
+test had an ability act on another object that had changed zones: now
+Mikaeus, the Lunarch's second ability counters a creature that came back
+before it was activated, and Rakish Heir's trigger a Vampire that did
+(`an_abilitys_effects_on_other_objects_are_not_held_to_its_sources_count`),
+and both mutants are caught. The `if self.is_new_source(id) { return }`
+guards of `tap`, `untap` and `remove_counters` give cargo-mutants nothing
+to mutate but the whole function, which the tests of those already catch.

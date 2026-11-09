@@ -282,3 +282,34 @@ fn fiend_hunter_returned_before_its_trigger_resolves_keeps_nothing_it_exiles() {
             "a Hunter returned in response is not the one that exiled: {returned}");
     }
 }
+
+/// What an ability puts on other objects is not held to its source's zone
+/// change count: a creature that came back before the ability went on the
+/// stack is the object it acts on, whatever count its source had. Mikaeus,
+/// the Lunarch's second ability puts a counter on each other creature of
+/// its controller's, and Rakish Heir's trigger one on the Vampire that
+/// dealt the damage; each such creature has changed zones twice, the source
+/// not at all.
+#[test]
+fn an_abilitys_effects_on_other_objects_are_not_held_to_its_sources_count() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mikaeus = named_permanent(&mut state, &reg, "Mikaeus, the Lunarch", P0);
+    state.add_counters(mikaeus, CounterType::PlusOnePlusOne, 1);
+    let other = ready_creature(&mut state, P0, 2, 2);
+    exile_and_return(&mut state, &reg, other);
+    activate_via_hooks(&mut state, &reg, mikaeus, 1, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(counters_of(&state, other, CounterType::PlusOnePlusOne), 1,
+        "the other creature came back before the ability went on the stack: it is the creature acted on");
+
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let vampire = named_permanent(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    exile_and_return(&mut state, &reg, vampire);
+    let entry = trigger(&state, heir, TriggerEvent::AnyCombatDamageToPlayer { dealer: vampire, damaged_player: P1, amount: 2 });
+    state.put_on_stack(entry);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(counters_of(&state, vampire, CounterType::PlusOnePlusOne), 1,
+        "the Vampire that dealt the damage gets the Heir's counter");
+}
