@@ -404,6 +404,42 @@ fn every_view(state: &GameState, registry: &CardRegistry) -> Vec<serde_json::Val
 /// did. `mtg-engine/tests/view_hidden_information.rs` holds the hands and
 /// the questions put to the other player to the same rule on boards of
 /// its own.
+/// And what a player is shown of the other's hand: its size alone (CR
+/// 402.3). The cards of each other player's hand dealt anew among its
+/// objects (each object taking the next one's card), the viewer's view
+/// must be the same. Not while a question is pending, which may name the
+/// cards of a hand to the player it reveals them to (Night Terrors).
+fn views_hide_other_hands(state: &GameState, registry: &CardRegistry) -> Vec<String> {
+    if state.awaiting_action.is_some() {
+        return Vec::new();
+    }
+    let seen = every_view(state, registry);
+    let mut out = Vec::new();
+    for (v, viewer) in state.players.iter().enumerate() {
+        let mut dealt = state.clone();
+        for other in state.players.iter().filter(|p| p.id != viewer.id) {
+            let hand: Vec<mtg_engine::ids::ObjectId> = state.objects_in_zone(mtg_engine::types::Zone::Hand, other.id).iter().map(|o| o.id).collect();
+            for (i, id) in hand.iter().enumerate() {
+                let mut next = state.get_object(hand[(i + 1) % hand.len()]).expect("in the hand").clone();
+                next.id = *id;
+                dealt.objects.insert(*id, next);
+            }
+        }
+        let after = serde_json::to_value(GameView::for_player(&dealt, viewer.id, registry)).unwrap_or(serde_json::Value::Null);
+        if seen[v] != after {
+            let fields: Vec<&str> = match (&seen[v], &after) {
+                (serde_json::Value::Object(a), serde_json::Value::Object(b)) => a.iter()
+                    .filter(|(k, x)| b.get(*k) != Some(*x))
+                    .map(|(k, _)| k.as_str())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            out.push(format!("p{v}'s view reads the cards of another player's hand (CR 402.3): its {} change when they are dealt anew", fields.join(", ")));
+        }
+    }
+    out
+}
+
 fn views_hide_library_order(state: &GameState, registry: &CardRegistry) -> Vec<String> {
     let mut reversed = state.clone();
     for p in &mut reversed.players {
@@ -1125,6 +1161,7 @@ stops here — pass --save {path} to keep writing it");
             }
             violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
             violations.extend(views_hide_library_order(game_state, registry_ref));
+            violations.extend(views_hide_other_hands(game_state, registry_ref));
 
             let mut counts = vec![0usize; game_state.players.len()];
             for obj in game_state.objects.values() {
