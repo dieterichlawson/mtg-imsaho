@@ -897,6 +897,38 @@ fn two_simultaneous_deaths_trigger_twice_and_transform_once() {
     assert_eq!(state.stack.len(), 0);
 }
 
+/// A watcher that dies in the same event as the creature it sees die
+/// triggers from the face it had (CR 603.10a, 712.8): leaving the
+/// battlefield turns a double-faced card face up (712.8a), and the face
+/// was read off the card after its move, so a Thraben Militia, which has
+/// no death trigger, dying beside another creature raised Thraben Sentry's,
+/// which then sat on the stack doing nothing. A Sentry dying so still
+/// triggers.
+#[test]
+fn a_watcher_dying_with_the_creature_triggers_from_the_face_it_had() {
+    let reg = registry();
+    for transformed in [true, false] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
+        if transformed {
+            mtg_engine::cards::helpers::apply_transform(&mut state, sentry, &reg);
+            assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");
+        }
+        let other = ready_creature(&mut state, P0, 1, 1);
+
+        mtg_engine::destruction::try_destroy_all(&mut state, &[sentry, other], &reg);
+        mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+        mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+        let face = if transformed { "Thraben Militia" } else { "Thraben Sentry" };
+        assert_eq!(state.get_object(sentry).unwrap().zone, Zone::Graveyard, "{face} died");
+        let triggers = state.stack.len() + state.pending_trigger_pushes_ap.len() + state.pending_trigger_pushes_nap.len();
+        assert_eq!(triggers, usize::from(!transformed),
+            "{face}, dying beside another creature, triggers {} (stack {:?})",
+            if transformed { "nothing: Militia has no death trigger" } else { "once" }, state.stack);
+    }
+}
+
 // -------------------------------------------------------------------------
 // Bloodline Keeper
 // -------------------------------------------------------------------------

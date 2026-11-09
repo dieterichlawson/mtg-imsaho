@@ -121,10 +121,16 @@ pub(super) fn creature_died(
     // `controller` back to its owner, and a Falkenrath Noble its owner's
     // opponent had taken, dying beside another creature, gave its owner the
     // drain for that death. Read off the object in hand, as the milled-card
-    // collector below reads it.
+    // collector below reads it. And from the face each had: leaving turned a
+    // double-faced one face up, and a Thraben Militia dying beside another
+    // creature raised Thraben Sentry's trigger (CR 712.8a, 603.10a).
     let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects_in_id_order().into_iter()
         .filter(|o| o.id != dead_id && super::was_on_the_battlefield(state, events, o.id))
-        .map(|o| (o.id, o.card_id, if o.zone == Zone::Battlefield { o.controller } else { o.last_controller.unwrap_or(o.controller) }, o.is_transformed))
+        .map(|o| if o.zone == Zone::Battlefield {
+            (o.id, o.card_id, o.controller, o.is_transformed)
+        } else {
+            (o.id, o.card_id, o.last_controller.unwrap_or(o.controller), o.last_transformed)
+        })
         .collect();
     for (watcher_id, watcher_card_id, watcher_controller, watcher_transformed) in watchers {
         // Only create death-watch triggers for permanents whose ACTIVE

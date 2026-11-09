@@ -870,6 +870,7 @@ impl GameState {
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            last_transformed: false,
             token_face: None,
         };
         self.objects.insert(id, obj);
@@ -1183,6 +1184,7 @@ impl GameState {
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            last_transformed: false,
             // The token's printed half, frozen here. Everything an effect
             // grants it later goes into the vectors above, exactly as it does
             // for a card, and the two stay tellable apart.
@@ -1568,6 +1570,7 @@ impl GameState {
                 // never reset counted the wrong one. Last known information is
                 // already captured above in `pre_move_controller`.
                 obj.last_controller = Some(obj.controller);
+                obj.last_transformed = obj.is_transformed;
                 obj.controller = obj.owner;
                 obj.tapped = false;
                 obj.summoning_sick = false;
@@ -4426,6 +4429,13 @@ pub struct GameObject {
     /// CR 108.4, so it cannot answer that. The Curse pair
     /// `last_attached_to_player` exists for the same reason.
     pub last_controller: Option<PlayerId>,
+    /// Whether this permanent was on its back face as it last left the
+    /// battlefield (CR 712.8, 603.10a). Leaving turns a double-faced card
+    /// face up (712.8a), so a watcher that died in the same event as the
+    /// creature it saw die reads the face it had here: a Thraben Militia
+    /// dying beside another creature is not a Thraben Sentry.
+    #[serde(default)]
+    pub last_transformed: bool,
     /// The turn this permanent was last declared as an attacker, if any
     /// (CR 508.1). "Didn't attack this turn" is a plain fact about the game,
     /// asked by Homicidal Brute among others; it is not a triggered ability,
