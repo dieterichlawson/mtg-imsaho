@@ -438,11 +438,13 @@ card_proof! {
     /// Fiend Hunter entering: its controller may exile its target ("you
     /// may": asked, with that target the one choice, and declining an
     /// answer); on yes, the target exiled, and the Hunter remembers which
-    /// card it was, whether it is still on the battlefield or not (if it
-    /// has left first, its leaves trigger has already found nothing, and
-    /// the card stays exiled: the card's ruling). With no target (the
-    /// trigger's target illegal, it does not resolve at all, CR 608.2b),
-    /// nothing. Nothing else.
+    /// card it was if it is still on the battlefield. One that has left
+    /// first remembers nothing: its leaves trigger has already found
+    /// nothing, and the card stays exiled (the card's ruling), and a record
+    /// on the card it now is would be returned by a later Hunter's leaving
+    /// that did not exile it (CR 607.2a). With no target (the trigger's
+    /// target illegal, it does not resolve at all, CR 608.2b), nothing.
+    /// Nothing else.
     fn fiend_hunter_may_exile_its_target() {
         let mut b = entered(Box::new(isd::fiend_hunter::FiendHunter));
         let target = if kani::any() { Some(Target::Object(b.others[usize::from(kani::any::<bool>())])) } else { None };
@@ -459,9 +461,15 @@ card_proof! {
         assert!(*source == b.me && *player == b.you && *source_id == b.me && key.is_empty() && options.len() == 1 && options[0] == target);
         let Target::Object(id) = target else { unreachable!() };
         let card = b.card();
+        let there = b.get(b.me).zone == Zone::Battlefield;
         b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &target, &b.registry);
         assert!(acted() == 2 && Some(&Act::Move(id, Zone::Exile)) == act(1));
-        assert!(b.get(b.me).card_state.get("exiled_creature") == Some(&id) && b.get(b.me).card_state.len() == 1);
+        if there {
+            assert!(b.get(b.me).card_state.get("exiled_creature") == Some(&id) && b.get(b.me).card_state.len() == 1);
+        } else {
+            assert!(b.get(b.me).card_state.is_empty());
+        }
+        kani::cover!(!there, "a Hunter gone before its trigger resolved");
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
