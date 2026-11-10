@@ -590,11 +590,9 @@ afterwards is the whole exercise\n\
     }
 }
 
-/// What heads a guide in the draft rules. The draft loop's guide is
-/// written from earlier nights and said "tonight" about them, and its
-/// drafters took those nights' anecdotes as their own table's (#1013).
-pub const GUIDE_PREAMBLE: &str = "Written before this draft: what it says happened at a table happened at \
-another table, not this one.";
+/// What heads a guide in the draft rules, and in a guided seat's game
+/// prompt: the one sentence, kept in `mtg_player::llm` (#1013).
+pub use mtg_player::llm::GUIDE_PREAMBLE;
 
 /// Shared draft rules (used by all backends).
 fn build_draft_rules(

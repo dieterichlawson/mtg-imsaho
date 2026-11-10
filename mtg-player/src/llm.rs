@@ -988,6 +988,13 @@ fn read_pass_until(value: &str) -> (bool, Option<&'static str>) {
 /// one applied (#756, #757).
 pub const PASS_UNTIL_ROW: &str = "Pass until something happens";
 
+/// What heads a guide, in a guided seat's game prompt and in the draft
+/// rules (`mtg_draft_runner::llm_client`). The draft loop's guide is
+/// written from earlier nights and said "tonight" about them, and its
+/// seats took those nights' anecdotes as their own table's (#1013).
+pub const GUIDE_PREAMBLE: &str = "Written before this draft: what it says happened at a table happened at \
+another table, not this one.";
+
 /// The system prompt's account of [`PASS_UNTIL_ROW`], sent only to a seat
 /// that is offered the row: with `MTG_LLM_PASS_UNTIL=off` it told the seat
 /// index 1 was the row when index 1 was an engine action (#755). The stops
@@ -2705,6 +2712,8 @@ impl LlmPlayer {
         deck_info.push_str(&match_format.match_section());
         if let Some(guide) = &self.guide {
             deck_info.push_str("\n\n## Guide\n\n");
+            deck_info.push_str(GUIDE_PREAMBLE);
+            deck_info.push_str("\n\n");
             deck_info.push_str(guide);
         }
         deck_info.push_str("\n\n## Your decklist\n\n");

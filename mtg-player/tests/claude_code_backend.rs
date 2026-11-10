@@ -710,3 +710,25 @@ fn a_system_prompt_too_long_for_one_argument_gives_the_seat_up_at_once() {
     assert!(fake.calls().is_empty(), "the CLI was never run:\n{}", fake.log());
     assert!(started.elapsed() < std::time::Duration::from_secs(2), "no backoff was slept");
 }
+
+/// #1013: the draft loop's guide said "tonight" about the night it was
+/// written, and a guided seat read it as its own table, in its games as at
+/// its picks. The guide in a game seat's system prompt is headed by where
+/// it comes from, as the draft rules head it; no guide, no heading.
+#[test]
+fn a_game_seats_guide_is_headed_as_written_before_this_draft() {
+    let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+    let seat = |guide: Option<&str>| {
+        let fake = Fake::new(if guide.is_some() { "guided" } else { "unguided" }, OK_BODY);
+        let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+        if let Some(g) = guide {
+            p = p.with_guide(g.to_string());
+        }
+        p.init_conversation(&[("Swamp".to_string(), 17)], "Swamp | Land", &registry, MatchFormat::SingleGame);
+        p.system_prompt_for_test().to_string()
+    };
+    let guided = seat(Some("Tonight a BR went 3-0."));
+    let at = guided.find(mtg_player::llm::GUIDE_PREAMBLE).expect("the guide is headed");
+    assert!(at < guided.find("Tonight a BR").unwrap(), "{guided}");
+    assert!(!seat(None).contains(mtg_player::llm::GUIDE_PREAMBLE));
+}
