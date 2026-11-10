@@ -2148,10 +2148,14 @@ and the 52 of those that then ran out at 3.5 GB run alone at 7 GB
 (180bcb7: the 8 cards whose hooks defect 34 changed, the trigger
 collector's 19, the mana abilities' 12 and the rest, every one proved),
 the merged results (a later result for a harness replacing an earlier
-one) leave 30 of the 2,087 open, from 171: 976 of the 990 card harnesses
-prove, and of the 14 that do not, 12 are still queued alone at 12 GB and
-Moldgraf Monstrosity's two are queued at 12 GB at defect 40's fix. The
-16 engine actions open ran out of memory at 12 GB too: the trigger order
+one) leave 21 of the 2,087 open, from 171. 985 of the 990 card harnesses
+prove: the twelve card harnesses left at 12 GB all proved there, nine of
+them standing, and three (Bitterheart Witch's, Ghoulraiser's, Woodland
+Sleuth's) at a tree from before defect 34's fix, which changed their
+hooks, where they had run out at 3.5 GB; those three and Moldgraf
+Monstrosity's two (out at 3.5 GB at defect 40's fix) are queued alone at
+12 GB at the fixes. The 16 engine actions open ran out of memory at 12 GB
+too: the trigger order
 question's seven, a creature's dying trigger resolving, four answers of
 a cast's targets, two cast costs of a creature spell and two Forest
 payments. No
