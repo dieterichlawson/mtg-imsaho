@@ -1,6 +1,6 @@
 # What a pull request proves: the fastest proved harness of each module of
 # the proofs, fastest first, 31 of the 198 modules within 450 s
-# (433 s in the last run). Written by scripts/kani-tiers.py write.
+# (439 s in the last run). Written by scripts/kani-tiers.py write.
 proofs::mana_payment::each_type_has_its_own_slot
 proofs::actions::mana_cost::a_cost_of_no_symbols_is_built_as_none
 proofs::cards::counted_pt::skaab_ruinator_costs_three_creature_cards_and_casts_from_the_graveyard
@@ -19,11 +19,11 @@ proofs::actions::random::shuffling_a_library_of_four::for_the_second_player
 proofs::cards::activated::full_moons_rise_pumps_your_werewolves
 proofs::actions::offering::a_card_may_be_cast_at_the_time_its_types_allow
 proofs::actions::predicates::a_player_can_be_targeted_unless_gone
-proofs::cards::enters::fiend_hunter_declares_its_triggers
 proofs::actions::mulligan::keeping_a_hand_owes_a_card_to_the_bottom_for_each_mulligan_taken
 proofs::actions::filters::flying_or_reach_matches_exactly_what_has_either
 proofs::actions::until_end_of_turn::no_flashback_granted_until_end_of_turn_is_read_as_none
 proofs::vec_map::inserting_into_a_vec_set_is_inserting_into_an_ordered_set
+proofs::cards::enters::fiend_hunter_declares_its_triggers
 proofs::cards::targets::brimstone_volley_targets_any_target
 proofs::actions::trigger_resolving::the_requirement_a_trigger_is_rechecked_under_is_the_one_its_card_prints
 proofs::actions::predicates::an_object_is_a_creature_when_its_types_say_so::of_a_card

@@ -1,23 +1,26 @@
-# Card proofs at 617e92c
+# Card proofs at 7a07866
 
 Every card harness's last result, merged from: the pass over every
 harness the proofs define (three lanes at 3.5 GB, begun at 156d7ad and
 moved to 782c4ed after 896 harnesses), the solo passes of what ran out of
-memory there (alone at 7 GB, then at 12 GB, still under way), and the
-harnesses run again at the fixes of defects 34 to 36 (3.5 GB, at
-1e5f16b-b55a3a6). A later result for a harness replaces an earlier one.
+memory there (alone at 7 GB, then at 12 GB), the harnesses run again at
+the fixes of defects 34 to 36 (3.5 GB, at 1e5f16b-b55a3a6), the 7 GB
+rerun of those that ran out at 3.5 GB there (180bcb7, all 52 proved), and
+what defect 40 touches at its fix (dec10e4 and 8279960). A later result
+for a harness replaces an earlier one.
 
 Not proved below means out of memory at the cap of its last run. Of the
-23 such card harnesses, 15 are still queued at 12 GB, and 8 are cards
-whose hooks defect 34 changed, which ran out at 3.5 GB and are queued
-alone at 7 GB, where they proved before. This ledger is refreshed from
-those. `docs/plans/formal-verification.md` says what each proof is over
-and what its bounds are.
+14 such card harnesses, 12 are still queued alone at 12 GB, where in the
+run before every card harness among them proved, and Moldgraf
+Monstrosity's two ran out at 3.5 GB at defect 40's fix and are queued at
+12 GB at it. This ledger is refreshed from those.
+`docs/plans/formal-verification.md` says what each proof is over and
+what its bounds are.
 
 990 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
 
-- OOM: 23
-- SUCCESSFUL: 967
+- OOM: 14
+- SUCCESSFUL: 976
 
 | card | harnesses | proved | not proved |
 |---|---|---|---|
@@ -52,7 +55,7 @@ and what its bounds are.
 | caravan_vigil | 40 | 40 |  |
 | cellar_door | 10 | 10 |  |
 | champion_of_the_parish | 1 | 1 |  |
-| charmbreaker_devils | 2 | 1 | `charmbreaker_devils_returns_an_instant_or_sorcery_at_random` (OOM) |
+| charmbreaker_devils | 2 | 2 |  |
 | civilized_scholar | 8 | 8 |  |
 | claustrophobia | 3 | 3 |  |
 | clifftop_retreat | 2 | 2 |  |
@@ -74,7 +77,7 @@ and what its bounds are.
 | daybreak_ranger | 5 | 5 |  |
 | dead_weight | 2 | 2 |  |
 | dearly_departed | 1 | 1 |  |
-| delver_of_secrets | 8 | 5 | `delver_of_secrets_of_the_second_player_over_lightning_bolt` (OOM), `delver_of_secrets_of_the_second_player_over_lava_axe` (OOM), `delver_of_secrets_of_the_second_player_over_a_blank_card` (OOM) |
+| delver_of_secrets | 8 | 8 |  |
 | demonmail_hauberk | 2 | 2 |  |
 | deranged_assistant | 1 | 1 |  |
 | desperate_ravings | 1 | 1 |  |
@@ -101,7 +104,7 @@ and what its bounds are.
 | fiend_hunter | 3 | 3 |  |
 | forbidden_alchemy | 16 | 16 |  |
 | forest | 1 | 1 |  |
-| frightful_delusion | 14 | 13 | `frightful_delusion_against_the_second_players_spell_paid_for_with_two_cards_in_hand` (OOM) |
+| frightful_delusion | 14 | 14 |  |
 | full_moons_rise | 10 | 10 |  |
 | furor_of_the_bitten | 2 | 2 |  |
 | gallows_warden | 1 | 1 |  |
@@ -109,7 +112,7 @@ and what its bounds are.
 | garruk_relentless | 30 | 30 |  |
 | gatstaf_shepherd | 1 | 1 |  |
 | gavony_township | 3 | 3 |  |
-| geist_honored_monk | 1 | 0 | `geist_honored_monk_counts_your_creatures_and_brings_two_spirits` (OOM) |
+| geist_honored_monk | 1 | 1 |  |
 | geist_of_saint_traft | 1 | 1 |  |
 | geistcatchers_rig | 2 | 2 |  |
 | geistflame | 2 | 2 |  |
@@ -146,7 +149,7 @@ and what its bounds are.
 | invisible_stalker | 1 | 1 |  |
 | island | 1 | 1 |  |
 | isolated_chapel | 2 | 2 |  |
-| kessig_cagebreakers | 1 | 0 | `kessig_cagebreakers_brings_a_wolf_for_each_creature_card_in_your_graveyard` (OOM) |
+| kessig_cagebreakers | 1 | 1 |  |
 | kessig_wolf | 2 | 2 |  |
 | kessig_wolf_run | 2 | 2 |  |
 | kruin_outlaw | 1 | 1 |  |
@@ -260,11 +263,11 @@ and what its bounds are.
 | vampire_interloper | 1 | 1 |  |
 | vampiric_fury | 8 | 8 |  |
 | victim_of_night | 2 | 2 |  |
-| village_bell_ringer | 2 | 1 | `village_bell_ringer_untaps_your_creatures` (OOM) |
+| village_bell_ringer | 2 | 2 |  |
 | village_cannibals | 1 | 1 |  |
 | village_ironsmith | 1 | 1 |  |
 | villagers_of_estwald | 1 | 1 |  |
-| witchbane_orb | 2 | 1 | `witchbane_orb_destroys_the_curses_on_you` (OOM) |
+| witchbane_orb | 2 | 2 |  |
 | wooden_stake | 3 | 3 |  |
 | woodland_cemetery | 2 | 2 |  |
 | woodland_sleuth | 2 | 1 | `woodland_sleuth_returns_a_creature_card_at_random_after_a_death` (OOM) |
