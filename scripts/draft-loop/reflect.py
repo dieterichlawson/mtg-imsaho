@@ -2,14 +2,15 @@
 """The nightly draft loop's notes across sessions: each seat's lessons from
 tonight, and the guide rewritten from them and from every night's tables.
 
-    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE] [--conventional-guide GUIDE]
+    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE] [--conventional-guide GUIDE] [--positions JSONL]
     scripts/draft-loop/reflect.py curate  --night DATE --out reports/draft-loop --guide GUIDE
 
 `debrief` asks every seat of `<out>/nights/<DATE>.json`, in one `claude -p`
 call each, for up to three lessons grounded in what happened to it: its
 picks, its deck, its matches, its own end-of-draft notes, and the guide it
 drafted with: the loop's guide, the fixed conventional one
-(`--conventional-guide`), or none. They go to
+(`--conventional-guide`), or none, as its kept positions (`--positions`)
+carry it, or else the file. They go to
 `<out>/nights/<DATE>-lessons.json`.
 
 `curate` hands the guide, tonight's lessons and `<out>/stats.md` (every
@@ -173,15 +174,26 @@ def debrief(args):
     night = json.load(open(os.path.join(args.out, "nights", f"{args.night}.json")))
     read = lambda path: open(path).read().strip() if path and os.path.exists(path) else ""
     guides = {"loop": read(args.guide), "conventional": read(args.conventional_guide)}
+    # The guide each seat's picks were made under, from its kept positions:
+    # a night resumed after the guide file changed drafted under the old
+    # one, and the debrief handed the seat the new one to judge (#1014).
+    # Where one seat met two, the one most of its picks were made under.
+    drafted = collections.defaultdict(collections.Counter)
+    if args.positions and os.path.exists(args.positions):
+        for line in open(args.positions):
+            p = json.loads(line)
+            if p.get("guide"):
+                drafted[p["seat"]][p["guide"].strip()] += 1
     model = os.environ.get("DRAFT_LOOP_MODEL", "claude-haiku-5-5")
 
     def one(s):
-        guide = guides.get(s.get("guide", "loop" if s["guided"] else None), "")
+        kind = s.get("guide", "loop" if s["guided"] else None)
+        guide = (drafted[s["seat"]].most_common(1)[0][0] if kind and drafted[s["seat"]] else guides.get(kind, ""))
         # The loop's guide was written on an earlier night, from that
         # night's tables: the seat is told so, or it reads the guide's
         # anecdotes as facts about its own table (#1013).
         written = (" It was written before tonight's draft, from earlier nights: what it says happened, "
-                   "happened at those nights' tables, not at yours." if s.get("guide", "loop" if s["guided"] else None) == "loop" else "")
+                   "happened at those nights' tables, not at yours." if kind == "loop" else "")
         told = (f"You drafted with this guide in your prompt.{written}\n\n{guide}\n" if guide
                 else "You drafted without a guide.\n")
         message = (f"{seat_story(night, s)}\n\n{told}\nWrite up to three lessons for the next drafter, each one "
@@ -356,6 +368,8 @@ def main():
         p.add_argument("--guide", required=name == "curate")
         if name == "debrief":
             p.add_argument("--conventional-guide")
+            # The night's kept positions: the guide each seat drafted with.
+            p.add_argument("--positions")
     args = ap.parse_args()
     debrief(args) if args.cmd == "debrief" else curate(args)
 

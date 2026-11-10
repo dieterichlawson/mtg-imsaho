@@ -121,7 +121,8 @@ MTG_DRAFT_POSITIONS="$PWD/$logs/positions.jsonl" "$MTG_DRAFT_RUNNER_BIN" \
 python3 scripts/draft-loop/ledger.py night --save "$logs/save.json" --positions "$logs/positions.jsonl" \
   --night "$night" --guided "$guided" --guide "$guide" --conventional "$conv" --conventional-guide "$conventional" --usage "$logs/out.txt" --log "$logs/draft.log" --out "$out"
 xz -9 -c "$logs/positions.jsonl" > "$out/nights/$night-positions.jsonl.xz"
-python3 scripts/draft-loop/reflect.py debrief --night "$night" --out "$out" --guide "$guide" --conventional-guide "$conventional"
+python3 scripts/draft-loop/reflect.py debrief --night "$night" --out "$out" --guide "$guide" --conventional-guide "$conventional" \
+  --positions "$logs/positions.jsonl"
 python3 scripts/draft-loop/ledger.py stats --out "$out"
 python3 scripts/draft-loop/reflect.py curate --night "$night" --out "$out" --guide "$guide"
 python3 scripts/draft-loop/report.py --night "$night" --out "$out"
