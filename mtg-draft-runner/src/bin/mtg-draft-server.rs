@@ -334,7 +334,8 @@ and {} replayed; a match that was in progress is played again from its first gam
             // Nothing was asked yet, or no AI seat is asked anything.
         } else if let Some(was) = &save.prompt {
             // In the words `mtg-draft-replay` and scripts/decision-eval read.
-            for why in was.unlike(&live, !save.matches.is_empty()) {
+            let still = mtg_draft_runner::lobby::StillAsked::after(!save.decks.is_empty(), save.best_of);
+            for why in was.unlike(&live, !save.matches.is_empty(), still) {
                 resumed_warnings.push(format!("WARN --resume {path}: its system prompt is not the live one: {why}"));
             }
         } else {

@@ -12,7 +12,7 @@ mod lobby_support;
 use std::time::{Duration, Instant};
 
 use lobby_support::Server;
-use mtg_draft_runner::lobby::{SeatKind, TablePrompt};
+use mtg_draft_runner::lobby::{SeatKind, StillAsked, TablePrompt};
 
 #[test]
 fn a_table_resumed_without_its_guide_says_so() {
@@ -83,19 +83,45 @@ fn a_table_prompt_names_each_setting_that_moved() {
     was.settings.text_answers = live.settings.text_answers.map(|t| !t);
     was.settings.pass_until = live.settings.pass_until.map(|p| !p);
     was.settings.reference = Some("set-b".into());
-    let said = was.unlike(&live, false);
+    let said = was.unlike(&live, false, StillAsked::Draft);
     assert_eq!(said.len(), 3, "the draft's three, not the games' before a game was played: {said:?}");
     assert!(said[0].contains("MTG_LLM_HISTORY="), "{said:?}");
     assert!(said[1].contains("MTG_CLAUDE_CODE_DRAFT_ANSWERS="), "{said:?}");
     assert!(said[2].contains("not the one it was asked about"), "{said:?}");
-    let said = was.unlike(&live, true);
+    let said = was.unlike(&live, true, StillAsked::Draft);
     assert_eq!(said.len(), 4, "{said:?}");
     assert!(said[3].contains("MTG_LLM_PASS_UNTIL="), "{said:?}");
-    assert!(live.unlike(&live, true).is_empty(), "the same settings say nothing");
+    assert!(live.unlike(&live, true, StillAsked::Draft).is_empty(), "the same settings say nothing");
 
     let people = [SeatKind::Human, SeatKind::Human];
     let mut was = TablePrompt::live(&people, Some("g.md"), Some("0123456789abcdef"), "set-b");
     was.settings.history = Some(5);
-    let said = was.unlike(&TablePrompt::live(&people, None, None, "set-a"), true);
+    let said = was.unlike(&TablePrompt::live(&people, None, None, "set-a"), true, StillAsked::Draft);
     assert!(said.is_empty(), "no AI seat is asked anything: {said:?}");
+}
+
+/// #1014: a resume after every pick and deck was made, under a guide edited
+/// since, warned "the rest of this draft will be made under" the new guide
+/// and "this draft is a mixture of the two", when nothing but sideboarding
+/// (best-of-3) or nothing at all (best-of-1) was still to be asked. The
+/// warning says what is still asked; with nothing, there is no warning.
+#[test]
+fn a_changed_guide_after_the_draft_is_not_called_a_mixed_draft() {
+    let ai = [SeatKind::Human, SeatKind::Ai("cc".into())];
+    let was = TablePrompt::live(&ai, Some("g.md"), Some("0123456789abcdef"), "set-a");
+    let live = TablePrompt::live(&ai, Some("g.md"), Some("fedcba9876543210"), "set-a");
+
+    assert_eq!(StillAsked::after(false, 3), StillAsked::Draft);
+    let said = was.unlike(&live, false, StillAsked::Draft);
+    assert!(said.len() == 1 && said[0].contains("mixture") && said[0].contains("g.md as it was"), "{said:?}");
+
+    assert_eq!(StillAsked::after(true, 3), StillAsked::Sideboarding);
+    let said = was.unlike(&live, false, StillAsked::Sideboarding);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(said[0].contains("picks and decks was made under guide g.md as it was")
+            && said[0].contains("only the sideboarding between games is still asked"), "{said:?}");
+    assert!(!said[0].contains("mixture") && !said[0].contains("rest of this draft"), "{said:?}");
+
+    assert_eq!(StillAsked::after(true, 1), StillAsked::Nothing);
+    assert!(was.unlike(&live, false, StillAsked::Nothing).is_empty(), "nothing is asked under the new guide");
 }
