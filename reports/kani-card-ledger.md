@@ -1,4 +1,4 @@
-# Card proofs at cf36a02
+# Card proofs at fda2ee3
 
 Every card harness's last result, merged from: the pass over every
 harness the proofs define (three lanes at 3.5 GB, begun at 156d7ad and
@@ -6,22 +6,18 @@ moved to 782c4ed after 896 harnesses), the solo passes of what ran out of
 memory there (alone at 7 GB, then at 12 GB), the harnesses run again at
 the fixes of defects 34 to 36 (3.5 GB, at 1e5f16b-b55a3a6), the 7 GB
 rerun of those that ran out at 3.5 GB there (180bcb7, all 52 proved), and
-what defect 40 touches at its fix (dec10e4 and 8279960). A later result
-for a harness replaces an earlier one.
+what defect 40 touches at its fix (dec10e4 and 8279960), with the five
+card harnesses last out at 3.5 GB run alone at 12 GB at the fixes
+(Moldgraf Monstrosity's two, Bitterheart Witch's, Ghoulraiser's and
+Woodland Sleuth's, all proved). A later result for a harness replaces an
+earlier one.
 
-Not proved below means out of memory at the cap of its last run. Of the
-5 such card harnesses, Bitterheart Witch's, Ghoulraiser's and Woodland
-Sleuth's proved alone at 12 GB before defect 34's fix changed their
-hooks and ran out at 3.5 GB after it, and Moldgraf Monstrosity's two ran
-out at 3.5 GB at defect 40's fix; all five are queued alone at 12 GB at
-the fixes. This ledger is refreshed from those.
-`docs/plans/formal-verification.md` says what each proof is over and
-what its bounds are.
+Every card harness proves. `docs/plans/formal-verification.md` says what
+each proof is over and what its bounds are.
 
 990 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
 
-- OOM: 5
-- SUCCESSFUL: 985
+- SUCCESSFUL: 990
 
 | card | harnesses | proved | not proved |
 |---|---|---|---|
@@ -38,7 +34,7 @@ what its bounds are.
 | back_from_the_brink | 9 | 9 |  |
 | balefire_dragon | 1 | 1 |  |
 | battleground_geist | 1 | 1 |  |
-| bitterheart_witch | 12 | 11 | `bitterheart_witch_attaches_the_curse_to_its_target` (OOM) |
+| bitterheart_witch | 12 | 12 |  |
 | blasphemous_act | 1 | 1 |  |
 | blazing_torch | 3 | 3 |  |
 | bloodcrazed_neonate | 1 | 1 |  |
@@ -121,7 +117,7 @@ what its bounds are.
 | ghostly_possession | 2 | 2 |  |
 | ghoulcallers_bell | 2 | 2 |  |
 | ghoulcallers_chant | 1 | 1 |  |
-| ghoulraiser | 2 | 1 | `ghoulraiser_returns_a_zombie_card_at_random` (OOM) |
+| ghoulraiser | 2 | 2 |  |
 | giant_growth | 1 | 1 |  |
 | glorious_anthem | 1 | 1 |  |
 | gnaw_to_the_bone | 1 | 1 |  |
@@ -176,7 +172,7 @@ what its bounds are.
 | mindshrieker | 5 | 5 |  |
 | mirror_mad_phantasm | 2 | 2 |  |
 | moan_of_the_unhallowed | 1 | 1 |  |
-| moldgraf_monstrosity | 2 | 0 | `moldgraf_monstrosity_in_its_graveyard_exiles_itself_and_returns_two_at_random` (OOM), `moldgraf_monstrosity_gone_to_exile_returns_two_at_random` (OOM) |
+| moldgraf_monstrosity | 2 | 2 |  |
 | moment_of_heroism | 1 | 1 |  |
 | moonmist | 16 | 16 |  |
 | moorland_haunt | 17 | 17 |  |
@@ -271,7 +267,7 @@ what its bounds are.
 | witchbane_orb | 2 | 2 |  |
 | wooden_stake | 3 | 3 |  |
 | woodland_cemetery | 2 | 2 |  |
-| woodland_sleuth | 2 | 1 | `woodland_sleuth_returns_a_creature_card_at_random_after_a_death` (OOM) |
+| woodland_sleuth | 2 | 2 |  |
 | wreath_of_geists | 3 | 3 |  |
 
 ## Tables of cards
