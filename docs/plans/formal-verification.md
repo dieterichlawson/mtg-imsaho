@@ -2156,6 +2156,21 @@ when a payment can be planned: their proof now holds the question to the
 planner's stand-in (asked exactly when it finds a plan, nothing done when
 not), and both prove at 321bcd4.
 
+What defect 40 touches was run again at its fix (dec10e4), two at a time
+at 3.5 GB: the 40 proofs of tapping, untapping, counters on and off,
+regeneration shields and transforming, each now asked with an ability
+resolving whose own source may have come back as a new object (or
+another's, or one with no count kept), with a cover of that case each,
+and of pushing an activated ability and putting a trigger on the stack,
+which now hold the source's zone change count; and the 22 of the cards
+whose code the fix changed. 60 prove. Fiend Hunter's "may exile its
+target" first failed, its proof still asking a Hunter gone before its
+trigger resolved to remember what it exiled: it now asks that of a Hunter
+still there and nothing of one gone, and proves (297 s). Moldgraf
+Monstrosity's two run out of memory at 3.5 GB as they did before the
+fix, and are queued at 12 GB at it. A fuzz campaign at the fix ran 938
+games with no failure.
+
 The engine paths a card proof stands in for or takes for granted were
 then walked function by function for any with no proof: the answers to
 the questions a resolution or a cast asks (each reply its own harness),
