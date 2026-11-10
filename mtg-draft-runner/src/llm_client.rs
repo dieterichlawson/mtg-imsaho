@@ -590,6 +590,12 @@ afterwards is the whole exercise\n\
     }
 }
 
+/// What heads a guide in the draft rules. The draft loop's guide is
+/// written from earlier nights and said "tonight" about them, and its
+/// drafters took those nights' anecdotes as their own table's (#1013).
+pub const GUIDE_PREAMBLE: &str = "Written before this draft: what it says happened at a table happened at \
+another table, not this one.";
+
 /// Shared draft rules (used by all backends).
 fn build_draft_rules(
     set_name: &str,
@@ -598,7 +604,7 @@ fn build_draft_rules(
     table: Table,
 ) -> String {
     let guide_section = guide
-        .map(|g| format!("\n## Draft Guide\n\n{g}\n"))
+        .map(|g| format!("\n## Draft Guide\n\n{GUIDE_PREAMBLE}\n\n{g}\n"))
         .unwrap_or_default();
     format!(
         r#"You are drafting Magic: The Gathering cards from {set_name}.
@@ -1901,6 +1907,18 @@ mod draft_prompt_tests {
     }
 
     use super::{build_draft_rules, deck_schema_for, DraftLlmClient, Table};
+
+    /// #1013: the loop's guide said "tonight" about the night it was
+    /// written, and drafters read it as their own table. The guide is
+    /// headed by where it comes from; a seat with no guide hears nothing.
+    #[test]
+    fn a_guide_is_headed_as_written_before_this_draft() {
+        let t = Table { seat: 0, pod_size: 8, pack_size: 14 };
+        let rules = build_draft_rules("Innistrad", Some("Tonight a BR went 3-0."), "", t);
+        let at = rules.find(super::GUIDE_PREAMBLE).expect("the guide is headed");
+        assert!(at < rules.find("Tonight a BR").unwrap(), "{rules}");
+        assert!(!build_draft_rules("Innistrad", None, "", t).contains(super::GUIDE_PREAMBLE));
+    }
     use crate::card_lines::CardLines;
 
     fn cards() -> CardLines {
