@@ -177,7 +177,12 @@ def debrief(args):
 
     def one(s):
         guide = guides.get(s.get("guide", "loop" if s["guided"] else None), "")
-        told = (f"You drafted with this guide in your prompt:\n\n{guide}\n" if guide
+        # The loop's guide was written on an earlier night, from that
+        # night's tables: the seat is told so, or it reads the guide's
+        # anecdotes as facts about its own table (#1013).
+        written = (" It was written before tonight's draft, from earlier nights: what it says happened, "
+                   "happened at those nights' tables, not at yours." if s.get("guide", "loop" if s["guided"] else None) == "loop" else "")
+        told = (f"You drafted with this guide in your prompt.{written}\n\n{guide}\n" if guide
                 else "You drafted without a guide.\n")
         message = (f"{seat_story(night, s)}\n\n{told}\nWrite up to three lessons for the next drafter, each one "
                    "sentence of at most 35 words. Where tonight contradicted the guide, say so in the lesson.\n\n"
@@ -209,6 +214,9 @@ tonight's drafters wrote, and the statistics of every night so far, and you writ
 - Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck.
 - Length is yours to judge: add what the data supports, and cut what no longer earns its place. The guide
   travels in one command-line argument with the rules, so it may not pass {GUIDE_MAX_BYTES // 1024} KB (about 9,000 words).
+- The guide is read on later nights, at other tables, by drafters who take its words as said about their
+  own table. Never write "tonight", "this table" or "today": date what happened ("on 2026-11-09 a guided
+  WG went 0-3") or say "earlier".
 - End the guide with the line {END}: an answer without it is taken to have been cut off."""
 
 
@@ -272,6 +280,24 @@ def read_guide(reply):
     return guide, problems
 
 
+TONIGHT = re.compile(r"\b(tonight)('s)?\b", re.I)
+
+
+def dated(guide, night):
+    """The guide with every "tonight" it still says tied to `night`, and how
+    many there were. The curator writes from one night's lessons and the
+    guide is read on the next, where an undated "tonight" is taken as the
+    reader's own night: a guided seat drafted on "tonight a guided BR went
+    3-0" and wrote it up as its own table's (#1013). The curator is told
+    not to; this is what holds when it does anyway."""
+    def one(m):
+        if m.group(2):
+            return f"{night}'s"
+        at_start = m.group(1)[0].isupper()
+        return f"{'On' if at_start else 'on'} {night}"
+    return TONIGHT.subn(one, guide)
+
+
 def curate(args):
     stats_path = os.path.join(args.out, "stats.md")
     lessons_path = os.path.join(args.out, "nights", f"{args.night}-lessons.json")
@@ -289,7 +315,7 @@ def curate(args):
              "not yours; where their lessons speak of \"the guide\", they mean that one.\n\n"
              if any(s.get("guide") == "conventional" for s in lessons["seats"]) else "")
     message = (f"The guide now:\n\n{guide or '(none yet: write the first one)'}\n\n"
-               f"Tonight's lessons ({args.night}):\n{told or '(none)'}\n\n{other}"
+               f"The lessons {args.night}'s drafters wrote:\n{told or '(none)'}\n\n{other}"
                f"The statistics of every night so far:\n\n{stats}\n\n"
                f"Write the next guide: only the markdown, starting with the first heading.")
     model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
@@ -306,8 +332,10 @@ def curate(args):
         refused.append({"words": words, "missing_sections": missing, "problems": problems, "usage": usage})
         message += (f"\n\nYour last answer was not taken: it {'; it '.join(problems)}. Use exactly the six "
                     f"`## ` headings, each once, in order, and end with the line {END}.")
+    new, undated = dated(new, args.night)
     record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
-              "missing_sections": missing, "problems": problems, "usage": usage, "refused": refused}
+              "missing_sections": missing, "problems": problems, "usage": usage, "refused": refused,
+              "tonight_dated": undated}
     if problems:
         record["kept_old_guide"] = True
         record["rejected"] = text
