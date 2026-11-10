@@ -124,4 +124,11 @@ fn a_changed_guide_after_the_draft_is_not_called_a_mixed_draft() {
 
     assert_eq!(StillAsked::after(true, 1), StillAsked::Nothing);
     assert!(was.unlike(&live, false, StillAsked::Nothing).is_empty(), "nothing is asked under the new guide");
+
+    // Nor under another draft setting (#1014's review): "the rest of this
+    // draft" is no draft at all.
+    let mut was = live.clone();
+    was.settings.history = Some(live.settings.history.unwrap() + 2);
+    assert_eq!(was.unlike(&live, false, StillAsked::Sideboarding).len(), 1);
+    assert!(was.unlike(&live, false, StillAsked::Nothing).is_empty());
 }

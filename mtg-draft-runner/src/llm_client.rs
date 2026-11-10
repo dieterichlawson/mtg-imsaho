@@ -997,18 +997,21 @@ impl DraftPromptSettings {
     /// The game settings only once a game was played (`games_played`): a
     /// match in progress is played again from its first game.
     #[must_use]
-    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
+    /// The draft's own settings only where the draft still asks something
+    /// (`still`): past the decks of a best-of-1 nothing is (#1014's review).
+    pub fn unlike(&self, live: &Self, games_played: bool, still: crate::lobby::StillAsked) -> Vec<String> {
         let mut out = Vec::new();
+        let drafting = still != crate::lobby::StillAsked::Nothing;
         let how = |text: bool| if text { "in text" } else { "in the schema" };
         let format = |text: bool| if text { "text" } else { "schema" };
         let on_off = |on: bool| if on { "on" } else { "off" };
-        if let (Some(was), Some(now)) = (self.history, live.history) {
+        if let (true, Some(was), Some(now)) = (drafting, self.history, live.history) {
             if was != now {
                 out.push(format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft \
 is made under {now}"));
             }
         }
-        if let (Some(was), Some(now)) = (self.text_answers, live.text_answers) {
+        if let (true, Some(was), Some(now)) = (drafting, self.text_answers, live.text_answers) {
             if was != now {
                 out.push(format!("its picks were made under {DRAFT_ANSWERS_ENV}={}, and the rest of this draft \
 is asked {}", format(was), how(now)));

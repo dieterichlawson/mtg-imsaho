@@ -901,8 +901,14 @@ length its matches were played at", args.best_of);
     // has every pick, and its guide reaches only the sideboarding (#1014).
     let still = mtg_draft_runner::lobby::StillAsked::after(
         resumed.as_ref().is_some_and(|s| !s.decks.is_empty()), args.best_of);
-    for (seat, was, now) in &replayed_under {
-        let (was, now) = SeatPolicy::describe_pair(was, now);
+    // A changed model plays the games as well, so only a change of guide
+    // alone is narrowed by what is still asked (#1014's review).
+    let still_for = |was: &SeatPolicy, now: &SeatPolicy| {
+        if was.model == now.model { still } else { mtg_draft_runner::lobby::StillAsked::Draft }
+    };
+    for (seat, was_policy, now_policy) in &replayed_under {
+        let still = still_for(was_policy, now_policy);
+        let (was, now) = SeatPolicy::describe_pair(was_policy, now_policy);
         // The phrase `mtg-draft-replay` and the hosted table use (#948's
         // review), and in the log beside the header's line, where the
         // readers of that phrase look.
@@ -956,7 +962,7 @@ picks were made under is unknown", save.picks.len());
     if let Some(save) = resumed.as_ref().filter(|s| !s.picks.is_empty()) {
         let path = args.resume.as_deref().unwrap_or_default();
         let notes = match &save.prompt {
-            Some(was) => was.unlike(&live_prompt, !save.matches.is_empty())
+            Some(was) => was.unlike(&live_prompt, !save.matches.is_empty(), still)
                 .into_iter()
                 .map(|why| format!("--resume {path}: its system prompt is not the live one: {why}"))
                 .collect(),
@@ -1076,7 +1082,7 @@ resume with the --best-of its run was played at)", args.best_of) };
         .iter()
         // Said in the header only where the rest of the run is asked under
         // the other guide: the ledger reads that line as two prompts (#1014).
-        .filter(|_| still != mtg_draft_runner::lobby::StillAsked::Nothing)
+        .filter(|(_, was, now)| still_for(was, now) != mtg_draft_runner::lobby::StillAsked::Nothing)
         .map(|(seat, was, now)| { let (was, now) = SeatPolicy::describe_pair(was, now); (*seat, was, now) })
         .collect();
     log_header!(log, &set_data.set_name, args.players, args.best_of,

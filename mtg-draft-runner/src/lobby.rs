@@ -605,7 +605,7 @@ impl TablePrompt {
             let (was, now) = if was == now { (format!("{was} as it was"), format!("{now} as it is now")) } else { (was, now) };
             out.extend(still.guide_change("the AI seats'", &was, &now));
         }
-        out.extend(self.settings.unlike(&live.settings, games_played));
+        out.extend(self.settings.unlike(&live.settings, games_played, still));
         out
     }
 }
