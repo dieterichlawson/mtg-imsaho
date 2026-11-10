@@ -2148,14 +2148,14 @@ and the 52 of those that then ran out at 3.5 GB run alone at 7 GB
 (180bcb7: the 8 cards whose hooks defect 34 changed, the trigger
 collector's 19, the mana abilities' 12 and the rest, every one proved),
 the merged results (a later result for a harness replacing an earlier
-one) leave 21 of the 2,087 open, from 171. 985 of the 990 card harnesses
-prove: the twelve card harnesses left at 12 GB all proved there, nine of
-them standing, and three (Bitterheart Witch's, Ghoulraiser's, Woodland
-Sleuth's) at a tree from before defect 34's fix, which changed their
-hooks, where they had run out at 3.5 GB; those three and Moldgraf
-Monstrosity's two (out at 3.5 GB at defect 40's fix) are queued alone at
-12 GB at the fixes. The 16 engine actions open ran out of memory at 12 GB
-too: the trigger order
+one) leave 16 of the 2,087 open, from 171, and every one of the 990
+card harnesses proves. The twelve card harnesses left at 12 GB all
+proved there, three of them (Bitterheart Witch's, Ghoulraiser's,
+Woodland Sleuth's) at a tree from before defect 34's fix, which changed
+their hooks; those three and Moldgraf Monstrosity's two (out at 3.5 GB
+at defect 40's fix) were then run alone at 12 GB at the fixes, and prove
+in 557 to 772 s. The 16 open are engine actions that ran out of memory
+at 12 GB: the trigger order
 question's seven, a creature's dying trigger resolving, four answers of
 a cast's targets, two cast costs of a creature spell and two Forest
 payments. No
@@ -2177,7 +2177,7 @@ target" first failed, its proof still asking a Hunter gone before its
 trigger resolved to remember what it exiled: it now asks that of a Hunter
 still there and nothing of one gone, and proves (297 s). Moldgraf
 Monstrosity's two run out of memory at 3.5 GB as they did before the
-fix, and are queued at 12 GB at it. A fuzz campaign at the fix ran 938
+fix, and prove alone at 12 GB at it (559 and 557 s). A fuzz campaign at the fix ran 938
 games with no failure.
 
 The engine paths a card proof stands in for or takes for granted were
