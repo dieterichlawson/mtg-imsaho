@@ -1,4 +1,4 @@
-# Card proofs at 7a07866
+# Card proofs at cf36a02
 
 Every card harness's last result, merged from: the pass over every
 harness the proofs define (three lanes at 3.5 GB, begun at 156d7ad and
@@ -10,17 +10,18 @@ what defect 40 touches at its fix (dec10e4 and 8279960). A later result
 for a harness replaces an earlier one.
 
 Not proved below means out of memory at the cap of its last run. Of the
-14 such card harnesses, 12 are still queued alone at 12 GB, where in the
-run before every card harness among them proved, and Moldgraf
-Monstrosity's two ran out at 3.5 GB at defect 40's fix and are queued at
-12 GB at it. This ledger is refreshed from those.
+5 such card harnesses, Bitterheart Witch's, Ghoulraiser's and Woodland
+Sleuth's proved alone at 12 GB before defect 34's fix changed their
+hooks and ran out at 3.5 GB after it, and Moldgraf Monstrosity's two ran
+out at 3.5 GB at defect 40's fix; all five are queued alone at 12 GB at
+the fixes. This ledger is refreshed from those.
 `docs/plans/formal-verification.md` says what each proof is over and
 what its bounds are.
 
 990 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
 
-- OOM: 14
-- SUCCESSFUL: 976
+- OOM: 5
+- SUCCESSFUL: 985
 
 | card | harnesses | proved | not proved |
 |---|---|---|---|
@@ -72,7 +73,7 @@ what its bounds are.
 | curse_of_stalked_prey | 2 | 2 |  |
 | curse_of_the_bloody_tome | 2 | 2 |  |
 | curse_of_the_nightly_hunt | 1 | 1 |  |
-| curse_of_the_pierced_heart | 2 | 1 | `curse_of_the_pierced_heart_deals_one_damage_to_its_player_or_their_planeswalker` (OOM) |
+| curse_of_the_pierced_heart | 2 | 2 |  |
 | darkthicket_wolf | 2 | 2 |  |
 | daybreak_ranger | 5 | 5 |  |
 | dead_weight | 2 | 2 |  |
@@ -128,7 +129,7 @@ what its bounds are.
 | grave_bramble | 1 | 1 |  |
 | graveyard_shovel | 2 | 2 |  |
 | grimgrin_corpse_born | 4 | 4 |  |
-| grimoire_of_the_dead | 22 | 20 | `grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_first_player` (OOM), `grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_second_player` (OOM) |
+| grimoire_of_the_dead | 22 | 22 |  |
 | grizzled_outcasts | 1 | 1 |  |
 | gruesome_deformity | 2 | 2 |  |
 | gutter_grime | 1 | 1 |  |
@@ -171,7 +172,7 @@ what its bounds are.
 | memorys_journey | 1 | 1 |  |
 | mentor_of_the_meek | 5 | 5 |  |
 | midnight_haunting | 1 | 1 |  |
-| mikaeus_the_lunarch | 3 | 2 | `mikaeus_the_lunarch_puts_counters_on_itself_or_on_your_other_creatures` (OOM) |
+| mikaeus_the_lunarch | 3 | 3 |  |
 | mindshrieker | 5 | 5 |  |
 | mirror_mad_phantasm | 2 | 2 |  |
 | moan_of_the_unhallowed | 1 | 1 |  |
@@ -207,7 +208,7 @@ what its bounds are.
 | reaper_from_the_abyss | 2 | 2 |  |
 | rebuke | 2 | 2 |  |
 | reckless_waif | 1 | 1 |  |
-| rolling_temblor | 1 | 0 | `rolling_temblor_deals_two_to_each_creature_without_flying` (OOM) |
+| rolling_temblor | 1 | 1 |  |
 | rooftop_storm | 1 | 1 |  |
 | runechanters_pike | 3 | 3 |  |
 | runic_repetition | 1 | 1 |  |
@@ -216,7 +217,7 @@ what its bounds are.
 | selfless_cathar | 2 | 2 |  |
 | selhoff_occultist | 1 | 1 |  |
 | sensory_deprivation | 2 | 2 |  |
-| sever_the_bloodline | 6 | 2 | `sever_the_bloodline_targeting_the_card_with_the_token_of_its_name` (OOM), `sever_the_bloodline_targeting_the_card_with_the_token_of_another_name` (OOM), `sever_the_bloodline_targeting_the_token_of_the_cards_name` (OOM), `sever_the_bloodline_targeting_the_token_of_another_name` (OOM) |
+| sever_the_bloodline | 6 | 6 |  |
 | sharpened_pitchfork | 2 | 2 |  |
 | shimmering_grotto | 1 | 1 |  |
 | silent_departure | 1 | 1 |  |

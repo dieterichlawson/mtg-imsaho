@@ -18,17 +18,8 @@ proofs::actions::trigger_order::the_first_trigger_chosen_goes_on_now  # OOM
 proofs::actions::trigger_order::the_second_trigger_chosen_goes_on_now  # OOM
 proofs::actions::trigger_order::a_trigger_past_those_offered_is_refused  # OOM
 proofs::actions::trigger_resolving::a_creature_dying_trigger_resolves_with_the_dead_and_its_target_unless_it_is_illegal  # OOM
-proofs::cards::activated::mikaeus_the_lunarch_puts_counters_on_itself_or_on_your_other_creatures  # OOM
-proofs::cards::activated::grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_first_player  # OOM
-proofs::cards::activated::grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_second_player  # OOM
-proofs::cards::board_spells::rolling_temblor_deals_two_to_each_creature_without_flying  # OOM
-proofs::cards::curses::curse_of_the_pierced_heart_deals_one_damage_to_its_player_or_their_planeswalker  # OOM
 proofs::cards::death_and_attack_triggers::bitterheart_witch_attaches_the_curse_to_its_target  # OOM
 proofs::cards::death_and_attack_triggers::moldgraf_monstrosity_in_its_graveyard_exiles_itself_and_returns_two_at_random  # OOM
 proofs::cards::death_and_attack_triggers::moldgraf_monstrosity_gone_to_exile_returns_two_at_random  # OOM
 proofs::cards::enters::ghoulraiser_returns_a_zombie_card_at_random  # OOM
 proofs::cards::enters::woodland_sleuth_returns_a_creature_card_at_random_after_a_death  # OOM
-proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_card_with_the_token_of_its_name  # OOM
-proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_card_with_the_token_of_another_name  # OOM
-proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_token_of_the_cards_name  # OOM
-proofs::cards::targeted_spells::sever_the_bloodline_targeting_the_token_of_another_name  # OOM
