@@ -13,7 +13,7 @@ drafted with: the loop's guide, the fixed conventional one
 carry it, or else the file. They go to
 `<out>/nights/<DATE>-lessons.json`.
 
-`curate` hands the guide, tonight's lessons and `<out>/stats.md` (every
+`curate` hands the guide, the night's lessons and `<out>/stats.md` (every
 night's tables, `ledger.py stats`) to one call that rewrites the guide.
 It is as long as it needs to be: no word count is set, and the curator is
 asked to keep every line earning its place, since the guide is in every
@@ -217,7 +217,7 @@ CURATE_SYSTEM = f"""You keep the draft guide for Innistrad (ISD) booster drafts 
 table, three packs of 14, best-of-three Swiss. The guide is put in front of every guided drafter at every
 pick, so it must be specific and right, and as long as it needs to be and no longer: markdown under exactly
 these headings, in this order: {", ".join(h[3:] for h in SECTIONS)}. Each night you get the guide, the lessons
-tonight's drafters wrote, and the statistics of every night so far, and you write the next guide.
+that night's drafters wrote, and the statistics of every night so far, and you write the next guide.
 
 - Keep what the statistics or more than one lesson support; correct or drop what they contradict.
 - A claim that rests on numbers says how many games it rests on, e.g. "(31 games)"; numbers from fewer than
