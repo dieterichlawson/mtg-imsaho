@@ -515,6 +515,49 @@ pub struct TableSave {
     pub prompt: Option<TablePrompt>,
 }
 
+/// What a resumed draft still asks its seats under their guide, which is
+/// what a guide changed since the stop is a mixture with (#1014). A
+/// snapshot with every deck in it has every pick too, so the guide reaches
+/// only the sideboarding between games, and in best-of-1 nothing at all;
+/// the warning said "the rest of this draft will be made under" the new
+/// guide when no pick remained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StillAsked {
+    /// Picks remain, or decks to build.
+    Draft,
+    /// Every pick and deck is made; matches of more than one game remain.
+    Sideboarding,
+    /// Every pick and deck is made and the matches are best-of-1.
+    Nothing,
+}
+
+impl StillAsked {
+    /// From what the snapshot holds: its decks, and the match length.
+    #[must_use]
+    pub fn after(has_decks: bool, best_of: usize) -> Self {
+        match (has_decks, best_of > 1) {
+            (false, _) => Self::Draft,
+            (true, true) => Self::Sideboarding,
+            (true, false) => Self::Nothing,
+        }
+    }
+
+    /// How a guide that changed since the replayed decisions reads, `whose`
+    /// being "its" or "the AI seats'". `None` when nothing more is asked
+    /// under it: the draft was made under `was` alone, and saying it was a
+    /// mixture is what the night's report counted as two system prompts.
+    #[must_use]
+    pub fn guide_change(self, whose: &str, was: &str, now: &str) -> Option<String> {
+        match self {
+            Self::Draft => Some(format!("{whose} replayed picks were made under {was}, and the rest of this draft \
+will be made under {now}: this draft is a mixture of the two")),
+            Self::Sideboarding => Some(format!("every one of {whose} picks and decks was made under {was}; only \
+the sideboarding between games is still asked, and under {now}")),
+            Self::Nothing => None,
+        }
+    }
+}
+
 /// The guide and the settings an AI seat's system prompt is made under at
 /// a hosted table: one guide for every AI seat, as `--guide` gives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -546,7 +589,7 @@ impl TablePrompt {
     /// one line each; nothing when no seat is an AI seat. The game settings
     /// only once a game was played (`games_played`).
     #[must_use]
-    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
+    pub fn unlike(&self, live: &Self, games_played: bool, still: StillAsked) -> Vec<String> {
         let mut out = Vec::new();
         if live.settings.history.is_none() {
             return out;
@@ -560,9 +603,9 @@ impl TablePrompt {
             // The same path on both sides: the file was edited in place,
             // and naming it twice says nothing (#950).
             let (was, now) = if was == now { (format!("{was} as it was"), format!("{now} as it is now")) } else { (was, now) };
-            out.push(format!("the AI seats' replayed picks were made under {was}, and the rest of this draft will be made under {now}: this draft is a mixture of the two"));
+            out.extend(still.guide_change("the AI seats'", &was, &now));
         }
-        out.extend(self.settings.unlike(&live.settings, games_played));
+        out.extend(self.settings.unlike(&live.settings, games_played, still));
         out
     }
 }

@@ -114,6 +114,26 @@ def final_ranks(log):
     return ranks
 
 
+def drafted_with(positions, seats, path):
+    """The sha256[:16] of the guide `seats` drafted with: the one their kept
+    positions carry, which is what their picks were made under. A night
+    resumed after the guide file changed was recorded under the file as it
+    was by then, a guide no pick saw (#1014). Two guides in one night are
+    both named, in the order the picks met them. The file is the fallback
+    for a night with no positions kept."""
+    hashes = []
+    for p in positions:
+        if p["seat"] in seats and p.get("guide"):
+            h = hashlib.sha256(p["guide"].encode()).hexdigest()[:16]
+            if h not in hashes:
+                hashes.append(h)
+    if hashes:
+        return "+".join(hashes)
+    if seats and path and os.path.exists(path):
+        return hashlib.sha256(open(path, "rb").read()).hexdigest()[:16]
+    return None
+
+
 def night(args):
     facts = card_facts()
     save = json.load(open(args.save))
@@ -180,12 +200,8 @@ def night(args):
     # What each seat was offered: for "taken over" and "seen" counts.
     offered = [{"seat": p["seat"], "pack": p["pack_number"], "pick": p["pick_index"],
                 "available": p["available"], "chosen": p["chosen"]} for p in positions]
-    guide_hash = None
-    if args.guide and os.path.exists(args.guide):
-        guide_hash = hashlib.sha256(open(args.guide, "rb").read()).hexdigest()[:16]
-    conventional_hash = None
-    if conventional and args.conventional_guide and os.path.exists(args.conventional_guide):
-        conventional_hash = hashlib.sha256(open(args.conventional_guide, "rb").read()).hexdigest()[:16]
+    guide_hash = drafted_with(positions, guided, args.guide)
+    conventional_hash = drafted_with(positions, conventional, args.conventional_guide) if conventional else None
     record = {
         "night": args.night, "seed": save["seed"], "set": save["set"], "players": save["players"],
         "best_of": save["best_of"], "guide_hash": guide_hash,

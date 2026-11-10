@@ -2,17 +2,18 @@
 """The nightly draft loop's notes across sessions: each seat's lessons from
 tonight, and the guide rewritten from them and from every night's tables.
 
-    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE] [--conventional-guide GUIDE]
+    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE] [--conventional-guide GUIDE] [--positions JSONL]
     scripts/draft-loop/reflect.py curate  --night DATE --out reports/draft-loop --guide GUIDE
 
 `debrief` asks every seat of `<out>/nights/<DATE>.json`, in one `claude -p`
 call each, for up to three lessons grounded in what happened to it: its
 picks, its deck, its matches, its own end-of-draft notes, and the guide it
 drafted with: the loop's guide, the fixed conventional one
-(`--conventional-guide`), or none. They go to
+(`--conventional-guide`), or none, as its kept positions (`--positions`)
+carry it, or else the file. They go to
 `<out>/nights/<DATE>-lessons.json`.
 
-`curate` hands the guide, tonight's lessons and `<out>/stats.md` (every
+`curate` hands the guide, the night's lessons and `<out>/stats.md` (every
 night's tables, `ledger.py stats`) to one call that rewrites the guide.
 It is as long as it needs to be: no word count is set, and the curator is
 asked to keep every line earning its place, since the guide is in every
@@ -173,11 +174,27 @@ def debrief(args):
     night = json.load(open(os.path.join(args.out, "nights", f"{args.night}.json")))
     read = lambda path: open(path).read().strip() if path and os.path.exists(path) else ""
     guides = {"loop": read(args.guide), "conventional": read(args.conventional_guide)}
+    # The guide each seat's picks were made under, from its kept positions:
+    # a night resumed after the guide file changed drafted under the old
+    # one, and the debrief handed the seat the new one to judge (#1014).
+    # Where one seat met two, the one most of its picks were made under.
+    drafted = collections.defaultdict(collections.Counter)
+    if args.positions and os.path.exists(args.positions):
+        for line in open(args.positions):
+            p = json.loads(line)
+            if p.get("guide"):
+                drafted[p["seat"]][p["guide"].strip()] += 1
     model = os.environ.get("DRAFT_LOOP_MODEL", "claude-haiku-5-5")
 
     def one(s):
-        guide = guides.get(s.get("guide", "loop" if s["guided"] else None), "")
-        told = (f"You drafted with this guide in your prompt:\n\n{guide}\n" if guide
+        kind = s.get("guide", "loop" if s["guided"] else None)
+        guide = (drafted[s["seat"]].most_common(1)[0][0] if kind and drafted[s["seat"]] else guides.get(kind, ""))
+        # The loop's guide was written on an earlier night, from that
+        # night's tables: the seat is told so, or it reads the guide's
+        # anecdotes as facts about its own table (#1013).
+        written = (" It was written before tonight's draft, from earlier nights: what it says happened, "
+                   "happened at those nights' tables, not at yours." if kind == "loop" else "")
+        told = (f"You drafted with this guide in your prompt.{written}\n\n{guide}\n" if guide
                 else "You drafted without a guide.\n")
         message = (f"{seat_story(night, s)}\n\n{told}\nWrite up to three lessons for the next drafter, each one "
                    "sentence of at most 35 words. Where tonight contradicted the guide, say so in the lesson.\n\n"
@@ -200,7 +217,7 @@ CURATE_SYSTEM = f"""You keep the draft guide for Innistrad (ISD) booster drafts 
 table, three packs of 14, best-of-three Swiss. The guide is put in front of every guided drafter at every
 pick, so it must be specific and right, and as long as it needs to be and no longer: markdown under exactly
 these headings, in this order: {", ".join(h[3:] for h in SECTIONS)}. Each night you get the guide, the lessons
-tonight's drafters wrote, and the statistics of every night so far, and you write the next guide.
+that night's drafters wrote, and the statistics of every night so far, and you write the next guide.
 
 - Keep what the statistics or more than one lesson support; correct or drop what they contradict.
 - A claim that rests on numbers says how many games it rests on, e.g. "(31 games)"; numbers from fewer than
@@ -209,6 +226,9 @@ tonight's drafters wrote, and the statistics of every night so far, and you writ
 - Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck.
 - Length is yours to judge: add what the data supports, and cut what no longer earns its place. The guide
   travels in one command-line argument with the rules, so it may not pass {GUIDE_MAX_BYTES // 1024} KB (about 9,000 words).
+- The guide is read on later nights, at other tables, by drafters who take its words as said about their
+  own table. Never write "tonight", "this table" or "today": date what happened ("on 2026-11-09 a guided
+  WG went 0-3") or say "earlier".
 - End the guide with the line {END}: an answer without it is taken to have been cut off."""
 
 
@@ -272,6 +292,24 @@ def read_guide(reply):
     return guide, problems
 
 
+TONIGHT = re.compile(r"\b(tonight)('s)?\b", re.I)
+
+
+def dated(guide, night):
+    """The guide with every "tonight" it still says tied to `night`, and how
+    many there were. The curator writes from one night's lessons and the
+    guide is read on the next, where an undated "tonight" is taken as the
+    reader's own night: a guided seat drafted on "tonight a guided BR went
+    3-0" and wrote it up as its own table's (#1013). The curator is told
+    not to; this is what holds when it does anyway."""
+    def one(m):
+        if m.group(2):
+            return f"{night}'s"
+        at_start = m.group(1)[0].isupper()
+        return f"{'On' if at_start else 'on'} {night}"
+    return TONIGHT.subn(one, guide)
+
+
 def curate(args):
     stats_path = os.path.join(args.out, "stats.md")
     lessons_path = os.path.join(args.out, "nights", f"{args.night}-lessons.json")
@@ -289,7 +327,7 @@ def curate(args):
              "not yours; where their lessons speak of \"the guide\", they mean that one.\n\n"
              if any(s.get("guide") == "conventional" for s in lessons["seats"]) else "")
     message = (f"The guide now:\n\n{guide or '(none yet: write the first one)'}\n\n"
-               f"Tonight's lessons ({args.night}):\n{told or '(none)'}\n\n{other}"
+               f"The lessons {args.night}'s drafters wrote:\n{told or '(none)'}\n\n{other}"
                f"The statistics of every night so far:\n\n{stats}\n\n"
                f"Write the next guide: only the markdown, starting with the first heading.")
     model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
@@ -306,8 +344,10 @@ def curate(args):
         refused.append({"words": words, "missing_sections": missing, "problems": problems, "usage": usage})
         message += (f"\n\nYour last answer was not taken: it {'; it '.join(problems)}. Use exactly the six "
                     f"`## ` headings, each once, in order, and end with the line {END}.")
+    new, undated = dated(new, args.night)
     record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
-              "missing_sections": missing, "problems": problems, "usage": usage, "refused": refused}
+              "missing_sections": missing, "problems": problems, "usage": usage, "refused": refused,
+              "tonight_dated": undated}
     if problems:
         record["kept_old_guide"] = True
         record["rejected"] = text
@@ -328,6 +368,8 @@ def main():
         p.add_argument("--guide", required=name == "curate")
         if name == "debrief":
             p.add_argument("--conventional-guide")
+            # The night's kept positions: the guide each seat drafted with.
+            p.add_argument("--positions")
     args = ap.parse_args()
     debrief(args) if args.cmd == "debrief" else curate(args)
 

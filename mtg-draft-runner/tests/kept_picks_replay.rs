@@ -179,7 +179,7 @@ fn a_guided_seats_pick_replays_under_its_guide() {
         sizes.dedup();
         sizes
     };
-    let section = "\n## Draft Guide\n\nTake removal first.\n\n".len() as u64;
+    let section = format!("\n## Draft Guide\n\n{}\n\nTake removal first.\n\n", mtg_draft_runner::llm_client::GUIDE_PREAMBLE).len() as u64;
     let rows = replay(&[]);
     let (guided, plain) = (system(&rows, 0), system(&rows, 1));
     assert_eq!((guided.len(), plain.len()), (1, 1), "one system prompt a seat: {guided:?} {plain:?}");

@@ -495,3 +495,134 @@ fn a_substituted_pick_is_not_counted_as_the_seat_taking_the_card() {
     assert!(story.contains("Pack 1: Ambush Viper; Naturalize (taken for you: your answer could not be used)"), "{story}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #1013: the curator wrote "tonight" about the night it curated, and the
+/// next night's drafters read it at every pick as their own table ("the
+/// guided 3-0 BR" a seat then wrote up was the night before's). What it
+/// still says "tonight" about is dated, and it is handed the lessons as one
+/// night's, not as "tonight's".
+#[test]
+fn a_guide_never_says_tonight_to_the_next_night() {
+    let body = "Tonight a guided BR went 3-0 (anecdote). Black was crowded at tonight's table. A WR went 1-2 tonight.\n\n";
+    let reply: String = HEADINGS.iter().map(|h| format!("{h}\n\n{body}")).collect::<String>() + END;
+    let (guide, record, sent) = curate_with("tonight", &reply);
+    assert!(record.get("kept_old_guide").is_none(), "{record}");
+    assert!(!guide.to_lowercase().contains("tonight"), "{guide}");
+    assert!(guide.contains("On 2099-01-01 a guided BR went 3-0") && guide.contains("at 2099-01-01's table")
+            && guide.contains("went 1-2 on 2099-01-01."), "{guide}");
+    assert_eq!(record["tonight_dated"], 18, "{record}");
+    assert!(sent[0].contains("The lessons 2099-01-01's drafters wrote:") && !sent[0].contains("Tonight's lessons"), "{}", sent[0]);
+}
+
+/// #1013: the debrief handed a guided seat the loop's guide, written from an
+/// earlier night, and asked where "tonight contradicted the guide"; the
+/// seat took the guide's anecdotes as its own table's. It is told the
+/// guide is from earlier nights; a seat with the fixed conventional guide
+/// or none is not.
+#[test]
+fn the_debrief_says_the_loops_guide_is_from_earlier_nights() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("mtg-debrief-guide-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = |cards: &[&str]| serde_json::json!({"deck": {"maindeck": cards, "lands": {"Forest": 17}, "sideboard": []}});
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 3, "best_of": 1,
+        "seats": [{"model": "cc"}, {"model": "cc"}, {"model": "cc"}],
+        "decks": [deck(&["Ambush Viper"]), deck(&["Darkthicket Wolf"]), deck(&["Orchard Spirit"])],
+        "picks": [], "matches": [],
+    });
+    std::fs::write(dir.join("save.json"), save.to_string()).unwrap();
+    std::fs::write(dir.join("guide.md"), "# Innistrad draft guide\n\nOn 2098-12-31 a guided BR went 3-0.\n").unwrap();
+    std::fs::write(dir.join("conventional.md"), "# Conventional\n\nTake removal.\n").unwrap();
+    let out = Command::new("python3").arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py"))
+        .args(["night", "--save", dir.join("save.json").to_str().unwrap(), "--night", "2099-01-01",
+               "--guided", "0", "--conventional", "2", "--out", dir.to_str().unwrap()])
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let stub = dir.join("claude");
+    std::fs::write(&stub, format!(
+        "#!/usr/bin/env python3\nimport json, sys, re\nm = sys.stdin.read()\nseat = re.search(r'seat (\\d+)', m)\n\
+         open('{d}/sent-' + m.split('You drafted')[1][:4].strip() + '-' + str(len(m)) + '.txt', 'w').write(m)\n\
+         print(json.dumps({{'type': 'result', 'is_error': False, 'result': '{{\"lessons\": []}}', 'usage': {{}}}}))\n",
+        d = dir.display())).unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new("python3").arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/reflect.py"))
+        .args(["debrief", "--night", "2099-01-01", "--out", dir.to_str().unwrap(),
+               "--guide", dir.join("guide.md").to_str().unwrap(),
+               "--conventional-guide", dir.join("conventional.md").to_str().unwrap()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let sent: Vec<String> = std::fs::read_dir(&dir).unwrap().filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with("sent-"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap()).collect();
+    assert_eq!(sent.len(), 3, "one debrief a seat");
+    let with = |text: &str| sent.iter().filter(|m| m.contains(text)).count();
+    assert_eq!(with("a guided BR went 3-0"), 1, "the loop's guide goes to its seat");
+    assert_eq!(with("Take removal."), 1, "the conventional guide to its seat");
+    assert_eq!(with("written before tonight's draft, from earlier nights"), 1, "{sent:#?}");
+    assert!(sent.iter().any(|m| m.contains("a guided BR went 3-0") && m.contains("written before tonight's draft")), "{sent:#?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1014: a night resumed after the guide file changed drafted every pick
+/// under the old guide, and the night record hashed the file as it was by
+/// then, and the debrief handed the guided seat the new file as "the guide
+/// you drafted with". Both take the guide from the kept positions, which
+/// carry what each pick was made under.
+#[test]
+fn a_resumed_night_names_the_guide_its_picks_were_made_under() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-resumed-guide-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = |cards: &[&str]| serde_json::json!({"deck": {"maindeck": cards, "lands": {"Forest": 17}, "sideboard": []}});
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 2, "best_of": 1,
+        "seats": [{"model": "cc"}, {"model": "cc"}],
+        "decks": [deck(&["Ambush Viper"]), deck(&["Darkthicket Wolf"])],
+        "picks": [], "matches": [],
+    });
+    std::fs::write(dir.join("save.json"), save.to_string()).unwrap();
+    let old = "# Innistrad draft guide\n\nThe guide the picks saw: take Brimstone Volley.\n";
+    let new = format!("{old}- An edit after the stop.\n");
+    std::fs::write(dir.join("guide.md"), &new).unwrap();
+    let position = |seat: usize, guide: Option<&str>| serde_json::json!({
+        "seat": seat, "pack_number": 1, "pick_index": 1, "available": ["Ambush Viper"], "chosen": "Ambush Viper", "guide": guide,
+    }).to_string();
+    std::fs::write(dir.join("positions.jsonl"), [position(0, Some(old)), position(1, None), position(0, Some(old))].join("\n") + "\n").unwrap();
+    let out = Command::new("python3").arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py"))
+        .args(["night", "--save", dir.join("save.json").to_str().unwrap(), "--positions", dir.join("positions.jsonl").to_str().unwrap(),
+               "--night", "2099-01-01", "--guided", "0", "--guide", dir.join("guide.md").to_str().unwrap(), "--out", dir.to_str().unwrap()])
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let night: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("nights/2099-01-01.json")).unwrap()).unwrap();
+    let sha = |text: &str| {
+        let out = Command::new("python3").args(["-c", "import hashlib, sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:16])", text])
+            .output().unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    assert_eq!(night["guide_hash"], sha(old), "the guide the picks were made under, not {}", sha(&new));
+
+    let stub = dir.join("claude");
+    std::fs::write(&stub, format!(
+        "#!/usr/bin/env python3\nimport json, sys, glob\nm = sys.stdin.read()\n\
+         open('{d}/sent-%d.txt' % len(glob.glob('{d}/sent-*.txt')), 'w').write(m)\n\
+         print(json.dumps({{'type': 'result', 'is_error': False, 'result': '{{\"lessons\": []}}', 'usage': {{}}}}))\n",
+        d = dir.display())).unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new("python3").arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/reflect.py"))
+        .args(["debrief", "--night", "2099-01-01", "--out", dir.to_str().unwrap(),
+               "--guide", dir.join("guide.md").to_str().unwrap(), "--positions", dir.join("positions.jsonl").to_str().unwrap()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let sent: Vec<String> = std::fs::read_dir(&dir).unwrap().filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with("sent-"))
+        .map(|e| std::fs::read_to_string(e.path()).unwrap()).collect();
+    assert_eq!(sent.len(), 2, "one debrief a seat");
+    assert_eq!(sent.iter().filter(|m| m.contains("The guide the picks saw")).count(), 1, "{sent:#?}");
+    assert!(sent.iter().all(|m| !m.contains("An edit after the stop")), "the guided seat is shown the guide it drafted with: {sent:#?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

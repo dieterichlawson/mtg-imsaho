@@ -1176,7 +1176,7 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   with the guide's real size each time the guide passes 5,000 words. Also
   try a guide in CRLF or with a byte-order mark: `sections()` and the
   heading check both match on exact strings.
-- D60 [proposed 2026-11-09, from 30232d2, 646cec4 and 69c06f6] the
+- D60 [from 30232d2, 646cec4 and 69c06f6; first run 2026-11-10] the
   three-guide split. Since 2026-11-08 seats 0 and 4 draft with
   `guide.md`, seats 2 and 6 with `reports/draft-loop/conventional.md`
   and the odd seats with none; the split is in the run stamp, the ledger
@@ -1192,3 +1192,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   3-0 was seat 3's unguided UB). Find what the debrief prompt showed it
   (`reflect.py debrief`) and whether a lesson built on a fact the seat
   was never given can reach the curator unchecked.
+  First run (2026-11-10): the seats were sent the guides the record names,
+  and the split change is refused. Two things were found. The guide says
+  "tonight" about the night it was written, and seats read that as their
+  own night (#1013). A resume under an edited guide is recorded and
+  debriefed with the edited guide (#1014). Next time: grep each new guide
+  for a "tonight"/"this table" claim and find the seat whose lesson repeats
+  it as its own. To stop a stub night after the draft, wrap the stub in
+  `sleep 0.3`; unwrapped, a four-seat night is over in 20 s. Stop it when
+  `save.json` has 4 decks and 0 matches. Also resume a night stopped *mid*-draft
+  under an edited guide: there the warning's "mixture" is true, and the
+  record should say which picks were made under which guide.

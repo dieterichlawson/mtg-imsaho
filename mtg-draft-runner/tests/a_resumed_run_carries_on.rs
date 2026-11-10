@@ -479,6 +479,17 @@ fn a_resume_under_other_prompt_settings_says_so() {
     let pass_until = saved["prompt"]["pass_until"].as_bool().unwrap();
     let snap = pod.path("snap.json");
     let snap = snap.to_str().unwrap();
+    // The draft's own settings are said where the draft still asks
+    // something: here its decks are still to build. Past the decks of a
+    // best-of-1 nothing is asked, and nothing is said (#1014).
+    let mut drafting = saved.clone();
+    for key in ["decks", "matches"] {
+        drafting.as_object_mut().unwrap().remove(key);
+    }
+    let drafting = pod.write("drafting.json", &drafting);
+    let out = pod.run_env(&["--resume", snap], "done.calls", "done.log", &[("MTG_LLM_HISTORY", "2")]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success() && !stderr.contains("MTG_LLM_HISTORY"), "nothing more is drafted:\n{stderr}");
 
     for (var, value, said) in [
         ("MTG_LLM_HISTORY", "2", "made under MTG_LLM_HISTORY=0, and the rest of this draft is made under 2"),
@@ -493,7 +504,8 @@ fn a_resume_under_other_prompt_settings_says_so() {
             else { "played under MTG_LLM_PASS_UNTIL=off, and the rest of this tournament is played with the pass-until row on" }),
     ] {
         let log = format!("{var}.log");
-        let out = pod.run_env(&["--resume", snap], &format!("{var}.calls"), &log, &[(var, value)]);
+        let from = if var.contains("DRAFT") || var == "MTG_LLM_HISTORY" { drafting.as_str() } else { snap };
+        let out = pod.run_env(&["--resume", from], &format!("{var}.calls"), &log, &[(var, value)]);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{stderr}");
         assert!(stderr.contains("its system prompt is not the live one") && stderr.contains(said),
@@ -546,7 +558,23 @@ fn a_guide_edited_in_place_is_named_as_it_was_and_as_it_is() {
     assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
 
     std::fs::write(guide, "Take green cards.\n").unwrap();
+    // Every pick, deck and best-of-1 match is in the snapshot: nothing is
+    // asked under the edited guide, and a note says so, not the warning
+    // that the draft is a mixture (#1014).
     let out = pod.run(&["--guide", guide, "--resume", snap.to_str().unwrap()], "second.calls", "second.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(!stderr.contains("WARN: seat"), "{stderr}");
+    let note = stderr.lines().find(|l| l.starts_with("note: seat 0")).unwrap_or_else(|| panic!("no note:\n{stderr}"));
+    assert!(note.contains(&format!("guide {guide} as it was")) && note.contains("nothing more is asked"), "{note}");
+
+    // Its decks still to build, the rest of the draft is asked under it.
+    let mut save: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&snap).unwrap()).unwrap();
+    for key in ["decks", "matches"] {
+        save.as_object_mut().unwrap().remove(key);
+    }
+    let drafting = pod.write("drafting.json", &save);
+    let out = pod.run(&["--guide", guide, "--resume", &drafting], "third.calls", "third.log");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{stderr}");
     let warn = stderr.lines().find(|l| l.starts_with("WARN: seat 0")).unwrap_or_else(|| panic!("no warning:\n{stderr}"));

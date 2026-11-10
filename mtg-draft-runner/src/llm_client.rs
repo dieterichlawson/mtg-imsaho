@@ -590,6 +590,10 @@ afterwards is the whole exercise\n\
     }
 }
 
+/// What heads a guide in the draft rules, and in a guided seat's game
+/// prompt: the one sentence, kept in `mtg_player::llm` (#1013).
+pub use mtg_player::llm::GUIDE_PREAMBLE;
+
 /// Shared draft rules (used by all backends).
 fn build_draft_rules(
     set_name: &str,
@@ -598,7 +602,7 @@ fn build_draft_rules(
     table: Table,
 ) -> String {
     let guide_section = guide
-        .map(|g| format!("\n## Draft Guide\n\n{g}\n"))
+        .map(|g| format!("\n## Draft Guide\n\n{GUIDE_PREAMBLE}\n\n{g}\n"))
         .unwrap_or_default();
     format!(
         r#"You are drafting Magic: The Gathering cards from {set_name}.
@@ -991,18 +995,21 @@ impl DraftPromptSettings {
     /// The game settings only once a game was played (`games_played`): a
     /// match in progress is played again from its first game.
     #[must_use]
-    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
+    /// The draft's own settings only where the draft still asks something
+    /// (`still`): past the decks of a best-of-1 nothing is (#1014's review).
+    pub fn unlike(&self, live: &Self, games_played: bool, still: crate::lobby::StillAsked) -> Vec<String> {
         let mut out = Vec::new();
+        let drafting = still != crate::lobby::StillAsked::Nothing;
         let how = |text: bool| if text { "in text" } else { "in the schema" };
         let format = |text: bool| if text { "text" } else { "schema" };
         let on_off = |on: bool| if on { "on" } else { "off" };
-        if let (Some(was), Some(now)) = (self.history, live.history) {
+        if let (true, Some(was), Some(now)) = (drafting, self.history, live.history) {
             if was != now {
                 out.push(format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft \
 is made under {now}"));
             }
         }
-        if let (Some(was), Some(now)) = (self.text_answers, live.text_answers) {
+        if let (true, Some(was), Some(now)) = (drafting, self.text_answers, live.text_answers) {
             if was != now {
                 out.push(format!("its picks were made under {DRAFT_ANSWERS_ENV}={}, and the rest of this draft \
 is asked {}", format(was), how(now)));
@@ -1901,6 +1908,18 @@ mod draft_prompt_tests {
     }
 
     use super::{build_draft_rules, deck_schema_for, DraftLlmClient, Table};
+
+    /// #1013: the loop's guide said "tonight" about the night it was
+    /// written, and drafters read it as their own table. The guide is
+    /// headed by where it comes from; a seat with no guide hears nothing.
+    #[test]
+    fn a_guide_is_headed_as_written_before_this_draft() {
+        let t = Table { seat: 0, pod_size: 8, pack_size: 14 };
+        let rules = build_draft_rules("Innistrad", Some("Tonight a BR went 3-0."), "", t);
+        let at = rules.find(super::GUIDE_PREAMBLE).expect("the guide is headed");
+        assert!(at < rules.find("Tonight a BR").unwrap(), "{rules}");
+        assert!(!build_draft_rules("Innistrad", None, "", t).contains(super::GUIDE_PREAMBLE));
+    }
     use crate::card_lines::CardLines;
 
     fn cards() -> CardLines {

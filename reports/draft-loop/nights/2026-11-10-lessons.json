@@ -1,0 +1,372 @@
+{
+ "night": "2026-11-10",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "My WR went 1-2 with only two fliers, Abbey Griffin and Spectral Rider, and both losses ran 17 to 24 turns, so draft a third flier or Rally the Peasants over late ground filler.",
+    "Tonight contradicted the cheap-creature plan: my curve won 2-0 in 12 turns against WU, but BG and UB ground me out in 17- and 24-turn losses, so cheap bodies need late fliers.",
+    "Keep a flexible late threat even at the cost of a cheap Thraben Sentry, since my WR had none and lost both of its long games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 9438,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3077,
+    "output_tokens_details": {
+     "thinking_tokens": 2872
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 9438
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3077,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 9438,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 9438,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Count fliers before committing: my black-green deck, with Corpse Lunge, Dead Weight and Tribute to Hunger, went 0-2 against a white-blue deck with Stitched Drake and Angel of Flight Alabaster.",
+    "Value recursion over filler: Round 2's 37-turn game was a grind, so Unburial Rites, which I cut for a 23rd spell, may deserve a slot over a weak body.",
+    "Check which colour is open before committing: seat 5's white-green went 3-0 while my black-green deck finished 1-2, so reassess the flow after pack 1."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3191,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1919,
+    "output_tokens_details": {
+     "thinking_tokens": 1712
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3191
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1919,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3191,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3191,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Early picks Brimstone Volley, Darkthicket Wolf, Prey Upon and Riot Devils were wasted off-colour; commit to WU by pick five and take blue and white removal over speculative cards.",
+    "The guide calls Wooden Stakes skip-worthy, yet the BR deck that beat me 2-1 registered two, so cheap ground-stopping cards matter when your fliers can't block early.",
+    "Round 2's WR humans beat my Moon Heron and Stitched Drake deck 0-2 in 12 turns, so the guide's 'fliers win' line needs a lower curve of two- and three-drops."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4927,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4113,
+    "output_tokens_details": {
+     "thinking_tokens": 3894
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4927
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4113,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4927,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4927,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Red was the open lane tonight: pack 2's first picks Galvanic Juggernaut and Into the Maw of Hell fed a 2-1 BR deck, so take red removal like Brimstone Volley early.",
+    "Don't main two Wooden Stake without reads: they were dead against Round 3's WG deck, which was mostly Humans and Spirits (Fiend Hunter, Slayer of the Wicked), and I lost 0-2 to it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3275,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2472,
+    "output_tokens_details": {
+     "thinking_tokens": 2311
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3275
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2472,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3275,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3275,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "0-3-0",
+   "lessons": [
+    "Tonight's WG went 0-3 with Avacyn's Pilgrim and Thraben Sentry, contradicting the guide's 2-1 WG claim: our ground bodies lost to Chapel Geist, Moon Heron and Stitched Drake in 20-to-34-turn games.",
+    "Claustrophobia taken first was stranded in WG; early removal needs a pair decision by pick 5, as the guide says, before it outranks on-colour creatures.",
+    "Our WG had only Orchard Spirit and two Somberwald Spiders against WU's fliers, so take a third evasive finisher in pack 3 over a fourth ground two-drop."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 9497,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3519,
+    "output_tokens_details": {
+     "thinking_tokens": 3292
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 9497
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3519,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 9497,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 9497,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "WG",
+   "record": "3-0-0",
+   "lessons": [
+    "Take Fiend Hunter and Bonds of Faith early: with Spidery Grasp, that removal and the creature base went 6-0 in games across three opponents, including the WG deck that went 0-3.",
+    "Expect long games: all six games ran 20 to 34 turns, so late-game value like Gavony Township, Mentor of the Meek and Grizzled Outcasts earned its place in the deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3206,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1675,
+    "output_tokens_details": {
+     "thinking_tokens": 1532
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3206
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1675,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3206,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3206,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "My picks include neither Fiend Hunter nor Slayer of the Wicked, yet the WG deck that beat me 2-0 ran both; take white removal creatures over filler.",
+    "The guide's warning against mill-yourself cards outside UG was contradicted: my UB deck with Armored Skaab won two of three matches, 4-2 in games.",
+    "Pack 2 spent two picks on Manor Skeleton and one on Lost in the Mist, all cut before build; take playable creatures or removal over those."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4908,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3664,
+    "output_tokens_details": {
+     "thinking_tokens": 3487
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4908
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3664,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4908,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4908,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Garruk Relentless, my pack 3 first pick, never made my blue-white deck, so settle on two colours before chasing off-colour bombs like it.",
+    "Blue was the deepest colour: the blue-white build around Stitched Drake, Forbidden Alchemy and Armored Skaab went 2-1 in matches, so take blue depth early and cut the hedges.",
+    "My round 1 loss was 0-2 to a UB deck with Murder of Crows and Moon Heron in 16- and 24-turn games, so prioritise cheap flyer defence like Abbey Griffin and Angel of Flight Alabaster."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3216,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2681,
+    "output_tokens_details": {
+     "thinking_tokens": 2464
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3216
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2681,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3216,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3216,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
