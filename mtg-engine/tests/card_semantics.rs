@@ -3333,6 +3333,12 @@ struct Model {
     /// its subtypes and the word "Token" (111.4). What "the same name"
     /// reads of it.
     token_name: Option<String>,
+    /// The card a permanent that is a copy of another is printed as (Evil
+    /// Twin entering as a copy, a creature entering as an Essence of the
+    /// Wild): what leaves the battlefield is that card, the copy effect
+    /// ending with it (CR 400.7, 707.2). None for one that is what it is
+    /// printed as, and for a token.
+    printed_as: Option<String>,
     /// ... and rules: "can't block this turn".
     temp_restricted: Vec<Restriction>,
     /// Who controlled it before an effect that gives it back in the
@@ -3351,6 +3357,7 @@ impl Model {
         let (types, subtypes) = p.types();
         Model {
             name: Some(p.name.clone()),
+            printed_as: None,
             owner,
             controller: owner,
             types: types.iter().map(|t| t.to_lowercase()).collect(),
@@ -3570,9 +3577,17 @@ struct World {
     /// stack once that is done (CR 603.2, 603.3), [`settle_triggers`].
     entered: Vec<Src>,
     /// What died as what is resolving resolved, each as it last existed on
-    /// the battlefield (CR 700.4, 603.10a): its dies trigger, and each
-    /// watcher's that sees it, go on the stack once that is done.
-    died: Vec<(ObjectId, Model)>,
+    /// the battlefield (CR 700.4, 603.10a), and in which event of
+    /// [`World::deaths`]: its dies trigger, and each watcher's that sees it,
+    /// go on the stack once that is done.
+    died: Vec<(ObjectId, Model, u32)>,
+    /// The events creatures have died in so far: a resolution is one, and
+    /// each pass of the state-based actions that follows is another (CR
+    /// 704.3). A watcher that died sees the deaths of its own event and of
+    /// those before it, not of a later one (603.10a): a Falkenrath Noble
+    /// dying beside a Gallows Warden does not see the Spirit that dies of
+    /// the Warden's leaving in the next pass.
+    deaths: u32,
     /// What entered as what is resolving resolved and may enter as a copy
     /// of a creature (Evil Twin returned): its choice, made as it enters
     /// (CR 614.12b), [`settle_triggers`] makes every way.
@@ -3758,6 +3773,7 @@ impl World {
         match self.permanents.values().find(|e| e.controller == m.controller && e.statics.contains(&Static::CreaturesYouControlEnterAsACopy)) {
             Some(e) => Model {
                 name: m.name.as_ref().and(e.name.clone().or_else(|| e.token_name.clone())),
+                printed_as: m.printed_as.clone().or_else(|| m.name.clone()),
                 tapped: m.tapped,
                 attacking: m.attacking,
                 exile_at_end_of_combat: m.exile_at_end_of_combat,
@@ -3877,7 +3893,7 @@ impl World {
         // 700.4), a token too, as it last existed (603.10a).
         if matches!(to, Dest::Graveyard) && self.permanents.get(&id).is_some_and(Model::is_creature) {
             if let Some(last) = self.as_it_last_was(id) {
-                self.died.push((id, last));
+                self.died.push((id, last, self.deaths));
             }
         }
         let Some(mut m) = self.permanents.remove(&id) else { return };
@@ -3885,6 +3901,10 @@ impl World {
         // (CR 712.8a).
         if m.transformed {
             m.transform();
+        }
+        // A copy leaves as the card it is, its copy effect ending (CR 400.7).
+        if let Some(card) = m.printed_as.take() {
+            m = Model::printed_with_faces(&cached_oracle()[&card], m.owner);
         }
         let Some(name) = m.name.clone() else { return };
         let owner = m.owner.0 as usize;
@@ -4129,6 +4149,8 @@ impl World {
                 self.walker_triggers();
                 return;
             }
+            // These die together, after what died before them.
+            self.deaths += 1;
             let before = self.clone();
             // A token dies too (CR 700.4), and then ceases to exist (704.5d).
             self.a_creature_died |= tokens_dying.contains(&true);
@@ -4225,6 +4247,7 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
         triggered: 0,
         entered: Vec::new(),
         died: Vec::new(),
+        deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
         active: P0,
@@ -4889,6 +4912,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
     Model {
         name: None,
         token_name: m.name.clone().or_else(|| m.token_name.clone()),
+        printed_as: None,
         owner: controller,
         controller,
         power: m.power.map(|p| p - net),
@@ -4923,6 +4947,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
     Model {
         name: None,
         token_name: Some(format!("{} Token", subtypes.join(" ")).trim_start().to_string()),
+        printed_as: None,
         owner: controller,
         controller,
         types: vec!["creature".to_string()],
@@ -5877,6 +5902,11 @@ fn pay(world: &World, payment: &Option<Payment>) -> World {
             w.x = u32::try_from(ids.len()).expect("a few");
         }
     }
+    // Cast, the spell's caster is about to receive priority, so the
+    // state-based actions are checked (CR 704.3, 117.3c): a Boneyard Wurm
+    // whose last creature card was exiled to pay dies, and what watches
+    // its death triggers above the spell (601.2i).
+    w.state_based_actions();
     w
 }
 
@@ -6167,21 +6197,43 @@ fn asks_as_it_resolves(spec: &Spec) -> bool {
         | Effect::CounterUnlessPays { .. } | Effect::ThatPlayerDiscards { .. } | Effect::SacrificeACreature))
 }
 
+/// How many distinct endings `worlds` are, as the engine's are observed.
+fn distinct(worlds: &[World]) -> usize {
+    worlds.iter().map(World::observed).collect::<BTreeSet<_>>().len()
+}
+
 /// Whether `spec` does something at random.
 fn is_random(spec: &Spec) -> bool {
     spec.effects.iter().any(|e| matches!(e, Effect::DiscardAtRandom { .. } | Effect::ReturnAtRandom { .. } | Effect::ShuffleIntoLibrary { .. }))
 }
 
-/// Every ending `play` reaches from `state` with each of 32 seeds for the
-/// engine's random choices; for a card that does something at random, the
-/// union is held to every way the text allows, so a way no seed reaches is
-/// a failure too. The seeds are fixed, so the check is too.
-fn over_seeds(state: &GameState, play: impl Fn(&GameState) -> Result<Vec<GameState>, String>) -> Result<Vec<GameState>, String> {
+/// Every ending `play` reaches from `state` over seeds for the engine's
+/// random choices; for a card that does something at random, the union is
+/// held to every way the text allows, so a way no seed reaches is a failure
+/// too. At least 32 seeds, and then on until as many distinct endings as
+/// the text allows (`ways`) have been reached, or 96 seeds in a row have
+/// reached none not reached before (at most 2,048): a Moldgraf Monstrosity
+/// returning two of six creature cards has fifteen ways to go, and 32
+/// seeds miss one of them about one time in nine. The seeds are fixed, so
+/// the check is too.
+fn over_seeds(state: &GameState, registry: &CardRegistry, ways: usize, play: impl Fn(&GameState) -> Result<Vec<GameState>, String>) -> Result<Vec<GameState>, String> {
     let mut all = Vec::new();
-    for seed in 0..32u64 {
+    let mut seen: BTreeSet<Observed> = BTreeSet::new();
+    let mut quiet = 0;
+    for seed in 0..2048u64 {
         let mut s = state.clone();
         s.rng_state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03;
-        all.extend(play(&s)?);
+        let mut new = false;
+        for ending in play(&s)? {
+            if seen.insert(observe(&ending, registry)) {
+                new = true;
+                all.push(ending);
+            }
+        }
+        quiet = if new { 0 } else { quiet + 1 };
+        if seed >= 31 && (seen.len() >= ways || quiet >= 96) {
+            break;
+        }
     }
     Ok(all)
 }
@@ -6342,7 +6394,7 @@ fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model,
             // A card copying a token is named as the token is (CR 707.2,
             // 111.4); a token copying anything is observed as a token.
             .map(|c| {
-                let mut copy = Model { name: c.name.clone().or_else(|| c.token_name.clone()).filter(|_| named), tapped: copy_enters_tapped(c), ..copy_of(c, caster) };
+                let mut copy = Model { name: c.name.clone().or_else(|| c.token_name.clone()).filter(|_| named), printed_as: m.name.clone(), tapped: copy_enters_tapped(c), ..copy_of(c, caster) };
                 copy_entry_counters(c, world, caster, &mut copy);
                 copy
             }))
@@ -6482,6 +6534,7 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
             let mut way = w.clone();
             let mut copy = Model {
                 name: c.name.clone().or_else(|| c.token_name.clone()),
+                printed_as: me.name.clone(),
                 tapped: copy_enters_tapped(c),
                 owner: me.owner,
                 ..copy_of(c, me.controller)
@@ -6515,7 +6568,10 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     // the casts that check it read.
     for src in &entered {
         let Src::Permanent(arrived) = src else { continue };
-        let Some(m) = w.permanents.get(arrived) else { continue };
+        // As it entered: one that has died since, before the triggers were
+        // put on the stack (a Boneyard Wurm returned with the last creature
+        // card it counted), triggered them all the same (CR 603.2, 603.6a).
+        let Some(m) = w.permanents.get(arrived).or_else(|| died.iter().find(|(d, _, _)| d == arrived).map(|(_, m, _)| m)) else { continue };
         for (watcher, wm) in &w.permanents {
             if let Some(watch) = text(wm).and_then(|s| s.on_enter) {
                 if m.matches_from(&watch.entering, wm.controller, watcher == arrived) {
@@ -6527,11 +6583,12 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     // Each creature that died: its own dies trigger, and the "whenever ...
     // dies" of each permanent there to see it, on the battlefield now or
     // dying beside it, looking back (CR 603.6c, 603.10a).
-    for (dead, last) in &died {
+    for (dead, last, when) in &died {
         if let Some(t) = text(last).and_then(|s| s.dies) {
             triggers.push((Some(*dead), last.controller, *t));
         }
-        let watchers = w.permanents.iter().map(|(id, m)| (*id, m)).chain(died.iter().map(|(id, m)| (*id, m)));
+        let watchers = w.permanents.iter().map(|(id, m)| (*id, m))
+            .chain(died.iter().filter(|(_, _, left)| when <= left).map(|(id, m, _)| (*id, m)));
         for (watcher, m) in watchers {
             if let Some(watch) = text(m).and_then(|s| s.watch) {
                 if last.matches_from(&watch.dying, m.controller, watcher == *dead) {
@@ -6567,7 +6624,7 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     // Doomed Travelers dying to one Blasphemous Act are one order, not six.
     let alike = |ts: &[&(Option<ObjectId>, PlayerId, Trigger)]| -> Vec<String> {
         ts.iter().map(|(src, c, t)| {
-            let source = src.and_then(|id| w.permanents.get(&id).or_else(|| died.iter().find(|(d, _)| *d == id).map(|(_, m)| m)));
+            let source = src.and_then(|id| w.permanents.get(&id).or_else(|| died.iter().find(|(d, _, _)| *d == id).map(|(_, m, _)| m)));
             format!("{c:?} {t:?} {source:?}")
         }).collect()
     };
@@ -7865,7 +7922,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
             let random = spec.etb.as_ref().is_some_and(|t| is_random(&t.spec)) || spec.dies.as_ref().is_some_and(|t| is_random(&t.spec))
                 || entering.iter().any(|w| w.randomized);
             let (endings, asked) = questions_asked(|| if random {
-                over_seeds(&state, |s| every_ending(s, &registry, Some(spell)))
+                over_seeds(&state, &registry, distinct(&entering), |s| every_ending(s, &registry, Some(spell)))
             } else {
                 every_ending(&state, &registry, Some(spell))
             });
@@ -7945,7 +8002,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                         // (a creature they return choosing at random).
                         let random = random || deaths.iter().any(|w| w.randomized);
                         let (died, asked) = questions_asked(|| if random {
-                            over_seeds(&dying, |s| every_ending_choosing(s, &registry, None, None, may))
+                            over_seeds(&dying, &registry, distinct(&deaths), |s| every_ending_choosing(s, &registry, None, None, may))
                         } else {
                             every_ending_choosing(&dying, &registry, None, None, may)
                         });
@@ -8000,7 +8057,22 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                 // 603.3); then the spell.
                 let want: Vec<World> = payable.iter()
                     .flat_map(|p| settle_triggers(pay(&world, p)))
-                    .flat_map(|paid| settle_triggers(resolve(spec, &paid, &targets, P0, card, spell)))
+                    .flat_map(|paid| {
+                        // A target that has left the battlefield since it
+                        // was chosen (a Boneyard Wurm dead of the cost that
+                        // exiled the last creature card it counted) is
+                        // illegal, and a spell whose every target is does
+                        // not resolve: it is put into its owner's graveyard
+                        // and does nothing (CR 608.2b).
+                        let gone = !targets.is_empty() && targets.iter()
+                            .all(|t| matches!(t, Target::Object(id) if world.permanents.contains_key(id) && !paid.permanents.contains_key(id)));
+                        if gone {
+                            let mut w = paid;
+                            w.graveyard[0].push(card.name.clone());
+                            return vec![w];
+                        }
+                        settle_triggers(resolve(spec, &paid, &targets, P0, card, spell))
+                    })
                     .collect();
                 let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
                 let mut endings = Vec::new();
@@ -8014,7 +8086,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                     // something at random (Moldgraf Monstrosity sacrificed).
                     let random = want.iter().any(|w| w.randomized);
                     let (played, these) = questions_asked(|| if random {
-                        over_seeds(&state, |s| every_ending_from(s, &registry, Some(spell), Some(first.clone())))
+                        over_seeds(&state, &registry, distinct(&want), |s| every_ending_from(s, &registry, Some(spell), Some(first.clone())))
                     } else {
                         every_ending_from(&state, &registry, Some(spell), Some(first.clone()))
                     });
@@ -8043,7 +8115,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                     .flat_map(|way| settle_triggers(resolve(spec, way, &targets, P0, card, spell)))
                     .collect();
                 let (endings, asked) = questions_asked(|| if is_random(spec) || want.iter().any(|w| w.randomized) {
-                    over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets))
+                    over_seeds(&state, &registry, distinct(&want), |s| every_ending_at(s, &registry, spell, &targets))
                 } else {
                     every_ending_at(&state, &registry, spell, &targets)
                 });
@@ -8094,7 +8166,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
             let settled = settle_triggers(resolved.clone());
             if settled.len() != 1 || settled[0].triggered != resolved.triggered {
                 let endings = if settled.iter().any(|w| w.randomized) {
-                    over_seeds(&state, |s| every_ending_at(s, registry, spell, &targets))
+                    over_seeds(&state, &registry, distinct(&settled), |s| every_ending_at(s, registry, spell, &targets))
                 } else {
                     every_ending_at(&state, registry, spell, &targets)
                 };
@@ -8103,7 +8175,10 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                 }
                 continue;
             }
-            let want = resolved.observed();
+            // The one way it settles: an Evil Twin returned to an empty
+            // board, its choice made, has entered as itself and died.
+            let settled = settled.into_iter().next().expect("one way");
+            let want = settled.observed();
             match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
                 Ok(after) => {
                     let got = observe(&after, &registry);
@@ -8111,7 +8186,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                         failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
                     } else if lasts_the_turn {
                         // Played on into the opponent's turn.
-                        let next = next_turn_outcomes(&Spec::default(), &resolved, spell, P1);
+                        let next = next_turn_outcomes(&Spec::default(), &settled, spell, P1);
                         let endings = every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain));
                         if let Some(why) = disagreement(&next, &endings, &registry) {
                             failures.push(format!("{name} at {targets:?}, in the next turn: {why}"));
@@ -9801,6 +9876,7 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         triggered: 0,
         entered: Vec::new(),
         died: Vec::new(),
+        deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
         active: P0,
@@ -9943,7 +10019,7 @@ fn combat_endings(state: &GameState, registry: &CardRegistry, world: &World, com
     let random = combat.0.iter().map(|(a, _)| *a).chain(combat.1.iter().map(|(b, _)| *b))
         .any(|id| world.permanents.get(&id).is_some_and(|m| m.combat.flips_to_destroy_what_it_damages));
     let (endings, asked) = questions_asked(|| if random {
-        over_seeds(state, |s| every_combat_ending(s, registry, combat))
+        over_seeds(state, &registry, usize::MAX, |s| every_combat_ending(s, registry, combat))
     } else {
         every_combat_ending(state, registry, combat)
     });
@@ -10176,7 +10252,7 @@ fn every_flashback_spell_does_what_its_text_says() {
                     .collect();
                 let first = cast_for(spell, if asks { Vec::new() } else { targets.clone() }, Some(flashback));
                 let (endings, asked) = questions_asked(|| if is_random(spec) {
-                    over_seeds(&state, |s| every_ending_casting(s, &registry, spell, &targets, Some(first.clone())))
+                    over_seeds(&state, &registry, distinct(&want), |s| every_ending_casting(s, &registry, spell, &targets, Some(first.clone())))
                 } else {
                     every_ending_casting(&state, &registry, spell, &targets, Some(first.clone()))
                 });
@@ -11078,7 +11154,7 @@ fn every_shuffle_and_reveal_is_what_its_text_says() {
                 w
             })
             .collect();
-        let got = over_seeds(&state, |s| every_ending_from(s, &registry, None, Some(act.clone())));
+        let got = over_seeds(&state, &registry, distinct(&want), |s| every_ending_from(s, &registry, None, Some(act.clone())));
         if let Some(why) = disagreement(&want, &got, &registry) {
             failures.push(format!("{}: {why}", card.name));
         }
