@@ -4207,6 +4207,238 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
     (state, world)
 }
 
+// ---- generated boards ----
+//
+// The boards above are each written for what they test, and every card is
+// cast on the few of them it reads. A card that goes wrong only on a board
+// none of them is — its target holding counters, damaged, shielded, a
+// token, another player's card, beside a permanent whose static ability
+// changes it — passes there. So each card is also cast on boards drawn
+// from a seed: any of the pool's permanents the reference reads whole on
+// either side, each tapped or not, damaged, with counters, with a
+// regeneration shield, the other player's card, or a token; any of the
+// pool's cards in each graveyard; each player at any life total a spell
+// here cannot take to nothing. The same seed draws the same board, so a
+// failure names the seed it was found at and replays from it.
+
+/// A seeded stream of numbers (SplitMix64): the same seed, the same
+/// boards, on every machine.
+struct Seeded(u64);
+
+impl Seeded {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+
+    /// A number below `n`.
+    fn below(&mut self, n: usize) -> usize {
+        usize::try_from(self.next() % u64::try_from(n).expect("small")).expect("small")
+    }
+
+    /// True `percent` times in a hundred.
+    fn chance(&mut self, percent: u64) -> bool {
+        self.next() % 100 < percent
+    }
+}
+
+/// The permanents a generated board may hold: those whose every ability
+/// the reference applies to a board they stand on without being cast or
+/// entering. Their statics are applied as the board is observed
+/// (`World::refresh`), and nothing they print triggers while a spell
+/// resolves in a main phase: no death trigger, no watcher of deaths,
+/// casts or entries (an upkeep or end step trigger does not fire mid-turn,
+/// an enters trigger did not fire for a permanent put there).
+///
+/// Left out, each for a reason the reference does not yet carry to a
+/// board it did not write: an Aura or Equipment (attached to what); a
+/// double-faced card (which face); a card that enters as a copy (of
+/// what); a static that
+/// changes a cost, a token, an entry, a mill, who may be targeted or
+/// which abilities may be activated; and a planeswalker.
+fn board_vocabulary(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
+    cards.iter()
+        .filter(|(card, spec)| {
+            let kind = card.has_type("Creature") || card.has_type("Artifact") || card.has_type("Enchantment") || card.has_type("Land");
+            kind && !card.has_type("Planeswalker") && card.back.is_none()
+                && !spec.enchants && !card.type_line.contains("Aura") && !card.type_line.contains("Equipment")
+                && !card.type_line.contains("Legendary")
+                && spec.dies.is_none() && spec.watch.is_none() && spec.on_cast.is_none() && spec.on_enter.is_none()
+                && spec.creature_spells_cost_less.is_none() && spec.zero_instead_for.is_none()
+                && !spec.grants_flashback_to_your_graveyard && !spec.bans_a_chosen_name && !spec.may_enter_as_a_copy
+                && spec.statics.iter().all(|s| matches!(s,
+                    Static::Group { .. } | Static::PerEach { .. } | Static::IfYouControl { .. }
+                    | Static::RestrictsItself { .. } | Static::AsLongAsItHas { .. }))
+        })
+        .cloned()
+        .collect()
+}
+
+/// The ways a generated board's permanents differ from as printed.
+#[derive(Clone, Copy)]
+struct Wear {
+    tapped: bool,
+    /// Damage marked, short of lethal.
+    damage: u32,
+    plus: u32,
+    minus: u32,
+    shield: bool,
+    /// Its owner the other player: a card borrowed (CR 108.3).
+    borrowed: bool,
+}
+
+fn wear(rng: &mut Seeded) -> Wear {
+    Wear {
+        tapped: rng.chance(30),
+        damage: if rng.chance(25) { 1 + u32::try_from(rng.below(3)).expect("small") } else { 0 },
+        plus: if rng.chance(15) { 1 + u32::try_from(rng.below(2)).expect("small") } else { 0 },
+        minus: if rng.chance(10) { 1 } else { 0 },
+        shield: rng.chance(10),
+        borrowed: rng.chance(10),
+    }
+}
+
+/// Put `wear` on permanent `id`, on both sides, as far as it leaves the
+/// permanent alive as the reference observes it: no -1/-1 counter beside a
+/// +1/+1 (they would annihilate, CR 704.5q), toughness left above nothing
+/// (704.5f) and damage short of it (704.5g); a creature alone takes damage,
+/// counters and shields.
+fn put_wear(state: &mut GameState, world: &mut World, id: ObjectId, w: Wear) {
+    let creature = world.permanents[&id].is_creature();
+    {
+        let o = state.get_object_mut(id).expect("placed");
+        o.tapped = w.tapped;
+        let m = world.permanents.get_mut(&id).expect("placed");
+        m.tapped = w.tapped;
+        if w.borrowed {
+            let other = if m.owner == P0 { P1 } else { P0 };
+            o.owner = other;
+            m.owner = other;
+        }
+        if !creature {
+            return;
+        }
+        // A -1/-1 counter only where it leaves toughness above nothing as
+        // printed; what the board's statics then do is settled at the end.
+        let printed_toughness = m.toughness.unwrap_or(0);
+        let (plus, minus) = if w.plus > 0 { (w.plus, 0) } else if i64::from(printed_toughness) > i64::from(w.minus) { (0, w.minus) } else { (0, 0) };
+        if plus > 0 {
+            o.counters.insert(CounterType::PlusOnePlusOne, plus);
+            m.counters.0 += plus;
+            let n = i32::try_from(plus).expect("small");
+            m.power = m.power.map(|p| p + n);
+            m.toughness = m.toughness.map(|t| t + n);
+        }
+        if minus > 0 {
+            o.counters.insert(CounterType::MinusOneMinusOne, minus);
+            m.counters.1 += minus;
+            let n = i32::try_from(minus).expect("small");
+            m.power = m.power.map(|p| p - n);
+            m.toughness = m.toughness.map(|t| t - n);
+        }
+        if w.shield {
+            o.regeneration_shields = 1;
+            m.shields = 1;
+        }
+    }
+    // Damage last, against the toughness the board gives it.
+    world.refresh();
+    let toughness = world.pt_of(&world.permanents[&id]).1;
+    if w.damage > 0 && toughness.is_some_and(|t| i64::from(t) > i64::from(w.damage)) {
+        state.get_object_mut(id).expect("placed").damage_marked = w.damage;
+        world.permanents.get_mut(&id).expect("placed").damage = w.damage;
+    }
+}
+
+/// A creature token for a generated board: any power from 0 and toughness
+/// from 1 to 4, of one colour or none, one of a few subtypes or none, and
+/// one keyword or none.
+fn token_for(rng: &mut Seeded, state: &mut GameState, world: &mut World, controller: PlayerId) -> ObjectId {
+    let power = i32::try_from(rng.below(5)).expect("small");
+    let toughness = 1 + i32::try_from(rng.below(4)).expect("small");
+    let colors: Vec<Color> = match rng.below(6) {
+        0 => vec![],
+        i => vec![Color::ALL[i - 1]],
+    };
+    let subtypes: Vec<String> = match rng.below(5) {
+        0 => vec!["Spirit".to_string()],
+        1 => vec!["Zombie".to_string()],
+        2 => vec!["Wolf".to_string()],
+        3 => vec!["Human".to_string()],
+        _ => vec![],
+    };
+    let candidates: Vec<Keyword> = Keyword::ALL.into_iter().filter(|k| *k != Keyword::Flash).collect();
+    let keywords: Vec<Keyword> = if rng.chance(40) { vec![candidates[rng.below(candidates.len())]] } else { vec![] };
+    let id = state.create_object(CardId(0), controller, Zone::Battlefield, Some(power), Some(toughness));
+    {
+        let o = state.get_object_mut(id).expect("just made");
+        o.is_token = true;
+        o.summoning_sick = false;
+        // As a token is named (CR 111.4): its subtypes and the word Token.
+        o.name = if subtypes.is_empty() { "Token".to_string() } else { format!("{} Token", subtypes.join(" ")) };
+        o.colors.clone_from(&colors);
+        o.card_types = vec![CardType::Creature];
+        o.subtypes.clone_from(&subtypes);
+        o.keywords.clone_from(&keywords);
+    }
+    world.permanents.insert(id, creature_token((power, toughness), &colors, &subtypes, &keywords, controller));
+    id
+}
+
+/// Board `seed`: the fixed board's hands and libraries (what the main
+/// property's casts are read against: a land each player may play, a
+/// creature card the caster cannot cast), and, drawn from the seed, up to
+/// five permanents on each side from `vocabulary` or tokens, each worn as
+/// [`wear`] draws, up to four cards from the pool in each graveyard, and
+/// each player's life from 6 to 20.
+fn generated_board(seed: u64, registry: &CardRegistry, cache: &BTreeMap<String, Printed>, vocabulary: &[(Printed, Spec)]) -> (GameState, World) {
+    let mut rng = Seeded(seed);
+    let (mut state, mut world) = empty_board(registry);
+    for side in [P0, P1] {
+        for _ in 0..rng.below(6) {
+            let id = if rng.chance(20) {
+                token_for(&mut rng, &mut state, &mut world, side)
+            } else {
+                let (card, spec) = &vocabulary[rng.below(vocabulary.len())];
+                let id = named_permanent(&mut state, registry, &card.name, side);
+                world.permanents.insert(id, model_of(spec, card, side));
+                id
+            };
+            let w = wear(&mut rng);
+            put_wear(&mut state, &mut world, id, w);
+        }
+    }
+    let pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    for side in [P0, P1] {
+        for _ in 0..rng.below(5) {
+            let name = pool[rng.below(pool.len())];
+            let id = card_in_graveyard(&mut state, registry, name, side);
+            world.yard.insert(id, Model::printed(&cache[name], side));
+            world.graveyard[side.0 as usize].push(name.to_string());
+        }
+        let life = 6 + i32::try_from(rng.below(15)).expect("small");
+        state.players[side.0 as usize].life = life;
+        world.life[side.0 as usize] = life;
+    }
+    // What the board drew and could not keep: a creature whose power and
+    // toughness are a count of what is not there, or that the board's
+    // statics leave with no toughness, is taken off it again (from both
+    // sides), until what is left stands.
+    loop {
+        world.refresh();
+        let Some(id) = world.permanents.iter()
+            .find(|(_, m)| m.is_creature() && world.pt_of(m).1.is_none_or(|t| t <= 0 || i64::from(t) <= i64::from(m.damage)))
+            .map(|(id, _)| *id)
+        else { break };
+        world.permanents.remove(&id);
+        state.objects.remove(&id);
+    }
+    (state, world)
+}
+
 /// The engine's state, observed the way [`World::observed`] observes the
 /// reference.
 fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
@@ -7589,6 +7821,110 @@ fn every_readable_card_does_what_its_text_says() {
     assert!(casts > 0);
     assert!(failures.is_empty(), "{} of {casts} casts, across the {} cards read, disagree with their text:\n  {}",
         failures.len(), cards.len(), failures.join("\n  "));
+}
+
+/// How many generated boards each card is cast on: `CARD_SEMANTICS_BOARDS`,
+/// four if it is not set; from board `CARD_SEMANTICS_FIRST_BOARD` (0), so
+/// that a long run can be split.
+fn generated_seeds() -> std::ops::Range<u64> {
+    let read = |var: &str, default: u64| std::env::var(var).ok().map_or(default, |v| v.parse().expect("a number of boards"));
+    let first = read("CARD_SEMANTICS_FIRST_BOARD", 0);
+    first..first + read("CARD_SEMANTICS_BOARDS", 4)
+}
+
+/// A board as a failure names it: each permanent by id, with what has
+/// happened to it, then the graveyards and life totals.
+fn described(world: &World) -> String {
+    let permanents: Vec<String> = world.permanents.iter()
+        .map(|(id, m)| {
+            let mut s = format!("{}: {} (P{}{})", id.0, m.name.as_deref().unwrap_or("token"), m.controller.0,
+                if m.owner == m.controller { String::new() } else { format!(", P{}'s", m.owner.0) });
+            if m.is_creature() {
+                s += &format!(" {}/{}", m.power.unwrap_or(0), m.toughness.unwrap_or(0));
+                if m.name.is_none() {
+                    s += &format!(" {:?} {:?} {:?}", m.colors, m.subtypes, m.keywords);
+                }
+            }
+            for (on, what) in [(m.tapped, "tapped".to_string()), (m.damage > 0, format!("{} damage", m.damage)),
+                (m.counters.0 > 0, format!("{} +1/+1", m.counters.0)), (m.counters.1 > 0, format!("{} -1/-1", m.counters.1)),
+                (m.shields > 0, "shielded".to_string())] {
+                if on {
+                    s += &format!(", {what}");
+                }
+            }
+            s
+        })
+        .collect();
+    format!("{}; graveyards {:?}; life {:?}", permanents.join("; "), world.graveyard, world.life)
+}
+
+/// A generated board with Kindercatch on the opponent's side as well, for a
+/// counterspell, which is read against the opponent's Giant Growth on it.
+fn generated_board_for(spec: &Spec, seed: u64, registry: &CardRegistry, cache: &BTreeMap<String, Printed>, vocabulary: &[(Printed, Spec)]) -> (GameState, World) {
+    let (mut state, mut world) = generated_board(seed, registry, cache, vocabulary);
+    if spec.slots.iter().any(|s| matches!(s, Slot::Spell(_))) {
+        let id = named_permanent(&mut state, registry, "Kindercatch", P1);
+        world.permanents.insert(id, Model::printed_with_faces(&cache["Kindercatch"], P1));
+        world.refresh();
+    }
+    (state, world)
+}
+
+/// Each generated board, as the engine builds it, is the board the
+/// reference describes, and stands: state-based actions find nothing to do
+/// on it (CR 704.3). A board that failed this would be a wrong starting
+/// point for every cast on it.
+#[test]
+fn every_generated_board_is_what_its_cards_print() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let vocabulary = board_vocabulary(&cards);
+    assert!(vocabulary.len() >= 60, "the boards draw from {} permanents", vocabulary.len());
+    let mut failures = Vec::new();
+    for seed in generated_seeds().start..generated_seeds().end.max(64) {
+        let (state, world) = generated_board(seed, &registry, &cache, &vocabulary);
+        let (got, want) = (observe(&state, &registry), world.observed());
+        if got != want {
+            failures.push(format!("board {seed}: {}", differences(&got, &want)));
+            continue;
+        }
+        let mut settled = state.clone();
+        mtg_engine::sba::check_state_based_actions(&mut settled, &registry);
+        let after = observe(&settled, &registry);
+        if after != got {
+            failures.push(format!("board {seed} does not stand: {}", differences(&after, &got)));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// [`every_readable_card_does_what_its_text_says`], on generated boards:
+/// every card the grammar reads cast on each, at every target set the
+/// text allows and every way its questions can be answered, and the games
+/// the engine ends in held to the games the text allows.
+#[test]
+fn every_readable_card_does_what_its_text_says_on_generated_boards() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let vocabulary = board_vocabulary(&cards);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for seed in generated_seeds() {
+        let before = failures.len();
+        for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
+            let which = format!(" on generated board {seed}");
+            check_cast_on(card, spec, &which, generated_board_for(spec, seed, &registry, &cache, &vocabulary), &registry, &cache, &mut failures, &mut casts);
+        }
+        if failures.len() > before {
+            let (_, world) = generated_board(seed, &registry, &cache, &vocabulary);
+            failures.push(format!("generated board {seed} is {}", described(&world)));
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts on generated boards {:?}, across the {} cards read, disagree with their text:\n  {}",
+        failures.len(), generated_seeds(), cards.len(), failures.join("\n  "));
 }
 
 /// Every activated ability the grammar reads, of a permanent its controller

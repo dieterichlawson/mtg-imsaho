@@ -344,6 +344,17 @@ every legal target and every answer to every question rather than
 proved. See
 [cards against their Oracle text](#cards-against-their-oracle-text).
 
+What the Kani card proofs show is narrower than their name: each card's own
+code, with the engine actions it calls replaced by recorders, asks for the
+calls its text implies. They say nothing of the state the engine leaves, and
+nothing ties a recorder to the action it stands for. Running the real engine
+under a card instead does not fit in CBMC, even for Doom Blade with only its
+target's numbers left open. So the engine in the loop is the reference's
+job, on generated boards rather than boards written for each test, and the
+card proofs are to be made compositional properly (stand-ins that do what
+the action does, each action proved to refine its stand-in, and outcomes
+asserted rather than calls): `docs/plans/cards-in-the-loop.md`.
+
 ### Tier 4: whole-game properties
 
 That priority passing ends (CR 117.4), that the stack resolves last in,
@@ -2294,6 +2305,7 @@ so each night starts from everything the last one reached.
 | 38 | the names of the cards a pending question chose among were put in both players' views, whoever was asked: while one player chose the card of their hand to discard (Liliana of the Veil, Frightful Delusion, Murder of Crows), looked at the top of their library (Delver of Secrets) or searched it, the other seat was sent those cards' names (CR 402.3, 701.16, 701.19) | the same test, with each kind of question put to the other player | every game where one player discards from a hand of two or more, looks or searches: the names now go to the player asked alone |
 | 39 | a death watcher that left the battlefield in the same event as the creature it saw die was read on the face it had in the graveyard, not the one it had on the battlefield: leaving turns a double-faced card face up (CR 712.8a), so a Thraben Militia dying beside another creature, in any combat or to a board wipe, raised Thraben Sentry's "whenever another creature you control dies", which sat on the stack doing nothing (603.10a) | the known-and-not-fixed list defect 33 left, worked | a transformed death watcher dying with another creature: Thraben Militia, the pool's one back face of a death watcher's card |
 | 40 | an ability whose source left and came back before it resolved acted on the object that came back, whose id is the old one's: Champion of the Parish's trigger put its counter on a Champion exiled by Fiend Hunter and returned by the Hunter's death in response, Mikaeus, the Lunarch's "{T}: put a +1/+1 counter on Mikaeus" on a Mikaeus sacrificed and returned, Darkthicket Wolf's pump on the Wolf back, a werewolf's upkeep trigger transformed the one back, and Moldgraf Monstrosity's "exile it" exiled one that had died, come back and died again (CR 400.7) | the known-and-not-fixed list defect 36 left, worked: each ability's entry now carries its source's zone change count as it went on the stack, as it carries the targets' (`GameState::is_new_source`); the counters, shields, taps, untaps, transforms and until-end-of-turn effects an ability puts on its source each refuse a new object, and Fiend Hunter keeps no link on one | a source returned at instant speed while its ability waits: Fiend Hunter's exile undone by its death, Grimoire of the Dead's activation, Moldgraf Monstrosity's random return |
+| 41 | a token with no name of its own was named after its subtypes alone ("Spirit"), where CR 111.4 names it after its subtypes plus the word "Token" ("Spirit Token"; the rule's example is "Dwarf Berserker Token"): issues #331 and #334 had moved the engine there, quoting an older edition of the rule, and the object invariant checked that reading. A card copying a token took the wrong name: Evil Twin entering as a copy of a Spirit token was a card named "Spirit" | casting every card on generated boards (`card_semantics.rs`, `docs/plans/cards-in-the-loop.md`): the first token on a board Evil Twin could copy | the name of every unnamed token, as same-name effects and copies read it; nothing in the pool plays differently but a copy's name |
 
 Each has a regression test that fails without its fix.
 
