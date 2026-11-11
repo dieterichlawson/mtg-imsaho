@@ -4104,6 +4104,30 @@ type Build = fn(&CardRegistry, &BTreeMap<String, Printed>) -> (GameState, World)
 /// The board, built in the engine, and the same board as the reference
 /// sees it.
 fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = empty_board(registry);
+    for (name, owner) in BOARD {
+        let id = named_permanent(&mut state, registry, name, owner);
+        world.permanents.insert(id, Model::printed_with_faces(&cache[name], owner));
+        // One of the opponent's creatures tapped, as by an attack, so an
+        // untap has something to do.
+        if name == TAPPED_ON_THE_BOARD {
+            state.get_object_mut(id).expect("just placed").tapped = true;
+            world.permanents.get_mut(&id).expect("just placed").tapped = true;
+        }
+    }
+    for (name, owner) in GRAVEYARDS {
+        let id = card_in_graveyard(&mut state, registry, name, owner);
+        world.yard.insert(id, Model::printed(&cache[name], owner));
+        world.graveyard[owner.0 as usize].push(name.to_string());
+    }
+    world.refresh();
+    (state, world)
+}
+
+/// The board with nothing on the battlefield and nothing in a graveyard:
+/// P0 in their precombat main phase, each player's hand and library as
+/// every board has them.
+fn empty_board(registry: &CardRegistry) -> (GameState, World) {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mut world = World {
         permanents: BTreeMap::new(),
@@ -4137,21 +4161,6 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         exile: [Vec::new(), Vec::new()],
         library: [Vec::new(), Vec::new()],
     };
-    for (name, owner) in BOARD {
-        let id = named_permanent(&mut state, registry, name, owner);
-        world.permanents.insert(id, Model::printed_with_faces(&cache[name], owner));
-        // One of the opponent's creatures tapped, as by an attack, so an
-        // untap has something to do.
-        if name == TAPPED_ON_THE_BOARD {
-            state.get_object_mut(id).expect("just placed").tapped = true;
-            world.permanents.get_mut(&id).expect("just placed").tapped = true;
-        }
-    }
-    for (name, owner) in GRAVEYARDS {
-        let id = card_in_graveyard(&mut state, registry, name, owner);
-        world.yard.insert(id, Model::printed(&cache[name], owner));
-        world.graveyard[owner.0 as usize].push(name.to_string());
-    }
     // A land the caster could play, so that once the spell has resolved the
     // game loop has something to ask them: it passes priority on its own
     // for a player with nothing to do, and would play on into the next
@@ -6487,6 +6496,11 @@ fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, tar
 fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, scene: Scene, script: &[Answer]) -> Result<Played, String> {
     RUNS.with(|r| r.set(r.get() + 1));
     let mut state = state.clone();
+    // Every pass the loop would make for a player with nothing to do is
+    // shown here, so that a game that comes to rest in the step it began
+    // in stops there, and not where the next player is next asked, a turn
+    // later, its untap and draw done: what it rests as is what is read.
+    state.observe_every_submit = true;
     // A spell that asks for its targets at cast time is cast bare, and each
     // question answered in turn as a player answers them: one target for a
     // single slot, the whole set for an "up to" slot.
@@ -6518,7 +6532,9 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
     let turn = state.turn_number;
     let step = state.step;
     engine::run_game_loop(&mut state, registry, |s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
-        decisions += 1;
+        if !legal.is_observed_pass() {
+            decisions += 1;
+        }
         if let Some(c) = cast.take() {
             return c;
         }
@@ -7035,6 +7051,279 @@ fn disagreement(want: &[World], got: &Result<Vec<GameState>, String>, registry: 
         only_engine.len(), only_text.len(), detail.join("\n    ")))
 }
 
+/// One card cast on one board, every way the main property casts it, its
+/// disagreements pushed onto `failures` and its casts counted: `which`
+/// names the board in what it reports.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world): (GameState, World),
+    registry: &CardRegistry, cache: &BTreeMap<String, Printed>, failures: &mut Vec<String>, casts: &mut usize) {
+    let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
+        // A card of that name already in the caster's hand is the one
+        // cast: the engine offers one cast for copies of an untargeted
+        // spell.
+        let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == card.name) {
+            Some(o) => {
+                let at = world.hand[0].iter().position(|h| *h == card.name).expect("in the reference's hand too");
+                world.hand[0].remove(at);
+                o.id
+            }
+            None => spell_in_hand(&mut state, &registry, &card.name, P0),
+        };
+        let cost = mana_cost(&card.mana_cost).expect("read above");
+        let creatures = u32::try_from(world.permanents.values().filter(|m| m.is_creature()).count()).expect("a few");
+        fund(&mut state, P0, &cost, if spec.cheaper_per_creature { creatures } else { 0 });
+        // A counterspell is read with a spell to counter.
+        if counters {
+            opponent_casts_a_spell(&mut state, &mut world, &registry, &cache);
+        }
+        let name = format!("{}{}{which}", card.name, if counters { " against Giant Growth" } else { "" });
+
+        // A creature spell: every way it can end, against every way the
+        // engine lets it end; then, if its text says what its death
+        // does, every way that can end.
+        let payable = payments(spec, &world, P0);
+        if payable.is_empty() {
+            // An additional cost that cannot be paid: no cast (CR 601.2h).
+            if engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == spell) {
+                failures.push(format!("{name}: offered though its additional cost cannot be paid"));
+            }
+            return;
+        }
+        if spec.permanent && card.has_type("Creature") {
+            *casts += 1;
+            // An {X} in its cost: every X from nothing to what floats
+            // (CR 107.3a).
+            let xs: Vec<u32> = if cost.symbols.contains(&ManaSymbol::X) { (0..=X_FLOAT).collect() } else { vec![0] };
+            let entering: Vec<World> = payable.iter()
+                .flat_map(|p| xs.iter().map(move |&x| (p, x)))
+                .flat_map(|(p, x)| {
+                    let paid = pay(&world, p);
+                    let w = if cost.symbols.contains(&ManaSymbol::X) { World { x, pool: x_left(&paid, x), ..paid } } else { paid };
+                    creature_outcomes(spec, &w, P0, card, spell)
+                })
+                .collect();
+            let random = spec.etb.as_ref().is_some_and(|t| is_random(&t.spec)) || spec.dies.as_ref().is_some_and(|t| is_random(&t.spec));
+            let (endings, asked) = questions_asked(|| if random {
+                over_seeds(&state, |s| every_ending(s, &registry, Some(spell)))
+            } else {
+                every_ending(&state, &registry, Some(spell))
+            });
+            if let Some(why) = disagreement(&entering, &endings, &registry)
+                .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, spell, &asked))
+            {
+                failures.push(format!("{name}: {why}"));
+                return;
+            }
+            if spec.dies.is_some() || spec.watch.is_some() {
+                // Each way it entered, beside the engine's ending of it,
+                // told by what is observed: a death checked from each.
+                let Ok(engine_entered) = endings.as_deref() else { return };
+                let pairs: Vec<(&World, &GameState)> = entering.iter()
+                    .filter_map(|w| {
+                        let seen = w.observed();
+                        engine_entered.iter().find(|e| observe(e, &registry) == seen).map(|e| (w, e))
+                    })
+                    .collect();
+                if pairs.len() != entering.len() {
+                    failures.push(format!("{name}: a way it entered that no ending of the engine's is"));
+                    return;
+                }
+                for (after_entering, entered) in pairs {
+                let id = entered.objects.values()
+                    .find(|o| o.zone == Zone::Battlefield && !o.is_token && o.name == card.name)
+                    .map(|o| o.id)
+                    .expect("the creature is on the battlefield");
+                // Who dies: the creature itself; and, for a trigger on
+                // other deaths, each other creature on the board, and
+                // each two at once, the creature itself among them or
+                // not (CR 603.10a: it sees the deaths it dies with).
+                let mut who = vec![vec![spell]];
+                if spec.watch.is_some() {
+                    let creatures: Vec<ObjectId> = after_entering.permanents.iter()
+                        .filter(|(_, m)| m.is_creature())
+                        .map(|(r, _)| *r)
+                        .collect();
+                    who.extend(creatures.iter().filter(|r| **r != spell).map(|r| vec![*r]));
+                    for (i, x) in creatures.iter().enumerate() {
+                        who.extend(creatures[i + 1..].iter().map(|y| vec![*x, *y]));
+                    }
+                }
+                // A watcher sees them untapped, and tapped, as by an
+                // attack, so that an untap has something to do.
+                let taps: &[bool] = if spec.watch.is_some() { &[false, true] } else { &[false] };
+                for (rs, &tapped) in who.iter().flat_map(|rs| taps.iter().map(move |t| (rs.clone(), t))) {
+                    *casts += 1;
+                    let mut dying = entered.clone();
+                    let mut after_entering = after_entering.clone();
+                    dying.get_object_mut(id).expect("on the battlefield").tapped = tapped;
+                    after_entering.permanents.get_mut(&spell).expect("on the battlefield").tapped = tapped;
+                    let after_entering = &after_entering;
+                    for &r in &rs {
+                        let e = if r == spell { id } else { r };
+                        let lethal = dying.effective_toughness(e, &registry).expect("a creature").max(1);
+                        dying.get_object_mut(e).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
+                    }
+                    let what = match rs.as_slice() {
+                        [r] if *r == spell => "dying".to_string(),
+                        _ => format!("seeing {} die{}", rs.iter()
+                            .map(|r| after_entering.permanents[r].name.as_deref().unwrap_or("a token"))
+                            .collect::<Vec<_>>().join(" and "), if tapped { ", tapped" } else { "" }),
+                    };
+                    // Every way, and then each "you may" taken every
+                    // time and declined every time.
+                    let optional = spec.dies.as_ref().is_some_and(|t| t.optional) || spec.watch.as_ref().is_some_and(|w| w.trigger.optional);
+                    for may in [None, Some(true), Some(false)].into_iter().filter(|m| m.is_none() || optional) {
+                        let deaths = death_outcomes(spec, after_entering, P0, spell, &rs, may);
+                        let (died, asked) = questions_asked(|| if random {
+                            over_seeds(&dying, |s| every_ending_choosing(s, &registry, None, None, may))
+                        } else {
+                            every_ending_choosing(&dying, &registry, None, None, may)
+                        });
+                        let policy = match may {
+                            None => "",
+                            Some(true) => ", taking every \"may\"",
+                            Some(false) => ", declining every \"may\"",
+                        };
+                        if let Some(why) = disagreement(&deaths, &died, &registry)
+                            .or_else(|| wrong_chooser(&triggers_text(spec), &[], after_entering, P0, spell, &asked))
+                        {
+                            failures.push(format!("{name} {what}{policy}: {why}"));
+                            break;
+                        }
+                    }
+                }
+                }
+            }
+            return;
+        }
+
+        let expected_sets = target_sets(spec, &world, P0);
+        let offered_sets = match offered(&state, &registry, spell) {
+            Ok(sets) => sets,
+            Err(why) => {
+                failures.push(format!("{name}: {why}"));
+                return;
+            }
+        };
+        if offered_sets != expected_sets {
+            failures.push(format!("{name}: offers targets {offered_sets:?}, the text allows {expected_sets:?} ({spec:?})"));
+            return;
+        }
+        // Each way to pay an additional cost is a way the cast can go:
+        // the sacrifice is named in the cast, the exile asked after it.
+        if spec.additional.is_some() {
+            let row = engine::legal_actions(&state, &registry).castable_spells.into_iter().find(|c| c.object_id == spell);
+            let mut offered_sacrifices = row.map(|r| r.sacrifice_options).unwrap_or_default();
+            offered_sacrifices.sort();
+            let mut sacrifices: Vec<ObjectId> = payable.iter()
+                .filter_map(|p| match p { Some(Payment::Sacrifice(id)) => Some(*id), _ => None })
+                .collect();
+            sacrifices.sort();
+            if offered_sacrifices != sacrifices {
+                failures.push(format!("{name}: offers to sacrifice {offered_sacrifices:?}, the text allows {sacrifices:?}"));
+                return;
+            }
+            for targets in expected_sets {
+                *casts += 1;
+                let want: Vec<World> = payable.iter().map(|p| resolve(spec, &pay(&world, p), &targets, P0, card, spell)).collect();
+                let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
+                let mut endings = Vec::new();
+                let mut asked = Vec::new();
+                for sacrifice in casts_by_sacrifice {
+                    let first = Action::CastSpell {
+                        object_id: spell, targets: targets.clone(), sacrifice, exile_count: None,
+                        exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+                    };
+                    let (played, these) = questions_asked(|| every_ending_from(&state, &registry, Some(spell), Some(first)));
+                    asked.extend(these);
+                    match played {
+                        Ok(e) => endings.extend(e),
+                        Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
+                    }
+                }
+                if let Some(why) = disagreement(&want, &Ok(endings), &registry)
+                    .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
+                {
+                    failures.push(format!("{name} at {targets:?}: {why}"));
+                }
+            }
+            return;
+        }
+        // A spell that asks something as it resolves (at random, of
+        // another player, of a search): every way it can go, against
+        // every way the engine goes, from 32 seeds when it is random
+        // (CR 608.2d, 701.19).
+        if !spec.permanent && asks_as_it_resolves(spec) {
+            for targets in expected_sets {
+                *casts += 1;
+                let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
+                    .map(|way| resolve(spec, way, &targets, P0, card, spell))
+                    .collect();
+                let (endings, asked) = questions_asked(|| if is_random(spec) {
+                    over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets))
+                } else {
+                    every_ending_at(&state, &registry, spell, &targets)
+                });
+                if let Some(why) = disagreement(&want, &endings, &registry)
+                    .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
+                {
+                    failures.push(format!("{name} at {targets:?}: {why}"));
+                    continue;
+                }
+                // A choice of a named type, answer by answer: as a set,
+                // one type's ending can hide behind another's.
+                if spec.effects.contains(&Effect::ReturnAllOfChosenType) {
+                    for kind in ["artifact", "creature", "enchantment", "land", "planeswalker"] {
+                        let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
+                            .filter(|w| w.picked.as_deref() == Some(kind))
+                            .map(|way| resolve(spec, way, &targets, P0, card, spell))
+                            .collect();
+                        let keep = |a: &Answer| !matches!(a, Answer::Index(_, label) if label.to_lowercase() != kind);
+                        let endings = every_ending_keeping(&state, &registry, Some(spell), &targets, None, &keep);
+                        if let Some(why) = disagreement(&want, &endings, &registry) {
+                            failures.push(format!("{name} at {targets:?}, choosing {kind}: {why}"));
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        // An {X} spell: at each target set, every X from nothing to
+        // what floats, announced as it is cast (CR 107.3a, 601.2b).
+        if cost.symbols.contains(&ManaSymbol::X) {
+            for targets in expected_sets {
+                *casts += 1;
+                let want: Vec<World> = (0..=X_FLOAT).map(|x| resolve(spec, &World { x, pool: x_left(&world, x), ..world.clone() }, &targets, P0, card, spell)).collect();
+                if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
+                    failures.push(format!("{name} at {targets:?}: {why}"));
+                }
+            }
+            return;
+        }
+        let lasts_the_turn = lasts_the_turn(spec);
+        for targets in expected_sets {
+            *casts += 1;
+            let resolved = resolve(spec, &world, &targets, P0, card, spell);
+            let want = resolved.observed();
+            match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
+                Ok(after) => {
+                    let got = observe(&after, &registry);
+                    if got != want {
+                        failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
+                    } else if lasts_the_turn {
+                        // Played on into the opponent's turn.
+                        let next = next_turn_outcomes(&Spec::default(), &resolved, spell, P1);
+                        let endings = every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain));
+                        if let Some(why) = disagreement(&next, &endings, &registry) {
+                            failures.push(format!("{name} at {targets:?}, in the next turn: {why}"));
+                        }
+                    }
+                }
+                Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
+            }
+        }
+}
+
 /// Every card the grammar reads offers exactly the targets its text allows,
 /// and at each of them does what its text says. A card with morbid is read
 /// on a board where a creature has died this turn as well.
@@ -7063,273 +7352,8 @@ fn every_readable_card_does_what_its_text_says() {
                 || (*i == 6 && (!spec.slots.is_empty() || format!("{:?}", spec.effects).contains("yours: Some"))))
             .map(|(_, b)| b)
             .collect();
-        let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
         for &(which, build) in boards {
-            let (mut state, mut world) = build(&registry, &cache);
-            // A card of that name already in the caster's hand is the one
-            // cast: the engine offers one cast for copies of an untargeted
-            // spell.
-            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == card.name) {
-                Some(o) => {
-                    let at = world.hand[0].iter().position(|h| *h == card.name).expect("in the reference's hand too");
-                    world.hand[0].remove(at);
-                    o.id
-                }
-                None => spell_in_hand(&mut state, &registry, &card.name, P0),
-            };
-            let cost = mana_cost(&card.mana_cost).expect("read above");
-            let creatures = u32::try_from(world.permanents.values().filter(|m| m.is_creature()).count()).expect("a few");
-            fund(&mut state, P0, &cost, if spec.cheaper_per_creature { creatures } else { 0 });
-            // A counterspell is read with a spell to counter.
-            if counters {
-                opponent_casts_a_spell(&mut state, &mut world, &registry, &cache);
-            }
-            let name = format!("{}{}{which}", card.name, if counters { " against Giant Growth" } else { "" });
-
-            // A creature spell: every way it can end, against every way the
-            // engine lets it end; then, if its text says what its death
-            // does, every way that can end.
-            let payable = payments(spec, &world, P0);
-            if payable.is_empty() {
-                // An additional cost that cannot be paid: no cast (CR 601.2h).
-                if engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == spell) {
-                    failures.push(format!("{name}: offered though its additional cost cannot be paid"));
-                }
-                continue;
-            }
-            if spec.permanent && card.has_type("Creature") {
-                casts += 1;
-                // An {X} in its cost: every X from nothing to what floats
-                // (CR 107.3a).
-                let xs: Vec<u32> = if cost.symbols.contains(&ManaSymbol::X) { (0..=X_FLOAT).collect() } else { vec![0] };
-                let entering: Vec<World> = payable.iter()
-                    .flat_map(|p| xs.iter().map(move |&x| (p, x)))
-                    .flat_map(|(p, x)| {
-                        let paid = pay(&world, p);
-                        let w = if cost.symbols.contains(&ManaSymbol::X) { World { x, pool: x_left(&paid, x), ..paid } } else { paid };
-                        creature_outcomes(spec, &w, P0, card, spell)
-                    })
-                    .collect();
-                let random = spec.etb.as_ref().is_some_and(|t| is_random(&t.spec)) || spec.dies.as_ref().is_some_and(|t| is_random(&t.spec));
-                let (endings, asked) = questions_asked(|| if random {
-                    over_seeds(&state, |s| every_ending(s, &registry, Some(spell)))
-                } else {
-                    every_ending(&state, &registry, Some(spell))
-                });
-                if let Some(why) = disagreement(&entering, &endings, &registry)
-                    .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, spell, &asked))
-                {
-                    failures.push(format!("{name}: {why}"));
-                    continue;
-                }
-                if spec.dies.is_some() || spec.watch.is_some() {
-                    // Each way it entered, beside the engine's ending of it,
-                    // told by what is observed: a death checked from each.
-                    let Ok(engine_entered) = endings.as_deref() else { continue };
-                    let pairs: Vec<(&World, &GameState)> = entering.iter()
-                        .filter_map(|w| {
-                            let seen = w.observed();
-                            engine_entered.iter().find(|e| observe(e, &registry) == seen).map(|e| (w, e))
-                        })
-                        .collect();
-                    if pairs.len() != entering.len() {
-                        failures.push(format!("{name}: a way it entered that no ending of the engine's is"));
-                        continue;
-                    }
-                    for (after_entering, entered) in pairs {
-                    let id = entered.objects.values()
-                        .find(|o| o.zone == Zone::Battlefield && !o.is_token && o.name == card.name)
-                        .map(|o| o.id)
-                        .expect("the creature is on the battlefield");
-                    // Who dies: the creature itself; and, for a trigger on
-                    // other deaths, each other creature on the board, and
-                    // each two at once, the creature itself among them or
-                    // not (CR 603.10a: it sees the deaths it dies with).
-                    let mut who = vec![vec![spell]];
-                    if spec.watch.is_some() {
-                        let creatures: Vec<ObjectId> = after_entering.permanents.iter()
-                            .filter(|(_, m)| m.is_creature())
-                            .map(|(r, _)| *r)
-                            .collect();
-                        who.extend(creatures.iter().filter(|r| **r != spell).map(|r| vec![*r]));
-                        for (i, x) in creatures.iter().enumerate() {
-                            who.extend(creatures[i + 1..].iter().map(|y| vec![*x, *y]));
-                        }
-                    }
-                    // A watcher sees them untapped, and tapped, as by an
-                    // attack, so that an untap has something to do.
-                    let taps: &[bool] = if spec.watch.is_some() { &[false, true] } else { &[false] };
-                    for (rs, &tapped) in who.iter().flat_map(|rs| taps.iter().map(move |t| (rs.clone(), t))) {
-                        casts += 1;
-                        let mut dying = entered.clone();
-                        let mut after_entering = after_entering.clone();
-                        dying.get_object_mut(id).expect("on the battlefield").tapped = tapped;
-                        after_entering.permanents.get_mut(&spell).expect("on the battlefield").tapped = tapped;
-                        let after_entering = &after_entering;
-                        for &r in &rs {
-                            let e = if r == spell { id } else { r };
-                            let lethal = dying.effective_toughness(e, &registry).expect("a creature").max(1);
-                            dying.get_object_mut(e).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
-                        }
-                        let what = match rs.as_slice() {
-                            [r] if *r == spell => "dying".to_string(),
-                            _ => format!("seeing {} die{}", rs.iter()
-                                .map(|r| after_entering.permanents[r].name.as_deref().unwrap_or("a token"))
-                                .collect::<Vec<_>>().join(" and "), if tapped { ", tapped" } else { "" }),
-                        };
-                        // Every way, and then each "you may" taken every
-                        // time and declined every time.
-                        let optional = spec.dies.as_ref().is_some_and(|t| t.optional) || spec.watch.as_ref().is_some_and(|w| w.trigger.optional);
-                        for may in [None, Some(true), Some(false)].into_iter().filter(|m| m.is_none() || optional) {
-                            let deaths = death_outcomes(spec, after_entering, P0, spell, &rs, may);
-                            let (died, asked) = questions_asked(|| if random {
-                                over_seeds(&dying, |s| every_ending_choosing(s, &registry, None, None, may))
-                            } else {
-                                every_ending_choosing(&dying, &registry, None, None, may)
-                            });
-                            let policy = match may {
-                                None => "",
-                                Some(true) => ", taking every \"may\"",
-                                Some(false) => ", declining every \"may\"",
-                            };
-                            if let Some(why) = disagreement(&deaths, &died, &registry)
-                                .or_else(|| wrong_chooser(&triggers_text(spec), &[], after_entering, P0, spell, &asked))
-                            {
-                                failures.push(format!("{name} {what}{policy}: {why}"));
-                                break;
-                            }
-                        }
-                    }
-                    }
-                }
-                continue;
-            }
-
-            let expected_sets = target_sets(spec, &world, P0);
-            let offered_sets = match offered(&state, &registry, spell) {
-                Ok(sets) => sets,
-                Err(why) => {
-                    failures.push(format!("{name}: {why}"));
-                    continue;
-                }
-            };
-            if offered_sets != expected_sets {
-                failures.push(format!("{name}: offers targets {offered_sets:?}, the text allows {expected_sets:?} ({spec:?})"));
-                continue;
-            }
-            // Each way to pay an additional cost is a way the cast can go:
-            // the sacrifice is named in the cast, the exile asked after it.
-            if spec.additional.is_some() {
-                let row = engine::legal_actions(&state, &registry).castable_spells.into_iter().find(|c| c.object_id == spell);
-                let mut offered_sacrifices = row.map(|r| r.sacrifice_options).unwrap_or_default();
-                offered_sacrifices.sort();
-                let mut sacrifices: Vec<ObjectId> = payable.iter()
-                    .filter_map(|p| match p { Some(Payment::Sacrifice(id)) => Some(*id), _ => None })
-                    .collect();
-                sacrifices.sort();
-                if offered_sacrifices != sacrifices {
-                    failures.push(format!("{name}: offers to sacrifice {offered_sacrifices:?}, the text allows {sacrifices:?}"));
-                    continue;
-                }
-                for targets in expected_sets {
-                    casts += 1;
-                    let want: Vec<World> = payable.iter().map(|p| resolve(spec, &pay(&world, p), &targets, P0, card, spell)).collect();
-                    let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
-                    let mut endings = Vec::new();
-                    let mut asked = Vec::new();
-                    for sacrifice in casts_by_sacrifice {
-                        let first = Action::CastSpell {
-                            object_id: spell, targets: targets.clone(), sacrifice, exile_count: None,
-                            exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        };
-                        let (played, these) = questions_asked(|| every_ending_from(&state, &registry, Some(spell), Some(first)));
-                        asked.extend(these);
-                        match played {
-                            Ok(e) => endings.extend(e),
-                            Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
-                        }
-                    }
-                    if let Some(why) = disagreement(&want, &Ok(endings), &registry)
-                        .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
-                    {
-                        failures.push(format!("{name} at {targets:?}: {why}"));
-                    }
-                }
-                continue;
-            }
-            // A spell that asks something as it resolves (at random, of
-            // another player, of a search): every way it can go, against
-            // every way the engine goes, from 32 seeds when it is random
-            // (CR 608.2d, 701.19).
-            if !spec.permanent && asks_as_it_resolves(spec) {
-                for targets in expected_sets {
-                    casts += 1;
-                    let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
-                        .map(|way| resolve(spec, way, &targets, P0, card, spell))
-                        .collect();
-                    let (endings, asked) = questions_asked(|| if is_random(spec) {
-                        over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets))
-                    } else {
-                        every_ending_at(&state, &registry, spell, &targets)
-                    });
-                    if let Some(why) = disagreement(&want, &endings, &registry)
-                        .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
-                    {
-                        failures.push(format!("{name} at {targets:?}: {why}"));
-                        continue;
-                    }
-                    // A choice of a named type, answer by answer: as a set,
-                    // one type's ending can hide behind another's.
-                    if spec.effects.contains(&Effect::ReturnAllOfChosenType) {
-                        for kind in ["artifact", "creature", "enchantment", "land", "planeswalker"] {
-                            let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
-                                .filter(|w| w.picked.as_deref() == Some(kind))
-                                .map(|way| resolve(spec, way, &targets, P0, card, spell))
-                                .collect();
-                            let keep = |a: &Answer| !matches!(a, Answer::Index(_, label) if label.to_lowercase() != kind);
-                            let endings = every_ending_keeping(&state, &registry, Some(spell), &targets, None, &keep);
-                            if let Some(why) = disagreement(&want, &endings, &registry) {
-                                failures.push(format!("{name} at {targets:?}, choosing {kind}: {why}"));
-                            }
-                        }
-                    }
-                }
-                continue;
-            }
-            // An {X} spell: at each target set, every X from nothing to
-            // what floats, announced as it is cast (CR 107.3a, 601.2b).
-            if cost.symbols.contains(&ManaSymbol::X) {
-                for targets in expected_sets {
-                    casts += 1;
-                    let want: Vec<World> = (0..=X_FLOAT).map(|x| resolve(spec, &World { x, pool: x_left(&world, x), ..world.clone() }, &targets, P0, card, spell)).collect();
-                    if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
-                        failures.push(format!("{name} at {targets:?}: {why}"));
-                    }
-                }
-                continue;
-            }
-            let lasts_the_turn = lasts_the_turn(spec);
-            for targets in expected_sets {
-                casts += 1;
-                let resolved = resolve(spec, &world, &targets, P0, card, spell);
-                let want = resolved.observed();
-                match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
-                    Ok(after) => {
-                        let got = observe(&after, &registry);
-                        if got != want {
-                            failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
-                        } else if lasts_the_turn {
-                            // Played on into the opponent's turn.
-                            let next = next_turn_outcomes(&Spec::default(), &resolved, spell, P1);
-                            let endings = every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain));
-                            if let Some(why) = disagreement(&next, &endings, &registry) {
-                                failures.push(format!("{name} at {targets:?}, in the next turn: {why}"));
-                            }
-                        }
-                    }
-                    Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
-                }
-            }
+            check_cast_on(card, spec, which, build(&registry, &cache), &registry, &cache, &mut failures, &mut casts);
         }
     }
     assert!(casts > 0);
