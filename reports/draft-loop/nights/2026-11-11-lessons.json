@@ -1,0 +1,372 @@
+{
+ "night": "2026-11-11",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Contradicts the guide: my WR with no flexible late threat won 2-0 in 24- and 21-turn games and again in 20- and 28-turn games, so long games were not automatically lost.",
+    "I lost 1-2 to WR seat 4 with two Thraben Sentry, two Selfless Cathar and two Unruly Mob but only three fliers; take a third flier over a second Unruly Mob.",
+    "Seat 4's WR went 3-0 on Rebuke, Rally the Peasants, Furor of the Bitten and Voiceless Spirit, so take those early and trust the guide's fast WR line."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 10142,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3195,
+    "output_tokens_details": {
+     "thinking_tokens": 2982
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 10142
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3195,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 10142,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 10142,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Draft answers to flyers early: I lost 0-2 to WR with two Abbey Griffin and 1-2 to WU with Angel of Flight Alabaster; my only reach was Geistflame and Brimstone Volley.",
+    "Smite the Monstrous hits power four or more, so my Morkrut Banshee and Falkenrath Noble top end was exposed; draft cheaper threats below power four so one removal spell can't blank the curve.",
+    "I cut Cobbled Wings for the ground creature base, leaving no way for my Devils and Werewolves to get past white flying blockers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3254,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3019,
+    "output_tokens_details": {
+     "thinking_tokens": 2814
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3254
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3019,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3254,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3254,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide calls WU the strongest common archetype, but my WU went 4-4 in games and lost 0-2 to WR in a 28-turn grind. Draft more cheap evasive threats, not Think Twice filler.",
+    "Ghoulcaller's Bell at pick 14 was a wasted pick; the guide's skip list was right, so take playable creatures over marginal late picks.",
+    "Opposing WR ran Rebuke, Fiend Hunter, Slayer of the Wicked and Bonds of Faith; take instant-speed answers like Smite the Monstrous before marginal creatures to clear blockers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4913,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2781,
+    "output_tokens_details": {
+     "thinking_tokens": 2568
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4913
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2781,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4913,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4913,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "My UB deck went 0-3 (3-6 in games) with 13 to 28 turn games, so prioritise a low curve and early creatures over marginal fliers like Cobbled Wings and Trepanation Blade.",
+    "In pack 2 I took Spectral Flight and Moon Heron twice each; a second copy of an evasion spell cost me a playable creature for the curve.",
+    "I ran 17 lands with 10 Swamp and 7 Island and still lost every round 1-2, so check colour sources and threat count before settling on a 23-spell list."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3235,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1547,
+    "output_tokens_details": {
+     "thinking_tokens": 1355
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3235
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1547,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3235,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3235,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "3-0-0",
+   "lessons": [
+    "Tonight contradicted the guide: a WR with only one flier (Voiceless Spirit) went 3-0 by curving out with Ashmouth Hound, Thraben Sentry, Elder Cathar, Furor of the Bitten, Rebuke and Into the Maw of Hell.",
+    "Cutting green, Traitorous Blood and Curse of the Pierced Heart for a clean two-colour WR core worked; splashing or hedging would have diluted the curve and removal.",
+    "Red and white flowed through picks 4-8 of packs 2 and 3 (Pitchburn Devils, Rage Thrower, Rebuke, Bonds of Faith), so commit to the open pair early instead of hedging."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 10260,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1721,
+    "output_tokens_details": {
+     "thinking_tokens": 1474
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 10260
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1721,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 10260,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 10260,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Stalled WU shells lose long games: my fliers and Sensory Deprivation and Claustrophobia could not close the 26- and 24-turn losses to WG, so favor a faster curve and early pressure.",
+    "Seat 4's WR went 3-0 and beat my WU 2-1 with Furor of the Bitten and Pitchburn Devils, so stay open to red-white aggression rather than committing early to blue.",
+    "The second Moment of Heroism (pack 1, pick 11) was cut before play, so take a playable creature over a redundant combat trick once your deck already has one."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3322,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1823,
+    "output_tokens_details": {
+     "thinking_tokens": 1621
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3322
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1823,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3322,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3322,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Take evasion over ground filler: my WG deck's only fliers were Chapel Geist and Voiceless Spirit, and the 37-turn loss to BG's ground board showed that fliers win, as the guide says.",
+    "Take cheap interaction before ground bodies: Blazing Torch and Feeling of Dread were my only cheap answers, which left me short against UB's Moon Herons and BG's Garruk Relentless."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4966,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3175,
+    "output_tokens_details": {
+     "thinking_tokens": 3024
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4966
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3175,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4966,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4966,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Take cheap two-drops and cheap interaction over a fourth top-end fatty: our BG games ran 16 to 37 turns, and we went 4-5 in games, losing to WU fliers and WR tricks.",
+    "Expect WU's Stitched Drakes and Murder of Crows and WR's Pitchburn Devils; our BG answers were mainly Victim of Night, Prey Upon and Corpse Lunge, so draft reach or flier removal earlier."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3250,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2678,
+    "output_tokens_details": {
+     "thinking_tokens": 2512
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3250
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2678,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3250,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3250,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

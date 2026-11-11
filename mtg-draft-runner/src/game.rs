@@ -256,6 +256,56 @@ pub fn check_finished_matches(matches: &[(usize, &MatchResult)], players: usize,
 best-of-{best_of}", name(m), r.games.len()));
         }
     }
+    let (_, used) = walk_tournament(matches, players, best_of);
+    match used.iter().position(|&u| !u) {
+        Some(i) => Err(format!("its record for {} is not a match this tournament pairs", name(&matches[i]))),
+        None => Ok(()),
+    }
+}
+
+/// Whether the tournament the saved matches (round, result) stand for has
+/// a match still to play: its rounds walked on the records, as
+/// [`check_finished_matches`] walks them. A resume past deck building
+/// still plays these games, under each seat's live guide (#1015).
+#[must_use]
+pub fn matches_remain(matches: &[(usize, &MatchResult)], players: usize, best_of: usize) -> bool {
+    !walk_tournament(matches, players, best_of).0.is_complete()
+}
+
+/// [`matches_remain`] for each seat: whether that seat has a match still
+/// to play. In the last round, that is a pairing of its with no record (a
+/// snapshot is written after each match, so a round can be half done, and
+/// a bye is no match). Before the last round, every seat has one: who
+/// gets a later bye is not known yet (#1015's review).
+#[must_use]
+pub fn seats_with_matches_left(matches: &[(usize, &MatchResult)], players: usize, best_of: usize) -> Vec<bool> {
+    let (tournament, _) = walk_tournament(matches, players, best_of);
+    if tournament.is_complete() {
+        return vec![false; players];
+    }
+    let round = tournament.rounds.len() + 1;
+    if round < tournament.total_rounds() {
+        return vec![true; players];
+    }
+    let mut left = vec![false; players];
+    for (a, b) in tournament.generate_pairings() {
+        let recorded = matches.iter().any(|m| m.0 == round && m.1.player_a == a && m.1.player_b == b);
+        if b != tournament::BYE && !recorded {
+            for seat in [a, b] {
+                if let Some(l) = left.get_mut(seat) {
+                    *l = true;
+                }
+            }
+        }
+    }
+    left
+}
+
+/// The tournament as far as the records carry it, and which records it
+/// paired.
+fn walk_tournament(matches: &[(usize, &MatchResult)], players: usize, best_of: usize)
+    -> (tournament::Tournament, Vec<bool>)
+{
     let mut tournament = tournament::Tournament::new(players, tournament::TournamentConfig { best_of });
     let mut used = vec![false; matches.len()];
     while !tournament.is_complete() {
@@ -276,10 +326,7 @@ best-of-{best_of}", name(m), r.games.len()));
         }
         tournament.record_round(pairings, results);
     }
-    match used.iter().position(|&u| !u) {
-        Some(i) => Err(format!("its record for {} is not a match this tournament pairs", name(&matches[i]))),
-        None => Ok(()),
-    }
+    (tournament, used)
 }
 
 /// Play one match. `before_game` is asked before each game who plays

@@ -506,6 +506,58 @@ fn a_prompt_shows_its_own_description_and_falls_back_to_a_header() {
     assert_eq!(described(looked_at("")), format!("{source_name}: choose a card"));
 }
 
+/// #1018: the looked-at offers are one per card (#721), so Forbidden
+/// Alchemy's four cards with two copies of Moan of the Unhallowed among
+/// them were shown as three rows, and the second Moan going to the
+/// graveyard was never seen (CR 701.16a). The description, which the
+/// terminal, the model's prompt and the page all show, says which card a
+/// row stands for more than one copy of, and the prompt the seats read
+/// carries the same words; four different cards add nothing.
+#[test]
+fn a_looked_at_choice_names_the_copies_its_rows_collapse() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let mut card = |name: &str| {
+        let id = state.create_object(reg.get_id_by_name(name).unwrap(), P0, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = name.into();
+        state.get_player_mut(P0).library_order.push(id);
+        id
+    };
+    let top = [card("Forbidden Alchemy"), card("Moan of the Unhallowed"), card("Mountain"),
+        card("Moan of the Unhallowed")];
+    let distinct = [top[0], top[1], top[2], card("Island")];
+    let asked = |looked_at: &[mtg_engine::ids::ObjectId]| {
+        let mut s = state.clone();
+        s.priority_player = None;
+        s.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: P0, source, choice: K::ChooseFromLookedAt {
+            description: "Forbidden Alchemy: choose a card to put into your hand (rest go to graveyard)".into(),
+            looked_at: looked_at.to_vec(),
+        } });
+        mtg_engine::engine::legal_actions(&s, &reg)
+    };
+
+    let legal = asked(&top);
+    assert_eq!(legal.actions.len(), 3, "one row per card, as #721 has it");
+    let context = legal.context.clone().unwrap_or_default();
+    // At the front: the page cuts a long title at its end.
+    assert_eq!(context, "Forbidden Alchemy: (2 of the 4 are Moan of the Unhallowed) choose a card to put into \
+your hand (rest go to graveyard)");
+    match legal.resolution_prompt {
+        Some(K::ChooseFromLookedAt { description, looked_at }) => {
+            assert_eq!(description, context, "the page reads the prompt's description");
+            assert_eq!(looked_at, top.to_vec());
+        }
+        other => panic!("{other:?}"),
+    }
+
+    let context = asked(&distinct).context.unwrap_or_default();
+    assert_eq!(context, "Forbidden Alchemy: choose a card to put into your hand (rest go to graveyard)",
+        "every card is a row of its own");
+}
+
 /// The header a player gets while something is on the stack names WHOSE
 /// spell they are responding to, from their own seat: "your" for the one
 /// they cast, and the other player by number.

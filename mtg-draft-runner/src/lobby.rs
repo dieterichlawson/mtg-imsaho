@@ -518,28 +518,42 @@ pub struct TableSave {
 /// What a resumed draft still asks its seats under their guide, which is
 /// what a guide changed since the stop is a mixture with (#1014). A
 /// snapshot with every deck in it has every pick too, so the guide reaches
-/// only the sideboarding between games, and in best-of-1 nothing at all;
-/// the warning said "the rest of this draft will be made under" the new
-/// guide when no pick remained.
+/// only the games still to play: a guided seat's game system prompt
+/// carries it (#1013), and so does the sideboarding between games. Only
+/// once every match is played is nothing asked under it (#1015: a resume
+/// stopped before its matches said the new guide "is not used", then
+/// played every game under it).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StillAsked {
     /// Picks remain, or decks to build.
     Draft,
-    /// Every pick and deck is made; matches of more than one game remain.
+    /// Every pick and deck is made; best-of-1 matches remain to play.
+    Games,
+    /// Every pick and deck is made; matches of more than one game remain,
+    /// and the sideboarding between their games.
     Sideboarding,
-    /// Every pick and deck is made and the matches are best-of-1.
+    /// Every pick, deck and match is made.
     Nothing,
 }
 
 impl StillAsked {
-    /// From what the snapshot holds: its decks, and the match length.
+    /// From what the snapshot holds: its decks, whether a match is still
+    /// to play ([`crate::game::matches_remain`]), and the match length.
     #[must_use]
-    pub fn after(has_decks: bool, best_of: usize) -> Self {
-        match (has_decks, best_of > 1) {
-            (false, _) => Self::Draft,
-            (true, true) => Self::Sideboarding,
-            (true, false) => Self::Nothing,
+    pub fn after(has_decks: bool, matches_remain: bool, best_of: usize) -> Self {
+        match (has_decks, matches_remain, best_of > 1) {
+            (false, _, _) => Self::Draft,
+            (true, false, _) => Self::Nothing,
+            (true, true, false) => Self::Games,
+            (true, true, true) => Self::Sideboarding,
         }
+    }
+
+    /// Whether a pick or a deck, or the sideboarding the draft client
+    /// asks, is still to be asked: what the draft's own settings reach.
+    #[must_use]
+    pub fn drafting(self) -> bool {
+        matches!(self, Self::Draft | Self::Sideboarding)
     }
 
     /// How a guide that changed since the replayed decisions reads, `whose`
@@ -551,8 +565,10 @@ impl StillAsked {
         match self {
             Self::Draft => Some(format!("{whose} replayed picks were made under {was}, and the rest of this draft \
 will be made under {now}: this draft is a mixture of the two")),
-            Self::Sideboarding => Some(format!("every one of {whose} picks and decks was made under {was}; only \
-the sideboarding between games is still asked, and under {now}")),
+            Self::Games => Some(format!("{whose} picks, decks and any finished matches were made under {was}; \
+only the games still to play are asked, and under {now}")),
+            Self::Sideboarding => Some(format!("{whose} picks, decks and any finished matches were made under \
+{was}; only the games still to play and the sideboarding between them are asked, and under {now}")),
             Self::Nothing => None,
         }
     }

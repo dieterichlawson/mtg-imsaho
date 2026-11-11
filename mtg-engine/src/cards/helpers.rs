@@ -1121,6 +1121,27 @@ pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<Obj
         .collect()
 }
 
+/// What [`one_of_each_card`]'s offers leave out when they collapse
+/// copies, as "2 of the 4 are Moan of the Unhallowed" (and ", 2 are
+/// Mountain" for each further card with copies), or `None` when every card
+/// among `ids` is there once.
+#[must_use]
+pub fn copies_note(state: &GameState, ids: &[ObjectId]) -> Option<String> {
+    let mut seen: Vec<(Option<crate::ids::CardId>, String, usize)> = Vec::new();
+    for &id in ids {
+        let card = state.get_object(id).map(|o| o.card_id);
+        match seen.iter_mut().find(|(c, _, _)| card.is_some() && *c == card) {
+            Some(entry) => entry.2 += 1,
+            None => seen.push((card, state.get_object(id).map_or_else(|| state.obj_name(id), |o| o.name.clone()), 1)),
+        }
+    }
+    let copies: Vec<String> = seen.iter().filter(|(_, _, n)| *n > 1)
+        .enumerate()
+        .map(|(i, (_, name, n))| if i == 0 { format!("{n} of the {} are {name}", ids.len()) } else { format!("{n} are {name}") })
+        .collect();
+    (!copies.is_empty()).then(|| copies.join(", "))
+}
+
 /// CR 701.19: search a library, take at most one matching card, then shuffle.
 ///
 /// Handles the whole shape once: no match (shuffle and move on), exactly one

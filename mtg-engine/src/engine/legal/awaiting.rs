@@ -213,6 +213,34 @@ pub(crate) fn legal_actions_while_awaiting(
                         None => choice,
                     }
                 }
+                // The offers are one per card, not per copy (#721), so with
+                // two copies among the cards looked at the rows were the only
+                // place they were shown and one of them was never seen: the
+                // second Moan of the Unhallowed going to the graveyard
+                // (#1018, CR 701.16a). The copies are said in the one text
+                // every seat shows, at the front of the question, since the
+                // page cuts a long title at its end.
+                ResolutionChoiceKind::ChooseFromLookedAt { description, looked_at } => {
+                    match crate::cards::helpers::copies_note(state, looked_at) {
+                        Some(note) => {
+                            let what = if description.is_empty() {
+                                format!("{source_name}: choose a card")
+                            } else {
+                                description.clone()
+                            };
+                            let description = match what.split_once(": ") {
+                                Some((who, question)) => format!("{who}: ({note}) {question}"),
+                                None => format!("({note}) {what}"),
+                            };
+                            annotated = ResolutionChoiceKind::ChooseFromLookedAt {
+                                description,
+                                looked_at: looked_at.clone(),
+                            };
+                            &annotated
+                        }
+                        None => choice,
+                    }
+                }
                 _ => choice,
             };
             let actions = match choice {
