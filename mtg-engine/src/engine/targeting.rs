@@ -276,9 +276,9 @@ pub(crate) fn as_targets_are_chosen<'a>(
     if let Some(o) = view.get_object_mut(spell) {
         o.zone = Zone::Stack;
     }
-    let owner = view.get_player_mut(at.1);
-    owner.graveyard_order.retain(|&id| id != spell);
-    owner.library_order.retain(|&id| id != spell);
+    // A spell is cast from a hand or a graveyard (flashback), never a
+    // library, and only a graveyard keeps a pile of its own.
+    view.get_player_mut(at.1).graveyard_order.retain(|&id| id != spell);
     std::borrow::Cow::Owned(view)
 }
 
