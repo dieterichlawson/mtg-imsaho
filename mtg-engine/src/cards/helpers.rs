@@ -1053,12 +1053,12 @@ pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<Obj
         .collect()
 }
 
-/// `ids` named once per card in order of first appearance, with a copy
-/// count where there is more than one ("Moan of the Unhallowed (2
-/// copies)"), or `None` when every card is there once: what
-/// [`one_of_each_card`]'s offers leave out when they collapse copies.
+/// What [`one_of_each_card`]'s offers leave out when they collapse
+/// copies, as "2 of the 4 are Moan of the Unhallowed" (and ", 2 are
+/// Mountain" for each further card with copies), or `None` when every card
+/// among `ids` is there once.
 #[must_use]
-pub fn copies_line(state: &GameState, ids: &[ObjectId]) -> Option<String> {
+pub fn copies_note(state: &GameState, ids: &[ObjectId]) -> Option<String> {
     let mut seen: Vec<(Option<crate::ids::CardId>, String, usize)> = Vec::new();
     for &id in ids {
         let card = state.get_object(id).map(|o| o.card_id);
@@ -1067,13 +1067,11 @@ pub fn copies_line(state: &GameState, ids: &[ObjectId]) -> Option<String> {
             None => seen.push((card, state.get_object(id).map_or_else(|| state.obj_name(id), |o| o.name.clone()), 1)),
         }
     }
-    if seen.iter().all(|(_, _, n)| *n == 1) {
-        return None;
-    }
-    Some(seen.iter()
-        .map(|(_, name, n)| if *n == 1 { name.clone() } else { format!("{name} ({n} copies)") })
-        .collect::<Vec<_>>()
-        .join(", "))
+    let copies: Vec<String> = seen.iter().filter(|(_, _, n)| *n > 1)
+        .enumerate()
+        .map(|(i, (_, name, n))| if i == 0 { format!("{n} of the {} are {name}", ids.len()) } else { format!("{n} are {name}") })
+        .collect();
+    (!copies.is_empty()).then(|| copies.join(", "))
 }
 
 pub fn search_library(

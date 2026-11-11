@@ -510,9 +510,9 @@ fn a_prompt_shows_its_own_description_and_falls_back_to_a_header() {
 /// Alchemy's four cards with two copies of Moan of the Unhallowed among
 /// them were shown as three rows, and the second Moan going to the
 /// graveyard was never seen (CR 701.16a). The description, which the
-/// terminal, the model's prompt and the page all show, names every card
-/// looked at when a row stands for more than one, and the prompt the seats
-/// read carries the same words; four different cards add nothing.
+/// terminal, the model's prompt and the page all show, says which card a
+/// row stands for more than one copy of, and the prompt the seats read
+/// carries the same words; four different cards add nothing.
 #[test]
 fn a_looked_at_choice_names_the_copies_its_rows_collapse() {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind as K};
@@ -542,8 +542,9 @@ fn a_looked_at_choice_names_the_copies_its_rows_collapse() {
     let legal = asked(&top);
     assert_eq!(legal.actions.len(), 3, "one row per card, as #721 has it");
     let context = legal.context.clone().unwrap_or_default();
-    assert_eq!(context, "Forbidden Alchemy: choose a card to put into your hand (rest go to graveyard); you looked \
-at 4: Forbidden Alchemy, Moan of the Unhallowed (2 copies), Mountain");
+    // At the front: the page cuts a long title at its end.
+    assert_eq!(context, "Forbidden Alchemy: (2 of the 4 are Moan of the Unhallowed) choose a card to put into \
+your hand (rest go to graveyard)");
     match legal.resolution_prompt {
         Some(K::ChooseFromLookedAt { description, looked_at }) => {
             assert_eq!(description, context, "the page reads the prompt's description");
