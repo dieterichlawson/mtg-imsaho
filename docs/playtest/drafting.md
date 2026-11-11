@@ -999,7 +999,13 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   still ready, and a match in progress is played again from game 1 with
   nothing of the stopped game in the standings. Then edit the snapshot
   (a pick of a card the pack never had, a deck the pool cannot build) and
-  check each is refused with its reason, before anything is dealt
+  check each is refused with its reason, before anything is dealt.
+  Wrinkle (2026-11-11, #1015): stop *after* deck building and before the
+  last match, change `--guide` (or any setting), resume, and record which
+  guide every game call's argv carries (a `CLAUDE_CODE_BIN` wrapper
+  around `scripts/llm-prompt-stub.py`). Then check what the resume note
+  and the log header say was used. The games are asked under the guide
+  as well as the picks, and the note said otherwise
 - D47 [proposed 2026-10-21, from #822-#825] where everybody is: with a
   person in a match, close their game page, then their draft page, then
   reopen each; kick them mid-game; Ctrl-C the server. At every step read
