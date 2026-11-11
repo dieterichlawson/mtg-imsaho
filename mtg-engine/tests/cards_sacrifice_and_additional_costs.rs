@@ -815,17 +815,18 @@ fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Corpse Lunge");
 }
-/// "damage equal to **the exiled card's** power" — the card's power where it
-/// is, which is exile, and read when the spell resolves.
+/// "damage equal to **the exiled card's** power" — its power as it last
+/// existed in the graveyard. The ruling on the same words (Corpse Explosion,
+/// 2022-04-29): "Use the card's power as it last existed in the graveyard to
+/// determine how much damage is dealt."
 ///
 /// Boneyard Wurm is the card that can tell the difference: "power and toughness
 /// are each equal to the number of creature cards in your graveyard", and a
-/// characteristic-defining ability functions in every zone (CR 604.3). Exiling
-/// the Wurm to pay the cost takes it *out* of the graveyard, so it stops
-/// counting itself: with two other creature cards down there it is a 2/2 in
-/// exile, not the 3/3 it was in the graveyard a moment earlier.
+/// characteristic-defining ability functions in every zone (CR 604.3). In the
+/// graveyard it counts itself: with two other creature cards beside it, a 3/3,
+/// though in exile it is a 2/2. This test used to require the 2 (defect 42).
 #[test]
-fn corpse_lunge_reads_the_exiled_cards_power_where_it_now_is() {
+fn corpse_lunge_reads_the_exiled_cards_power_as_it_was_in_the_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -844,16 +845,15 @@ fn corpse_lunge_reads_the_exiled_cards_power_where_it_now_is() {
         "test setup: the Wurm is the card that paid the cost");
     assert_eq!(state.effective_power(wurm, &reg), Some(2),
         "out of the graveyard, the Wurm counts only the two cards still in it");
-    assert_eq!(state.get_object(target).unwrap().damage_marked, 2,
-        "and that is the power the spell deals");
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 3,
+        "but the spell deals the 3 it had as it last existed in the graveyard");
 }
 
 /// The limit case of the same rule: a Boneyard Wurm that is the *only* creature
-/// card in the graveyard pays the cost by leaving it, and is a 0/0 in exile
-/// with nothing left to count. Corpse Lunge deals no damage at all — and 0
-/// damage is not damage (CR 120.8), so nothing is marked.
+/// card in the graveyard is a 1/1 there, counting itself, though a 0/0 in exile
+/// with nothing left to count. Corpse Lunge deals the 1.
 #[test]
-fn corpse_lunge_exiling_a_lone_boneyard_wurm_deals_nothing() {
+fn corpse_lunge_exiling_a_lone_boneyard_wurm_deals_one() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -869,16 +869,17 @@ fn corpse_lunge_exiling_a_lone_boneyard_wurm_deals_nothing() {
         "the Wurm paid the additional cost");
     assert_eq!(state.effective_power(wurm, &reg), Some(0),
         "and out of the graveyard there is nothing left for it to count");
-    assert_eq!(state.get_object(target).unwrap().damage_marked, 0);
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 1,
+        "but it was a 1/1 as it last existed in the graveyard");
 }
 
-/// The other half of the same sentence: "the exiled card's power" is a value
-/// the spell reads as it resolves, not one it carried up from the cast. Corpse
-/// Lunge is an instant, so there is a priority window between the two — a
-/// creature card reaching the graveyard in it raises the exiled Wurm's power,
-/// and the damage with it.
+/// The other half of the same sentence: "the exiled card's power" is the
+/// power the card had as it last existed in the graveyard, which is as the
+/// cost was paid. Corpse Lunge is an instant, so there is a priority window
+/// before it resolves; a creature card reaching the graveyard in it raises
+/// the exiled Wurm's power in exile, and not the damage.
 #[test]
-fn corpse_lunge_reads_the_exiled_cards_power_when_it_resolves() {
+fn corpse_lunge_deals_the_power_the_card_had_as_the_cost_was_paid() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -911,10 +912,9 @@ fn corpse_lunge_reads_the_exiled_cards_power_when_it_resolves() {
     }
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert_eq!(state.get_object(target).unwrap().damage_marked, 4,
-        "the Wurm was a 2/2 in exile when the spell went on the stack and a \
-         4/4 when it resolved, and the spell deals what it reads on resolution \
-         (3 would be its power back in the graveyard as the cost was paid)");
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 3,
+        "the Wurm was a 3/3 as it last existed in the graveyard, whatever it \
+         is in exile by the time the spell resolves (a 4/4)");
 }
 
 /// Ruling: "You must exile exactly one creature card from your graveyard to

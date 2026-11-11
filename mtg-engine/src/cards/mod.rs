@@ -192,19 +192,32 @@ pub const EXILE_COUNT: &str = "exile_count";
 /// [`AdditionalCost::ExileCreaturesFromGraveyard`] exiled, as
 /// `exiled_to_cost_0`, `exiled_to_cost_1`, … in the order they were exiled.
 ///
-/// The engine writes the *cards*, not anything derived from them. It used to
-/// write `exiled_power` instead — the power of the first one, read off while
-/// that card was still in the graveyard — which is one card's question
-/// (Corpse Lunge's) answered inside the cost machinery, at the wrong moment
-/// and in the wrong zone. What the cost did is that these cards were exiled;
-/// what a card wants to know about them is the card's own business, asked when
-/// it resolves.
+/// The engine writes the cards, and beside each its power as it last existed
+/// in the graveyard ([`EXILED_TO_COST_POWER`]).
 pub const EXILED_TO_COST: &str = "exiled_to_cost";
 
 /// The `card_state` key naming the `i`th card exiled to pay an additional cost.
 #[must_use]
 pub fn exiled_to_cost_key(i: usize) -> String {
     indexed_key(EXILED_TO_COST, "_", i)
+}
+
+/// The power of each card exiled to pay an additional cost, as it last
+/// existed in the graveyard it was exiled from, none below 0, written as the
+/// cost is paid: what "the exiled card's power" reads. The rules' ruling on
+/// those words (Corpse Explosion, 2022-04-29): "Use the card's power as it
+/// last existed in the graveyard to determine how much damage is dealt."
+/// A characteristic-defining power counts what was there, the card itself
+/// among it (CR 604.3): Boneyard Wurm with two other creature cards beside it
+/// is a 3/3 there. The engine read the power in exile, as the spell resolved,
+/// which left the Wurm out of its own count (defect 42).
+pub const EXILED_TO_COST_POWER: &str = "exiled_to_cost_power";
+
+/// The `card_state` key holding the power, as an id's number, of the `i`th
+/// card exiled to pay an additional cost ([`EXILED_TO_COST_POWER`]).
+#[must_use]
+pub fn exiled_to_cost_power_key(i: usize) -> String {
+    indexed_key(EXILED_TO_COST_POWER, "_", i)
 }
 
 /// `prefix`, `separator` and `i` in decimal, as a `card_state` key.

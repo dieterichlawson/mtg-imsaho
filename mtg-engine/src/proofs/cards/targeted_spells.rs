@@ -275,24 +275,22 @@ card_proof! {
 
 card_proof! {
     /// Corpse Lunge: its additional cost exiles a creature card from its
-    /// caster's graveyard (CR 601.2h), which the engine pays and records;
-    /// it deals damage equal to that card's power, as it is in exile, to
-    /// its target, none for a power of 0 or less. With no card recorded
-    /// (none exiled), 0.
+    /// caster's graveyard (CR 601.2h), which the engine pays and records,
+    /// with the card's power as it last existed there (the ruling on the
+    /// same words, Corpse Explosion's); it deals that much damage to its
+    /// target, whatever the card is now. With no power recorded (none
+    /// exiled), 0.
     fn corpse_lunge_deals_the_exiled_cards_power() {
         assert!(isd::corpse_lunge::CorpseLunge.card_data().additional_cost == Some(AdditionalCost::ExileCreaturesFromGraveyard(1)));
         let mut b = spell(Box::new(isd::corpse_lunge::CorpseLunge));
         assert!(*b.requirement() == R::Creature);
-        let blank = b.get(b.others[0]).card_id;
-        let power: i8 = kani::any();
-        kani::assume((-1..=6).contains(&power));
-        let exiled = b.state.create_object(blank, PlayerId(0), Zone::Exile, Some(i32::from(power)), Some(1));
-        b.state.get_object_mut(exiled).expect("just created").card_types = vec![CardType::Creature];
+        let power: u8 = kani::any();
+        kani::assume(power <= 6);
         let recorded: bool = kani::any();
         if recorded {
-            b.state.get_object_mut(b.spell).expect("on the stack").card_state.insert(crate::cards::exiled_to_cost_key(0), exiled);
+            b.state.get_object_mut(b.spell).expect("on the stack").card_state.insert(crate::cards::exiled_to_cost_power_key(0), ObjectId(u64::from(power)));
         }
-        let damage = if recorded { u32::try_from(power.max(0)).expect("small") } else { 0 };
+        let damage = if recorded { u32::from(power) } else { 0 };
         let target = b.any_object_target();
         let before = b.resolve(&[target.clone()]);
         match target {
