@@ -4033,6 +4033,27 @@ fn an_evil_twin_returned_beside_an_essence_of_the_wild_is_what_it_chose() {
     }
 }
 
+/// Defect 46, found by the generated boards: a Dearly Departed in its
+/// owner's graveyard gives each Human creature entering under them a
+/// counter, and an Evil Twin entering as a copy of a Human is one (CR
+/// 614.12: the permanent as it would exist, its copy effect applied first).
+/// The engine read the Twin's own subtypes, a Shapeshifter's, and gave it
+/// nothing.
+#[test]
+fn an_evil_twin_entering_as_a_copy_of_a_human_gets_dearly_departeds_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+    let human = named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(human));
+    assert_eq!(state.name_of(twin, &reg), "Doomed Traveler");
+    assert_eq!(state.get_object(twin).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(), Some(1));
+    // And one entering as a copy of a non-Human gets none.
+    let heron = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let other = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(heron));
+    assert_eq!(state.get_object(other).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0), 0);
+}
+
 /// Essence of the Wild's ruling (2011-09-22): "If a creature such as Clone
 /// is entering under your control, there will be two copy effects to
 /// apply: the creature's own and Essence of the Wild's. No matter what

@@ -48,7 +48,9 @@ impl CardBehavior for DearlyDeparted {
             Some(o) if state.zone_as_entering_began(self_id) == Some(Zone::Graveyard) => o.owner,
             _ => return None,
         };
-        if e.controller != owner || !state.has_subtype(e.object, "Human", registry) {
+        // A Human as it enters: one entering as a copy of a Human is one
+        // (CR 614.12, 707.2).
+        if e.controller != owner || !crate::replacement::enters_with_subtype(state, e, "Human", registry) {
             return None;
         }
         Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(
