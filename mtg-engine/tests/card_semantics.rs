@@ -3325,6 +3325,14 @@ struct Model {
     temp_protection_from_non: Vec<String>,
     /// The subtypes an Equipment on it says can't block it, as refreshed.
     granted_not_blocked_by: Vec<String>,
+    /// Its power as a characteristic-defining ability counts it (CR
+    /// 604.3), as refreshed; what "power N or greater" reads of it then.
+    defined_power: Option<i32>,
+    /// A token's name, which `name` leaves out so that the battlefield is
+    /// observed by card names: the name of what it copies (CR 707.2), or
+    /// its subtypes and the word "Token" (111.4). What "the same name"
+    /// reads of it.
+    token_name: Option<String>,
     /// ... and rules: "can't block this turn".
     temp_restricted: Vec<Restriction>,
     /// Who controlled it before an effect that gives it back in the
@@ -3374,6 +3382,8 @@ impl Model {
             temp_lost: Vec::new(),
             temp_protection_from_non: Vec::new(),
             granted_not_blocked_by: Vec::new(),
+            defined_power: None,
+            token_name: None,
             temp_restricted: Vec::new(),
             stolen_from: None,
             attacking: false,
@@ -3438,8 +3448,8 @@ impl Model {
                 && !c.not_colors.iter().any(|col| self.colors.contains(col))
                 && !c.not_types.iter().any(|t| self.types.contains(t) || self.subtypes.contains(t))
                 && c.subtypes.iter().all(|t| self.subtypes.contains(t))
-                && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 + self.temp.0 >= n))
-                && c.max_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 + self.temp.0 <= n))
+                && c.min_power.is_none_or(|n| self.defined_power.or(self.power).is_some_and(|p| p + self.boost.0 + self.temp.0 >= n))
+                && c.max_power.is_none_or(|n| self.defined_power.or(self.power).is_some_and(|p| p + self.boost.0 + self.temp.0 <= n))
                 && !c.without.iter().any(has)
                 && c.with.iter().all(has)
                 && !(c.other && is_source)
@@ -3547,6 +3557,12 @@ struct World {
     /// no legal target is not counted, as the engine never puts it there
     /// (603.3d).
     triggered: u32,
+    /// What entered the battlefield as what is resolving resolved, other
+    /// than a spell becoming a permanent: its enters triggers go on the
+    /// stack once that is done (CR 603.2, 603.3), [`settle_entries`].
+    entered: Vec<Src>,
+    /// Whose turn it is, whose triggers go on the stack first (CR 101.4).
+    active: PlayerId,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -3662,6 +3678,28 @@ impl World {
 
     /// This world as triggers are put on the stack from it, each
     /// double-faced permanent's face recorded (CR 701.28f).
+    /// Permanent `id` as it last existed on the battlefield (CR 608.2h):
+    /// its power and toughness as they stood, a count that defines them
+    /// counted then, not once it has gone.
+    fn as_it_last_was(&self, id: ObjectId) -> Option<Model> {
+        let mut now = self.clone();
+        now.refresh();
+        let m = now.permanents.get(&id)?;
+        let (power, toughness) = now.pt_of(m);
+        Some(Model {
+            power, toughness, boost: (0, 0), temp: (0, 0), counts_creatures: false, counts_creature_cards: false,
+            counts_hand: false, counts_counters_on: None, defined_power: None, ..m.clone()
+        })
+    }
+
+    /// An id no permanent, card or token here has: for a permanent the
+    /// engine's id for is not known here, a token made or a card returned.
+    fn fresh_id(&self) -> ObjectId {
+        (0..).map(|n| ObjectId(u64::MAX - n))
+            .find(|id| !self.permanents.contains_key(id) && !self.yard.contains_key(id) && !self.exiled.contains_key(id))
+            .expect("an id is free")
+    }
+
     fn with_faces_put(&self) -> World {
         let faces_put = self.permanents.iter()
             .filter(|(_, m)| m.other_face.is_some())
@@ -3687,7 +3725,7 @@ impl World {
         }
         match self.permanents.values().find(|e| e.controller == m.controller && e.statics.contains(&Static::CreaturesYouControlEnterAsACopy)) {
             Some(e) => Model {
-                name: m.name.as_ref().and(e.name.clone()),
+                name: m.name.as_ref().and(e.name.clone().or_else(|| e.token_name.clone())),
                 tapped: m.tapped,
                 attacking: m.attacking,
                 exile_at_end_of_combat: m.exile_at_end_of_combat,
@@ -3739,31 +3777,6 @@ impl World {
 
     /// Whether `player` can pay {`n`}: what floats in their pool and the
     /// untapped basic lands they control.
-    fn can_pay_generic(&self, player: PlayerId, n: u32) -> bool {
-        let floating: u32 = self.pool[player.0 as usize].values().sum();
-        floating + u32::try_from(self.untapped_basics(player).len()).expect("a few") >= n
-    }
-
-    fn untapped_basics(&self, player: PlayerId) -> Vec<ObjectId> {
-        self.permanents.iter()
-            .filter(|(_, m)| m.controller == player && !m.tapped && m.name.as_deref().is_some_and(|n| BASIC_LANDS.contains(&n)))
-            .map(|(id, _)| *id)
-            .collect()
-    }
-
-    /// `player` pays {`n`} by tapping basic lands: with nothing floating,
-    /// as on every board here, and lands of one name, so which ones are
-    /// tapped is not told apart (CR 601.2g-h, 605.3a).
-    fn pay_generic(&mut self, player: PlayerId, n: u32) {
-        assert_eq!(self.pool[player.0 as usize].values().sum::<u32>(), 0, "the reference pays from lands, nothing floating");
-        let lands = self.untapped_basics(player);
-        let names: BTreeSet<Option<String>> = lands.iter().map(|id| self.permanents[id].name.clone()).collect();
-        assert!(names.len() <= 1, "the reference pays from lands of one name, not {names:?}");
-        for id in lands.iter().take(n as usize) {
-            self.permanents.get_mut(id).expect("on the battlefield").tapped = true;
-        }
-    }
-
     /// [`World::pt_of`] before static abilities change it (CR 613.4b-c),
     /// its +1/+1 and -1/-1 counters counted (613.4c): in its power and
     /// toughness, or added to the count that defines them (604.3), as
@@ -3803,7 +3816,8 @@ impl World {
                     }
                 }
                 seen.attached_to = match &m.attached {
-                    Some(Target::Object(id)) => self.permanents.get(id).and_then(|a| a.name.clone()),
+                    // A token by what it is, as the engine's side names it.
+                    Some(Target::Object(id)) => self.permanents.get(id).map(|a| a.name.clone().unwrap_or_else(|| "a token".to_string())),
                     Some(Target::Player(p)) => Some(format!("player {}", p.0)),
                     _ => None,
                 };
@@ -3873,11 +3887,16 @@ impl World {
     /// toughness (layer 7c), whose "with flying" sees those keywords (CR
     /// 613.1f, 613.4c).
     fn refresh(&mut self) {
-        for m in self.permanents.values_mut().chain(self.tokens.iter_mut()) {
+        let defined: Vec<Option<i32>> = self.permanents.values().chain(&self.tokens)
+            .map(|m| (m.counts_creatures || m.counts_creature_cards || m.counts_hand || m.counts_counters_on.is_some())
+                .then(|| self.defined_pt(m).0).flatten())
+            .collect();
+        for (m, d) in self.permanents.values_mut().chain(self.tokens.iter_mut()).zip(defined) {
             m.granted.clear();
             m.boost = (0, 0);
             m.restricted.clear();
             m.granted_not_blocked_by.clear();
+            m.defined_power = d;
         }
         let evasions: Vec<(ObjectId, Vec<String>)> = self.permanents.values()
             .filter_map(|src| match src.attached { Some(Target::Object(on)) => Some((on, src)), _ => None })
@@ -4151,6 +4170,8 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
         x: 0,
         faces_put: BTreeMap::new(),
         triggered: 0,
+        entered: Vec::new(),
+        active: P0,
         prevent_combat_damage_except: Vec::new(),
         damaged_by_life_gainers: Vec::new(),
         tokens: Vec::new(),
@@ -4239,7 +4260,8 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                     .map(|(t, n)| (t.label().to_string(), *n))
                     .collect(),
                 regeneration_shields: o.regeneration_shields,
-                attached_to: o.attached_to.map(|host| state.name_of(host, registry))
+                attached_to: o.attached_to
+                    .map(|host| if state.get_object(host).is_some_and(|h| h.is_token) { "a token".to_string() } else { state.name_of(host, registry) })
                     .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
                 may_block: creature && mtg_engine::combat::can_block_at_all(state, o.id, registry),
                 must_attack: creature && state.must_attack(o.id, registry),
@@ -4322,12 +4344,20 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
     let players = |which: &dyn Fn(PlayerId) -> bool| -> Vec<Target> {
         [P0, P1].into_iter().filter(|p| which(*p) && !hexproof(*p)).map(Target::Player).collect()
     };
+    // Protection from what the source is: not a target of it (CR
+    // 702.16b). A spell here is of no creature type; an ability's source
+    // is the permanent it is read for.
+    let source = world.source.and_then(|s| world.permanents.get(&s));
+    let shielded = |m: &Model| source.is_some_and(|src| protected(m, src));
+    // Hexproof: not a target of what its controller's opponents control,
+    // whatever the slot (CR 702.11b).
+    let hexed = |m: &Model| has(m, Keyword::Hexproof) && m.controller != caster;
     let creatures = || world.permanents.iter()
-        .filter(|(_, m)| m.is_creature())
+        .filter(|(_, m)| m.is_creature() && !shielded(m) && !hexed(m))
         .map(|(id, _)| Target::Object(*id))
         .collect::<Vec<_>>();
     let planeswalkers = || world.permanents.iter()
-        .filter(|(_, m)| m.types.iter().any(|t| t == "planeswalker"))
+        .filter(|(_, m)| m.types.iter().any(|t| t == "planeswalker") && !shielded(m) && !hexed(m))
         .map(|(id, _)| Target::Object(*id))
         .collect::<Vec<_>>();
     // "Any target" is a creature, a player or a planeswalker (CR 115.4).
@@ -4340,7 +4370,8 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         // control (CR 702.11b).
         Slot::Permanent(f) | Slot::UpTo { filter: f, .. } => world.permanents.iter()
             .filter(|(id, m)| m.matches(f, caster)
-                && !(has(m, Keyword::Hexproof) && m.controller != caster)
+                && !hexed(m)
+                && !shielded(m)
                 && !(f.0.iter().all(|c| c.other) && world.source == Some(**id)))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
@@ -4476,6 +4507,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
     let net = i32::try_from(m.counters.0).expect("a few") - i32::try_from(m.counters.1).expect("a few");
     Model {
         name: None,
+        token_name: m.name.clone().or_else(|| m.token_name.clone()),
         owner: controller,
         controller,
         power: m.power.map(|p| p - net),
@@ -4495,6 +4527,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
         temp_lost: Vec::new(),
         temp_protection_from_non: Vec::new(),
         granted_not_blocked_by: Vec::new(),
+        defined_power: None,
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
@@ -4508,6 +4541,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
 fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[String], keywords: &[Keyword], controller: PlayerId) -> Model {
     Model {
         name: None,
+        token_name: Some(format!("{} Token", subtypes.join(" ")).trim_start().to_string()),
         owner: controller,
         controller,
         types: vec!["creature".to_string()],
@@ -4539,6 +4573,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         temp_lost: Vec::new(),
         temp_protection_from_non: Vec::new(),
         granted_not_blocked_by: Vec::new(),
+        defined_power: None,
         temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
@@ -4663,13 +4698,25 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 let (Some(ma), Some(mb)) = (w.permanents.get(&ia).cloned(), w.permanents.get(&ib).cloned()) else { continue };
                 let (pa, pb) = (w.pt_of(&ma).0, w.pt_of(&mb).0);
                 let dealt = |p: Option<i32>| u32::try_from(p.unwrap_or(0).max(0)).expect("non-negative");
-                for (to, from, p) in [(ib, &ma, pa), (ia, &mb, pb)] {
+                // Damage a creature has protection from is prevented, and
+                // so not dealt (CR 702.16e); damage dealt is remembered by
+                // a source whose text gains life when what it damaged dies
+                // (Abattoir Ghoul), as in combat.
+                let mut gave = [false, false];
+                for (k, (to, from_id, from, p)) in [(ib, ia, &ma, pa), (ia, ib, &mb, pb)].into_iter().enumerate() {
                     let m = w.permanents.get_mut(&to).expect("on the board");
+                    if protected(m, from) {
+                        continue;
+                    }
+                    gave[k] = true;
                     let took = deal(m, dealt(p));
                     m.deathtouched |= has(from, Keyword::Deathtouch) && took;
+                    if took && from.combat.gains_life_when_what_it_damaged_dies {
+                        w.damaged_by_life_gainers.push((to, from_id));
+                    }
                 }
-                for (m, p) in [(&ma, pa), (&mb, pb)] {
-                    if has(m, Keyword::Lifelink) {
+                for (k, (m, p)) in [(&ma, pa), (&mb, pb)].into_iter().enumerate() {
+                    if gave[k] && has(m, Keyword::Lifelink) {
                         w.life[m.controller.0 as usize] += dealt(p) as i32;
                     }
                 }
@@ -4712,7 +4759,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     // A copy of the creature chosen, which was on the
                     // battlefield before any of these came back.
                     if let (true, Some(c)) = (read.as_ref().is_some_and(|s| s.may_enter_as_a_copy), world.chosen.first().and_then(|c| world.permanents.get(c))) {
-                        m = Model { name: c.name.clone(), ..copy_of(c, caster) };
+                        m = Model { name: c.name.clone().or_else(|| c.token_name.clone()), ..copy_of(c, caster) };
                     }
                     m.controller = caster;
                     if !m.colors.contains(&Color::Black) {
@@ -4723,14 +4770,19 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     }
                     let m = w.entering(m);
                     w.permanents.insert(id, m);
+                    w.entered.push(Src::Permanent(id));
                 }
             }
             Effect::ShuffleIntoLibraryRevealUntilNamed => unreachable!("each place it lands played by every_shuffle_and_reveal_is_what_its_text_says"),
             Effect::TokenCopy { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get(&id)).cloned() {
                     for _ in 0..w.tokens_per_token(caster) {
+                        // Under an id of the reference's own, so that what
+                        // its enters trigger targets may be it (CR 707.2).
                         let t = w.entering(copy_of(&m, caster));
-                        w.tokens.push(t);
+                        let id = w.fresh_id();
+                        w.permanents.insert(id, t);
+                        w.entered.push(Src::Permanent(id));
                     }
                 }
             }
@@ -4794,9 +4846,12 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::ExileWithSameName { slot } => {
-                if let Some(name) = object(*slot).and_then(|id| w.permanents.get(&id)).and_then(|m| m.name.clone()) {
+                // A token has a name too (CR 111.4), and is exiled with
+                // what shares it.
+                let named = |m: &Model| m.name.clone().or_else(|| m.token_name.clone());
+                if let Some(name) = object(*slot).and_then(|id| w.permanents.get(&id)).and_then(named) {
                     let doomed: Vec<ObjectId> = w.permanents.iter()
-                        .filter(|(_, m)| m.is_creature() && m.name.as_ref() == Some(&name))
+                        .filter(|(_, m)| m.is_creature() && named(m).as_ref() == Some(&name))
                         .map(|(id, _)| *id)
                         .collect();
                     for id in doomed {
@@ -4900,12 +4955,16 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::ReturnAtRandom { to_battlefield, .. } => {
+                // Each enters as the graveyard stood before any of them
+                // left it, all of them returning at once.
+                let before = w.clone();
                 for id in &world.chosen {
-                    let Some(mut card) = w.leave_yard(*id) else { continue };
+                    let Some(card) = w.leave_yard(*id) else { continue };
                     if *to_battlefield {
                         // A new object under its owner's control (CR 110.2).
-                        card.controller = card.owner;
-                        w.permanents.insert(*id, card);
+                        let m = arriving(&before, card.name.as_deref().expect("a card"), card.owner, card.owner);
+                        w.permanents.insert(*id, m);
+                        w.entered.push(Src::Permanent(*id));
                     } else {
                         w.hand[card.owner.0 as usize].push(card.name.expect("a card"));
                     }
@@ -4914,7 +4973,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::SacrificeOfTheirChoice { .. } => {
                 if let Some(&victim) = world.chosen.first() {
                     w.refresh();
-                    w.cost_sacrificed = w.permanents.get(&victim).cloned();
+                    w.cost_sacrificed = w.as_it_last_was(victim);
                     w.leave(victim, Dest::Graveyard);
                     w.a_creature_died = true;
                 }
@@ -5126,24 +5185,34 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 if let Some((src, m)) = w.linked_exile.clone().filter(|(src, _)| Some(*src) == w.source) {
                     let _ = src;
                     w.linked_exile = None;
-                    let name = m.name.clone().expect("a card has a name");
+                    // A token exiled ceased to exist (CR 111.7, 704.5d), and
+                    // what has left the battlefield as a token comes back to
+                    // no zone (111.8): nothing returns.
+                    let Some(name) = m.name.clone() else { continue };
                     if let Some(at) = w.exile[m.owner.0 as usize].iter().position(|n| *n == name) {
                         w.exile[m.owner.0 as usize].remove(at);
                         // A new object, as it is printed, under its owner
                         // (CR 400.7, 610.3).
-                        let back = w.entering(Model::printed_with_faces(&cached_oracle()[&name], m.owner));
-                        w.permanents.insert(ObjectId(u64::MAX - w.permanents.len() as u64), back);
+                        let back = arriving(&w, &name, m.owner, m.owner);
+                        let id = w.fresh_id();
+                        w.permanents.insert(id, back);
+                        w.entered.push(Src::Permanent(id));
                     }
                 }
             }
             Effect::Reanimate { slot, minus_counter } => {
-                if let Some(mut m) = object(*slot).and_then(|id| w.leave_yard(id)) {
-                    m.controller = caster;
+                // Its counters as it enters, counted on the graveyard it is
+                // still in: Unbreathing Horde counts itself (its ruling).
+                let before = w.clone();
+                if let Some(card) = object(*slot).and_then(|id| w.leave_yard(id)) {
+                    let mut m = arriving(&before, card.name.as_deref().expect("a card"), card.owner, caster);
                     if *minus_counter {
                         change(&mut m, -1, -1);
                         m.counters.1 += 1;
                     }
-                    w.permanents.insert(object(*slot).expect("just read"), m);
+                    let id = object(*slot).expect("just read");
+                    w.permanents.insert(id, m);
+                    w.entered.push(Src::Permanent(id));
                 }
             }
             Effect::DamageEqualToExiledPower { slot } => {
@@ -5185,12 +5254,11 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     if *exile { w.exile[m.owner.0 as usize].push(name) } else { w.graveyard[m.owner.0 as usize].push(name) }
                 }
             }
-            Effect::CounterUnlessPays { slot, n } => {
+            // Paid as [`pay_choices`] paid it, and the spell stays; or not,
+            // and it is countered.
+            Effect::CounterUnlessPays { slot, .. } => {
                 if let Some(at) = object(*slot).and_then(|id| w.stack.iter().position(|(s, _, _)| *s == id)) {
-                    if w.paid {
-                        let payer = w.stack[at].1.controller;
-                        w.pay_generic(payer, *n);
-                    } else {
+                    if !w.paid {
                         let (_, m, _) = w.stack.remove(at);
                         w.graveyard[m.owner.0 as usize].push(m.name.expect("a spell from a card"));
                     }
@@ -5586,9 +5654,18 @@ fn pay_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<World> {
     let mut ways = vec![world.clone()];
     for effect in &spec.effects {
         match effect {
+            // Paid each way its controller can pay it, from their pool and
+            // the mana abilities of their untapped lands and artifacts, or
+            // not paid (CR 118.12, 605.3a).
             Effect::CounterUnlessPays { slot, n } => {
-                if whose(*slot).is_some_and(|p| world.can_pay_generic(p, *n)) {
-                    ways = ways.into_iter().flat_map(|w| [World { paid: true, ..w.clone() }, w]).collect();
+                if let Some(p) = whose(*slot) {
+                    let cost = mana_cost(&format!("{{{n}}}")).expect("a generic cost");
+                    ways = ways.into_iter()
+                        .flat_map(|w| {
+                            let paying: Vec<World> = ways_to_pay(&w, p, &cost).into_iter().map(|paid| World { paid: true, ..paid }).collect();
+                            paying.into_iter().chain(std::iter::once(w))
+                        })
+                        .collect();
                 }
             }
             Effect::ThatPlayerDiscards { slot } => {
@@ -5832,13 +5909,18 @@ fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model,
         let mut ways = Vec::new();
         let named = m.name.is_some();
         for entering in std::iter::once(m.clone()).chain(world.permanents.values().filter(|c| c.is_creature())
-            .map(|c| Model { name: c.name.clone().filter(|_| named), ..copy_of(c, caster) }))
+            // A card copying a token is named as the token is (CR 707.2,
+            // 111.4); a token copying anything is observed as a token.
+            .map(|c| Model { name: c.name.clone().or_else(|| c.token_name.clone()).filter(|_| named), ..copy_of(c, caster) }))
         {
             let mut w = world.clone();
             w.permanents.insert(id, entering);
             w.source = Some(id);
             w.state_based_actions();
-            ways.push(w);
+            // A copy has what it copies' enters trigger, which triggers
+            // as it enters (CR 707.2, 603.6a).
+            w.entered.push(Src::Permanent(id));
+            ways.extend(settle_entries(w));
         }
         return ways;
     }
@@ -5850,14 +5932,28 @@ fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model,
         w.state_based_actions();
         return vec![w];
     }
+    entry_counters(spec, world, caster, &mut m);
+    w.permanents.insert(id, m);
+    w.source = Some(id);
+    w.state_based_actions();
+    match &spec.etb {
+        Some(trigger) if !(trigger.if_morbid && !w.a_creature_died) => trigger_outcomes(trigger, &w, caster),
+        _ => vec![w],
+    }
+}
+
+/// The counters `m`, a creature read as `spec`, enters with under `caster`
+/// (CR 614.1c, 122.6): its own text's, and a Dearly Departed's in its
+/// caster's graveyard.
+fn entry_counters(spec: &Spec, world: &World, caster: PlayerId, m: &mut Model) {
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
         let n = i32::try_from(n).expect("a few");
-        change(&mut m, n, n);
+        change(m, n, n);
         m.counters.0 += n as u32;
     }
     if spec.enters_with_x_counters {
         let n = i32::try_from(world.x).expect("a few");
-        change(&mut m, n, n);
+        change(m, n, n);
         m.counters.0 += world.x;
     }
     // A counter for each other permanent of a subtype its caster controls
@@ -5867,7 +5963,7 @@ fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model,
         let n = world.permanents.values().chain(&world.tokens).filter(|o| o.controller == caster && o.subtypes.contains(t)).count()
             + world.yard.values().filter(|c| c.owner == caster && c.subtypes.contains(t)).count();
         let n = i32::try_from(n).expect("a few");
-        change(&mut m, n, n);
+        change(m, n, n);
         m.counters.0 += n as u32;
     }
     // A card in its caster's graveyard that gives their creatures of a
@@ -5880,16 +5976,137 @@ fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model,
         .count();
     if extra > 0 {
         let n = i32::try_from(extra).expect("a few");
-        change(&mut m, n, n);
+        change(m, n, n);
         m.counters.0 += n as u32;
     }
-    w.permanents.insert(id, m);
-    w.source = Some(id);
-    w.state_based_actions();
-    match &spec.etb {
-        Some(trigger) if !(trigger.if_morbid && !w.a_creature_died) => trigger_outcomes(trigger, &w, caster),
-        _ => vec![w],
+}
+
+/// What a permanent card's text reads as, by its type: a creature's, an
+/// artifact's, an enchantment's or a land's reading.
+fn read_permanent(card: &Printed) -> Option<Spec> {
+    if card.has_type("Creature") {
+        read_creature(card).ok()
+    } else if card.has_type("Artifact") {
+        read_artifact(card).ok()
+    } else if card.has_type("Enchantment") {
+        read_enchantment(card).ok()
+    } else if card.has_type("Land") {
+        read_land(card).ok()
+    } else {
+        None
     }
+}
+
+/// Card `name`, owned by `owner`, entering the battlefield under
+/// `controller` other than by being cast: a new object (CR 400.7), as its
+/// text reads, tapped if its text has it enter tapped, with the counters
+/// it enters with, and as a copy of a permanent that has its controller's
+/// creatures enter as one (614.1c). Not yet on the battlefield.
+fn arriving(world: &World, name: &str, owner: PlayerId, controller: PlayerId) -> Model {
+    let printed = &cached_oracle()[name];
+    let mut m = match read_permanent(printed) {
+        Some(spec) => {
+            let mut m = Model { tapped: spec.enters_tapped, ..model_of(&spec, printed, controller) };
+            entry_counters(&spec, world, controller, &mut m);
+            m
+        }
+        None => Model::printed(printed, controller),
+    };
+    m.owner = owner;
+    world.entering(m)
+}
+
+/// Every way the enters triggers of what entered as something resolved can
+/// go, once that is done (CR 603.2, 603.3): each permanent that entered and
+/// is still there, whose text has an enters trigger whose intervening "if"
+/// holds (603.4), is put on the stack by its controller, the active
+/// player's first and each player's in any order they choose (101.4,
+/// 603.3b), its targets chosen as it is put there (603.3d); then they
+/// resolve, last put first, each every way it can. What their resolution
+/// puts onto the battlefield triggers in turn. A token copy triggers as
+/// what it copies would (707.2).
+fn settle_entries(mut w: World) -> Vec<World> {
+    let active = w.active;
+    let entered = std::mem::take(&mut w.entered);
+    let mut triggers: Vec<(Option<ObjectId>, PlayerId, Trigger)> = Vec::new();
+    for src in entered {
+        let (id, m) = match src {
+            Src::Permanent(id) => (Some(id), w.permanents.get(&id)),
+            Src::Token(i) => (None, w.tokens.get(i)),
+        };
+        let Some(m) = m else { continue };
+        let Some(printed) = m.name.as_ref().or(m.token_name.as_ref()).and_then(|n| cached_oracle().get(n)) else { continue };
+        let Some(trigger) = read_creature(printed).ok().and_then(|s| s.etb) else { continue };
+        if trigger.if_morbid && !w.a_creature_died {
+            continue;
+        }
+        triggers.push((id, m.controller, *trigger));
+    }
+    if triggers.is_empty() {
+        return vec![w];
+    }
+    let (ap, nap): (Vec<_>, Vec<_>) = triggers.iter().partition(|(_, c, _)| *c == active);
+    let mut out = Vec::new();
+    for ap_order in permutations(ap.len()) {
+        for nap_order in permutations(nap.len()) {
+            let stack: Vec<&(Option<ObjectId>, PlayerId, Trigger)> = ap_order.iter().map(|&i| ap[i])
+                .chain(nap_order.iter().map(|&i| nap[i]))
+                .collect();
+            out.extend(stack_outcomes(&w, &stack));
+        }
+    }
+    out.into_iter().flat_map(settle_entries).collect()
+}
+
+/// Every way `stack`, triggers listed in the order they are put on it
+/// (each with its source and controller), can resolve on `world`: targets
+/// chosen as each is put there, on the board as it is (CR 603.3d; none
+/// legal and it is removed), then each resolved from the top, every way
+/// it can, a "may" taken or not and a "may pay" paid each way it can be,
+/// a target gone by then left out (608.2b).
+fn stack_outcomes(world: &World, stack: &[&(Option<ObjectId>, PlayerId, Trigger)]) -> Vec<World> {
+    let mut choices: Vec<Vec<Option<Vec<Target>>>> = vec![Vec::new()];
+    for (source, controller, trigger) in stack {
+        let mut at = world.clone();
+        at.source = *source;
+        let sets = target_sets(&trigger.spec, &at, *controller);
+        let options: Vec<Option<Vec<Target>>> = if sets.is_empty() { vec![None] } else { sets.into_iter().map(Some).collect() };
+        choices = choices.into_iter()
+            .flat_map(|c| options.iter().map(move |o| [c.clone(), vec![o.clone()]].concat()))
+            .collect();
+    }
+    let mut out = Vec::new();
+    for chosen in choices {
+        let mut put = world.with_faces_put();
+        put.triggered += u32::try_from(chosen.iter().filter(|c| c.is_some()).count()).expect("a few");
+        let mut worlds = vec![put];
+        for (k, (source, controller, trigger)) in stack.iter().enumerate().rev() {
+            let Some(targets) = &chosen[k] else { continue };
+            worlds = worlds.into_iter()
+                .flat_map(|mut w| {
+                    w.source = *source;
+                    let paid = match &trigger.pay {
+                        Some(cost) => ways_to_pay(&w, *controller, cost),
+                        None => vec![w.clone()],
+                    };
+                    let mut out: Vec<World> = paid.iter()
+                        .flat_map(|paid| resolution_ways(&trigger.spec, paid, targets, *controller))
+                        .map(|way| {
+                            let mut after = apply(&trigger.spec, &way, targets, *controller);
+                            after.state_based_actions();
+                            after
+                        })
+                        .collect();
+                    if trigger.optional || paid.is_empty() {
+                        out.push(w);
+                    }
+                    out
+                })
+                .collect();
+        }
+        out.extend(worlds);
+    }
+    out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
 }
 
 /// The permanent `card`, read as `spec`, under `controller`: its printed
@@ -5917,6 +6134,7 @@ fn model_of(spec: &Spec, card: &Printed, controller: PlayerId) -> Model {
 /// (514.2, 500.4).
 fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId) -> Vec<World> {
     let mut w = world.clone();
+    w.active = active;
     for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
         m.damage = 0;
         m.deathtouched = false;
@@ -5970,6 +6188,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
 /// Mana empties as the main phase ends (500.4).
 fn end_step_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId, attacked: bool) -> Vec<World> {
     let mut w = world.clone();
+    w.active = active;
     w.pool = [BTreeMap::new(), BTreeMap::new()];
     w.source = Some(id);
     let controller = w.permanents.get(&id).map_or(P0, |m| m.controller);
@@ -6005,7 +6224,7 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
             for way in resolution_ways(&trigger.spec, paid, &targets, caster) {
                 let mut after = apply(&trigger.spec, &way, &targets, caster);
                 after.state_based_actions();
-                out.push(after);
+                out.extend(settle_entries(after));
             }
         }
         if trigger.optional || paid.is_empty() {
@@ -6116,10 +6335,10 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
                 worlds = worlds.into_iter()
                     .flat_map(|w| {
                         let mut out: Vec<World> = resolution_ways(&trigger.spec, &w, targets, caster).iter()
-                            .map(|way| {
+                            .flat_map(|way| {
                                 let mut after = apply(&trigger.spec, way, targets, caster);
                                 after.state_based_actions();
-                                after
+                                settle_entries(after)
                             })
                             .collect();
                         if trigger.optional {
@@ -7139,8 +7358,10 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                 // not (CR 603.10a: it sees the deaths it dies with).
                 let mut who = vec![vec![spell]];
                 if spec.watch.is_some() {
+                    // Each that lethal damage kills: not one that is
+                    // indestructible or shielded (CR 702.12b, 701.19a).
                     let creatures: Vec<ObjectId> = after_entering.permanents.iter()
-                        .filter(|(_, m)| m.is_creature())
+                        .filter(|(_, m)| m.is_creature() && !has(m, Keyword::Indestructible) && m.shields == 0)
                         .map(|(r, _)| *r)
                         .collect();
                     who.extend(creatures.iter().filter(|r| **r != spell).map(|r| vec![*r]));
@@ -7225,7 +7446,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
             }
             for targets in expected_sets {
                 *casts += 1;
-                let want: Vec<World> = payable.iter().map(|p| resolve(spec, &pay(&world, p), &targets, P0, card, spell)).collect();
+                let want: Vec<World> = payable.iter().flat_map(|p| settle_entries(resolve(spec, &pay(&world, p), &targets, P0, card, spell))).collect();
                 let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
                 let mut endings = Vec::new();
                 let mut asked = Vec::new();
@@ -7257,7 +7478,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
             for targets in expected_sets {
                 *casts += 1;
                 let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
-                    .map(|way| resolve(spec, way, &targets, P0, card, spell))
+                    .flat_map(|way| settle_entries(resolve(spec, way, &targets, P0, card, spell)))
                     .collect();
                 let (endings, asked) = questions_asked(|| if is_random(spec) {
                     over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets))
@@ -7276,7 +7497,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                     for kind in ["artifact", "creature", "enchantment", "land", "planeswalker"] {
                         let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
                             .filter(|w| w.picked.as_deref() == Some(kind))
-                            .map(|way| resolve(spec, way, &targets, P0, card, spell))
+                            .flat_map(|way| settle_entries(resolve(spec, way, &targets, P0, card, spell)))
                             .collect();
                         let keep = |a: &Answer| !matches!(a, Answer::Index(_, label) if label.to_lowercase() != kind);
                         let endings = every_ending_keeping(&state, &registry, Some(spell), &targets, None, &keep);
@@ -7293,7 +7514,7 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
         if cost.symbols.contains(&ManaSymbol::X) {
             for targets in expected_sets {
                 *casts += 1;
-                let want: Vec<World> = (0..=X_FLOAT).map(|x| resolve(spec, &World { x, pool: x_left(&world, x), ..world.clone() }, &targets, P0, card, spell)).collect();
+                let want: Vec<World> = (0..=X_FLOAT).flat_map(|x| settle_entries(resolve(spec, &World { x, pool: x_left(&world, x), ..world.clone() }, &targets, P0, card, spell))).collect();
                 if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
                     failures.push(format!("{name} at {targets:?}: {why}"));
                 }
@@ -7304,6 +7525,15 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
         for targets in expected_sets {
             *casts += 1;
             let resolved = resolve(spec, &world, &targets, P0, card, spell);
+            // What entered as it resolved, and triggered: every way those
+            // triggers go, against every way the engine's do.
+            let settled = settle_entries(resolved.clone());
+            if settled.len() != 1 || settled[0].triggered != resolved.triggered {
+                if let Some(why) = disagreement(&settled, &every_ending_at(&state, registry, spell, &targets), registry) {
+                    failures.push(format!("{name} at {targets:?}: {why}"));
+                }
+                continue;
+            }
             let want = resolved.observed();
             match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
                 Ok(after) => {
@@ -7562,7 +7792,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 }
                 if let Some(victim) = sac {
                     paid.refresh();
-                    paid.cost_sacrificed = Some(paid.permanents[victim].clone());
+                    paid.cost_sacrificed = paid.as_it_last_was(*victim);
                     paid.leave(*victim, Dest::Graveyard);
                     paid.a_creature_died = true;
                 }
@@ -8894,6 +9124,8 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         x: 0,
         faces_put: BTreeMap::new(),
         triggered: 0,
+        entered: Vec::new(),
+        active: P0,
         prevent_combat_damage_except: Vec::new(),
         damaged_by_life_gainers: Vec::new(),
         tokens: Vec::new(),
