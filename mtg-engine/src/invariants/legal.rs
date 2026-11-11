@@ -369,13 +369,17 @@ fn cast(state: &GameState, acting: PlayerId, id: ObjectId, targets: &[Target], s
         // requirement whose announcement carries `fixed_len` targets. Judging
         // an announcement by the full count instead reads every one of them as
         // a cast with too few targets.
+        //
+        // The targets are judged with the spell on the stack, where CR
+        // 601.2a has it as they are chosen (601.2c).
+        let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, id, &req);
         let announcing = crate::engine::set_slot(
-                state, acting, id, &req, targets, b, registry)
+                &chosen_in, acting, id, &req, targets, b, registry)
             .is_some_and(|s| targets.len() == s.fixed_len && s.max > 0);
         if !announcing && !arity_ok(&req, targets.len()) {
             v.push(format!("{what} offers {} targets for {req:?}", targets.len()));
         }
-        targets_ok(state, acting, id, true, &req, targets, &what, registry, v);
+        targets_ok(&chosen_in, acting, id, true, &req, targets, &what, registry, v);
         card_predicate_ok(state, acting, obj.card_id, targets, &what, registry, v);
     }
     for t in targets {

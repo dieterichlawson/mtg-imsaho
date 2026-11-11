@@ -474,6 +474,35 @@ fn smite_the_monstrous_reads_power_as_it_is_now() {
         "printed 5 power, but 3 right now");
 }
 
+/// Defect 47, found by the generated boards: a spell's targets are chosen
+/// with the spell already on the stack (CR 601.2a moves it there before
+/// anything is announced, 601.2c), so a Sturmgeist, whose power is the
+/// number of cards in its controller's hand, does not count the Smite being
+/// cast. With the Smite and three other cards in hand, the Sturmgeist is a
+/// 4/4 as the cast is begun and a 3/3 as its target is chosen: not offered,
+/// and not accepted when named. With four others, it is a 4/4 either way.
+#[test]
+fn smite_the_monstrous_judges_power_with_itself_on_the_stack() {
+    let reg = registry();
+    for others in [3usize, 4] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let geist = named_permanent(&mut state, &reg, "Sturmgeist", P0);
+        let smite = castable_spell(&mut state, &reg, "Smite the Monstrous", P0);
+        while state.objects_in_zone(Zone::Hand, P0).len() < others + 1 {
+            spell_in_hand(&mut state, &reg, "Moon Heron", P0);
+        }
+        assert_eq!(state.objects_in_zone(Zone::Hand, P0).len(), others + 1, "test setup: the Smite and {others} others");
+        assert_eq!(state.effective_power(geist, &reg), Some(i32::try_from(others + 1).unwrap()),
+            "test setup: the Sturmgeist counts the Smite while it is in hand");
+        let legal = others >= 4;
+        assert_eq!(offered_targets(&state, &reg, smite).contains(&Target::Object(geist)), legal,
+            "with {others} other cards in hand, the Sturmgeist is a {others}/{others} as the target is chosen");
+        let after = cast_and_resolve(&state, &reg, smite, vec![Target::Object(geist)]);
+        assert_eq!(after.get_object(geist).unwrap().zone == Zone::Graveyard, legal,
+            "named anyway, the cast is refused when the target is not legal");
+    }
+}
+
 // -------------------------------------------------------------------------
 // Naturalize
 // -------------------------------------------------------------------------

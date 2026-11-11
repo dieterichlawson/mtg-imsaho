@@ -596,6 +596,26 @@ pub enum TargetRequirement {
     ModalChoice(Vec<TargetRequirement>),
 }
 
+impl TargetRequirement {
+    /// Whether what it allows turns on a power ("target creature with power
+    /// 4 or greater"). A power is the one characteristic a target is judged
+    /// by that a card moving from its owner's hand or graveyard to the stack
+    /// can change, through what counts that zone (Sturmgeist's cards in hand,
+    /// Runechanter's Pike's instants and sorceries in a graveyard), which is
+    /// why a spell's targets are chosen with the spell already on the stack
+    /// (CR 601.2a, 601.2c; `engine::targeting::as_targets_are_chosen`).
+    #[must_use]
+    pub fn reads_power(&self) -> bool {
+        match self {
+            Self::CreatureWithFilter(f) | Self::PermanentWithFilter(f) => matches!(f, TargetFilter::PowerAtLeast(_)),
+            Self::TwoTargets(a, b) => a.reads_power() || b.reads_power(),
+            Self::UpToTargets(_, r) => r.reads_power(),
+            Self::ModalChoice(modes) => modes.iter().any(Self::reads_power),
+            _ => false,
+        }
+    }
+}
+
 /// The trait that every card implements.
 /// Provides static data and behavioral hooks.
 pub trait CardBehavior: Send + Sync {

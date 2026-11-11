@@ -43,8 +43,12 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // asked twice, once per slot, off one stash.
         let resuming = state.pending_spell_cast.as_ref()
             .is_some_and(|p| p.object_id == object_id);
+        // Chosen, and checked, with the spell on the stack (CR 601.2a,
+        // 601.2c): the move itself comes below, once the cast is known to
+        // go ahead.
+        let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, object_id, &target_req);
         let pending_slot = crate::engine::targeting::set_slot(
-            state, player, object_id, &target_req, targets, behavior, registry)
+            &chosen_in, player, object_id, &target_req, targets, behavior, registry)
             .filter(|s| !(resuming && s.min == 0) && targets.len() == s.fixed_len && s.max > 0);
 
         // CR 601.2c: the targets are chosen as the spell is cast, and they must
@@ -60,11 +64,12 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // fills, and comes back through this gate in full once answered.
         let named_so_far_are_legal = if pending_slot.is_some() {
             crate::engine::targeting::prefix_is_legal(
-                state, &target_req, targets, player, object_id, behavior, registry)
+                &chosen_in, &target_req, targets, player, object_id, behavior, registry)
         } else {
             crate::engine::targeting::targets_are_legal(
-                state, &target_req, targets, player, object_id, behavior, registry)
+                &chosen_in, &target_req, targets, player, object_id, behavior, registry)
         };
+        drop(chosen_in);
         if !named_so_far_are_legal {
             state.log(crate::state::LogLevel::Debug, format!(
                 "{}: cast refused, illegal targets {targets:?} (CR 601.2c)", data.name));

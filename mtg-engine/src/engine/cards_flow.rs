@@ -333,8 +333,9 @@ pub(crate) fn has_castable_with_potential_mana(
 
             // Check if the spell has valid targets (or needs none).
             let target_req = behavior.target_requirement();
+            let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, obj.id, &target_req);
             let cast_actions = generate_cast_actions_with_targets(
-                state, player, obj.id, &target_req, behavior, registry,
+                &chosen_in, player, obj.id, &target_req, behavior, registry,
             );
             if !cast_actions.is_empty() {
                 return true;

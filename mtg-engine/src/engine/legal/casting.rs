@@ -128,8 +128,10 @@ pub(crate) fn from_hand(
                 seen_untargeted_casts.push(obj.card_id);
             }
 
+            // Chosen with the spell on the stack (CR 601.2a, 601.2c).
+            let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, obj.id, &target_req);
             let mut cast_actions = generate_cast_actions_with_targets(
-                state, player, obj.id, &target_req, behavior, registry,
+                &chosen_in, player, obj.id, &target_req, behavior, registry,
             );
 
             // Set the autotap plan on all generated cast actions.
@@ -243,7 +245,7 @@ pub(crate) fn from_hand(
                 // UI can show the effective damage in the label.
                 let exile_x_from_gy_max = additional.exile_x_max;
                 actions.extend(cast_actions);
-                let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior, registry);
+                let spec = build_cast_target_spec(&chosen_in, player, obj.id, &target_req, behavior, registry);
                 let additional_cost_label = additional.label.clone();
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
@@ -497,8 +499,10 @@ pub(crate) fn flashback(
                 seen_untargeted_flashbacks.push(key);
             }
 
+            // Chosen with the spell on the stack (CR 601.2a, 601.2c).
+            let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, obj.id, &target_req);
             let mut cast_actions = generate_cast_actions_with_targets(
-                state, player, obj.id, &target_req, behavior, registry,
+                &chosen_in, player, obj.id, &target_req, behavior, registry,
             );
             // Each action carries the cost it was offered for, so the cast
             // handler charges the one the player picked rather than
@@ -518,7 +522,7 @@ pub(crate) fn flashback(
             }
             if !cast_actions.is_empty() {
                 actions.extend(cast_actions);
-                let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior, registry);
+                let spec = build_cast_target_spec(&chosen_in, player, obj.id, &target_req, behavior, registry);
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
                     name: data.name.clone(),

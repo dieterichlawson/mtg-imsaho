@@ -250,6 +250,38 @@ fn empty_cast(spell_id: ObjectId) -> Action {
     }
 }
 
+/// The game as `spell`'s targets are chosen in: with the spell on the
+/// stack, where CR 601.2a has moved it before anything of its casting is
+/// announced (601.2c). Judged with it still in its owner's hand, a
+/// Sturmgeist counted it among the cards there, and a Smite the Monstrous
+/// was offered a Sturmgeist one too small for it (defect 47).
+///
+/// Only a power can tell the two apart ([`TargetRequirement::reads_power`]),
+/// so for any other requirement, and a spell already on the stack, this is
+/// the game as it is. Otherwise it is a copy with the spell's zone written
+/// as the stack and the spell out of the pile it was in: no zone change is
+/// done, and nothing sees one.
+///
+/// [`TargetRequirement::reads_power`]: crate::cards::TargetRequirement::reads_power
+pub(crate) fn as_targets_are_chosen<'a>(
+    state: &'a GameState,
+    spell: ObjectId,
+    target_req: &crate::cards::TargetRequirement,
+) -> std::borrow::Cow<'a, GameState> {
+    let Some(at) = state.get_object(spell).map(|o| (o.zone, o.owner)) else { return std::borrow::Cow::Borrowed(state) };
+    if at.0 == Zone::Stack || !target_req.reads_power() {
+        return std::borrow::Cow::Borrowed(state);
+    }
+    let mut view = state.clone();
+    if let Some(o) = view.get_object_mut(spell) {
+        o.zone = Zone::Stack;
+    }
+    let owner = view.get_player_mut(at.1);
+    owner.graveyard_order.retain(|&id| id != spell);
+    owner.library_order.retain(|&id| id != spell);
+    std::borrow::Cow::Owned(view)
+}
+
 pub(crate) fn set_slot(
     state: &GameState,
     caster: PlayerId,
