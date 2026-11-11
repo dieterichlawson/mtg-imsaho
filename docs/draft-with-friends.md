@@ -281,7 +281,8 @@ the settings the AI seats were asked under and a digest of the set data
 (its name, card text and rarities), and a resume under any other
 prints `WARN --resume …: its system prompt is not the live one: …` on the
 terminal and in the log, unless nothing more is asked under it (every
-seat's deck final and the matches best-of-1). The snapshot records a digest of the whole
+seat's deck final and every match played: a guided seat's games are
+asked under its guide, #1015). The snapshot records a digest of the whole
 deal and each pick the card it took, so a build whose card pool has
 changed since (a `git pull` and a rebuild deal other packs from the same
 seed) refuses the snapshot, even when every card taken so far is where it

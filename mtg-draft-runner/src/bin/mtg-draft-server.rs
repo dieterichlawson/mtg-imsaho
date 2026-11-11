@@ -337,7 +337,11 @@ and {} replayed; a match that was in progress is played again from its first gam
             // Decks are kept a seat at a time: the draft is done only when
             // every seat's is final (#1014's review).
             let every_deck = (0..save.seats.len()).all(|seat| save.decks.iter().any(|d| d.seat == seat && d.ready));
-            let still = mtg_draft_runner::lobby::StillAsked::after(every_deck, save.best_of);
+            // Its games are played under the live guide too (#1015).
+            let records: Vec<(usize, &mtg_draft::tournament::MatchResult)> =
+                save.matches.iter().map(|m| (m.round, &m.result)).collect();
+            let remain = mtg_draft_runner::game::matches_remain(&records, save.seats.len(), save.best_of);
+            let still = mtg_draft_runner::lobby::StillAsked::after(every_deck, remain, save.best_of);
             for why in was.unlike(&live, !save.matches.is_empty(), still) {
                 resumed_warnings.push(format!("WARN --resume {path}: its system prompt is not the live one: {why}"));
             }

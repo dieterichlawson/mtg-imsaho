@@ -490,6 +490,22 @@ fn a_resume_under_other_prompt_settings_says_so() {
     let out = pod.run_env(&["--resume", snap], "done.calls", "done.log", &[("MTG_LLM_HISTORY", "2")]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success() && !stderr.contains("MTG_LLM_HISTORY"), "nothing more is drafted:\n{stderr}");
+    // Nor a game setting once every match is played: no game is left to
+    // ask under it (#1015's review).
+    let flipped = if pass_until { "0" } else { "1" };
+    let out = pod.run_env(&["--resume", snap], "done2.calls", "done2.log", &[("MTG_LLM_PASS_UNTIL", flipped)]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success() && !stderr.contains("MTG_LLM_PASS_UNTIL"), "no game is left:\n{stderr}");
+
+    // The game settings are said where a game was played and one is still
+    // to play: a three-seat tournament with its second round to play.
+    let three = pod.path("three.json");
+    let first = pod.run(&["--players", "3", "--save", three.to_str().unwrap()], "three.calls", "three.log");
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+    let mut mid: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&three).unwrap()).unwrap();
+    mid["matches"].as_array_mut().unwrap().retain(|m| m["round"] == 1);
+    assert!(!mid["matches"].as_array().unwrap().is_empty(), "round 1 was played: {}", mid["matches"]);
+    let mid_tournament = pod.write("mid.json", &mid);
 
     for (var, value, said) in [
         ("MTG_LLM_HISTORY", "2", "made under MTG_LLM_HISTORY=0, and the rest of this draft is made under 2"),
@@ -504,8 +520,9 @@ fn a_resume_under_other_prompt_settings_says_so() {
             else { "played under MTG_LLM_PASS_UNTIL=off, and the rest of this tournament is played with the pass-until row on" }),
     ] {
         let log = format!("{var}.log");
-        let from = if var.contains("DRAFT") || var == "MTG_LLM_HISTORY" { drafting.as_str() } else { snap };
-        let out = pod.run_env(&["--resume", from], &format!("{var}.calls"), &log, &[(var, value)]);
+        let drafts = var.contains("DRAFT") || var == "MTG_LLM_HISTORY";
+        let (from, players) = if drafts { (drafting.as_str(), "2") } else { (mid_tournament.as_str(), "3") };
+        let out = pod.run_env(&["--players", players, "--resume", from], &format!("{var}.calls"), &log, &[(var, value)]);
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(out.status.success(), "{stderr}");
         assert!(stderr.contains("its system prompt is not the live one") && stderr.contains(said),
@@ -567,6 +584,22 @@ fn a_guide_edited_in_place_is_named_as_it_was_and_as_it_is() {
     assert!(!stderr.contains("WARN: seat"), "{stderr}");
     let note = stderr.lines().find(|l| l.starts_with("note: seat 0")).unwrap_or_else(|| panic!("no note:\n{stderr}"));
     assert!(note.contains(&format!("guide {guide} as it was")) && note.contains("nothing more is asked"), "{note}");
+
+    // Its decks built and its match still to play, the games are asked
+    // under it: the note said "is not used" while every game call carried
+    // the edited guide (#1015). A warning says so, and the log's header.
+    let mut save: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&snap).unwrap()).unwrap();
+    save.as_object_mut().unwrap().remove("matches");
+    let playing = pod.write("playing.json", &save);
+    let out = pod.run(&["--guide", guide, "--resume", &playing], "games.calls", "games.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(!stderr.contains("nothing more is asked"), "{stderr}");
+    let warn = stderr.lines().find(|l| l.starts_with("WARN: seat 0")).unwrap_or_else(|| panic!("no warning:\n{stderr}"));
+    assert!(warn.contains("only the games still to play are asked") && warn.contains(&format!("guide {guide} as it is now")),
+        "{warn}");
+    let log = std::fs::read_to_string(pod.path("games.log")).unwrap();
+    assert!(log.contains(&format!("guide {guide} as it is now")), "the header names the guide the games were played under");
 
     // Its decks still to build, the rest of the draft is asked under it.
     let mut save: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&snap).unwrap()).unwrap();

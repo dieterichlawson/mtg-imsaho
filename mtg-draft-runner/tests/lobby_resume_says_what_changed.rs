@@ -111,18 +111,19 @@ fn a_changed_guide_after_the_draft_is_not_called_a_mixed_draft() {
     let was = TablePrompt::live(&ai, Some("g.md"), Some("0123456789abcdef"), "set-a");
     let live = TablePrompt::live(&ai, Some("g.md"), Some("fedcba9876543210"), "set-a");
 
-    assert_eq!(StillAsked::after(false, 3), StillAsked::Draft);
+    assert_eq!(StillAsked::after(false, true, 3), StillAsked::Draft);
     let said = was.unlike(&live, false, StillAsked::Draft);
     assert!(said.len() == 1 && said[0].contains("mixture") && said[0].contains("g.md as it was"), "{said:?}");
 
-    assert_eq!(StillAsked::after(true, 3), StillAsked::Sideboarding);
+    assert_eq!(StillAsked::after(true, true, 3), StillAsked::Sideboarding);
     let said = was.unlike(&live, false, StillAsked::Sideboarding);
     assert_eq!(said.len(), 1, "{said:?}");
     assert!(said[0].contains("picks and decks was made under guide g.md as it was")
-            && said[0].contains("only the sideboarding between games is still asked"), "{said:?}");
+            && said[0].contains("only the games still to play and the sideboarding between them are asked"), "{said:?}");
     assert!(!said[0].contains("mixture") && !said[0].contains("rest of this draft"), "{said:?}");
 
-    assert_eq!(StillAsked::after(true, 1), StillAsked::Nothing);
+    assert_eq!(StillAsked::after(true, false, 1), StillAsked::Nothing);
+    assert_eq!(StillAsked::after(true, false, 3), StillAsked::Nothing);
     assert!(was.unlike(&live, false, StillAsked::Nothing).is_empty(), "nothing is asked under the new guide");
 
     // Nor under another draft setting (#1014's review): "the rest of this
@@ -131,4 +132,54 @@ fn a_changed_guide_after_the_draft_is_not_called_a_mixed_draft() {
     was.settings.history = Some(live.settings.history.unwrap() + 2);
     assert_eq!(was.unlike(&live, false, StillAsked::Sideboarding).len(), 1);
     assert!(was.unlike(&live, false, StillAsked::Nothing).is_empty());
+    // The history is in a game seat's system prompt too (#1015's review).
+    let said = was.unlike(&live, false, StillAsked::Games);
+    assert!(said.len() == 1 && said[0].contains("the games still to play are asked under"), "{said:?}");
+    // A game setting, once every match is played, reaches nothing.
+    let mut was = live.clone();
+    was.settings.pass_until = live.settings.pass_until.map(|on| !on);
+    assert_eq!(was.unlike(&live, true, StillAsked::Games).len(), 1);
+    assert!(was.unlike(&live, true, StillAsked::Nothing).is_empty(), "no game is left to play under it");
+}
+
+/// #1015: a snapshot with every deck and a best-of-1 match still to play
+/// was taken as "nothing more is asked", and the note said the new guide
+/// "is not used" while every game was played under it: a guided seat's
+/// game system prompt carries its guide. The games are what is still
+/// asked, and the change is said.
+#[test]
+fn a_changed_guide_before_the_matches_reaches_the_games() {
+    let ai = [SeatKind::Human, SeatKind::Ai("cc".into())];
+    let was = TablePrompt::live(&ai, Some("g.md"), Some("0123456789abcdef"), "set-a");
+    let live = TablePrompt::live(&ai, Some("g.md"), Some("fedcba9876543210"), "set-a");
+
+    assert_eq!(StillAsked::after(true, true, 1), StillAsked::Games);
+    let said = was.unlike(&live, false, StillAsked::Games);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(said[0].contains("only the games still to play are asked, and under guide g.md as it is now"), "{said:?}");
+    assert!(!said[0].contains("mixture") && !said[0].contains("sideboarding"), "{said:?}");
+
+    // Which is what the records say: no match played is a match to play,
+    // and a finished two-seat best-of-1 is none.
+    let result = |a: usize, b: usize| mtg_draft::tournament::MatchResult {
+        player_a: a, player_b: b, wins_a: 1, wins_b: 0,
+        games: vec![serde_json::from_value(serde_json::json!({ "winner": a, "turns": 5 })).unwrap()],
+    };
+    assert!(mtg_draft_runner::game::matches_remain(&[], 2, 1));
+    let mut t = mtg_draft::tournament::Tournament::new(2, mtg_draft::tournament::TournamentConfig { best_of: 1 });
+    let mut records = Vec::new();
+    let mut round = 1;
+    while !t.is_complete() {
+        let pairings = t.generate_pairings();
+        let results: Vec<_> = pairings.iter().filter(|&&(_, b)| b != mtg_draft::tournament::BYE)
+            .map(|&(a, b)| result(a, b)).collect();
+        for r in &results {
+            records.push((round, r.clone()));
+        }
+        t.record_round(pairings, results);
+        round += 1;
+    }
+    let all: Vec<(usize, &mtg_draft::tournament::MatchResult)> = records.iter().map(|(r, m)| (*r, m)).collect();
+    assert!(!mtg_draft_runner::game::matches_remain(&all, 2, 1), "every match is played");
+    assert!(mtg_draft_runner::game::matches_remain(&all[..all.len() - 1], 2, 1), "the last match is still to play");
 }

@@ -992,21 +992,28 @@ impl DraftPromptSettings {
 
     /// How `live` differs from what the snapshot was made under, in
     /// `mtg-draft-replay`'s words; nothing where either side does not say.
-    /// The game settings only once a game was played (`games_played`): a
-    /// match in progress is played again from its first game.
+    /// The game settings only once a game was played (`games_played`) and
+    /// while one is still to play: a match in progress is played again
+    /// from its first game.
     #[must_use]
     /// The draft's own settings only where the draft still asks something
-    /// (`still`): past the decks of a best-of-1 nothing is (#1014's review).
+    /// (`still`): past the decks of a best-of-1 only games are (#1014's review).
     pub fn unlike(&self, live: &Self, games_played: bool, still: crate::lobby::StillAsked) -> Vec<String> {
         let mut out = Vec::new();
-        let drafting = still != crate::lobby::StillAsked::Nothing;
+        let drafting = still.drafting();
         let how = |text: bool| if text { "in text" } else { "in the schema" };
         let format = |text: bool| if text { "text" } else { "schema" };
         let on_off = |on: bool| if on { "on" } else { "off" };
-        if let (true, Some(was), Some(now)) = (drafting, self.history, live.history) {
+        // The history reaches a game seat's system prompt too (#1015's
+        // review), so it is asked under while any game is still to play.
+        if let (true, Some(was), Some(now)) = (still != crate::lobby::StillAsked::Nothing, self.history, live.history) {
             if was != now {
-                out.push(format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft \
-is made under {now}"));
+                out.push(if still == crate::lobby::StillAsked::Draft {
+                    format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft is made under {now}")
+                } else {
+                    format!("its picks and decks were made under MTG_LLM_HISTORY={was}, and the games still to \
+play are asked under {now}")
+                });
             }
         }
         if let (true, Some(was), Some(now)) = (drafting, self.text_answers, live.text_answers) {
@@ -1020,7 +1027,9 @@ is asked {}", format(was), how(now)));
                 out.push(OTHER_SET.to_string());
             }
         }
-        if !games_played {
+        // A game setting reaches only games: none played is no mixture,
+        // and none left to play is none either (#1015's review).
+        if !games_played || still == crate::lobby::StillAsked::Nothing {
             return out;
         }
         if let (Some(was), Some(now)) = (self.game_text_answers, live.game_text_answers) {

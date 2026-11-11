@@ -898,16 +898,16 @@ length its matches were played at", args.best_of);
         })
         .unwrap_or_default();
     // What is still asked under the guide: a snapshot past deck building
-    // has every pick, and its guide reaches only the sideboarding (#1014).
-    let still = mtg_draft_runner::lobby::StillAsked::after(
-        resumed.as_ref().is_some_and(|s| !s.decks.is_empty()), args.best_of);
-    // A changed model plays the games as well, so only a change of guide
-    // alone is narrowed by what is still asked (#1014's review).
-    let still_for = |was: &SeatPolicy, now: &SeatPolicy| {
-        if was.model == now.model { still } else { mtg_draft_runner::lobby::StillAsked::Draft }
-    };
+    // has every pick (#1014), and its guide reaches the games still to
+    // play and the sideboarding between them (#1015).
+    let still = resumed.as_ref().map_or(mtg_draft_runner::lobby::StillAsked::Draft, |s| {
+        let records: Vec<(usize, &MatchResult)> = s.matches.iter().map(|m| (m.round, &m.result)).collect();
+        mtg_draft_runner::lobby::StillAsked::after(!s.decks.is_empty(),
+            mtg_draft_runner::game::matches_remain(&records, args.players, args.best_of), args.best_of)
+    });
+    // A changed model plays the games as well, which `still` counts now
+    // that it counts the games (#1015), as it does a changed guide.
     for (seat, was_policy, now_policy) in &replayed_under {
-        let still = still_for(was_policy, now_policy);
         let (was, now) = SeatPolicy::describe_pair(was_policy, now_policy);
         // The phrase `mtg-draft-replay` and the hosted table use (#948's
         // review), and in the log beside the header's line, where the
@@ -918,7 +918,7 @@ length its matches were played at", args.best_of);
             resume_notes.push(warning);
         } else {
             // Not the warning's words: nothing is asked under two prompts.
-            let note = format!("seat {seat}: every pick and deck of this draft was made under {was}, and \
+            let note = format!("seat {seat}: every pick, deck and match of this draft was made under {was}, and \
 nothing more is asked of it, so {now} is not used");
             mtg_player::stderr_line!("note: {note}");
             resume_notes.push(note);
@@ -1082,7 +1082,7 @@ resume with the --best-of its run was played at)", args.best_of) };
         .iter()
         // Said in the header only where the rest of the run is asked under
         // the other guide: the ledger reads that line as two prompts (#1014).
-        .filter(|(_, was, now)| still_for(was, now) != mtg_draft_runner::lobby::StillAsked::Nothing)
+        .filter(|_| still != mtg_draft_runner::lobby::StillAsked::Nothing)
         .map(|(seat, was, now)| { let (was, now) = SeatPolicy::describe_pair(was, now); (*seat, was, now) })
         .collect();
     log_header!(log, &set_data.set_name, args.players, args.best_of,
