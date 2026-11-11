@@ -822,6 +822,30 @@ pub fn defer_choosers(state: &mut GameState, id: ObjectId, to: Zone, controller:
     !(to == Zone::Battlefield && state.get_object(id).and_then(|o| registry.get(o.card_id)).is_some_and(|b| b.chooses_copy_as_it_enters()))
 }
 
+/// Stands in for `GameState::move_onto_battlefield_together`: each move
+/// recorded, in order, as [`record_move_under`] records one, and each
+/// done. What the engine does to plan the entries together is its own,
+/// tested with the cards that make them (Grimoire of the Dead, Moldgraf
+/// Monstrosity) in `tests/cards_complex_creatures.rs`.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn record_moves_together(state: &mut GameState, ids: &[ObjectId], controller: PlayerId, registry: &CardRegistry) -> Vec<bool> {
+    let mut done = Vec::with_capacity(ids.len());
+    for &id in ids {
+        done.push(record_move_under(state, id, Zone::Battlefield, controller, registry));
+    }
+    done
+}
+
+/// [`record_moves_together`], each move as [`defer_choosers`] reports it.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn defer_choosers_together(state: &mut GameState, ids: &[ObjectId], controller: PlayerId, registry: &CardRegistry) -> Vec<bool> {
+    let mut done = Vec::with_capacity(ids.len());
+    for &id in ids {
+        done.push(defer_choosers(state, id, Zone::Battlefield, controller, registry));
+    }
+    done
+}
+
 /// Stands in for `helpers::sorted`: `names` as they are, which it asserts
 /// are in order. Sorting a list in order leaves it as it is, so on every
 /// list it accepts this is the sort; and the names a proof's registry
@@ -1113,20 +1137,20 @@ pub fn no_name(_: &GameState, _: crate::ids::ObjectId) -> String {
 /// proof runs under (the module doc says why each).
 macro_rules! card_proof {
     ($(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) together(record_moves_together) $(#[$meta])* fn $name() $body }
     };
     (unwind($n:literal) $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind($n) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind($n) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) together(record_moves_together) $(#[$meta])* fn $name() $body }
     };
     // For a card that reads the board back after creating tokens: the
     // tokens made, as [`make_tokens`] says.
     (making_tokens $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(make_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(make_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) together(record_moves_together) $(#[$meta])* fn $name() $body }
     };
     // For a card that reads counters back after adding them: the counters
     // added, as [`add_counters`] says.
     (adding_counters $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(add_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(add_counters) mill(record_mill_one) under(record_move_under) together(record_moves_together) $(#[$meta])* fn $name() $body }
     };
     // For a card that reads the library back after milling a card from
     // it: the card taken out of the library, as [`take_milled`] says.
@@ -1134,12 +1158,12 @@ macro_rules! card_proof {
     // as (Evil Twin): that move reported not done, as [`defer_choosers`]
     // says.
     (deferring_entries $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(defer_choosers) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(defer_choosers) together(defer_choosers_together) $(#[$meta])* fn $name() $body }
     };
     (taking_milled $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(take_milled) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(take_milled) under(record_move_under) together(record_moves_together) $(#[$meta])* fn $name() $body }
     };
-    (@with unwind($n:literal) tokens($tokens:ident) counters($counters:ident) mill($mill:ident) under($under:ident) $(#[$meta:meta])* fn $name:ident() $body:block) => {
+    (@with unwind($n:literal) tokens($tokens:ident) counters($counters:ident) mill($mill:ident) under($under:ident) together($together:ident) $(#[$meta:meta])* fn $name:ident() $body:block) => {
         $(#[$meta])*
         #[kani::proof]
         #[kani::unwind($n)]
@@ -1172,6 +1196,7 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::choose_at_random, $crate::proofs::cards::record_random)]
         #[kani::stub($crate::state::GameState::put_into_library, $crate::proofs::cards::record_to_library)]
         #[kani::stub($crate::state::GameState::move_object_under_control, $crate::proofs::cards::$under)]
+        #[kani::stub($crate::state::GameState::move_onto_battlefield_together, $crate::proofs::cards::$together)]
         #[kani::stub($crate::cards::helpers::shuffle_library, $crate::proofs::cards::record_shuffle)]
         #[kani::stub($crate::cards::helpers::sorted, $crate::proofs::cards::names_in_order)]
         #[kani::stub($crate::cards::store_ids, $crate::proofs::cards::record_store_ids)]

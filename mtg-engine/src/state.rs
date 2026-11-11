@@ -469,6 +469,23 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_grants: IdMap<(Vec<String>, Vec<crate::types::Color>)>,
 
+    /// Where each of the others put onto the battlefield in the same event
+    /// as a deferred entry was as that event began. CR 614.12: an entry is
+    /// replaced by the effects that already exist as it happens, so one of
+    /// those it entered with is not yet a source of them (an Essence of the
+    /// Wild returned beside it does not make it a copy), and one that left
+    /// the zone it works from in that event still is (a Dearly Departed
+    /// returned beside a Human). The rest of its event entered before it
+    /// was asked, so this is kept from when it was deferred, and read while
+    /// its entry is planned ([`GameState::zone_as_entering_began`]).
+    #[serde(default)]
+    pub pending_entry_zones: IdMap<Vec<(ObjectId, Zone)>>,
+
+    /// The zones of [`GameState::pending_entry_zones`] for the entry being
+    /// planned now, and empty at every other moment.
+    #[serde(default)]
+    pub entering_zones_before: Vec<(ObjectId, Zone)>,
+
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
     /// one ends the permanent goes to whichever of the rest is latest — a
@@ -848,6 +865,8 @@ impl GameState {
             pending_entry_controllers: IdMap::new(),
             pending_entry_options: IdMap::new(),
             pending_entry_grants: IdMap::new(),
+            pending_entry_zones: IdMap::new(),
+            entering_zones_before: Vec::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -1437,7 +1456,88 @@ impl GameState {
         controller: PlayerId,
         registry: &crate::cards::CardRegistry,
     ) -> bool {
-        self.move_object_inner(id, to, Some(controller), registry)
+        self.move_object_inner(id, to, Some(controller), None, registry)
+    }
+
+    /// Put `ids` onto the battlefield under `controller` in one event, as
+    /// "return all creature cards" and "return two creature cards" do
+    /// (Grimoire of the Dead, Moldgraf Monstrosity), and say of each, in the
+    /// same order, whether it moved: `false` for an entry deferred on a copy
+    /// choice, exactly as [`GameState::move_object`] says.
+    ///
+    /// CR 614.12 and 616.1: the replacement effects that modify how a
+    /// permanent enters are those that exist before the event, applied to
+    /// the event before it happens. Moved one at a time, each saw the ones
+    /// moved before it: an Essence of the Wild returned first made the
+    /// creatures returned after it copies of itself, a Dearly Departed
+    /// returned first no longer gave the Humans after it their counter, and
+    /// an Unbreathing Horde counted Zombies that had been in another
+    /// player's graveyard. So every entry is planned on the board as it was,
+    /// before any of them moves, each under the player it enters under; then
+    /// they move, each as planned. An entry deferred on its copy choice is
+    /// planned when it is answered, after the rest have entered, and keeps
+    /// where they were (`pending_entry_zones`) to be planned by.
+    pub fn move_onto_battlefield_together(
+        &mut self,
+        ids: &[ObjectId],
+        controller: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<bool> {
+        let before: Vec<(ObjectId, Zone)> = ids.iter()
+            .filter_map(|&id| self.objects.get(&id).map(|o| (id, o.zone)))
+            .collect();
+        let mut plans: Vec<Option<crate::replacement::EnteringPermanent>> = Vec::with_capacity(ids.len());
+        for &id in ids {
+            let from = self.objects.get(&id).map(|o| o.zone);
+            if from.is_none_or(|z| z == Zone::Battlefield) || self.defers_entry(id, Zone::Battlefield, registry) {
+                plans.push(None);
+                continue;
+            }
+            // Planned as entering under `controller`, which the move writes
+            // first; put back, since the card has not moved yet (CR 108.4).
+            let was = self.objects.get(&id).map(|o| o.controller);
+            if let Some(obj) = self.get_object_mut(id) {
+                obj.controller = controller;
+            }
+            plans.push(Some(self.plan_entering(id, from, registry)));
+            if let (Some(obj), Some(was)) = (self.get_object_mut(id), was) {
+                obj.controller = was;
+            }
+        }
+        let mut moved = Vec::with_capacity(ids.len());
+        for (&id, plan) in ids.iter().zip(plans) {
+            let did = self.move_object_inner(id, Zone::Battlefield, Some(controller), plan, registry);
+            if !did {
+                let others: Vec<(ObjectId, Zone)> = before.iter().filter(|(o, _)| *o != id).copied().collect();
+                self.pending_entry_zones.insert(id, others);
+            }
+            moved.push(did);
+        }
+        moved
+    }
+
+    /// Where `id` was as the entry being planned began: the zone kept for
+    /// it if it entered in the same event as a deferred entry being planned
+    /// now (`entering_zones_before`), and where it is otherwise. What a
+    /// replacement effect that modifies how a permanent enters reads of its
+    /// own source (CR 614.12).
+    pub fn zone_as_entering_began(&self, id: ObjectId) -> Option<Zone> {
+        match self.entering_zones_before.iter().find(|(o, _)| *o == id) {
+            Some((_, zone)) => Some(*zone),
+            None => self.objects.get(&id).map(|o| o.zone),
+        }
+    }
+
+    /// Whether moving `id` to `to` waits on its copy choice (CR 614.12b):
+    /// a card that chooses what it enters as, not yet asked, entering the
+    /// battlefield from elsewhere.
+    fn defers_entry(&self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) -> bool {
+        to == Zone::Battlefield
+            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
+            && self.objects.get(&id)
+                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
+            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
+                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
     }
 
     /// Returns whether the object actually moved. It is `false` for exactly
@@ -1453,14 +1553,17 @@ impl GameState {
     /// had no business having — a CR 108.4 and CR 400.7 violation the
     /// fuzzer reported from fifteen seeds (issues #335-#349).
     pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) -> bool {
-        self.move_object_inner(id, to, None, registry)
+        self.move_object_inner(id, to, None, None, registry)
     }
 
+    /// The move, with the entry already planned (`planned`) when it is one
+    /// of several made in one event ([`GameState::move_onto_battlefield_together`]).
     fn move_object_inner(
         &mut self,
         id: ObjectId,
         to: Zone,
         under: Option<PlayerId>,
+        planned: Option<crate::replacement::EnteringPermanent>,
         registry: &crate::cards::CardRegistry,
     ) -> bool {
         // CR 614.12b: a permanent that chooses what to enter as makes that
@@ -1470,13 +1573,7 @@ impl GameState {
         // its controller before anyone receives priority, and the answer
         // re-runs this move. Nothing ever sees the permanent on the
         // battlefield as its printed self with the choice outstanding.
-        if to == Zone::Battlefield
-            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
-            && self.objects.get(&id)
-                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
-            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
-                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
-        {
+        if self.defers_entry(id, to, registry) {
             if !self.pending_entry_choices.contains(&id) {
                 self.pending_entry_choices.push(id);
             }
@@ -1588,7 +1685,10 @@ impl GameState {
         let is_entering = to == Zone::Battlefield
             && from.is_some_and(|z| z != Zone::Battlefield);
         let entering = if is_entering {
-            Some(self.plan_entering(id, from, registry))
+            Some(match planned {
+                Some(plan) => plan,
+                None => self.plan_entering(id, from, registry),
+            })
         } else {
             None
         };

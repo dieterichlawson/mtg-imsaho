@@ -260,6 +260,9 @@ pub fn record_entry_choice(
     state.pending_entry_choices.retain(|&id| id != object);
     state.pending_entry_options.remove(&object);
     let grant = state.pending_entry_grants.remove(&object);
+    // Planned against where the rest of its event was as it began (CR
+    // 614.12), for this entry only.
+    state.entering_zones_before = state.pending_entry_zones.remove(&object).unwrap_or_default();
     // The entry the deferral belonged to may have asked for a controller
     // other than the owner (Grimoire of the Dead, Moldgraf Monstrosity,
     // Fiend Hunter). It was held rather than written, so it is applied now,
@@ -269,6 +272,7 @@ pub fn record_entry_choice(
             state.move_object_under_control(object, Zone::Battlefield, controller, registry),
         None => state.move_object(object, Zone::Battlefield, registry),
     };
+    state.entering_zones_before.clear();
     // What the effect that put it there makes it, now that it is there, as
     // whatever it entered as.
     if let Some((subtypes, colors)) = grant.filter(|_| state.get_object(object).is_some_and(|o| o.zone == Zone::Battlefield)) {
@@ -297,13 +301,16 @@ fn run_entering_pass(
     registry: &CardRegistry,
     pass: Pass,
 ) -> Option<EnteringPermanent> {
+    // Each source where it was as the entry began (CR 614.12): one put
+    // onto the battlefield in the same event as a deferred entry is judged
+    // from the zone it left (`GameState::zone_as_entering_began`).
     let mut candidates: Vec<(ObjectId, CardId)> = state
         .objects
         .values()
         .filter(|o| {
             registry
                 .get(o.card_id)
-                .is_some_and(|b| b.replacement_zones().contains(&o.zone))
+                .is_some_and(|b| state.zone_as_entering_began(o.id).is_some_and(|z| b.replacement_zones().contains(&z)))
         })
         .map(|o| (o.id, o.card_id))
         .collect();

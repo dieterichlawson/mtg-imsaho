@@ -3917,3 +3917,119 @@ fn moldgrafs_evil_twin_copies_only_what_was_there() {
     };
     assert_eq!(options, vec![Target::Object(there)], "only the Moon Heron was there before the return");
 }
+
+/// Grimoire of the Dead's return, with three study counters on it,
+/// activated and resolved.
+fn grimoire_returns_everything(mut state: GameState, reg: &CardRegistry) -> GameState {
+    let grimoire = named_permanent(&mut state, reg, "Grimoire of the Dead", P0);
+    state.get_object_mut(grimoire).unwrap().counters.insert(CounterType::Study, 3);
+    let mut state = activate(&state, reg, grimoire, 1, vec![]);
+    if state.stack.last().is_some() {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, reg);
+    }
+    state
+}
+
+/// Defect 44, found by the generated boards (Moldgraf Monstrosity
+/// returning an Essence of the Wild and a Skaab Goliath): CR 614.12, the
+/// replacement effects that modify how a permanent enters are those that
+/// already exist, and an Essence of the Wild returned in the same event is
+/// not yet on the battlefield to have one. The engine moved the two one at
+/// a time, so the Essence, moved first, made the Goliath a copy of itself.
+///
+/// The two come back in a random order, so each of several seeds: in some
+/// the Essence is the one moved first.
+#[test]
+fn moldgraf_returning_an_essence_of_the_wild_returns_the_other_as_itself() {
+    let reg = registry();
+    for seed in 0..16u64 {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
+        let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+        let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
+        let goliath = named_card_in_graveyard(&mut state, &reg, "Skaab Goliath", P0);
+
+        mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+        let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
+        behavior.on_dies(&mut state, monstrosity, &[], &reg);
+
+        for id in [essence, goliath] {
+            assert_eq!(state.get_object(id).map(|o| o.zone), Some(Zone::Battlefield), "both came back (seed {seed})");
+        }
+        assert_eq!(state.name_of(goliath, &reg), "Skaab Goliath", "the Essence was not there to make it a copy (seed {seed})");
+        assert_eq!((state.effective_power(goliath, &reg), state.effective_toughness(goliath, &reg)), (Some(6), Some(9)));
+    }
+}
+
+/// Defect 44 for Grimoire of the Dead, which returns every creature card
+/// at once: the Essence among them makes none of the others a copy.
+#[test]
+fn grimoire_returning_an_essence_of_the_wild_returns_the_rest_as_themselves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let state = grimoire_returns_everything(state, &reg);
+    assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.name_of(corpse, &reg), "Walking Corpse");
+}
+
+/// CR 614.12 the other way round: a Dearly Departed's effect exists while
+/// it is in the graveyard, so one returned in the same event as a Human
+/// still gives the Human its counter. Moved first, it had left the
+/// graveyard before the Human's entry was worked out, and gave nothing.
+#[test]
+fn grimoire_returning_a_dearly_departed_gives_the_human_beside_it_its_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+    let traveler = named_card_in_graveyard(&mut state, &reg, "Doomed Traveler", P0);
+    let state = grimoire_returns_everything(state, &reg);
+    assert_eq!(state.get_object(traveler).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.get_object(traveler).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(), Some(1),
+        "the Dearly Departed was in the graveyard as the event began");
+}
+
+/// CR 614.12, 616.1: Unbreathing Horde's count is of the board before the
+/// return. A creature returned before it, under Grimoire's controller and
+/// made a Zombie by the Grimoire, is not one of "your" Zombies yet, nor is
+/// a Zombie card from the other player's graveyard. Counted one at a time,
+/// both were. The Horde counts itself (its ruling), and nothing else.
+#[test]
+fn grimoire_returning_an_unbreathing_horde_counts_the_board_before_the_return() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Moon Heron", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+    let horde = named_card_in_graveyard(&mut state, &reg, "Unbreathing Horde", P0);
+    let state = grimoire_returns_everything(state, &reg);
+    assert_eq!(state.get_object(horde).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.get_object(horde).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(), Some(1),
+        "one: the Horde itself, a Zombie card in its controller's graveyard");
+}
+
+/// Defect 44 for a deferred entry: an Evil Twin returned beside an Essence
+/// of the Wild chooses after the Essence has entered, but its entry is
+/// worked out against the board before the return, where there was no
+/// Essence to make it a copy. It is what it chose, a copy of a creature
+/// there before or its printed self.
+#[test]
+fn an_evil_twin_returned_beside_an_essence_of_the_wild_is_what_it_chose() {
+    let reg = registry();
+    for (copy, expected) in [(true, "Moon Heron"), (false, "Evil Twin")] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
+        let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
+        let twin = named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
+        let mut state = grimoire_returns_everything(state, &reg);
+        assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Battlefield));
+        mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+        state.awaiting_action = None;
+        let choice = if copy { mtg_engine::state::EnterAsCopyChoice::Copy(there) } else { mtg_engine::state::EnterAsCopyChoice::Declined };
+        mtg_engine::replacement::record_entry_choice(&mut state, twin, choice, &reg);
+        assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield));
+        assert_eq!(state.name_of(twin, &reg), expected);
+        assert!(state.entering_zones_before.is_empty() && state.pending_entry_zones.is_empty(), "nothing kept past the entry");
+    }
+}
+

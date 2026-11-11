@@ -142,15 +142,20 @@ impl CardBehavior for GrimoireOfTheDead {
                 }
 
                 let count = creatures.len();
-                for &cid in &creatures {
-                    let name = state.obj_name(cid);
+                // All in one event (CR 614.12): what each enters as is
+                // decided by what was there before any of them, not by the
+                // ones returned beside it (an Essence of the Wild among
+                // them makes none of the others a copy of itself).
+                let names: Vec<String> = creatures.iter().map(|&cid| state.obj_name(cid)).collect();
+                let moved = state.move_onto_battlefield_together(&creatures, controller, registry);
+                for ((&cid, name), moved) in creatures.iter().zip(names).zip(moved) {
                     // A card with a copy choice outstanding (Evil Twin) has
                     // its entry deferred until its controller answers, so it
                     // has NOT moved yet. Stamping it anyway left it in its
                     // owner's graveyard wearing this Grimoire's controller
                     // and a Zombie subtype — CR 108.4 and CR 400.7, reported
                     // by the fuzzer from fifteen seeds (issues #335-#349).
-                    if !state.move_object_under_control(cid, Zone::Battlefield, controller, registry) {
+                    if !moved {
                         // Its entry waits on what it enters as a copy of
                         // (CR 614.12b), asked once the rest have entered: it
                         // may copy only a creature there before any of them

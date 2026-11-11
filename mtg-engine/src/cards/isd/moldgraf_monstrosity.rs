@@ -70,9 +70,12 @@ impl CardBehavior for MoldgrafMonstrosity {
 
         // "return two creature cards AT RANDOM".
         let to_return = state.choose_at_random(&creatures_in_gy, 2);
-        for cid in &to_return {
-            let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
-            if !state.move_object_under_control(*cid, Zone::Battlefield, controller, registry) {
+        // Both in one event (CR 614.12): what each enters as is decided by
+        // what was there before either.
+        let names: Vec<String> = to_return.iter().map(|&cid| state.get_object(cid).map(|o| o.name.clone()).unwrap_or_default()).collect();
+        let moved = state.move_onto_battlefield_together(&to_return, controller, registry);
+        for ((cid, name), moved) in to_return.iter().zip(names).zip(moved) {
+            if !moved {
                 // Its entry waits on what it enters as a copy of (CR
                 // 614.12b), asked once the other has entered: it may copy
                 // only a creature there before either (Evil Twin's ruling).

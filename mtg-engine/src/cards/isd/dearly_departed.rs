@@ -41,9 +41,11 @@ impl CardBehavior for DearlyDeparted {
     ) -> Option<crate::replacement::Replacement> {
         use crate::replacement::{ReplaceableEvent, Replacement};
         let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
-        // Must be in our graveyard, and only our own Humans get the counter.
+        // Must be in our graveyard as the entry began (CR 614.12: one put
+        // onto the battlefield beside the Human still gives it the
+        // counter), and only our own Humans get it.
         let owner = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Graveyard => o.owner,
+            Some(o) if state.zone_as_entering_began(self_id) == Some(Zone::Graveyard) => o.owner,
             _ => return None,
         };
         if e.controller != owner || !state.has_subtype(e.object, "Human", registry) {

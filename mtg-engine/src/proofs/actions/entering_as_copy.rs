@@ -18,8 +18,9 @@ use crate::types::Zone;
 /// The answer recorded and the entry finished (`record_entry_choice`, CR
 /// 614.12b, 110.2): the permanent holds the answer (a copy of the creature
 /// chosen, or declined), is no longer waiting on a choice (every other
-/// permanent waiting still is) nor holding what it might copy or be given,
-/// and is put onto the battlefield, under the
+/// permanent waiting still is) nor holding what it might copy or be given
+/// or where the rest of its event was, and is put onto the battlefield,
+/// under the
 /// player its entry was to give it to if `held` names one, and otherwise
 /// as it enters by default (its owner's control). For either answer,
 /// another permanent waiting or none, and `held` a constant of each
@@ -44,6 +45,8 @@ fn recording(held: Option<PlayerId>) {
     // What it may copy and what it is given, kept with the entry.
     state.pending_entry_options.insert(entering, vec![copied]);
     state.pending_entry_grants.insert(entering, (Vec::new(), Vec::new()));
+    // Where the rest of its event was as it began (CR 614.12).
+    state.pending_entry_zones.insert(entering, vec![(waiting, Zone::Graveyard)]);
     let choice = if kani::any() { EnterAsCopyChoice::Copy(copied) } else { EnterAsCopyChoice::Declined };
 
     crate::replacement::record_entry_choice(&mut state, entering, choice, &registry);
@@ -53,6 +56,7 @@ fn recording(held: Option<PlayerId>) {
     let still: &[ObjectId] = if other_waits { &one } else { &[] };
     assert!(state.pending_entry_choices.as_slice() == still);
     assert!(state.pending_entry_controllers.is_empty() && state.pending_entry_options.is_empty() && state.pending_entry_grants.is_empty());
+    assert!(state.pending_entry_zones.is_empty() && state.entering_zones_before.is_empty());
     assert!(match held {
         Some(p) => asked_for(&[Act::MoveUnder(entering, Zone::Battlefield, p)]),
         None => asked_for(&[Act::Move(entering, Zone::Battlefield)]),
