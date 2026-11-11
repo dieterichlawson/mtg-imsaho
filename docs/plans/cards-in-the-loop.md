@@ -20,7 +20,8 @@ Two layers check cards against their Oracle text.
   and code after a call reads a state the call did not change, or never
   sees the call fail. The engine actions are proved separately
   (`proofs/actions/`), but nothing ties a recorder to the action it stands
-  in for. Of the 40 defects found so far, 3 were found by card proofs.
+  in for. Of the 40 defects found before this plan, 3 were found by card
+  proofs.
 - **The independent reference** (`mtg-engine/tests/card_semantics.rs`). A
   grammar reads every card's Oracle text, all 268 of the pool, and a
   reference semantics written from the Comprehensive Rules says what each
@@ -141,15 +142,107 @@ worked to its cause:
 Each found by a board none of the fixed ones was. After them, every card
 agrees with its text on the first four boards.
 
+### A1, continued: deaths on the boards, and 1,024 of them
+
+The first widening of A2 came next, because sixty-four boards needed
+it: a permanent with a dies trigger or a watcher of deaths may now be on
+a board. At most one, none beside a card under test that is one, and a
+board holding one holds at most four creatures, so that the orders its
+triggers may go on the stack in stay countable (a board wipe over five
+death watchers is 5! orders of each player's). The reference reads the
+deaths as the rules have them: each creature that dies records its last
+known information, its own dies trigger and every watcher's, on the
+battlefield or dying beside it, triggers (CR 603.6c, 603.10a), and they
+go on the stack in APNAP order, each distinct order of each player's own
+(603.3b).
+
+Sixty-four boards then disagreed on 4 of 36,549 casts, boards 64 to 320
+on 4 more, and boards 320 to 1,024 on 15. Each was worked to its cause.
+Six engine defects:
+
+- **Defect 42.** Corpse Lunge read the exiled card's power in exile, as
+  it resolved; the ruling on the same words (Corpse Explosion,
+  2022-04-29) reads it as it last existed in the graveyard. Boneyard
+  Wurm left itself out of its own count. Issue #576 had chosen the
+  reading in exile on purpose; it is reversed.
+- **Defect 43.** A spell's additional costs were paid with the card
+  still in its owner's hand, where CR 601.2a moves it to the stack first:
+  Sturmgeist exiled to Corpse Lunge counted the Lunge in its hand.
+- **Defect 44.** Creatures returned together (Grimoire of the Dead,
+  Moldgraf Monstrosity) were moved one at a time, each seeing the ones
+  before it: an Essence of the Wild among them made the rest copies of
+  itself, a Dearly Departed among them gave the Humans after it nothing,
+  and an Unbreathing Horde counted what had just arrived. CR 614.12 works
+  each entry out against the effects that existed before the event; the
+  engine now plans them all before any moves.
+- **Defect 45.** An Evil Twin entering under its controller's Essence of
+  the Wild was what it chose, where the Essence's ruling makes it an
+  Essence "no matter what order these effects are applied". Found reading
+  the code for defect 44; the reference had it wrong the same way.
+- **Defect 46.** Dearly Departed read an entering permanent's own
+  subtypes, so an Evil Twin entering as a copy of a Human was no Human to
+  it (CR 614.12, 707.2).
+- **Defect 47.** A spell's targets were chosen with the card still in its
+  owner's hand, where CR 601.2a has moved it to the stack first: Smite the
+  Monstrous was offered a Sturmgeist that counted the Smite among the
+  cards in its controller's hand.
+
+And the reference's own gaps, each closed: counters annihilating (CR
+704.5q) and surviving a transform; a copy entering tapped and with the
+counters its copied text gives it (an Evil Twin copying a Festerhide
+Boar after a death); a Dearly Departed's counter on a copy of a token
+and on a token; creatures' mana abilities, and abilities whose cost
+mills, paying "unless its controller pays"; enter watchers for what
+arrives; a creature entering with no toughness dying, with what watches
+it; a draw from a short library; a negative power gaining no life
+(107.1b); the triggers paying a cost sets off resolving before the
+spell (601.2i), after the state-based actions the cast is followed by
+(704.3: a Boneyard Wurm that loses the last creature card it counted
+dies before the spell resolves), and a spell whose every target has left
+not resolving (608.2b); a copy leaving the battlefield as the card it is
+(400.7: an Evil Twin copying a Boneyard Wurm dies an Evil Twin); and a
+watcher that died seeing only the deaths of its own event and those
+before it (603.10a: a Falkenrath Noble dying beside a Gallows Warden
+does not see the Spirit that dies of the Warden's leaving). Two harness
+gaps: a random trigger a cost sets off (Moldgraf Monstrosity sacrificed
+to Altar's Reap) was played from one seed, not 32, and a resolution that
+settled one way was compared as it stood before its copy choices were
+made.
+
+After them every card agrees with its text on boards 0 to 1,024: about
+580,000 casts of the 268 readable cards, in two runs of the same build.
+Two earlier runs of that build, made under an 8 GB address-space cap,
+each reported one disagreement that no rerun reproduces, alone or with
+the boards before it (Moldgraf Monstrosity on board 693, 20 runs of it
+alone agreeing; and a reference panic). That is not yet explained, so a
+result of the exhaustive tier is taken from two runs, not one.
+
+Known and not yet fixed, each with a test or a note where it shows:
+
+- **"Unless pays" is paid by the planner.** A cost the engine asks for as
+  a spell resolves (Frightful Delusion's) is paid from
+  the sources its autotap planner picks, not as the payer chooses (CR
+  601.2g-h, 605.3a). The reference compares those endings by
+  `disagreement_paying`: each the engine reaches must be one the text
+  allows, and it must reach a paying one and a declining one.
+- **Two Essences.** Of two Essences of the Wild, the engine applies the
+  one with the higher id last; CR 616.1 lets the entering creature's
+  controller choose. Both copies are 6/6 Avatars unless one Essence is
+  itself a copy with something added (an Evil Twin's ability).
+- **A deferred copy's own count.** An Evil Twin returned beside others
+  and copying a card whose own entry counts the board (an Unbreathing
+  Horde) counts the board as it is when the Twin is answered, the others
+  already there.
+
 ### A2. Wider boards (next)
 
 The vocabulary leaves out, each for a reason the reference does not yet
 carry to a board it did not write:
 
-1. a permanent with a dies trigger or a watcher of deaths, casts or
-   entries: the reference fires these for the card under test, and must
-   for any permanent on the board (a Doom Blade killing a Doomed Traveler,
-   a Murder of Crows watching it), the way it now does for entries;
+1. what watches deaths is in (above), one to a board; still out are
+   upkeep and end-step triggers, creatures that attack each combat, death
+   triggers that search or shuffle a library, and more than one death
+   watcher on a board;
 2. Auras and Equipment attached to what the board holds;
 3. double-faced cards on either face;
 4. statics that change costs, tokens, entries, mills, targeting or
@@ -185,8 +278,10 @@ board, which A2 builds toward.
 
 ### Scale
 
-`cargo test` runs four boards per card (about 20 s in a debug build). The
-exhaustive tier runs hundreds, in release, sharded with
+`cargo test` runs four boards per card (about 20 s in a debug build). A
+release build casts every card on 64 boards in about 20 s and on 1,024
+in about six minutes (`CARD_SEMANTICS_BOARDS=1024 cargo test --release
+-p mtg-engine --test card_semantics -- generated_boards`), sharded with
 `CARD_SEMANTICS_FIRST_BOARD`.
 
 ## Part B: Kani card proofs that are sound about the engine
