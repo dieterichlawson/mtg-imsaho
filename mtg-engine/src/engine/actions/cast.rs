@@ -369,17 +369,22 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         mana::auto_pay_reserving(&mut state.get_player_mut(player).mana_pool, &pay, &reserve)
             .expect("legal_actions should have verified mana availability");
 
-        // CR 601.2b: additional costs are paid before the spell goes on the
-        // stack. One dispatch on the kind, shared with the exile-choice handler.
-        costs::pay_additional_cost(
-            state, registry, card_id, object_id, player, sacrifice, exile_count, exile_ids);
-
         // Move to stack and store targets. The zone the spell was cast from
         // (CR 601.2a) is read before the move, because after it the spell is
         // on the stack and nothing else remembers where it came from — which
         // is the whole of "whenever you cast a spell from your graveyard".
         let cast_from = state.get_object(object_id).map(|o| o.zone);
         state.move_object(object_id, Zone::Stack, registry);
+
+        // CR 601.2h: the additional costs are paid with the spell on the
+        // stack, where 601.2a put it before anything was announced or paid.
+        // They were paid with the card still in its owner's hand (citing
+        // 601.2b, which announces them), so a count of the hand paid for
+        // counted the spell: Sturmgeist exiled to Corpse Lunge was one too
+        // big (defect 43). One dispatch on the kind, shared with the
+        // exile-choice handler.
+        costs::pay_additional_cost(
+            state, registry, card_id, object_id, player, sacrifice, exile_count, exile_ids);
         {
             let obj = state.get_object_mut(object_id).expect("spell must exist after moving to stack");
             obj.targets = targets.to_vec();

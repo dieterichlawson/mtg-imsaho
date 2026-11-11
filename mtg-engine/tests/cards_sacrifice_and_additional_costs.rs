@@ -917,6 +917,29 @@ fn corpse_lunge_deals_the_power_the_card_had_as_the_cost_was_paid() {
          is in exile by the time the spell resolves (a 4/4)");
 }
 
+/// Defect 43: CR 601.2a moves a spell to the stack before anything else of
+/// its casting, and 601.2h pays its costs after, so a cost that reads its
+/// payer's hand reads it without the spell. Sturmgeist's power is the
+/// number of cards in its owner's hand: exiled to Corpse Lunge, it had as
+/// it last existed in the graveyard one less than the hand the Lunge was
+/// cast from. Paid with the Lunge still in hand, it counted the Lunge.
+#[test]
+fn corpse_lunge_exiling_sturmgeist_counts_the_hand_without_the_lunge() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let geist = named_card_in_graveyard(&mut state, &reg, "Sturmgeist", P0);
+    spell_in_hand(&mut state, &reg, "Moon Heron", P0);
+    spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
+    let target = ready_creature(&mut state, P1, 5, 9);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+    let in_hand = state.objects_in_zone(Zone::Hand, P0).len();
+    assert!(in_hand >= 3, "test setup: the Lunge and two other cards in hand");
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+    assert_eq!(state.get_object(geist).unwrap().zone, Zone::Exile, "the Sturmgeist paid the cost");
+    assert_eq!(state.get_object(target).unwrap().damage_marked, u32::try_from(in_hand - 1).unwrap(),
+        "its power as the cost was paid: the hand without the Lunge, already on the stack");
+}
+
 /// Ruling: "You must exile exactly one creature card from your graveyard to
 /// cast this spell; you cannot cast it without exiling a creature card."
 ///

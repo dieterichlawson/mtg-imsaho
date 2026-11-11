@@ -644,19 +644,20 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         let x = funded + options.x_discount;
                         state.log(LogLevel::Event, format!("Funded X = {x}"));
 
-                        // Step 4: pay additional costs (CR 601.2b), through
-                        // the same dispatch the eager cast path uses.
-                        crate::engine::costs::pay_additional_cost(
-                            state, registry, pending.card_id, pending.object_id, player,
-                            pending.sacrifice, pending.exile_count, &pending.exile_ids);
-
-                        // Step 5: move spell to stack, set metadata,
+                        // Step 4: move spell to stack, set metadata,
                         // push StackEntry.
                         // Read before the move, for the same reason the eager
                         // cast path does: after it, nothing remembers the zone
                         // the spell was cast from (CR 601.2a).
                         let cast_from = state.get_object(pending.object_id).map(|o| o.zone);
                         state.move_object(pending.object_id, Zone::Stack, registry);
+
+                        // Step 5: pay additional costs with the spell on the
+                        // stack (CR 601.2h), through the same dispatch the
+                        // eager cast path uses.
+                        crate::engine::costs::pay_additional_cost(
+                            state, registry, pending.card_id, pending.object_id, player,
+                            pending.sacrifice, pending.exile_count, &pending.exile_ids);
                         {
                             let obj = state.get_object_mut(pending.object_id)
                                 .expect("spell must exist after moving to stack");
