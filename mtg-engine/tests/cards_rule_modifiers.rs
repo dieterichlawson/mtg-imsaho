@@ -172,17 +172,17 @@ fn parallel_lives_doubles_only_its_controllers_tokens() {
 
     // Baseline: one token is one token.
     make(&mut state, "Spirit", P0);
-    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 1,
+    assert_eq!(count_tokens_named_by(&state, "Spirit Token", P0), 1,
         "without Parallel Lives, creating one token creates one token");
 
     named_permanent(&mut state, &reg, "Parallel Lives", P0);
 
     make(&mut state, "Angel", P0);
-    assert_eq!(count_tokens_named_by(&state, "Angel", P0), 2,
+    assert_eq!(count_tokens_named_by(&state, "Angel Token", P0), 2,
         "its controller's tokens are doubled");
 
     make(&mut state, "Zombie", P1);
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P1), 1,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P1), 1,
         "an opponent's are not");
 }
 
@@ -207,7 +207,7 @@ fn doubled_token_creation_logs_the_real_count() {
         mtg_engine::cards::AttackInfo { attacker: cagebreakers, defending_player: P1 },
         &[], &reg);
 
-    assert_eq!(count_tokens_named_by(&state, "Wolf", P0), 6,
+    assert_eq!(count_tokens_named_by(&state, "Wolf Token", P0), 6,
         "3 creature cards, doubled by Parallel Lives");
     // The count is written where the tokens are made, so it cannot be a
     // number a card printed on itself (issue #329).
@@ -237,7 +237,7 @@ fn a_card_that_creates_many_tokens_at_once_reports_what_entered() {
     state.get_object_mut(army).unwrap().name = "Army of the Damned".into();
     reg.get(card_id).unwrap().on_resolve(&mut state, army, &[], &reg);
 
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 26,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 26,
         "thirteen, doubled by Parallel Lives");
     let counted: Vec<&String> = state.game_log.iter()
         .map(|e| &e.message)
@@ -298,13 +298,13 @@ fn a_replacement_that_leaves_no_tokens_creates_none() {
         "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![],
         vec!["Spirit".to_string()], &reg);
     assert!(made.is_empty(), "one less two is none: {made:?}");
-    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 0, "and none entered");
+    assert_eq!(count_tokens_named_by(&state, "Spirit Token", P0), 0, "and none entered");
 
     let three = state.create_tokens_with_subtypes(
         3, "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![],
         vec!["Spirit".to_string()], &reg);
     assert_eq!(three.len(), 1, "three less two is one");
-    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 1);
+    assert_eq!(count_tokens_named_by(&state, "Spirit Token", P0), 1);
 }
 
 // ── Heartless Summoning ──────────────────────────────────────

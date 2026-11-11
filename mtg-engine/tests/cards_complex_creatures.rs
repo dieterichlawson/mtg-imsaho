@@ -243,10 +243,10 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     // Should have 3 Wolf tokens on the battlefield. CR 111.4 names a token
     // after its subtypes, so these are named "Wolf" — a filter on any other
     // string matches nothing and asserts nothing.
-    assert_eq!(count_tokens_named(&state, "Wolf"), 3, "Should have created 3 Wolf tokens");
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 3, "Should have created 3 Wolf tokens");
 
     let wolves: Vec<ObjectId> = state.objects.values()
-        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Wolf")
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Wolf Token")
         .map(|o| o.id)
         .collect();
     assert_eq!(wolves.len(), 3);
@@ -295,7 +295,7 @@ fn duplicate_attacker_entries_collapse_to_one_attack_and_one_trigger() {
     while !state.stack.is_empty() {
         mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     }
-    assert_eq!(count_tokens_named(&state, "Wolf"), 2,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 2,
         "one trigger resolution: one wolf per creature card in the graveyard");
 }
 
@@ -348,7 +348,7 @@ fn kessig_wolves_attack_the_cagebreakers_defender_and_not_just_the_next_player()
         choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Player(P2))),
     }, &reg);
 
-    let wolf = find_token_named(&state, "Wolf").expect("should have created a Wolf token");
+    let wolf = find_token_named(&state, "Wolf Token").expect("should have created a Wolf token");
     assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&wolf).copied()), Some(P2),
         "the Wolf attacks the player its controller chose");
 }
@@ -567,10 +567,10 @@ fn gutter_grime_creates_ooze_on_creature_death() {
         "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
-    assert_eq!(count_tokens_named(&state, "Ooze"), 1, "Should have created 1 Ooze token");
+    assert_eq!(count_tokens_named(&state, "Ooze Token"), 1, "Should have created 1 Ooze token");
 
     // "create a **green Ooze creature** token" — every word of it.
-    let ooze = find_token_named(&state, "Ooze").unwrap();
+    let ooze = find_token_named(&state, "Ooze Token").unwrap();
     assert_eq!(state.colors_of(ooze, &reg), vec![Color::Green], "the Ooze is green");
     assert!(state.is_creature(ooze, &reg), "and a creature");
     assert!(state.has_subtype(ooze, "Ooze", &reg), "and an Ooze");
@@ -601,7 +601,7 @@ fn the_ooze_is_announced_at_the_size_its_own_ability_gives_it() {
         "the size that entered, not the placeholder: {lines:?}");
     assert!(!lines.iter().any(|l| l.contains("0/0 Ooze")), "{lines:?}");
 
-    let ooze = find_token_named(&state, "Ooze").expect("the token is there");
+    let ooze = find_token_named(&state, "Ooze Token").expect("the token is there");
     assert_eq!(state.effective_power(ooze, &reg), Some(1), "and it really is one");
 
     // A second death, and the line moves with the slime count.
@@ -627,7 +627,7 @@ fn the_ooze_carries_its_own_pt_defining_ability_into_the_view() {
     state.move_object(dead, Zone::Graveyard, &reg);
     let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
     behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &[], &reg);
-    let ooze = find_token_named(&state, "Ooze").expect("the token is there");
+    let ooze = find_token_named(&state, "Ooze Token").expect("the token is there");
     let spirit = state.create_token_with_subtypes(
         "", P0, 1, 1, vec![Color::White], vec![CardType::Creature],
         vec![Keyword::Flying], vec!["Spirit".into()], &reg);
@@ -870,7 +870,7 @@ fn undead_alchemist_mills_instead_of_damage() {
 
     // Should have created Zombie tokens.
     // 2 creature cards milled = 2 Zombie tokens + the original zombie we created.
-    assert!(count_tokens_named_by(&state, "Zombie", P0) >= 2,
+    assert!(count_tokens_named_by(&state, "Zombie Token", P0) >= 2,
         "Should create Zombie tokens for each milled creature");
 }
 
@@ -1109,7 +1109,7 @@ fn cellar_door_mills_the_bottom_card_and_zombies_only_for_a_creature() {
             "the bottom card ({bottom_name}) is the one that goes");
         assert_eq!(state.get_object(top).unwrap().zone, Zone::Library,
             "and the top card ({top_name}) stays where it is");
-        assert_eq!(count_tokens_named(&state, "Zombie"), usize::from(expect_zombie),
+        assert_eq!(count_tokens_named(&state, "Zombie Token"), usize::from(expect_zombie),
             "milled {bottom_name}: 'if it's a creature card' is {expect_zombie}");
     }
 }
@@ -1132,12 +1132,12 @@ fn cellar_doors_zombie_is_a_two_two_black_zombie_for_the_activating_player() {
     activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 1,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 1,
         "the token belongs to whoever activated the ability");
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P1), 0,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P1), 0,
         "not to the player whose library was milled");
 
-    let token = find_token_named(&state, "Zombie").unwrap();
+    let token = find_token_named(&state, "Zombie Token").unwrap();
     assert_eq!(state.effective_power(token, &reg), Some(2));
     assert_eq!(state.effective_toughness(token, &reg), Some(2));
     assert!(state.colors_of(token, &reg).contains(&Color::Black), "black");
@@ -1158,7 +1158,7 @@ fn cellar_door_does_nothing_to_an_empty_library() {
     activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Zombie"), 0,
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 0,
         "nothing was milled, so nothing was a creature card");
     assert!(state.awaiting_action.is_none(),
         "and the ability finished rather than stalling");
@@ -3296,7 +3296,7 @@ fn every_ooze_is_sized_by_the_current_slime_count() {
 
         assert_eq!(counters_of(&state, grime, CounterType::Slime), expected,
             "one slime counter per nontoken creature death");
-        assert_eq!(count_tokens_named(&state, "Ooze"), expected as usize,
+        assert_eq!(count_tokens_named(&state, "Ooze Token"), expected as usize,
             "and one Ooze per death");
 
         // Every Ooze, including the ones made earlier, is the current size.
@@ -3304,7 +3304,7 @@ fn every_ooze_is_sized_by_the_current_slime_count() {
         // "Ooze" — a filter on any other string matches nothing and
         // asserts nothing.
         let oozes: Vec<_> = state.objects.values()
-            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze")
+            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze Token")
             .map(|o| o.id)
             .collect();
         assert_eq!(oozes.len(), expected as usize);
@@ -3351,7 +3351,7 @@ fn gutter_grime_counts_only_your_own_nontoken_creatures() {
 
         assert_eq!(counters_of(&state, grime, CounterType::Slime), u32::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
-        assert_eq!(count_tokens_named(&state, "Ooze"), usize::from(counts),
+        assert_eq!(count_tokens_named(&state, "Ooze Token"), usize::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
     }
 }
@@ -3435,7 +3435,7 @@ fn the_oozes_die_when_gutter_grime_leaves() {
     kill_by_damage(&mut state, &reg, creature);
     triggers::process_triggers(&mut state, &reg);
 
-    let ooze = find_token_named(&state, "Ooze").expect("an Ooze was made");
+    let ooze = find_token_named(&state, "Ooze Token").expect("an Ooze was made");
     assert_eq!(state.effective_power(ooze, &reg), Some(1), "test precondition: a 1/1");
 
     state.move_object(grime, Zone::Graveyard, &reg);

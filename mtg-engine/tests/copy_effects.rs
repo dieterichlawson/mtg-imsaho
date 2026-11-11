@@ -237,7 +237,7 @@ fn a_copy_does_not_take_a_creature_type_granted_after_printing() {
         "the printed type is copied, got {:?}", state.subtypes_of(copy, &reg));
     assert!(!state.has_subtype(copy, "Vampire", &reg),
         "a granted type is not copiable (CR 707.2), got {:?}", state.subtypes_of(copy, &reg));
-    assert_eq!(state.get_object(copy).unwrap().name, "Zombie");
+    assert_eq!(state.get_object(copy).unwrap().name, "Zombie Token");
 
     // The source is a card, which has always worked — the two must agree.
     let mut state = game_at_step(Step::PrecombatMain, P0);

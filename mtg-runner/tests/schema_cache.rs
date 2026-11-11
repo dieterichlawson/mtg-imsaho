@@ -99,13 +99,18 @@ fn every_kind_of_question_sends_one_schema_however_the_game_goes() {
     std::fs::write(&x_deck, "8 Mountain\n7 Forest\n1 Kessig Wolf Run\n4 Sol Ring\n4 Devil's Play\n\
         2 Avacyn's Pilgrim\n4 Grizzly Bears\n4 Kalonian Tusker\n2 Lightning Bolt\n2 Brimstone Volley\n2 Garruk Relentless\n").unwrap();
     let x_deck = x_deck.to_str().unwrap().to_string();
+    // Two seeds of it: the stub answers with a hash of the prompt, so any
+    // change to what a prompt says (a token's name) sends one game down
+    // another path, and one game alone held the count below to luck.
     let x_args = ["--deck1", x_deck.as_str(), "--deck2", x_deck.as_str(), "--seed", "6"];
-    let games: [(&str, &[&str]); 5] = [
+    let x_args_2 = ["--deck1", x_deck.as_str(), "--deck2", x_deck.as_str(), "--seed", "7"];
+    let games: [(&str, &[&str]); 6] = [
         ("seed1", &["--seed", "1"]),
         ("seed2", &["--seed", "2"]),
         ("seed4", &["--seed", "4"]),
         ("drafted", &["--deck1", "decks/ub-zombies.txt", "--deck2", "decks/ug-spider-spawning.txt", "--seed", "12"]),
         ("x-spells", &x_args),
+        ("x-spells-2", &x_args_2),
     ];
     let played: Vec<_> = std::thread::scope(|s| {
         let handles: Vec<_> = games.iter().map(|(name, args)| s.spawn(move || (*name, play(name, args)))).collect();

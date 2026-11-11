@@ -109,11 +109,11 @@ fn howlpack_alpha_end_step_trigger_is_not_gated() {
     // No player cast two or more spells: the *upkeep* condition is false.
     state.num_spells_cast_last_turn.insert(P0, 1);
     let alpha = transformed(&mut state, &reg, "Mayor of Avabruck", P0);
-    assert_eq!(count_tokens_named(&state, "Wolf"), 0);
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 0);
 
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1,
         "the unconditional end-step trigger on the same face must still fire; \
          object {alpha:?}");
 }

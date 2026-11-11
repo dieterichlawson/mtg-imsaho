@@ -1079,11 +1079,22 @@ impl GameState {
         if count == 0 {
             return Vec::new();
         }
-        // CR 111.4: the token's name is its subtype(s), unless the effect
-        // gave it one.
-        let derived;
-        let name = if name.is_empty() && !subtypes.is_empty() {
-            derived = subtypes.join(" ");
+        // CR 111.4: unless the effect gives it a name, the token's name is
+        // its subtype(s) plus the word "Token" ("Spirit Token"; "Token", of
+        // none). It was its subtypes alone, and a card that copied one (Evil
+        // Twin entering as a copy of a Spirit token) took that name for its
+        // own.
+        let mut derived;
+        let name = if name.is_empty() {
+            // Built without `format!`, which the proofs stub to nothing, and
+            // at its full length first, which a proof holds a list to.
+            let len = subtypes.iter().map(|s| s.len() + 1).sum::<usize>() + "Token".len();
+            derived = String::with_capacity(len);
+            for s in &subtypes {
+                derived.push_str(s);
+                derived.push(' ');
+            }
+            derived.push_str("Token");
             derived.as_str()
         } else {
             name
@@ -1134,7 +1145,8 @@ impl GameState {
         let (power, toughness) = self.get_object(id)
             .and_then(|o| self.token_defined_pt(o, registry))
             .unwrap_or((power, toughness));
-        let described = format!("{power}/{toughness} {name}");
+        // "2 1/1 Spirit tokens", not "Spirit Token tokens".
+        let described = format!("{power}/{toughness} {}", name.strip_suffix(" Token").unwrap_or(name));
 
         // The count a player reads is the count that entered, and it is
         // counted here rather than claimed by each caller. Seventeen cards

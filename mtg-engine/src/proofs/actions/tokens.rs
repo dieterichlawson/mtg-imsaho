@@ -73,7 +73,8 @@ fn creating_tokens(n: u32, zombie: bool, named: bool, flying: bool) {
     assert!(controller == owner && count == n);
     let made = answer.unwrap_or(0) as usize;
     assert!(ids.len() == made && (0..made).all(|i| ids[i] == ObjectId(there.0 + 1 + i as u64)));
-    let named_as = if named { "Named" } else if zombie { "Zombie" } else { "" };
+    // Unnamed, its subtypes and the word "Token" (CR 111.4).
+    let named_as = if named { "Named" } else if zombie { "Zombie Token" } else { "Token" };
     for id in &ids {
         let o = state.get_object(*id).expect("made");
         assert!(o.is_token && o.card_id == CardId(0) && o.zone == Zone::Battlefield && o.zone_change_count == 0);
@@ -164,9 +165,9 @@ fn copying(token: bool) {
     let o = state.get_object_mut(from).expect("just created");
     if token {
         o.is_token = true;
-        o.name = "Zombie".into();
+        o.name = "Zombie Token".into();
         o.token_face = Some(TokenFace {
-            name: "Zombie".into(), power: Some(2), toughness: Some(2), colors: vec![Color::Black],
+            name: "Zombie Token".into(), power: Some(2), toughness: Some(2), colors: vec![Color::Black],
             keywords: vec![], card_types: vec![CardType::Creature], subtypes: vec!["Zombie".into()],
         });
     }
@@ -192,7 +193,7 @@ fn copying(token: bool) {
     let made = answer.unwrap_or(0) as usize;
     let ids: [ObjectId; 2] = [ObjectId(from.0 + 1), ObjectId(from.0 + 2)];
     assert!(first == if made == 0 { ObjectId(0) } else { ids[0] });
-    let (name, colour, subtype, card) = if token { ("Zombie", Color::Black, "Zombie", CardId(0)) } else { ("Bear", Color::Green, "Bear", bear) };
+    let (name, colour, subtype, card) = if token { ("Zombie Token", Color::Black, "Zombie", CardId(0)) } else { ("Bear", Color::Green, "Bear", bear) };
     for id in &ids[..made] {
         let t = state.get_object(*id).expect("made");
         assert!(t.is_token && t.card_id == card && t.zone == Zone::Battlefield && t.controller == owner && t.owner == owner);
@@ -227,7 +228,7 @@ fn defining_its_size() {
     assert!(ids.len() == made && (0..made).all(|i| ids[i] == ObjectId(source.0 + 1 + i as u64)));
     for id in &ids {
         let t = state.get_object(*id).expect("made");
-        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == owner && t.name == "Ooze");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == owner && t.name == "Ooze Token");
         assert!(t.power == Some(0) && t.toughness == Some(0) && t.colors == [Color::Green] && t.card_types == [CardType::Creature]);
         assert!(t.card_state.get(crate::cards::PT_DEFINED_BY) == Some(&source) && t.card_state.len() == 1);
     }

@@ -96,14 +96,14 @@ fn army_of_the_damned_creates_13_tapped_zombies() {
     let state = cast_and_resolve(&state, &reg, spell, vec![]);
 
     // Count tokens on battlefield.
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 13, "Should have 13 Zombie tokens");
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 13, "Should have 13 Zombie tokens");
 
     // The name is "Zombie" — CR 111.4 derives it from the subtypes. A loop
     // filtering on any other string runs over nothing: every assertion in it
     // is vacuous, including the one about the thirteen Zombies being tapped,
     // which is the only interesting word in the card's text.
     let zombies: Vec<_> = state.objects.values()
-        .filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0)
+        .filter(|o| o.is_token && o.name == "Zombie Token" && o.controller == P0)
         .collect();
     assert_eq!(zombies.len(), 13, "the loop below has to run over something");
     for z in zombies {
