@@ -930,8 +930,8 @@ length its matches were played at", args.best_of);
             resume_notes.push(warning);
         } else {
             // Not the warning's words: nothing is asked under two prompts.
-            let note = format!("seat {seat}: every pick, deck and match of this draft was made under {was}, and \
-nothing more is asked of it, so {now} is not used");
+            let note = format!("seat {seat}: every one of its picks, its deck and its matches was made under \
+{was}, and nothing more is asked of it, so {now} is not used");
             mtg_player::stderr_line!("note: {note}");
             resume_notes.push(note);
         }

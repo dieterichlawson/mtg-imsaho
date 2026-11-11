@@ -556,8 +556,8 @@ picks and matches were made under, and a difference is said on stderr and in the
 guide as a `WARN`, a setting as "its system prompt is not the live one").
 A difference says what is still asked under it: past the decks the games
 still to play (a guided seat's game system prompt carries its guide,
-#1015) and the sideboarding between them; once every match is played,
-nothing, which is a note and not a warning (#1014).
+#1015) and the sideboarding between them; once that seat's matches are
+played, nothing, which is a note and not a warning (#1014).
 
 `scripts/draft-loop/night.sh` is this run as a nightly routine plays it:
 eight `cc:claude-haiku-5-5` seats, best-of-3, the date as the seed, the
