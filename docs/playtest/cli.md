@@ -50,7 +50,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
 hangs, stuck prompts, corrupted state and nonsense output do.
 
 - V1 input garbage at every prompt: junk text, huge numbers, empty
-  enter, unicode, control characters (game must reprompt, never crash)
+  enter, unicode, control characters (game must reprompt, never crash).
+  The crash half has held since 2026-08-29; what still turns up is the
+  refusal's *words*. Compare each refusal with the screen it is drawn on:
+  "at most N" on an exact-count mark screen (#1016), a 20-digit number
+  called "not a number" on one screen and "out of range" on the next
+  (#1017), and a refusal left on screen above the next question (#1019).
+  The deep prompts (X, sacrifice costs, discard to seven) are reached
+  quickly by staging lands onto the battlefield in a turn-1 save
+  (`library_order` minus the id, `zone: Battlefield`,
+  `summoning_sick: false`) and resuming it (2026-11-11)
 - V2 the wrong number: at every numbered menu, try -1, 0 off-by-one,
   and N+1 before choosing legally
 
