@@ -4033,3 +4033,19 @@ fn an_evil_twin_returned_beside_an_essence_of_the_wild_is_what_it_chose() {
     }
 }
 
+/// Essence of the Wild's ruling (2011-09-22): "If a creature such as Clone
+/// is entering under your control, there will be two copy effects to
+/// apply: the creature's own and Essence of the Wild's. No matter what
+/// order these effects are applied, the creature will be a copy of Essence
+/// of the Wild when it enters." The engine applied the Twin's own first
+/// and the Essence then stood aside, so the Twin was what it chose.
+#[test]
+fn an_evil_twin_entering_under_essence_of_the_wild_is_an_essence_whatever_it_chose() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Essence of the Wild", P0);
+    let heron = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(heron));
+    assert_eq!(state.name_of(twin, &reg), "Essence of the Wild");
+    assert_eq!((state.effective_power(twin, &reg), state.effective_toughness(twin, &reg)), (Some(6), Some(6)));
+}

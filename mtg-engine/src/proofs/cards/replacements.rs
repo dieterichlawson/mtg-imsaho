@@ -298,16 +298,18 @@ card_proof! {
 
 card_proof! {
     /// Essence of the Wild: another creature entering under its
-    /// controller's control enters as a copy of it (CR 614.1c, 706.9);
-    /// itself, a noncreature, a creature under the other player, and every
-    /// other event, as it is. A creature already entering as a copy of
-    /// something, another copy effect having been applied first, is left as
-    /// it is (CR 616.1: the order is the engine's, proved there).
+    /// controller's control enters as a copy of it (CR 614.1c, 706.9),
+    /// even one already entering as a copy of something else, another copy
+    /// effect having been applied first (its ruling: "No matter what order
+    /// these effects are applied, the creature will be a copy of Essence of
+    /// the Wild when it enters"); itself, a noncreature, a creature under
+    /// the other player, one already a copy of this, and every other event,
+    /// as it is.
     fn essence_of_the_wild_makes_your_creatures_enter_as_copies_of_it() {
         let mut o = offer(Box::new(isd::essence_of_the_wild::EssenceOfTheWild));
         let other_is_creature = o.state.get_object(o.other).expect("on the board").card_types.contains(&CardType::Creature);
         let expected = match &o.event {
-            Ev::EntersBattlefield(e) if e.object == o.other && other_is_creature && e.controller == o.you && e.copy_of.is_none() => {
+            Ev::EntersBattlefield(e) if e.object == o.other && other_is_creature && e.controller == o.you && e.copy_of != Some(o.me) => {
                 Some(Replacement::Modified(Ev::EntersBattlefield(EnteringPermanent { copy_of: Some(o.me), ..e.clone() })))
             }
             _ => None,
