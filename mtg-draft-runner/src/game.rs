@@ -272,6 +272,35 @@ pub fn matches_remain(matches: &[(usize, &MatchResult)], players: usize, best_of
     !walk_tournament(matches, players, best_of).0.is_complete()
 }
 
+/// [`matches_remain`] for each seat: whether that seat has a match still
+/// to play. In the last round, that is a pairing of its with no record (a
+/// snapshot is written after each match, so a round can be half done, and
+/// a bye is no match). Before the last round, every seat has one: who
+/// gets a later bye is not known yet (#1015's review).
+#[must_use]
+pub fn seats_with_matches_left(matches: &[(usize, &MatchResult)], players: usize, best_of: usize) -> Vec<bool> {
+    let (tournament, _) = walk_tournament(matches, players, best_of);
+    if tournament.is_complete() {
+        return vec![false; players];
+    }
+    let round = tournament.rounds.len() + 1;
+    if round < tournament.total_rounds() {
+        return vec![true; players];
+    }
+    let mut left = vec![false; players];
+    for (a, b) in tournament.generate_pairings() {
+        let recorded = matches.iter().any(|m| m.0 == round && m.1.player_a == a && m.1.player_b == b);
+        if b != tournament::BYE && !recorded {
+            for seat in [a, b] {
+                if let Some(l) = left.get_mut(seat) {
+                    *l = true;
+                }
+            }
+        }
+    }
+    left
+}
+
 /// The tournament as far as the records carry it, and which records it
 /// paired.
 fn walk_tournament(matches: &[(usize, &MatchResult)], players: usize, best_of: usize)

@@ -1011,8 +1011,8 @@ impl DraftPromptSettings {
                 out.push(if still == crate::lobby::StillAsked::Draft {
                     format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft is made under {now}")
                 } else {
-                    format!("its picks and decks were made under MTG_LLM_HISTORY={was}, and the games still to \
-play are asked under {now}")
+                    format!("its picks, decks and any finished matches were made under MTG_LLM_HISTORY={was}, \
+and the games still to play are asked under {now}")
                 });
             }
         }

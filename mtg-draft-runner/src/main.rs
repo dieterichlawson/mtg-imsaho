@@ -900,14 +900,26 @@ length its matches were played at", args.best_of);
     // What is still asked under the guide: a snapshot past deck building
     // has every pick (#1014), and its guide reaches the games still to
     // play and the sideboarding between them (#1015).
+    // Seat by seat: a seat whose last match is recorded, or which has the
+    // last round's bye, is asked nothing more (#1015's review).
+    let still_of: Vec<mtg_draft_runner::lobby::StillAsked> = resumed.as_ref().map_or_else(
+        || vec![mtg_draft_runner::lobby::StillAsked::Draft; args.players],
+        |s| {
+            let records: Vec<(usize, &MatchResult)> = s.matches.iter().map(|m| (m.round, &m.result)).collect();
+            mtg_draft_runner::game::seats_with_matches_left(&records, args.players, args.best_of).into_iter()
+                .map(|left| mtg_draft_runner::lobby::StillAsked::after(!s.decks.is_empty(), left, args.best_of))
+                .collect()
+        });
+    let still_for = |seat: usize| still_of.get(seat).copied().unwrap_or(mtg_draft_runner::lobby::StillAsked::Draft);
+    // The settings are every seat's: what any seat is still asked.
     let still = resumed.as_ref().map_or(mtg_draft_runner::lobby::StillAsked::Draft, |s| {
-        let records: Vec<(usize, &MatchResult)> = s.matches.iter().map(|m| (m.round, &m.result)).collect();
-        mtg_draft_runner::lobby::StillAsked::after(!s.decks.is_empty(),
-            mtg_draft_runner::game::matches_remain(&records, args.players, args.best_of), args.best_of)
+        let left = still_of.iter().any(|st| *st != mtg_draft_runner::lobby::StillAsked::Nothing);
+        mtg_draft_runner::lobby::StillAsked::after(!s.decks.is_empty(), left, args.best_of)
     });
     // A changed model plays the games as well, which `still` counts now
     // that it counts the games (#1015), as it does a changed guide.
     for (seat, was_policy, now_policy) in &replayed_under {
+        let still = still_for(*seat);
         let (was, now) = SeatPolicy::describe_pair(was_policy, now_policy);
         // The phrase `mtg-draft-replay` and the hosted table use (#948's
         // review), and in the log beside the header's line, where the
@@ -1082,7 +1094,7 @@ resume with the --best-of its run was played at)", args.best_of) };
         .iter()
         // Said in the header only where the rest of the run is asked under
         // the other guide: the ledger reads that line as two prompts (#1014).
-        .filter(|_| still != mtg_draft_runner::lobby::StillAsked::Nothing)
+        .filter(|(seat, _, _)| still_for(*seat) != mtg_draft_runner::lobby::StillAsked::Nothing)
         .map(|(seat, was, now)| { let (was, now) = SeatPolicy::describe_pair(was, now); (*seat, was, now) })
         .collect();
     log_header!(log, &set_data.set_name, args.players, args.best_of,

@@ -565,10 +565,10 @@ impl StillAsked {
         match self {
             Self::Draft => Some(format!("{whose} replayed picks were made under {was}, and the rest of this draft \
 will be made under {now}: this draft is a mixture of the two")),
-            Self::Games => Some(format!("every one of {whose} picks and decks was made under {was}; only \
-the games still to play are asked, and under {now}")),
-            Self::Sideboarding => Some(format!("every one of {whose} picks and decks was made under {was}; only \
-the games still to play and the sideboarding between them are asked, and under {now}")),
+            Self::Games => Some(format!("{whose} picks, decks and any finished matches were made under {was}; \
+only the games still to play are asked, and under {now}")),
+            Self::Sideboarding => Some(format!("{whose} picks, decks and any finished matches were made under \
+{was}; only the games still to play and the sideboarding between them are asked, and under {now}")),
             Self::Nothing => None,
         }
     }

@@ -118,7 +118,7 @@ fn a_changed_guide_after_the_draft_is_not_called_a_mixed_draft() {
     assert_eq!(StillAsked::after(true, true, 3), StillAsked::Sideboarding);
     let said = was.unlike(&live, false, StillAsked::Sideboarding);
     assert_eq!(said.len(), 1, "{said:?}");
-    assert!(said[0].contains("picks and decks was made under guide g.md as it was")
+    assert!(said[0].contains("picks, decks and any finished matches were made under guide g.md as it was")
             && said[0].contains("only the games still to play and the sideboarding between them are asked"), "{said:?}");
     assert!(!said[0].contains("mixture") && !said[0].contains("rest of this draft"), "{said:?}");
 
@@ -182,4 +182,58 @@ fn a_changed_guide_before_the_matches_reaches_the_games() {
     let all: Vec<(usize, &mtg_draft::tournament::MatchResult)> = records.iter().map(|(r, m)| (*r, m)).collect();
     assert!(!mtg_draft_runner::game::matches_remain(&all, 2, 1), "every match is played");
     assert!(mtg_draft_runner::game::matches_remain(&all[..all.len() - 1], 2, 1), "the last match is still to play");
+}
+
+/// #1015's review: what is still to play is a seat's own. A snapshot is
+/// written after each match, so the last round can be half played: the
+/// seats whose match is recorded, and a seat with the last round's bye,
+/// have nothing left, and their guide is no mixture.
+#[test]
+fn a_seat_whose_last_match_is_played_has_nothing_left() {
+    use mtg_draft::tournament::{MatchResult, Tournament, TournamentConfig, BYE};
+    use mtg_draft_runner::game::seats_with_matches_left;
+    // Every match of every round but the last, and the first match of the
+    // last round when `half`.
+    let records = |players: usize, half: bool| {
+        let mut t = Tournament::new(players, TournamentConfig { best_of: 1 });
+        let mut out: Vec<(usize, MatchResult)> = Vec::new();
+        let mut last = Vec::new();
+        while !t.is_complete() {
+            let round = t.rounds.len() + 1;
+            let pairings = t.generate_pairings();
+            let results: Vec<MatchResult> = pairings.iter().filter(|&&(_, b)| b != BYE).map(|&(a, b)| MatchResult {
+                player_a: a, player_b: b, wins_a: 1, wins_b: 0,
+                games: vec![serde_json::from_value(serde_json::json!({ "winner": a, "turns": 5 })).unwrap()],
+            }).collect();
+            if round == t.total_rounds() {
+                last.clone_from(&pairings);
+                if half {
+                    out.push((round, results[0].clone()));
+                }
+                break;
+            }
+            out.extend(results.iter().map(|r| (round, r.clone())));
+            t.record_round(pairings, results);
+        }
+        (out, last)
+    };
+    fn as_refs(r: &[(usize, MatchResult)]) -> Vec<(usize, &MatchResult)> {
+        r.iter().map(|(n, m)| (*n, m)).collect()
+    }
+
+    let (four, last) = records(4, true);
+    let played = four.last().unwrap().1.clone();
+    let left = seats_with_matches_left(&as_refs(&four), 4, 1);
+    for seat in 0..4 {
+        let done = seat == played.player_a || seat == played.player_b;
+        assert_eq!(left[seat], !done, "seat {seat}, last round {last:?}, played {}-{}", played.player_a, played.player_b);
+    }
+    assert_eq!(seats_with_matches_left(&[], 4, 1), vec![true; 4], "before the last round every seat plays");
+
+    let (three, last) = records(3, false);
+    let bye = last.iter().find(|&&(_, b)| b == BYE).map(|&(a, _)| a).expect("three seats have a bye");
+    let left = seats_with_matches_left(&as_refs(&three), 3, 1);
+    for seat in 0..3 {
+        assert_eq!(left[seat], seat != bye, "seat {seat}, the bye is seat {bye}");
+    }
 }
