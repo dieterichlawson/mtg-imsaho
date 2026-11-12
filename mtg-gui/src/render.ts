@@ -5,7 +5,7 @@
 // view; it looks at the last frame.
 
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown } from "./prompts.js";
 import type { CardView, Color, FaceText, GameView, ManaCost, ManaPool, ObjectId, PermanentView, PlayerId, Step, ViewObject } from "./protocol.js";
 import type { Hit, IndexEntry, LiveState, Row, State, Ui } from "./state.js";
 
@@ -396,9 +396,7 @@ type Highlight = "option" | "marked" | "selected" | "target" | "verb";
  * creature's verbs (#807). An ability's chip is keyed by its slot, `s<i>`,
  * which names no object.
  */
-export function stackChipKey(item: { object_id: ObjectId; card_types?: unknown[] | null }, i: number): string {
-  return item.card_types && item.card_types.length ? `o${item.object_id}` : `s${i}`;
-}
+export { stackChipKey, stackChipsShown } from "./prompts.js";
 
 export function highlightFor(state: State, key: string): Highlight | null {
   const ui = state.ui;
@@ -772,13 +770,15 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // "YOUR TURN" and the log lines, and past eleven they ran off the board,
   // with nothing counting what could not be seen (#991). When they do not
   // all fit, the last place is a "+N" chip that opens the whole stack.
-  const fits = Math.floor((BAND_X - 4 - sx0 + 2) / 28);
-  const shown = view.stack.length > fits ? fits - 1 : view.stack.length;
+  const shown = stackChipsShown(view.stack.length);
   if (shown < view.stack.length) {
     const x = sx0 + shown * 28, sy = y + 9;
     const hidden = view.stack.length - shown;
     // A hidden entry the question offers lights the chip that reaches it.
-    const hl = view.stack.slice(shown).some((item, j) => highlightFor(state, stackChipKey(item, shown + j)) !== null) ? "option" : null;
+    // In the colour of the strongest it carries: a hidden target already
+    // chosen reads as chosen, not as one more option (#991's review).
+    const carried = view.stack.slice(shown).map((item, j) => highlightFor(state, stackChipKey(item, shown + j)));
+    const hl = (["target", "selected", "marked", "option", "verb"] as Highlight[]).find(h => carried.includes(h)) ?? null;
     const hovered = state.hover !== null && state.hover.kind === "zone" && state.hover.zone === "stack";
     ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : "#5a5068";
     ctx.fillRect(x - 1, sy - 1, 26, 22);
@@ -899,11 +899,16 @@ function stackLines(ctx: Ctx, hits: Hit[], state: LiveState): void {
     // An ability's chip shares its key with the source permanent, so
     // `rectOf` would draw the arrow from whichever was pushed first. The
     // slot names the chip (issue #527).
-    const from = hits.find(h => h.kind === "stack" && h.stackIndex === i);
+    // An entry the band has no chip for draws from the "+N" chip that
+    // stands for it (#991's review). The stack overlay, drawn after,
+    // covers these when it is open.
+    const more = hits.find(h => h.kind === "zone" && h.zone === "stack");
+    const from = hits.find(h => h.kind === "stack" && h.stackIndex === i) ?? more;
     if (!from) return;
     for (const t of item.targets) {
       const key = typeof t === "object" ? ("Object" in t ? `o${t.Object}` : `p${t.Player}`) : null;
-      const to = key ? rectOf(key) : null;
+      const onStack = key !== null && view.stack.some((it, j) => stackChipKey(it, j) === key);
+      const to = key ? rectOf(key) ?? (onStack ? more : undefined) : null;
       if (!to) continue;
       // The chip's own key: an ability's is its slot (#807), so hovering its
       // source permanent no longer lights the ability's arrow either.

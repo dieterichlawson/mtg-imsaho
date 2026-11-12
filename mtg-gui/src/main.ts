@@ -484,8 +484,8 @@ function noAnswerHere(ui: Ui, key: string): string {
 window.addEventListener("keydown", (ev) => {
   if (ev.target === field) {
     // The box owns the typing — it has to, for a filter — but not the two
-    // keys that answer a prompt and not the seven that open the log and the
-    // zone overlays. It used to own all of them: `l g G e d s f` were typed
+    // keys that answer a prompt and not the eight that open the log and the
+    // zone overlays (`k`, the stack, since #991). It used to own all of them: `l g G e d s f` were typed
     // into the box at exactly the two prompts that ask you about cards, so a
     // `ChooseCardName` was the one decision you could not look anything up
     // to answer, and the box ended up filtered to nothing with no on-screen
@@ -530,6 +530,8 @@ window.addEventListener("keydown", (ev) => {
     case "G": if (v && v.opponents[0]) toggleZone("graveyard", v.opponents[0].id); break;
     case "e": if (v) toggleZone("exile", v.you); break;
     case "d": if (v) toggleZone("library", v.you); break;
+    // The whole stack, which the band shows only five of (#991).
+    case "k": if (v) toggleZone("stack", v.you); break;
     case "s":
       // A toggle is one press: a held key flipped it per repeat, ending
       // where the parity left it (#852's review).
@@ -545,7 +547,7 @@ window.addEventListener("keydown", (ev) => {
   draw();
 });
 
-function toggleZone(zone: "graveyard" | "exile" | "library", pid: number): void {
+function toggleZone(zone: "graveyard" | "exile" | "library" | "stack", pid: number): void {
   state.overlay = state.overlay && state.overlay.zone === zone && state.overlay.pid === pid ? null : { zone, pid };
 }
 
@@ -604,7 +606,7 @@ function releaseField(): void {
   field.value = "";
   releasedFor = ui;
   field.blur();
-  state.notice = "Box cleared — the board keys (l g G e d s f) work again; click the box to type.";
+  state.notice = "Box cleared — the board keys (l g G e d k s f) work again; click the box to type.";
 }
 /**
  * The widget whose typing box Escape handed back: while it is on screen, the

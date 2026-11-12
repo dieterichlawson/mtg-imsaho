@@ -476,6 +476,22 @@ export function withoutIds(s) {
         // "[#62]" or "[#62, 1 damage]" (combat.rs); the id goes, the damage stays.
         .replace(/ \[#\d+\]/g, "").replace(/\[#\d+, /g, "[");
 }
+/**
+ * A stack chip's key. A spell is keyed `o<id>` — it is its own object, and
+ * a click on it targets it. An activated ability carries its source's id,
+ * so its chip used to be keyed `o<source>`: a click on it targeted the
+ * creature, and in the menu it opened the creature's verbs (#807). An
+ * ability's chip is keyed by its slot, `s<i>`, which names no object.
+ */
+export function stackChipKey(item, i) {
+    return item.card_types && item.card_types.length ? `o${item.object_id}` : `s${i}`;
+}
+/** How many of `n` stack entries the band draws as chips (#991): five fit
+ *  between "STACK →" and the turn line at BAND_X (180 + 28i, 26 wide, short
+ *  of 326); past five, four and a "+N" chip that opens the rest. */
+export function stackChipsShown(n) {
+    return n > 5 ? 4 : n;
+}
 /** A widget over a set of targets or object ids. */
 function withOptions(ui, list) {
     const options = new Map();
@@ -506,10 +522,14 @@ function offBoardRows(state, ui, run) {
     // option's owner's graveyard, so a target in the opponent's was offered
     // under a panel titled "You: graveyard" (#690).
     const zones = new Map();
+    // A stack entry behind the band's "+N" chip is not drawn either: it gets
+    // a row, so it can be answered whichever overlay opens (#991's review).
+    const shown = stackChipsShown(state.view.stack.length);
+    const hiddenKeys = new Set(state.view.stack.map((it, i) => stackChipKey(it, i)).filter((_, i) => i >= shown));
     for (const [key, t] of ui.options ?? []) {
         const id = objectOfKey(key);
         const e = id === null ? null : state.index.get(id);
-        if (key[0] === "p" || (e && ON_BOARD.has(e.zone)))
+        if (key[0] === "p" || (e && ON_BOARD.has(e.zone) && !hiddenKeys.has(key)))
             continue;
         if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null)
             zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });
@@ -518,6 +538,10 @@ function offBoardRows(state, ui, run) {
     }
     if (zones.size === 1)
         state.overlay = [...zones.values()][0];
+    // An option behind the band's "+N" chip is not clickable where the band
+    // draws: the stack is opened for it, as a graveyard is (#991's review).
+    else if (zones.size === 0 && [...hiddenKeys].some(k => ui.options?.has(k)))
+        state.overlay = { zone: "stack", pid: state.view.you };
     return rows;
 }
 /**

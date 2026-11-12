@@ -899,6 +899,37 @@ async function main() {
       if (bad.length) fail(`deep-stack: ${JSON.stringify(bad)}`);
       else ok(`deep-stack → ${JSON.stringify(deep.map(d => [d.n, d.chips, d.listed]))}`);
 
+      // (b3) #991's review: a target behind the "+N" chip is brought to the
+      // person — the stack opens for it — and is answered from there; `k`
+      // opens and closes the stack as `g` does a graveyard.
+      await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = Array.from({ length: 9 }, (_, i) => ({ object_id: 950 + i, card_id: 1, name: `Brimstone Volley ${i}`,
+          controller: 1 - m.view.you, targets: [], x_value: null, cost: null, card_types: ["Instant"] }));
+        m.overlay = null;
+      });
+      const buried = { Object: 958 };
+      if (await stage("hidden-stack-target", legal({ actions: [rc({ ChosenTarget: buried }), rc({ ChosenTarget: null })],
+        resolution_prompt: { ChooseTarget: { description: "Counter target spell", options: [buried], optional: true, effect: "Counter" } } }), null, "pick")) {
+        const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, chip: m.hits.some(h => h.kind === "stack" && h.key === "o958") }; });
+        if (opened.zone !== "stack" || !opened.chip) fail(`hidden-stack-target: the buried target is not shown: ${JSON.stringify(opened)}`);
+        else {
+          await clickHit("(h) => h.kind === 'stack' && h.key === 'o958'");
+          await expectSent("hidden-stack-target", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenTarget && a.ResolveChoice.choice.ChosenTarget.Object === 958);
+        }
+      }
+      if (await stage("stack-key", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
+        await page.evaluate(() => { window.mtg.overlay = null; });
+        await page.keyboard.press("k");
+        const a = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
+        await page.keyboard.press("k");
+        const b = await page.evaluate(() => window.mtg.overlay);
+        if (a !== "stack" || b !== null) fail(`stack-key: k opened ${a} and left ${JSON.stringify(b)}`);
+        else ok("stack-key: k opens and closes the whole stack");
+      }
+      await page.evaluate(() => { window.mtg.view.stack = []; window.mtg.overlay = null; window.mtgDebug.render(); });
+
       // (c) the facts the CLI's detail page carries and the panel dropped.
       const facts = await page.evaluate((perm) => {
         const m = window.mtg;
