@@ -864,6 +864,41 @@ async function main() {
         fail(`two-triggers-inspect: both chips resolved to ${JSON.stringify(triggers)}`);
       else ok(`two-triggers-inspect → ${JSON.stringify(triggers)}`);
 
+      // (b2) #991: a deep stack's chips stop short of the turn line, a "+N"
+      // chip counts the rest, and it opens every entry as a chip would be.
+      const deep = await page.evaluate(() => {
+        const m = window.mtg;
+        const out = [];
+        for (const n of [5, 6, 12, 60]) {
+          m.view.stack = Array.from({ length: n }, (_, i) => ({ object_id: 0, card_id: 0, name: `Trigger ${i}`,
+            controller: i % 2, targets: [], x_value: null }));
+          m.overlay = null;
+          window.mtgDebug.render();
+          const chips = m.hits.filter(h => h.kind === "stack");
+          const more = m.hits.find(h => h.kind === "zone" && h.zone === "stack");
+          const right = Math.max(...chips.map(h => h.x + h.w), more ? more.x + more.w : 0);
+          let listed = null, pages = null;
+          if (more) {
+            more.onClick(); window.mtgDebug.render();
+            const seen = new Set();
+            for (let p = 0; p < 10; p++) {
+              m.overlay.page = p; window.mtgDebug.render();
+              m.hits.filter(h => h.kind === "stack").forEach(h => seen.add(h.stackIndex));
+            }
+            listed = seen.size;
+            m.overlay = null;
+          }
+          out.push({ n, chips: chips.length, more: !!more, right, listed });
+        }
+        m.view.stack = [];
+        window.mtgDebug.render();
+        return out;
+      });
+      const bandX = 330;
+      const bad = deep.filter(d => d.right > bandX - 2 || (d.n <= 5 ? d.chips !== d.n || d.more : !d.more || d.chips + 1 > 5 || d.listed !== d.n));
+      if (bad.length) fail(`deep-stack: ${JSON.stringify(bad)}`);
+      else ok(`deep-stack → ${JSON.stringify(deep.map(d => [d.n, d.chips, d.listed]))}`);
+
       // (c) the facts the CLI's detail page carries and the panel dropped.
       const facts = await page.evaluate((perm) => {
         const m = window.mtg;

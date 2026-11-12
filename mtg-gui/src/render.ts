@@ -768,7 +768,27 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   const mine = view.active_player === view.you;
   text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
   bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, engineLine(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
-  view.stack.forEach((item, i) => {
+  // The chips stop short of the turn line at BAND_X. A sixth drew over
+  // "YOUR TURN" and the log lines, and past eleven they ran off the board,
+  // with nothing counting what could not be seen (#991). When they do not
+  // all fit, the last place is a "+N" chip that opens the whole stack.
+  const fits = Math.floor((BAND_X - 4 - sx0 + 2) / 28);
+  const shown = view.stack.length > fits ? fits - 1 : view.stack.length;
+  if (shown < view.stack.length) {
+    const x = sx0 + shown * 28, sy = y + 9;
+    const hidden = view.stack.length - shown;
+    // A hidden entry the question offers lights the chip that reaches it.
+    const hl = view.stack.slice(shown).some((item, j) => highlightFor(state, stackChipKey(item, shown + j)) !== null) ? "option" : null;
+    const hovered = state.hover !== null && state.hover.kind === "zone" && state.hover.zone === "stack";
+    ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : "#5a5068";
+    ctx.fillRect(x - 1, sy - 1, 26, 22);
+    ctx.fillStyle = "#201828"; ctx.fillRect(x, sy, 24, 20);
+    text(ctx, `+${hidden}`, x + 12, sy + 6, { align: "center", font: "7px Silkscreen", color: "#ffe080" });
+    hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "zone", zone: "stack", pid: view.you, onClick: () => {
+      state.overlay = state.overlay && state.overlay.zone === "stack" ? null : { zone: "stack", pid: view.you };
+    } });
+  }
+  view.stack.slice(0, shown).forEach((item, i) => {
     const key = stackChipKey(item, i);
     const x = sx0 + i * 28, sy = y + 9;
     const hovered = state.hover !== null && state.hover.key === key;
@@ -1494,6 +1514,7 @@ function zoneOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
   if (ov.zone === "graveyard") { const g = view.graveyards.find(([pid]) => pid === ov.pid); cards = g ? g[1] : []; title = `${playerLabel(state, ov.pid)}: graveyard (${cards.length})`; }
   else if (ov.zone === "exile") { cards = view.exile.filter(c => c.owner === ov.pid); title = `${playerLabel(state, ov.pid)}: exile (${cards.length})`; }
   else if (ov.zone === "library") { cards = ov.pid === view.you ? view.your_library_cards : []; title = ov.pid === view.you ? `Your library (${cards.length}, order unknown)` : "Opponent's library"; }
+  else if (ov.zone === "stack") { stackOverlay(ctx, hits, state); return; }
   hits.push({ x: 0, y: 0, w: BOARD_W, h: H, kind: "overlay", onClick: () => { state.overlay = null; } });
   ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, BOARD_W, H);
   text(ctx, title, 8, 6, { font: "8px PressStart", color: "#ffe080" });
@@ -1516,6 +1537,44 @@ function zoneOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
     button(ctx, hits, 8, H - 20, 60, 13, "◀ prev", () => { ov.page = Math.max(0, page - 1); });
     button(ctx, hits, 72, H - 20, 60, 13, "next ▶", () => { ov.page = Math.min(Math.ceil(cards.length / perPage) - 1, page + 1); });
     text(ctx, `page ${page + 1} of ${Math.ceil(cards.length / perPage)}`, 140, H - 17, { font: "7px Silkscreen", color: "#8a8090" });
+  }
+}
+
+/** The whole stack, top first, when the band has no room for every chip
+ *  (#991). Each entry is the chip it stands for: the same key, kind and
+ *  slot, so it is inspected, targeted and drawn an arrow from as the chip
+ *  would be. */
+function stackOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
+  const view = state.view;
+  hits.push({ x: 0, y: 0, w: BOARD_W, h: H, kind: "overlay", onClick: () => { state.overlay = null; } });
+  ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, BOARD_W, H);
+  text(ctx, `The stack (${view.stack.length}, next to resolve first)`, 8, 6, { font: "8px PressStart", color: "#ffe080" });
+  text(ctx, "click outside or press Esc to close", 8, 18, { font: "7px Silkscreen", color: "#8a8090" });
+  const cols = 10, cw = 44, ch = 58;
+  const rows = Math.floor((H - 32) / (ch + 2));
+  const perPage = cols * rows;
+  const ov = state.overlay!;
+  const pages = Math.max(1, Math.ceil(view.stack.length / perPage));
+  const page = Math.min(ov.page || 0, pages - 1);
+  const waiting = view.stack[0]?.resolving ? 1 : 0;
+  view.stack.slice(page * perPage, (page + 1) * perPage).forEach((item, j) => {
+    const i = page * perPage + j;
+    const x = 8 + (j % cols) * (cw + 2), y = 32 + Math.floor(j / cols) * (ch + 2);
+    const key = stackChipKey(item, i);
+    const hl = highlightFor(state, key);
+    const hovered = state.hover !== null && state.hover.kind === "stack" && state.hover.stackIndex === i;
+    ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : item.controller === view.you ? "#6a5a8a" : "#8a5a5a";
+    ctx.fillRect(x - 1, y - 1, cw + 2, ch + 2);
+    ctx.fillStyle = "#201828"; ctx.fillRect(x, y, cw, ch);
+    drawArt(ctx, x + 6, y + 3, ART_S.w, ART_S.h, item.name, colorsOfCost(item.cost), false);
+    text(ctx, item.resolving ? "R" : String(i + 1 - waiting), x + cw - 4, y + 3, { align: "center", font: "6px Silkscreen", color: "#ffe080" });
+    wrapCapped(ctx, item.name, cw - 4, "6px Silkscreen", 3).forEach((l, k) => text(ctx, l, x + 2, y + 30 + k * 7, { font: "6px Silkscreen" }));
+    hits.push({ x: x - 1, y: y - 1, w: cw + 2, h: ch + 2, kind: "stack", key, id: item.object_id, stackIndex: i, onClick: clickFor(state, key) });
+  });
+  if (pages > 1) {
+    button(ctx, hits, 8, H - 20, 60, 13, "◀ prev", () => { ov.page = Math.max(0, page - 1); });
+    button(ctx, hits, 72, H - 20, 60, 13, "next ▶", () => { ov.page = Math.min(pages - 1, page + 1); });
+    text(ctx, `page ${page + 1} of ${pages}`, 140, H - 17, { font: "7px Silkscreen", color: "#8a8090" });
   }
 }
 
