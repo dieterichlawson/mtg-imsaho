@@ -5068,22 +5068,33 @@ impl CliPlayer {
     /// here too, by its source's name — Moonmist's prevention was one LOG
     /// line that scrolled away (#953); the card is in its graveyard to read.
     fn battlefield_rule(view: &GameView, width: usize) -> String {
-        // The effects first: a 58-column pane cuts the end of the label,
-        // and the death is also in the LOG pane's history of the turn.
-        let mut facts: Vec<String> = view.turn_effects.iter()
-            .map(|e| format!("{} in force", e.split_once(':').map_or(e.as_str(), |(source, _)| source)))
+        // Fitted as a whole, as the page's band is (#993): cut from the end,
+        // a second effect lost its tail with no count and the death after
+        // it went entirely. The words shorten first, then every effect after
+        // the first is counted, then they are only counted.
+        let sources: Vec<&str> = view.turn_effects.iter()
+            .map(|e| e.split_once(':').map_or(e.as_str(), |(source, _)| source))
             .collect();
-        if view.creature_died_this_turn {
-            facts.push("a creature died".into());
-        }
-        if let Some(last) = facts.last_mut() {
-            last.push_str(" this turn");
-        }
-        let label = if facts.is_empty() {
-            "─── BATTLEFIELD ".to_string()
-        } else {
-            format!("─── BATTLEFIELD ({}) ", facts.join("; "))
+        let died = view.creature_died_this_turn;
+        let n = sources.len();
+        let shape = |effects: Option<String>, death: &str| -> String {
+            let facts: Vec<String> = effects.into_iter().chain(died.then(|| death.to_string())).collect();
+            if facts.is_empty() { "─── BATTLEFIELD ".to_string() } else { format!("─── BATTLEFIELD ({}) ", facts.join("; ")) }
         };
+        let full = {
+            let mut facts: Vec<String> = sources.iter().map(|s| format!("{s} in force")).collect();
+            if died { facts.push("a creature died".into()); }
+            if let Some(last) = facts.last_mut() { last.push_str(" this turn"); }
+            if facts.is_empty() { "─── BATTLEFIELD ".to_string() } else { format!("─── BATTLEFIELD ({}) ", facts.join("; ")) }
+        };
+        let tries = [
+            full,
+            shape((n > 0).then(|| format!("{} in force", sources.join(", "))), "a creature died"),
+            shape((n > 1).then(|| format!("{} +{} in force", sources[0], n - 1))
+                .or_else(|| (n == 1).then(|| format!("{} in force", sources[0]))), "died"),
+            shape((n > 0).then(|| format!("{n} in force")), "died"),
+        ];
+        let label = tries.iter().find(|l| l.chars().count() <= width).unwrap_or(&tries[3]).clone();
         let line = format!("{label}{}", "─".repeat(width.saturating_sub(label.chars().count())));
         // Closed when the pane is narrower than the label (#781's review).
         Self::clip_closed_or_cut(&line, width)
@@ -10442,6 +10453,30 @@ Wolves or Werewolves is prevented".into()];
         for width in [90, 58, 30, 12] {
             let rule = CliPlayer::battlefield_rule(&v, width);
             assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
+        }
+    }
+
+    /// #993's review: cut from the end, a second effect lost its tail with
+    /// no count and the death after it went entirely. Fitted as a whole,
+    /// every effect is named or counted and the death is always said.
+    #[test]
+    fn the_battlefield_rule_names_or_counts_every_effect_and_keeps_the_death() {
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.creature_died_this_turn = true;
+        v.turn_effects = vec!["Moonmist: prevented".into(), "Rally the Peasants: +2/+0".into(), "Spare from Evil: protection".into()];
+        let full = CliPlayer::battlefield_rule(&v, 140);
+        assert!(full.contains("(Moonmist in force; Rally the Peasants in force; Spare from Evil in force; a creature died this turn)"), "{full}");
+        for width in [90, 58, 40] {
+            let rule = CliPlayer::battlefield_rule(&v, width);
+            assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
+            assert!(rule.contains("died"), "the death is dropped at {width}: {rule:?}");
+            let named = ["Moonmist", "Rally the Peasants", "Spare from Evil"].iter().filter(|s| rule.contains(*s)).count();
+            // "Moonmist +2 in force" or "3 in force": the number before "in force".
+            let lead = |t: &str| t.chars().take_while(char::is_ascii_digit).collect::<String>().parse::<usize>().ok();
+            let counted = rule.split_once('+').and_then(|(_, t)| lead(t))
+                .or_else(|| rule.split_once('(').and_then(|(_, t)| lead(t)))
+                .unwrap_or(0);
+            assert_eq!(named + counted, 3, "every effect named or counted at {width}: {rule:?}");
         }
     }
 
