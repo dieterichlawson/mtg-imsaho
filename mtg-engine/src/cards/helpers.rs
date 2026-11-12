@@ -357,15 +357,16 @@ pub fn token_attack_options(
     controller: PlayerId,
     registry: &CardRegistry,
 ) -> Vec<Target> {
-    let mut options: Vec<Target> = state
-        .all_objects_in_zone(Zone::Battlefield)
-        .iter()
-        .filter(|o| {
-            o.controller != controller
-                && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
-        })
-        .map(|o| Target::Object(o.id))
-        .collect();
+    // Allocated at its largest and filled in a loop, as `ids_where` says why.
+    let battlefield = state.all_objects_in_zone(Zone::Battlefield);
+    let mut options: Vec<Target> = Vec::with_capacity(battlefield.len() + state.players.len());
+    for o in battlefield {
+        if o.controller != controller
+            && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
+        {
+            options.push(Target::Object(o.id));
+        }
+    }
     for p in &state.players {
         if p.id != controller && !p.lost {
             options.push(Target::Player(p.id));
@@ -426,17 +427,28 @@ pub fn tokens_enter_combat_attacking(
 
 /// Put a list of targets into a stable order.
 ///
-/// Every list below is built by iterating `state.objects`, which is a HashMap
-/// and yields in arbitrary order. Players — and the LLM player especially —
-/// pick from these lists by position, so an unstable order means the same game
-/// replays differently and a recorded decision means something else on the way
-/// back. Objects sort by id, players after objects and by id among themselves.
+/// Players — and the LLM player especially — pick from these lists by
+/// position, so an unstable order means the same game replays differently
+/// and a recorded decision means something else on the way back. Objects
+/// sort by id, players after objects and by id among themselves.
+///
+/// An insertion sort, which is stable as `sort_by_key` is and gives the same
+/// list: these are a board's worth of targets, and a general sort over a
+/// list of a length the solver leaves open is one the proofs do not get
+/// through.
 fn stable(mut targets: Vec<Target>) -> Vec<Target> {
-    targets.sort_by_key(|t| match t {
+    let key = |t: &Target| match t {
         Target::Object(id) => (0u8, id.0),
         Target::Player(p) => (1u8, u64::from(p.0)),
         Target::Illegal => (2u8, 0),
-    });
+    };
+    for i in 1..targets.len() {
+        let mut j = i;
+        while j > 0 && key(&targets[j - 1]) > key(&targets[j]) {
+            targets.swap(j - 1, j);
+            j -= 1;
+        }
+    }
     targets
 }
 
@@ -505,10 +517,20 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
 /// All creatures controlled by a specific player.
 #[must_use]
 pub fn creatures_controlled_by(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    stable(state.objects_in_zone(Zone::Battlefield, player).into_iter()
-        .filter(|o| state.is_creature(o.id, registry))
-        .map(|o| Target::Object(o.id))
-        .collect())
+    // Allocated at the most it can hold, every object, and filled in a
+    // loop, as `ids_where` says why: allocated at the length of the
+    // battlefield's listing, a length a proof leaves open, it was a buffer
+    // of that open size. Not sorted after: `objects_in_zone` lists the
+    // battlefield in id order, which is the order `stable` gives a list of
+    // objects, and a proof walked the sort's swaps over places it left open
+    // all the same.
+    let mut creatures = Vec::with_capacity(state.objects.len());
+    for o in state.objects_in_zone(Zone::Battlefield, player) {
+        if state.is_creature(o.id, registry) {
+            creatures.push(Target::Object(o.id));
+        }
+    }
+    creatures
 }
 
 /// The single opponent in a 2-player game (auto-target convenience).
@@ -517,18 +539,20 @@ pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
     Target::Player(state.opponent(controller))
 }
 
-/// The controller of the activated ability currently resolving — the player
-/// its "you" refers to.
+/// The controller of the ability currently resolving — the player its "you"
+/// refers to.
 ///
-/// CR 602.2a: an ability's controller is the player who activated it, fixed
-/// when it went on the stack. That is not always the source's controller by
-/// the time it resolves: take the source in response and `controller_of` names
-/// the thief, so "you gain 2 life" paid the wrong player and "for as long as
-/// you control it" handed over the wrong permanent.
+/// CR 602.2a: an activated ability's controller is the player who activated
+/// it, and 603.3a: a triggered ability's is the player who controlled its
+/// source as it triggered; both are fixed when it went on the stack. That is
+/// not always the source's controller by the time it resolves: take the
+/// source in response and `controller_of` names the thief, so "you gain 2
+/// life" paid the wrong player, "for as long as you control it" handed over
+/// the wrong permanent, and Sturmgeist's "draw a card" drew for the taker.
 ///
-/// Falls back to the source's last known controller, which is the right answer
-/// for a triggered ability or an effect reached outside a resolving activated
-/// ability.
+/// Falls back to the source's last known controller outside a resolving
+/// ability: a spell's controller, which does not change on the stack, or a
+/// card's hook called directly, as a card proof calls it.
 #[must_use]
 pub fn ability_controller(state: &GameState, source_id: ObjectId) -> PlayerId {
     state.resolving_ability_activator
@@ -575,7 +599,7 @@ pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
 /// `apply_transform`) decline on their own, which they already do.
 #[must_use]
 pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
-    state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield)
+    state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) && !state.is_new_source(object_id)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -586,9 +610,10 @@ pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
 
 /// What came of asking a permanent to transform.
 ///
-/// Three of the four are refusals, and they are different refusals: a token
+/// Four of the five are refusals, and they are different refusals: a token
 /// copy of a double-faced card, a single-faced card wearing a double-faced
-/// creature's face, and nothing there to transform at all. A caller that
+/// creature's face, nothing there to transform at all, and an ability of the
+/// permanent's own that it has transformed since. A caller that
 /// cannot tell them apart cannot say which happened, and neither can a
 /// reader of the log (issue #500).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -606,7 +631,9 @@ pub enum TransformResult {
     /// ability still resolves (CR 113.7a); it just has no permanent.
     NotAPermanent,
     /// CR 701.28f: the permanent's own ability tried to transform it, and it
-    /// has transformed since that ability was put onto the stack.
+    /// has transformed since that ability was put onto the stack: Moonmist
+    /// in response to a werewolf's upkeep trigger, or a second activation of
+    /// Bloodline Keeper's transform held under the first.
     AlreadyTransformed,
 }
 
@@ -699,21 +726,21 @@ pub fn transform_quietly(
         // stamped with a DFC's `card_id` would otherwise pick up that card's
         // upkeep trigger and flip.
         Some(o) if o.zone == Zone::Battlefield && o.is_token => return TransformResult::Token,
-        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.is_transformed, o.copy_grantor),
+        // CR 400.7: the ability's own source back on the battlefield since
+        // it went on the stack is a new object, not the permanent it names.
+        Some(o) if o.zone == Zone::Battlefield && !state.is_new_source(object_id) =>
+            (o.card_id, o.is_transformed, o.copy_grantor),
         _ => return TransformResult::NotAPermanent,
     };
     let (card_id, was_transformed, copy_grantor) = (card_id.0, card_id.1, card_id.2);
-    if transformed_since_its_own_ability_was_stacked(state, object_id) {
-        return TransformResult::AlreadyTransformed;
-    }
-    let Some(behavior) = registry.get(card_id) else { return TransformResult::SingleFaced; };
+    if registry.get(card_id).is_none() { return TransformResult::SingleFaced; }
 
     // CR 701.28c: it is the *card* that has to be double-faced. A single-faced
     // clone (Evil Twin) copying a werewolf shows the werewolf's face, but the
     // card under it has no other face — nothing happens when it would
     // transform.
     let printed = copy_grantor.unwrap_or(card_id);
-    if registry.get(printed).is_none_or(|b| b.back_face_data().is_none()) {
+    if !registry.has_back_face(printed) {
         return TransformResult::SingleFaced;
     }
 
@@ -725,17 +752,24 @@ pub fn transform_quietly(
     //
     // `back_face_data` is the whole test: `every_card_with_a_back_face_declares_it`
     // holds every card Scryfall gives a back face to declaring one, Garruk
-    // Relentless included.
-    if behavior.back_face_data().is_none() {
+    // Relentless included. `has_back_face` asks it of the kept faces.
+    if !registry.has_back_face(card_id) {
         return TransformResult::SingleFaced;
+    }
+
+    // CR 701.28f, `transformed_since_its_own_ability_was_stacked`. The entry
+    // resolving is held across a question it asks, so a "you may transform"
+    // answered later is still that ability's.
+    if transformed_since_its_own_ability_was_stacked(state, object_id) {
+        return TransformResult::AlreadyTransformed;
     }
 
     // Refresh the display cache with the face now showing.
     let new_name = if was_transformed {
-        Some(behavior.card_data().name)
+        registry.printed_name(card_id, false)
     } else {
-        behavior.back_face_data().map(|back| back.name)
-    };
+        registry.printed_back_name(card_id)
+    }.map(str::to_string);
 
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;
@@ -938,9 +972,26 @@ pub fn enters_with_counters(
     if extra.is_empty() {
         return None;
     }
+    Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(entering_with_more_counters(e, extra))))
+}
+
+/// The permanent `e` entering with `extra` counters after the ones it
+/// already enters with.
+///
+/// Its counters allocated at what they come to, rather than a clone's
+/// (exactly as long as the counters it had) grown to take more: a proof
+/// holds a list to the room it was given (`proofs::cards::no_growing`).
+#[must_use]
+pub fn entering_with_more_counters(
+    e: &crate::replacement::EnteringPermanent,
+    extra: Vec<(crate::types::CounterType, u32)>,
+) -> crate::replacement::EnteringPermanent {
     let mut e = e.clone();
-    e.counters.extend(extra);
-    Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
+    let mut all = Vec::with_capacity(e.counters.len() + extra.len());
+    all.append(&mut e.counters);
+    all.extend(extra);
+    e.counters = all;
+    e
 }
 
 /// Which face of `object_id` a triggered ability belongs to. Inside a trigger's
@@ -1025,17 +1076,25 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
     true
 }
 
-/// CR 701.19: search a library, take at most one matching card, then shuffle.
+/// The ids of the objects in `objects`, in their order, that `keep` holds
+/// for: what `objects.into_iter().filter(keep).map(|o| o.id).collect()`
+/// gives, into a list allocated at the most it can hold.
 ///
-/// Handles the whole shape once: no match (shuffle and move on), exactly one
-/// (take it without asking — there is no choice to make), or several (ask, and
-/// finish in `finish_library_search` when the answer comes back). Five cards
-/// each had their own copy of this, with subtly different behaviour in the
-/// zero- and one-candidate cases.
-///
-/// `candidates` is what the card considers a legal find; `destination` and
-/// `tapped` are where it ends up. The shuffle always happens, even when
-/// nothing is found — you searched.
+/// A filtered `collect` allocates when it keeps its first object, so
+/// whether the list was allocated at all is a question about the board,
+/// which a proof of the card has to take both ways; allocated first, every
+/// id lands in the one list.
+#[must_use]
+pub fn ids_where(objects: Vec<&crate::state::GameObject>, mut keep: impl FnMut(&crate::state::GameObject) -> bool) -> Vec<ObjectId> {
+    let mut ids = Vec::with_capacity(objects.len());
+    for o in objects {
+        if keep(o) {
+            ids.push(o.id);
+        }
+    }
+    ids
+}
+
 /// One offer per card, not per copy, for a choice out of a library.
 ///
 /// Copies of a card in a library are interchangeable — the zone is hidden
@@ -1047,9 +1106,18 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
 /// this, and the invariant checker flags one that offers two copies.
 #[must_use]
 pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<ObjectId> {
-    let mut seen_cards = std::collections::HashSet::new();
+    // A list rather than a hash set: a library holds a few dozen cards, and
+    // a hash set's seed is drawn from the operating system, which the
+    // proofs of this function (`proofs::actions::searching`) cannot model.
+    let mut seen_cards: Vec<crate::ids::CardId> = Vec::new();
     candidates.into_iter()
-        .filter(|&id| state.get_object(id).is_none_or(|o| seen_cards.insert(o.card_id)))
+        .filter(|&id| state.get_object(id).is_none_or(|o| {
+            let fresh = !seen_cards.contains(&o.card_id);
+            if fresh {
+                seen_cards.push(o.card_id);
+            }
+            fresh
+        }))
         .collect()
 }
 
@@ -1074,6 +1142,17 @@ pub fn copies_note(state: &GameState, ids: &[ObjectId]) -> Option<String> {
     (!copies.is_empty()).then(|| copies.join(", "))
 }
 
+/// CR 701.19: search a library, take at most one matching card, then shuffle.
+///
+/// Handles the whole shape once: no match (shuffle and move on), exactly one
+/// (take it without asking — there is no choice to make), or several (ask, and
+/// finish in `finish_library_search` when the answer comes back). Five cards
+/// each had their own copy of this, with subtly different behaviour in the
+/// zero- and one-candidate cases.
+///
+/// `candidates` is what the card considers a legal find; `destination` and
+/// `tapped` are where it ends up. The shuffle always happens, even when
+/// nothing is found — you searched.
 pub fn search_library(
     state: &mut GameState,
     source_id: ObjectId,
@@ -1159,19 +1238,36 @@ pub fn finish_library_search(
 ) {
     let name = state.obj_name(found);
     state.move_object(found, destination, registry);
-    if destination == Zone::Battlefield {
-        if let Some(obj) = state.get_object_mut(found) {
-            obj.summoning_sick = false;
-        }
+    // A permanent put onto the battlefield is summoning sick as entering
+    // made it (CR 302.6), which is no matter for a land. This used to clear
+    // it, so a creature card a search put onto the battlefield could have
+    // attacked, or paid a {T} cost, the turn it arrived.
+    if destination == Zone::Battlefield && tapped {
         // "put it onto the battlefield tapped" — the land arrives tapped
         // rather than being tapped by anything (CR 614.1c).
-        if tapped {
-            state.arrives_tapped(found);
-        }
+        state.arrives_tapped(found);
     }
+    // Every search into a hand in the pool reveals the card it finds
+    // ("reveal it, put it into your hand": Traveler's Amulet, Garruk, the
+    // Veil-Cursed), so the line says so (CR 701.16a), and only a revealed
+    // card is named in the log every seat is sent; `card_semantics` holds
+    // the pool to it (`every_search_into_a_hand_reveals_what_it_finds`). A
+    // search that did not reveal would name its card at `Private`.
+    let found = if destination == Zone::Hand { "revealed" } else { "found" };
     state.log(crate::state::LogLevel::Event,
-        format!("p{} searched their library and found {name}", searcher.0));
+        format!("p{} searched their library and {found} {name}", searcher.0));
     shuffle_library(state, searcher);
+}
+
+/// `names` in order: card names offered to a player to choose among, in
+/// the order a person reads a list (Nevermore's question). A function of
+/// its own so that a proof can stand in for the sort: with the names on
+/// the heap, Kani could not tell how any two compared, and sorting even
+/// three of them did not finish symbolic execution in half an hour.
+#[must_use]
+pub fn sorted(mut names: Vec<String>) -> Vec<String> {
+    names.sort();
+    names
 }
 
 /// CR 701.20: shuffle a player's library.

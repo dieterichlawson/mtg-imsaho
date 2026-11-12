@@ -38,7 +38,6 @@ const ALLOWED: &[(&str, &str)] = &[
       DFC is always cast as its front face (CR 712.6a), so the registry face is the right read"),
     ("cards/isd/olivia_voldaren.rs", "grants the Vampire subtype at runtime"),
     ("cards/isd/grimoire_of_the_dead.rs", "grants Zombie and black at runtime"),
-    ("cards/isd/nevermore.rs", "names a CARD from the registry; no game object involved"),
     ("triggers.rs", "face_name implements front/back resolution for trigger display"),
     ("invariants/objects.rs", "the fuzz oracle audits the raw fields against the layer (CR 400.7 leaks)"),
     ("invariants/events.rs", "the fuzz oracle reads printed faces to check what entered the battlefield"),
@@ -90,10 +89,16 @@ fn is_face_binding(line: &str, pat: &str) -> bool {
         .any(|b| before.ends_with(b))
 }
 
+// `src/proofs` is left out: the proofs, built only under Kani, set their
+// boards up by writing the raw fields and state what a card must do in
+// terms of them, which is what this guards card and engine code against.
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).expect("src dir should be readable").flatten() {
         let p = entry.path();
         if p.is_dir() {
+            if p.ends_with("src/proofs") {
+                continue;
+            }
             walk(&p, out);
         } else if p.extension().is_some_and(|e| e == "rs") {
             out.push(p);

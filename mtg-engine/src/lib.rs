@@ -1,3 +1,13 @@
+// A card proof stands in for over forty engine actions, each a
+// `kani::stub` attribute, and each attribute is expanded inside the last.
+#![cfg_attr(kani, recursion_limit = "4096")]
+// The proofs' stand-in for growing an allocation names the allocator's
+// types (`proofs::cards::no_growing`).
+#![cfg_attr(kani, feature(allocator_api))]
+
+#[cfg(kani)]
+extern crate alloc;
+
 pub mod ids;
 pub mod types;
 pub mod state;
@@ -17,5 +27,10 @@ pub mod destruction;
 pub mod invariants;
 pub mod replacement;
 pub mod attachment;
+// Kept by Kani builds in place of `BTreeMap`; compiled for tests too, whose
+// unit tests hold it to `BTreeMap` beyond the proofs' bounds.
+#[cfg(any(kani, test))]
+pub mod kind_map;
+pub mod vec_map;
 #[cfg(kani)]
 mod proofs;

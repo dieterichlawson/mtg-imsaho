@@ -65,12 +65,12 @@ impl CardBehavior for LilianaOfTheVeil {
                 let active = state.active_player;
 
                 // Build list of players who need to discard, starting with active player.
-                let mut players_to_discard: Vec<PlayerId> = vec![];
+                // Allocated at the most it can hold, as `helpers::ids_where`
+                // says why.
+                let mut players_to_discard: Vec<PlayerId> = Vec::with_capacity(state.players.len());
                 // Active player first.
                 if !state.get_player(active).lost {
-                    let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, active)
-                        .iter().map(|o| o.id).collect();
-                    if !hand.is_empty() {
+                    if state.any_in_zone(Zone::Hand, active, |_| true) {
                         players_to_discard.push(active);
                     }
                 }
@@ -79,9 +79,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     let pid = PlayerId(u8::try_from(pid_idx).unwrap_or(u8::MAX));
                     if pid == active { continue; }
                     if state.get_player(pid).lost { continue; }
-                    let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, pid)
-                        .iter().map(|o| o.id).collect();
-                    if !hand.is_empty() {
+                    if state.any_in_zone(Zone::Hand, pid, |_| true) {
                         players_to_discard.push(pid);
                     }
                 }
@@ -137,10 +135,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     _ => return,
                 };
 
-                let permanents: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, target_player)
-                    .iter()
-                    .map(|o| o.id)
-                    .collect();
+                let permanents = state.ids_in_zone(Zone::Battlefield, target_player, |_| true);
 
                 if permanents.is_empty() {
                     state.log(crate::state::LogLevel::Event,
@@ -175,40 +170,27 @@ impl CardBehavior for LilianaOfTheVeil {
 }
 
 impl LilianaOfTheVeil {
-    // The +1's intermediate state lives in `card_state`, which maps
-    // String -> ObjectId: a queue of players who have yet to choose, and the
-    // cards chosen so far. Both are counted lists rather than one packed
-    // value — the previous encoding parsed a comma-joined string of player ids
-    // *as a u64*, which silently became 0 for any game with more than one
-    // player left to ask.
-    const QUEUE_LEN: &'static str = "liliana_queue_len";
-    const CHOSEN_LEN: &'static str = "liliana_chosen_len";
+    // The +1's intermediate state lives in `card_state`: a queue of players
+    // who have yet to choose, and the cards chosen so far, each a counted
+    // list (`cards::store_ids`) rather than one packed value — the previous
+    // encoding parsed a comma-joined string of player ids *as a u64*, which
+    // silently became 0 for any game with more than one player left to ask.
+    const QUEUE: &'static str = "liliana_queue";
+    const CHOSEN: &'static str = "liliana_chosen";
 
     fn store_queue(state: &mut GameState, self_id: ObjectId, queue: &[PlayerId], chosen: &[ObjectId]) {
         let Some(obj) = state.get_object_mut(self_id) else { return };
-        obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
-        obj.card_state.insert(Self::QUEUE_LEN.into(), ObjectId(queue.len() as u64));
-        for (i, pid) in queue.iter().enumerate() {
-            obj.card_state.insert(format!("liliana_queue_{i}"), ObjectId(u64::from(pid.0)));
-        }
-        obj.card_state.insert(Self::CHOSEN_LEN.into(), ObjectId(chosen.len() as u64));
-        for (i, cid) in chosen.iter().enumerate() {
-            obj.card_state.insert(format!("liliana_chosen_{i}"), *cid);
-        }
+        let players: Vec<ObjectId> = queue.iter().map(|p| ObjectId(u64::from(p.0))).collect();
+        crate::cards::store_ids(&mut obj.card_state, Self::QUEUE, &players);
+        crate::cards::store_ids(&mut obj.card_state, Self::CHOSEN, chosen);
     }
 
     fn load_queue(state: &GameState, self_id: ObjectId) -> (Vec<PlayerId>, Vec<ObjectId>) {
         let Some(obj) = state.get_object(self_id) else { return (vec![], vec![]) };
-        let read = |key: &str, len_key: &str| -> Vec<ObjectId> {
-            let len = obj.card_state.get(len_key).map_or(0, |id| usize::try_from(id.0).unwrap_or(0));
-            (0..len)
-                .filter_map(|i| obj.card_state.get(&format!("{key}{i}")).copied())
-                .collect()
-        };
-        let queue = read("liliana_queue_", Self::QUEUE_LEN).into_iter()
+        let queue = crate::cards::load_ids(&obj.card_state, Self::QUEUE).into_iter()
             .map(|id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)))
             .collect();
-        (queue, read("liliana_chosen_", Self::CHOSEN_LEN))
+        (queue, crate::cards::load_ids(&obj.card_state, Self::CHOSEN))
     }
 
     fn push_chosen(state: &mut GameState, self_id: ObjectId, card: ObjectId) {
@@ -224,8 +206,7 @@ impl LilianaOfTheVeil {
 
         while !queue.is_empty() {
             let player = queue.remove(0);
-            let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
-                .iter().map(|o| o.id).collect();
+            let hand = state.ids_in_zone(Zone::Hand, player, |_| true);
 
             if hand.is_empty() {
                 // A card may have left this player's hand since the ability
@@ -261,7 +242,8 @@ impl LilianaOfTheVeil {
             state.discard_card_for(*card, "Liliana +1", registry);
         }
         if let Some(obj) = state.get_object_mut(self_id) {
-            obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
+            crate::cards::clear_ids(&mut obj.card_state, Self::QUEUE);
+            crate::cards::clear_ids(&mut obj.card_state, Self::CHOSEN);
         }
     }
 }

@@ -28,7 +28,9 @@ use crate::types::{CounterType, Zone};
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnteringPermanent {
     pub object: ObjectId,
-    /// Where it is coming from. `None` for a token, which comes from nowhere.
+    /// Where it is coming from. `None` for a token, which comes from nowhere;
+    /// the command zone for a token copy held there for its enters-as-a-copy
+    /// choice (`GameState::create_token_internal`), which nothing reads.
     pub from: Option<Zone>,
     pub controller: PlayerId,
     pub tapped: bool,
@@ -44,6 +46,7 @@ pub struct EnteringPermanent {
 
 /// An event a replacement effect may act on before it happens.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum ReplaceableEvent {
     EntersBattlefield(EnteringPermanent),
     /// One or more tokens are about to be created under `controller`.
@@ -60,6 +63,7 @@ pub enum ReplaceableEvent {
 }
 
 /// What a replacement effect did to an event.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Replacement {
     /// The event happens, but like this instead.
     Modified(ReplaceableEvent),
@@ -148,6 +152,20 @@ pub fn for_entering(
         .unwrap_or(after_copy)
 }
 
+/// Whether the permanent `e` says is entering has `subtype` as it enters.
+/// CR 614.12 reads the permanent as it would exist on the battlefield,
+/// after the replacement effects already applied to how it enters, so one
+/// entering as a copy has the subtypes of what it copies (its copiable
+/// values, CR 707.2) and one entering as itself its own: an Evil Twin
+/// entering as a copy of a Human token is a Human to a Dearly Departed.
+#[must_use]
+pub fn enters_with_subtype(state: &GameState, e: &EnteringPermanent, subtype: &str, registry: &CardRegistry) -> bool {
+    match e.copy_of {
+        Some(source) => state.printed_subtypes_of(source, registry).iter().any(|s| s == subtype),
+        None => state.has_subtype(e.object, subtype, registry),
+    }
+}
+
 /// Ask for the enters-as-a-copy choices that deferred entries are waiting on
 /// (CR 614.12b), one at a time.
 ///
@@ -167,13 +185,20 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
         };
         // "A copy of any creature on the battlefield" is a choice, not a
         // target (CR 115.1, 614.12b), so hexproof and protection do not
-        // narrow it.
-        let options: Vec<crate::actions::Target> = state
-            .all_objects_in_zone(Zone::Battlefield)
-            .iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| crate::actions::Target::Object(o.id))
-            .collect();
+        // narrow it. One put onto the battlefield with others chooses among
+        // those there before them (`pending_entry_options`), still there.
+        let options: Vec<crate::actions::Target> = match state.pending_entry_options.get(&object) {
+            Some(before) => before.iter()
+                .filter(|&&id| state.get_object(id).is_some_and(|o| o.zone == Zone::Battlefield) && state.is_creature(id, registry))
+                .map(|&id| crate::actions::Target::Object(id))
+                .collect(),
+            None => state
+                .all_objects_in_zone(Zone::Battlefield)
+                .iter()
+                .filter(|o| state.is_creature(o.id, registry))
+                .map(|o| crate::actions::Target::Object(o.id))
+                .collect(),
+        };
         if options.is_empty() {
             // Nothing to copy: the choice cannot be made, so the permanent
             // enters as its printed self.
@@ -247,6 +272,11 @@ pub fn record_entry_choice(
         obj.entering_copy_choice = choice;
     }
     state.pending_entry_choices.retain(|&id| id != object);
+    state.pending_entry_options.remove(&object);
+    let grant = state.pending_entry_grants.remove(&object);
+    // Planned against where the rest of its event was as it began (CR
+    // 614.12), for this entry only.
+    state.entering_zones_before = state.pending_entry_zones.remove(&object).unwrap_or_default();
     // The entry the deferral belonged to may have asked for a controller
     // other than the owner (Grimoire of the Dead, Moldgraf Monstrosity,
     // Fiend Hunter). It was held rather than written, so it is applied now,
@@ -256,6 +286,18 @@ pub fn record_entry_choice(
             state.move_object_under_control(object, Zone::Battlefield, controller, registry),
         None => state.move_object(object, Zone::Battlefield, registry),
     };
+    state.entering_zones_before.clear();
+    // What the effect that put it there makes it, now that it is there, as
+    // whatever it entered as.
+    if let Some((subtypes, colors)) = grant.filter(|_| state.get_object(object).is_some_and(|o| o.zone == Zone::Battlefield)) {
+        let types: Vec<String> = subtypes.into_iter().filter(|t| !state.has_subtype(object, t, registry)).collect();
+        let has = state.colors_of(object, registry);
+        let colors: Vec<crate::types::Color> = colors.into_iter().filter(|c| !has.contains(c)).collect();
+        if let Some(obj) = state.get_object_mut(object) {
+            obj.subtypes.extend(types);
+            obj.colors.extend(colors);
+        }
+    }
 }
 
 /// Which half of the entering-replacement order a pass keeps.
@@ -273,13 +315,16 @@ fn run_entering_pass(
     registry: &CardRegistry,
     pass: Pass,
 ) -> Option<EnteringPermanent> {
+    // Each source where it was as the entry began (CR 614.12): one put
+    // onto the battlefield in the same event as a deferred entry is judged
+    // from the zone it left (`GameState::zone_as_entering_began`).
     let mut candidates: Vec<(ObjectId, CardId)> = state
         .objects
         .values()
         .filter(|o| {
             registry
                 .get(o.card_id)
-                .is_some_and(|b| b.replacement_zones().contains(&o.zone))
+                .is_some_and(|b| state.zone_as_entering_began(o.id).is_some_and(|z| b.replacement_zones().contains(&z)))
         })
         .map(|o| (o.id, o.card_id))
         .collect();

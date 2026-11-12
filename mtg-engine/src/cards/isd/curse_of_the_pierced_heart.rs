@@ -77,12 +77,19 @@ impl CardBehavior for CurseOfThePiercedHeart {
         // `state.objects.values()`, which is a HashMap iterator in arbitrary
         // order: the controller picks from `options` by position, so an
         // unstable order makes the same game replay differently.
-        let planeswalkers: Vec<Target> = state.objects_in_zone(Zone::Battlefield, cursed_player)
-            .iter()
-            .map(|o| o.id)
-            .filter(|id| state.has_card_type(*id, CardType::Planeswalker, registry))
-            .map(Target::Object)
-            .collect();
+        //
+        // The options are the player and then those planeswalkers, in a list
+        // with room for the player and the whole battlefield: a filtered
+        // `collect` allocates when it keeps its first, and extending a list
+        // of the player alone grew it, neither of which a proof allows.
+        let battlefield = state.objects_in_zone(Zone::Battlefield, cursed_player);
+        let mut options = Vec::with_capacity(1 + battlefield.len());
+        options.push(Target::Player(cursed_player));
+        for o in battlefield {
+            if state.has_card_type(o.id, CardType::Planeswalker, registry) {
+                options.push(Target::Object(o.id));
+            }
+        }
 
         // "…deals 1 damage to that player **or** a planeswalker that player
         // controls." One effect either way; only the number of options differs.
@@ -97,8 +104,6 @@ impl CardBehavior for CurseOfThePiercedHeart {
             amount: 1,
             source_id: self_id,
         };
-        let mut options = vec![Target::Player(cursed_player)];
-        options.extend(planeswalkers);
 
         if options.len() == 1 {
             crate::engine::apply_pending_effect(state, &options[0], &effect, registry);

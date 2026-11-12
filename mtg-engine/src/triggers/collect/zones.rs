@@ -50,8 +50,7 @@ pub(super) fn entered_battlefield(
         let trigger_kind = crate::cards::TriggerKind::AnyCreatureEnters;
         for (watcher_id, watcher_card_id, watcher_controller, watcher_zone) in watchers {
             if let Some(behavior) = registry.get(watcher_card_id) {
-                let has_trigger = behavior.card_data().triggered_abilities.iter()
-                    .any(|t| t.kind == trigger_kind);
+                let has_trigger = registry.prints_trigger(watcher_card_id, false, &trigger_kind);
                 // CR 603.2: an event condition on the entering
                 // creature is read HERE, as it enters — not at
                 // resolution, by which time its power may differ.
@@ -82,7 +81,9 @@ pub(super) fn creature_died(
     let dead_id = *object;
     let dead_card_id = *card_id;
     let dead_controller = *controller;
-    let dead = DeadCreature {
+    // What a watcher's trigger carries of the death, built for each trigger
+    // raised and only then: a death no watcher sees copies nothing.
+    let dead = || DeadCreature {
         id: dead_id,
         name: name.clone(),
         controller: dead_controller,
@@ -114,27 +115,40 @@ pub(super) fn creature_died(
     // NON-creature watcher destroyed alongside the creature it
     // watches — Gutter Grime is an enchantment — was invisible to
     // this list and lost its trigger entirely.
+    //
+    // Each under the controller it had as the creature died (CR 603.3a,
+    // 608.2g): one that died with it is off the battlefield now, its
+    // `controller` back to its owner, and a Falkenrath Noble its owner's
+    // opponent had taken, dying beside another creature, gave its owner the
+    // drain for that death. Read off the object in hand, as the milled-card
+    // collector below reads it. And from the face each had: leaving turned a
+    // double-faced one face up, and a Thraben Militia dying beside another
+    // creature raised Thraben Sentry's trigger (CR 712.8a, 603.10a).
     let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects_in_id_order().into_iter()
         .filter(|o| o.id != dead_id && super::was_on_the_battlefield(state, events, o.id))
-        .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
+        .map(|o| if o.zone == Zone::Battlefield {
+            (o.id, o.card_id, o.controller, o.is_transformed)
+        } else {
+            (o.id, o.card_id, o.last_controller.unwrap_or(o.controller), o.last_transformed)
+        })
         .collect();
     for (watcher_id, watcher_card_id, watcher_controller, watcher_transformed) in watchers {
         // Only create death-watch triggers for permanents whose ACTIVE
         // face has an AnyCreatureDies triggered ability (CR 712.8d —
         // a transformed DFC only has its back face's abilities).
-        let has_death_trigger = state.triggered_abilities_of(watcher_id, registry).iter()
-            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies);
+        let has_death_trigger = registry.prints_trigger(
+            watcher_card_id, watcher_transformed, &crate::cards::TriggerKind::AnyCreatureDies);
         // CR 603.2: the watcher's own condition on WHICH death this is, read
         // here as the creature dies — the same gate the ETB-watch scan above
         // and the damage collector both have.
         let condition_holds = registry.get(watcher_card_id).is_some_and(|b|
             b.should_trigger_on_creature_dies(
                 state, watcher_id, dead_id, dead_controller,
-                &dead.damaged_by, dead.toughness, dead.is_token, &dead.subtypes, registry));
+                damaged_by, *last_known_toughness, *is_token, subtypes, registry));
         if has_death_trigger && condition_holds {
             let desc = face_trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, watcher_transformed);
             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,
-                TriggerEvent::CreatureDied { dead: dead.clone() });
+                TriggerEvent::CreatureDied { dead: dead() });
         }
     }
 }
@@ -163,7 +177,7 @@ pub(super) fn left_battlefield(
 
 pub(super) fn creature_card_milled(
     state: &mut GameState,
-    _events: &[GameEvent],
+    events: &[GameEvent],
     event: &GameEvent,
     registry: &CardRegistry,
     c: &mut Collector,
@@ -171,17 +185,31 @@ pub(super) fn creature_card_milled(
     let GameEvent::CreatureCardMilled { object, milled_player } = event else { return };
     let milled_obj = *object;
     let milled_player = *milled_player;
-    // Find watchers on the battlefield with CreatureCardMilled triggers.
+    // Watchers with CreatureCardMilled triggers that were on the battlefield
+    // as the card was milled, under the controller they had then (CR 603.2,
+    // 608.2g): one the state-based actions took after the same step still
+    // sees it. Undead Alchemist dying to a deathtoucher in the combat damage
+    // step in which its replacement milled a creature card used to set off
+    // nothing, the card left in the graveyard and no Zombie made.
+    //
+    // `was_on_the_battlefield` and `last_known_controller` asked of each
+    // object, read off the object in hand rather than looked up again for
+    // each: the ids that left in this check gathered once.
+    let mut left: Vec<ObjectId> = Vec::with_capacity(events.len());
+    for e in events {
+        if let GameEvent::LeftBattlefield { object, .. } | GameEvent::CreatureDied { object, .. } = e {
+            left.push(*object);
+        }
+    }
     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects_in_id_order().into_iter()
-        .filter(|o| o.zone == Zone::Battlefield)
-        .map(|o| (o.id, o.card_id, o.controller))
+        .filter(|o| o.zone == Zone::Battlefield || left.contains(&o.id))
+        .map(|o| (o.id, o.card_id, if o.zone == Zone::Battlefield { o.controller } else { o.last_controller.unwrap_or(o.controller) }))
         .collect();
     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
         // Only watchers who are opponents of the milled player.
         if watcher_controller == milled_player { continue; }
-        let has_trigger = registry.get(watcher_card_id)
-            .is_some_and(|b| b.card_data().triggered_abilities.iter()
-                .any(|t| t.kind == crate::cards::TriggerKind::CreatureCardMilled));
+        let has_trigger = registry.prints_trigger(
+            watcher_card_id, false, &crate::cards::TriggerKind::CreatureCardMilled);
         if has_trigger {
             let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::CreatureCardMilled, false);
             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,

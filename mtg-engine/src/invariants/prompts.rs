@@ -94,8 +94,14 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             if state.step != Step::Cleanup {
                 v.push(format!("{w} in {:?} (CR 514.1)", state.step));
             }
-            if *player != active || state.priority_player != Some(active) {
-                v.push(format!("{w} for p{} with priority {:?}; it is p{}'s cleanup", player.0, state.priority_player, active.0));
+            if *player != active {
+                v.push(format!("{w} for p{}; it is p{}'s cleanup", player.0, active.0));
+            }
+            // CR 514.1, 514.3: the discard is the cleanup step's first act,
+            // and nobody receives priority in the step but after a
+            // state-based action or a trigger, which come after it.
+            if let Some(p) = state.priority_player {
+                v.push(format!("{w} with p{} holding priority (CR 514.3)", p.0));
             }
             tba_common(state, w, v);
             if state.combat.is_some() {

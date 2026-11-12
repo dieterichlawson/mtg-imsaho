@@ -55,21 +55,17 @@ impl HamletCaptain {
         // killing it in response to its own attack trigger cancelled the pump
         // for the rest of the team. Nothing in "other Humans you control get
         // +1/+1 until end of turn" is about the Captain.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
 
         // Find other Human creatures you control.
-        let humans: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller).into_iter()
-            .filter(|o| {
-                state.is_creature(o.id, registry)
-                    && o.id != self_id
-            })
-            // `registry.card_data` always returns FRONT-face data, so a
-            // transformed werewolf still looked Human and got buffed. CR 712.8d:
-            // a DFC on the battlefield has only its current face's
-            // characteristics — `has_subtype` reads that face.
-            .filter(|o| state.has_subtype(o.id, "Human", registry))
-            .map(|o| o.id)
-            .collect();
+        //
+        // `registry.card_data` always returns FRONT-face data, so a
+        // transformed werewolf still looked Human and got buffed. CR 712.8d:
+        // a DFC on the battlefield has only its current face's
+        // characteristics — `has_subtype` reads that face.
+        let humans = state.ids_in_zone(Zone::Battlefield, controller, |o| {
+            state.is_creature(o.id, registry) && o.id != self_id && state.has_subtype(o.id, "Human", registry)
+        });
 
         for id in &humans {
             state.until_end_of_turn.push(

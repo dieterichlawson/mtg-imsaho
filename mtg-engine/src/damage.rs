@@ -71,6 +71,7 @@ pub struct PendingDamage {
 /// One replacement or prevention effect that applies to a damage event —
 /// the things the affected player chooses among (CR 616.1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum DamageEffect {
     /// A prevention effect that prevents all of the damage and does nothing
     /// else (CR 615).
@@ -90,6 +91,7 @@ pub enum DamageEffect {
 
 /// What is preventing all of a damage event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum Prevention {
     /// A permanent's static ability — Ghostly Possession on the source or
     /// the target.
@@ -197,20 +199,23 @@ pub fn process_pending_damage(state: &mut GameState, registry: &CardRegistry) {
             i += 1;
             continue;
         }
-        let pd = state.pending_damage[i].clone();
-        if !can_be_dealt_damage(state, &pd.target) {
+        // The event read where it lies, not cloned: a proof reads the
+        // `applied` list of a clone as any list at all (CBMC's copy of a
+        // buffer it reaches through a pointer of more than one target keeps
+        // only its first byte), and every effect then applied, or not.
+        if !can_be_dealt_damage(state, &state.pending_damage[i].target) {
             // A permanent that has left the battlefield is not dealt damage
             // (CR 120.1); the event simply does not happen.
             state.pending_damage.remove(i);
             continue;
         }
-        let effects = distinct_answers(applicable_effects(state, &pd, registry), state);
+        let effects = distinct_answers(applicable_effects(state, &state.pending_damage[i], registry), state);
         if effects.is_empty() {
             state.pending_damage[i].settled = true;
             i += 1;
             continue;
         }
-        if effects.len() == 1 || same_outcome_in_every_order(&effects, pd.amount, state) {
+        if effects.len() == 1 || same_outcome_in_every_order(&effects, state.pending_damage[i].amount, state) {
             // Listed with the preventions first: the same place by the
             // fewest steps. The event may be gone afterwards, in which case
             // the next one is now at this index.
@@ -227,10 +232,11 @@ pub fn process_pending_damage(state: &mut GameState, registry: &CardRegistry) {
             // is made in the fixed order rather than lost.
             state.log(LogLevel::Debug, format!(
                 "a choice is already open; {} applies first to {} unasked",
-                effect_name(state, &effects[0]), describe_event(state, &pd)));
+                effect_name(state, &effects[0]), describe_event(state, &state.pending_damage[i])));
             apply_effect(state, i, &effects[0], registry);
             continue;
         }
+        let pd = state.pending_damage[i].clone();
         ask_affected_player(state, &pd, effects, registry);
         return;
     }
@@ -266,17 +272,17 @@ pub fn apply_chosen_effect(
             && p.amount == event.amount && p.kind == event.kind
     });
     if let (Some(i), true) = (position, matches) {
-        let pd = state.pending_damage[i].clone();
-        if applicable_effects(state, &pd, registry).contains(effect) {
+        // Read where it lies, as `process_pending_damage` reads it.
+        if applicable_effects(state, &state.pending_damage[i], registry).contains(effect) {
             let name = effect_name(state, effect);
             state.log(LogLevel::Event, format!(
                 "p{}: {name} applies first to {} (CR 616.1)",
-                chooser.0, describe_event(state, &pd)));
+                chooser.0, describe_event(state, &state.pending_damage[i])));
             apply_effect(state, i, effect, registry);
         } else {
             state.log(LogLevel::Debug, format!(
                 "the chosen effect {effect:?} no longer applies to {}; settling it again",
-                describe_event(state, &pd)));
+                describe_event(state, &state.pending_damage[i])));
         }
     } else {
         state.log(LogLevel::Debug,
@@ -290,6 +296,18 @@ pub fn apply_chosen_effect(
 fn effect_choice_is_open(state: &GameState) -> bool {
     matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
         choice: ResolutionChoiceKind::ChooseDamageEffect { .. }, .. }))
+}
+
+/// `item` put into `list` where it belongs, unless it is there already:
+/// a list in order and without repeats, as sorting and deduplicating it
+/// once collected gives. Built so, rather than sorted after, because a
+/// proof that leaves the list's length open follows a sort through every
+/// length's sorting network (most of what an effect that applies to damage
+/// cost to prove).
+fn insert_once_in_order<T: Ord>(list: &mut Vec<T>, item: T) {
+    if let Err(i) = list.binary_search(&item) {
+        list.insert(i, item);
+    }
 }
 
 /// The replacement and prevention effects that apply to `pd` as it stands,
@@ -314,30 +332,26 @@ pub fn applicable_effects(state: &GameState, pd: &PendingDamage, registry: &Card
             state.walk_effects(id,
                 &|e| matches!(e, ContinuousEffect::PreventCombatDamage { .. }),
                 registry,
-                &mut |_, by| { shields.push(by.id); true });
+                &mut |_, by| { insert_once_in_order(&mut shields, by.id); true });
         }
-        shields.sort_unstable_by_key(|id| id.0);
-        shields.dedup();
         out.extend(shields.into_iter().map(|id| DamageEffect::PreventAll(Prevention::Permanent(id))));
 
         // "Prevent all combat damage that would be dealt this turn by
         // creatures other than <filter>" (Moonmist). The filter names the
         // exceptions; a source that matches none of them is prevented.
         let controller = state.get_object(source).map_or(PlayerId(0), |o| o.controller);
-        let mut turn_wide: Vec<String> = state.until_end_of_turn.iter()
-            .filter_map(|e| match e {
-                crate::state::TemporaryEffect::PreventCombatDamageExcept { filter, source_name }
-                    // No permanent stands behind the effect, so the damage
-                    // source stands in as the "source" the filter is read
-                    // against, which only `ControlledByAttachedPlayer` would
-                    // notice and no such effect uses.
-                    if !state.matches_filter(source, filter, source, controller, registry) =>
-                        Some(source_name.clone()),
-                _ => None,
-            })
-            .collect();
-        turn_wide.sort();
-        turn_wide.dedup();
+        let mut turn_wide: Vec<String> = Vec::new();
+        for e in &state.until_end_of_turn {
+            if let crate::state::TemporaryEffect::PreventCombatDamageExcept { filter, source_name } = e {
+                // No permanent stands behind the effect, so the damage
+                // source stands in as the "source" the filter is read
+                // against, which only `ControlledByAttachedPlayer` would
+                // notice and no such effect uses.
+                if !state.matches_filter(source, filter, source, controller, registry) {
+                    insert_once_in_order(&mut turn_wide, source_name.clone());
+                }
+            }
+        }
         out.extend(turn_wide.into_iter().map(|name| DamageEffect::PreventAll(Prevention::ThisTurn(name))));
     }
 
@@ -357,9 +371,7 @@ pub fn applicable_effects(state: &GameState, pd: &PendingDamage, registry: &Card
         state.walk_effects(t,
             &|e| matches!(e, ContinuousEffect::PreventDamageRemoveCounter { .. }),
             registry,
-            &mut |_, by| { hordes.push(by.id); true });
-        hordes.sort_unstable_by_key(|id| id.0);
-        hordes.dedup();
+            &mut |_, by| { insert_once_in_order(&mut hordes, by.id); true });
         out.extend(hordes.into_iter().map(|by| DamageEffect::PreventAndRemoveCounter { by }));
     }
 
@@ -372,10 +384,8 @@ pub fn applicable_effects(state: &GameState, pd: &PendingDamage, registry: &Card
             state.walk_effects(id,
                 &|e| matches!(e, ContinuousEffect::DoubleCombatDamage { .. }),
                 registry,
-                &mut |_, by| { flails.push(by.id); true });
+                &mut |_, by| { insert_once_in_order(&mut flails, by.id); true });
         }
-        flails.sort_unstable_by_key(|id| id.0);
-        flails.dedup();
         out.extend(flails.into_iter().map(|by| DamageEffect::Double { by }));
     }
 
@@ -678,11 +688,13 @@ fn effect_label(
 /// card's replacement removes the event from the queue; a modification
 /// changes it in place and is recorded as applied (CR 614.5).
 fn apply_effect(state: &mut GameState, index: usize, effect: &DamageEffect, registry: &CardRegistry) {
-    let pd = state.pending_damage[index].clone();
-    let source_name = state.obj_name(pd.source);
-    let target = target_name(state, &pd.target);
-    let combat = if pd.kind == DamageKind::Combat { "combat " } else { "" };
-    let amount = pd.amount;
+    // The event's fields, not a clone of it (`process_pending_damage` says
+    // why): what replacing it is told is built from them.
+    let event = replaceable(&state.pending_damage[index]);
+    let source_name = state.obj_name(state.pending_damage[index].source);
+    let target = target_name(state, &state.pending_damage[index].target);
+    let combat = if state.pending_damage[index].kind == DamageKind::Combat { "combat " } else { "" };
+    let amount = state.pending_damage[index].amount;
     match effect {
         DamageEffect::PreventAll(_) => {
             // Said out loud — a silent damage step read as the engine
@@ -726,7 +738,7 @@ fn apply_effect(state: &mut GameState, index: usize, effect: &DamageEffect, regi
         }
         DamageEffect::Card { by } => {
             let behavior = state.get_object(*by).and_then(|o| registry.get(o.card_id));
-            let outcome = behavior.and_then(|b| b.replace_event(state, *by, &replaceable(&pd), registry));
+            let outcome = behavior.and_then(|b| b.replace_event(state, *by, &event, registry));
             match outcome {
                 Some(Replacement::Replaced) => {
                     state.pending_damage.remove(index);
@@ -754,7 +766,7 @@ fn apply_effect(state: &mut GameState, index: usize, effect: &DamageEffect, regi
 
 /// Deal settled damage: mark it (or remove loyalty), record who dealt it,
 /// emit the event and the log line, and gain lifelink life.
-fn perform(state: &mut GameState, pd: PendingDamage, registry: &CardRegistry) {
+pub(crate) fn perform(state: &mut GameState, pd: PendingDamage, registry: &CardRegistry) {
     let PendingDamage { source, target, amount, kind, .. } = pd;
     if amount == 0 {
         return;

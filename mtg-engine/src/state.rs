@@ -5,6 +5,7 @@ use crate::types::{Zone, Step, ManaPool, ContinuousEffect};
 
 /// An entry on the stack — a spell, triggered ability, or activated ability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum StackEntry {
     /// A spell (instant, sorcery, creature, etc.) on the stack.
     Spell(ObjectId),
@@ -30,6 +31,10 @@ pub enum StackEntry {
         /// `is_valid_target` — so an ability whose card restated nothing
         /// resolved against a target that had stopped satisfying it.
         target_requirement: Option<crate::cards::TargetRequirement>,
+        /// Each of `targets`' objects' `zone_change_count` as the ability was
+        /// put on the stack (CR 400.7, 608.2b), as for a spell.
+        #[serde(default)]
+        target_zone_changes: Vec<u32>,
         /// The creature sacrificed to pay this ability's cost, if any.
         ///
         /// Disciple of Griselbrand's "you gain life equal to the sacrificed
@@ -63,6 +68,13 @@ pub enum StackEntry {
         /// entry made before it was recorded, which is not checked.
         #[serde(default)]
         source_transforms: Option<u32>,
+        /// The source's `zone_change_count` as this went on the stack (CR
+        /// 400.7); stamped by [`GameState::put_on_stack`]. A source that has
+        /// changed zones since is a new object the ability does not act on
+        /// ([`GameState::is_new_source`]). `None` on an entry made before it
+        /// was recorded, which is not checked.
+        #[serde(default)]
+        source_zone_changes: Option<u32>,
         /// The source's name as this went on the stack; stamped by
         /// [`GameState::put_on_stack`]. CR 113.7a: the ability exists
         /// independently of its source, so it is named after the object that
@@ -112,6 +124,61 @@ pub struct EndOfCombatExileEntry {
     pub description: String,
 }
 
+/// Every object in the game, by id, in id order.
+///
+/// A `BTreeMap`, except in the proofs: CBMC does not finish inserting one
+/// `GameObject` into a `BTreeMap` (`crate::vec_map` says why), so a Kani
+/// build keeps the objects in a vector in id order instead, which answers
+/// the same. The engine asks this map only for `get`, `get_mut`, `insert`,
+/// `remove`, `values` and `values_mut`. Both iterate in id order, which the
+/// zone listings (`objects_in_zone` and the rest) rely on.
+#[cfg(not(kani))]
+pub type ObjectMap = std::collections::BTreeMap<ObjectId, GameObject>;
+#[cfg(kani)]
+pub type ObjectMap = crate::vec_map::VecMap<ObjectId, GameObject>;
+
+/// The counters on an object: a `BTreeMap`, except in the proofs, which
+/// keep one slot per kind (`crate::kind_map` says why). The engine asks
+/// it for `get`, `get_mut`, `insert`, `remove`, `entry(..).or_insert(..)`,
+/// `clear` and iteration in counter order.
+#[cfg(not(kani))]
+pub type CounterMap = std::collections::BTreeMap<crate::types::CounterType, u32>;
+#[cfg(kani)]
+pub type CounterMap = crate::kind_map::KindMap<crate::types::CounterType>;
+
+/// What a card keeps on its object (`GameObject::card_state`): a
+/// `BTreeMap`, except in the proofs, which keep it as a vector in key order
+/// (`crate::vec_map` says why: a proof follows a B-tree's rebalancing, and
+/// Divine Reckoning's, clearing the ids it kept, ran out of memory in it).
+/// The engine asks it for `get`, `insert`, `remove`, `len`, `is_empty` and
+/// `clear`.
+#[cfg(not(kani))]
+pub type CardState = std::collections::BTreeMap<String, ObjectId>;
+#[cfg(kani)]
+pub type CardState = crate::vec_map::VecMap<String, ObjectId>;
+
+/// A map from object ids, and a set of them, as the combat keeps its
+/// attackers, blockers and the rest (`CombatState`): a `BTreeMap` and a
+/// `BTreeSet`, except in the proofs, which keep each as a vector in id
+/// order (`crate::vec_map` says why: every proof of a combat ran out of
+/// memory in a B-tree's inserts and searches).
+#[cfg(not(kani))]
+pub type IdMap<V> = std::collections::BTreeMap<ObjectId, V>;
+#[cfg(kani)]
+pub type IdMap<V> = crate::vec_map::VecMap<ObjectId, V>;
+#[cfg(not(kani))]
+pub type IdSet = std::collections::BTreeSet<ObjectId>;
+#[cfg(kani)]
+pub type IdSet = crate::vec_map::VecSet<ObjectId>;
+/// The indices of the abilities an object has activated this turn: a
+/// B-tree set everywhere but the proofs, the indices in order in them, as
+/// [`IdSet`] (the proofs of an ability's costs and of the loyalty
+/// abilities offered ran out of memory in its tree's inserts and lookups).
+#[cfg(not(kani))]
+pub type IndexSet = std::collections::BTreeSet<usize>;
+#[cfg(kani)]
+pub type IndexSet = crate::vec_map::VecSet<usize>;
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -122,7 +189,7 @@ pub struct GameState {
     /// matched (issue #199). Same reason `ManaPool` is a `BTreeMap`. Also
     /// makes every iteration over the objects deterministic rather than
     /// merely usually-consistent.
-    pub objects: std::collections::BTreeMap<ObjectId, GameObject>,
+    pub objects: ObjectMap,
     /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
 
@@ -199,7 +266,9 @@ pub struct GameState {
     #[serde(default, skip)]
     pub resolving_trigger_from_back_face: Option<bool>,
 
-    /// Who activated the activated ability currently resolving (CR 602.2a).
+    /// The controller of the ability currently resolving: who activated an
+    /// activated ability (CR 602.2a), and who controlled a triggered
+    /// ability's source as it triggered (603.3a).
     ///
     /// An ability's controller is fixed when it is put on the stack and does
     /// not follow its source. Reading the source's `controller` at resolution
@@ -207,7 +276,8 @@ pub struct GameState {
     /// response — the case Olivia Voldaren's ruling is about: "if you activate
     /// Olivia Voldaren's last ability, and before that ability resolves you
     /// lose control of Olivia Voldaren, the ability will resolve with no
-    /// effect."
+    /// effect." A trigger's "you" was read the same way until it was set
+    /// here too: a Sturmgeist taken in response drew for the taker.
     #[serde(default, skip)]
     pub resolving_ability_activator: Option<PlayerId>,
 
@@ -231,7 +301,8 @@ pub struct GameState {
     /// section, after the events already said the ability resolved (#833).
     /// Set around the card's hook, kept while a choice it raised is pending,
     /// and cleared with `resolving_ability_activator` once the chain runs
-    /// out. Read only by the view.
+    /// out. Read by the view, and for what the ability's source was as it
+    /// went on (`is_new_source`, and CR 701.28f's transform count).
     #[serde(default)]
     pub resolving_ability: Option<StackEntry>,
 
@@ -371,8 +442,49 @@ pub struct GameState {
     /// exiled creature's owner). Writing it while the card is still in a
     /// graveyard would contradict CR 108.4, which gives a card off the
     /// battlefield its owner as its controller.
+    ///
+    /// An [`IdMap`]: a B-tree outside the proofs, a list in them, whose
+    /// proof of the entry finished ran out of memory taking a tree of one
+    /// entry apart.
     #[serde(default)]
-    pub pending_entry_controllers: std::collections::BTreeMap<ObjectId, PlayerId>,
+    pub pending_entry_controllers: IdMap<PlayerId>,
+
+    /// What a deferred entry may enter as a copy of, when an effect put it
+    /// onto the battlefield with others: the creatures there before that
+    /// effect began, not those entering with it. Evil Twin's ruling: "If
+    /// Evil Twin somehow enters the battlefield at the same time as another
+    /// creature, Evil Twin can't become a copy of that creature." The entry
+    /// is asked after the others have entered (Grimoire of the Dead returning
+    /// every creature card at once), so the list is kept from when it was
+    /// deferred. With none kept, the creatures on the battlefield as it is
+    /// asked.
+    #[serde(default)]
+    pub pending_entry_options: IdMap<Vec<ObjectId>>,
+
+    /// What the effect putting a deferred entry onto the battlefield makes
+    /// it there, given once the entry has happened, after any copy it
+    /// entered as (CR 613.1a, 613.1d-e): subtypes and colours it gains in
+    /// addition to its own (Grimoire of the Dead's "They're black Zombies in
+    /// addition to their other colors and types").
+    #[serde(default)]
+    pub pending_entry_grants: IdMap<(Vec<String>, Vec<crate::types::Color>)>,
+
+    /// Where each of the others put onto the battlefield in the same event
+    /// as a deferred entry was as that event began. CR 614.12: an entry is
+    /// replaced by the effects that already exist as it happens, so one of
+    /// those it entered with is not yet a source of them (an Essence of the
+    /// Wild returned beside it does not make it a copy), and one that left
+    /// the zone it works from in that event still is (a Dearly Departed
+    /// returned beside a Human). The rest of its event entered before it
+    /// was asked, so this is kept from when it was deferred, and read while
+    /// its entry is planned ([`GameState::zone_as_entering_began`]).
+    #[serde(default)]
+    pub pending_entry_zones: IdMap<Vec<(ObjectId, Zone)>>,
+
+    /// The zones of [`GameState::pending_entry_zones`] for the entry being
+    /// planned now, and empty at every other moment.
+    #[serde(default)]
+    pub entering_zones_before: Vec<(ObjectId, Zone)>,
 
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
@@ -466,7 +578,8 @@ pub struct LogEntry {
 }
 
 /// A temporary effect that expires during the cleanup step.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum TemporaryEffect {
     /// Modify power and/or toughness (e.g., Giant Growth +3/+3).
     ModifyPT { target: ObjectId, power_mod: i32, toughness_mod: i32 },
@@ -543,19 +656,46 @@ pub fn default_rng_seed() -> u64 {
     0x2545_F491_4F6C_DD1D
 }
 
+/// Whether `obj` is in `player`'s `zone`: a library, a hand or a
+/// graveyard by owner, the battlefield by controller, any other zone
+/// whoever's it is (CR 400.3, 108.4).
+pub(crate) fn in_zone_of(obj: &GameObject, zone: Zone, player: PlayerId) -> bool {
+    obj.zone == zone && match zone {
+        Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner == player,
+        Zone::Battlefield => obj.controller == player,
+        _ => true,
+    }
+}
+
 impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
     pub fn put_on_stack(&mut self, mut entry: StackEntry) {
         // CR 701.28f: "since the ability was put onto the stack" is measured
-        // from here, so the source's transform count is recorded here.
+        // from here, so the source's transform count is recorded here, and
+        // so is its zone change count: one that leaves and comes back is a
+        // new object the ability does not act on (CR 400.7).
+        // And what each target is (CR 400.7): the objects named, as they
+        // are now.
         match &mut entry {
-            StackEntry::Spell(_) => {}
-            StackEntry::Trigger(t) => {
-                t.source.source_transforms = self.get_object(t.source.id).map(|o| o.transforms);
+            StackEntry::Spell(id) => {
+                let id = *id;
+                let seen = self.get_object(id).map(|o| crate::stack::zone_changes_of(self, &o.targets)).unwrap_or_default();
+                if let Some(o) = self.get_object_mut(id) {
+                    o.target_zone_changes = seen;
+                }
             }
-            StackEntry::Ability { source_id, source_transforms, source_name, .. } => {
-                *source_transforms = self.get_object(*source_id).map(|o| o.transforms);
-                *source_name = self.get_object(*source_id).map(|o| o.name.clone());
+            StackEntry::Trigger(t) => {
+                let source = self.get_object(t.source.id);
+                t.source.source_transforms = source.map(|o| o.transforms);
+                t.source.source_zone_changes = source.map(|o| o.zone_change_count);
+                t.source.target_zone_changes = crate::stack::zone_changes_of(self, &t.source.chosen_targets);
+            }
+            StackEntry::Ability { source_id, source_transforms, source_zone_changes, source_name, targets, target_zone_changes, .. } => {
+                let source = self.get_object(*source_id);
+                *source_transforms = source.map(|o| o.transforms);
+                *source_zone_changes = source.map(|o| o.zone_change_count);
+                *source_name = source.map(|o| o.name.clone());
+                *target_zone_changes = crate::stack::zone_changes_of(self, targets);
             }
         }
         let controller = match &entry {
@@ -572,6 +712,42 @@ impl GameState {
             }
             self.stack_puts_by[p] += 1;
         }
+    }
+
+    /// Whether `id` is the resolving ability's own source and has changed
+    /// zones since the ability was put on the stack (CR 400.7): the object
+    /// `id` names now is a new one, which the ability does not act on.
+    ///
+    /// Champion of the Parish's trigger put its counter on a Champion that
+    /// Fiend Hunter had exiled and the Hunter's death had returned in
+    /// response, and Moldgraf Monstrosity's "exile it" exiled one that had
+    /// died, come back and died again. The counters, shields, taps, untaps,
+    /// transforms and until-end-of-turn effects an ability puts on its
+    /// source each ask this; a
+    /// trigger's source dead as it triggered is stamped in the graveyard,
+    /// where its "it" is (CR 603.10a). A spell is not an ability.
+    #[must_use]
+    pub fn is_new_source(&self, id: ObjectId) -> bool {
+        let stamped = match &self.resolving_ability {
+            Some(StackEntry::Trigger(t)) if t.source.id == id => t.source.source_zone_changes,
+            Some(StackEntry::Ability { source_id, source_zone_changes, .. }) if *source_id == id => *source_zone_changes,
+            _ => None,
+        };
+        stamped.is_some_and(|then| self.objects.get(&id).is_some_and(|o| o.zone_change_count != then))
+    }
+
+    /// Create an until-end-of-turn effect, unless what it is about is the
+    /// resolving ability's own source come back as a new object
+    /// ([`Self::is_new_source`], CR 400.7): Darkthicket Wolf's "+2/+2"
+    /// does not pump the Wolf that returned. Whether it was created. One
+    /// about a permanent gone altogether is dropped as the resolution ends
+    /// ([`Self::prune_effects_on_departed_objects`]).
+    pub fn add_until_end_of_turn(&mut self, effect: TemporaryEffect) -> bool {
+        if until_eot_object_target(&effect).is_some_and(|id| self.is_new_source(id)) {
+            return false;
+        }
+        self.until_end_of_turn.push(effect);
+        true
     }
 
     /// CR 400.7: an until-end-of-turn effect created for a permanent that is
@@ -644,7 +820,7 @@ impl GameState {
             .collect();
 
         Self {
-            objects: std::collections::BTreeMap::new(),
+            objects: ObjectMap::new(),
             next_object_id: 1,
             rng_state: default_rng_seed(),
             players,
@@ -686,7 +862,11 @@ impl GameState {
             observe_every_submit: false,
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
-            pending_entry_controllers: std::collections::BTreeMap::new(),
+            pending_entry_controllers: IdMap::new(),
+            pending_entry_options: IdMap::new(),
+            pending_entry_grants: IdMap::new(),
+            pending_entry_zones: IdMap::new(),
+            entering_zones_before: Vec::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -735,6 +915,7 @@ impl GameState {
             card_types: Vec::new(),
             subtypes: Vec::new(),
             targets: Vec::new(),
+            target_zone_changes: Vec::new(),
             attached_to: None,
             attached_to_player: None,
             last_attached_to_player: None,
@@ -746,18 +927,19 @@ impl GameState {
             cast_from_zone: None,
             instance_oracle_text: None,
             instance_continuous_effects: None,
-            card_state: std::collections::BTreeMap::new(),
-            counters: std::collections::BTreeMap::new(),
+            card_state: CardState::new(),
+            counters: CounterMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
             transforms: 0,
             x_value: None,
             chosen_mode: None,
-            abilities_activated_this_turn: std::collections::BTreeSet::new(),
+            abilities_activated_this_turn: IndexSet::new(),
             entering_copy_choice: EnterAsCopyChoice::Unasked,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            last_transformed: false,
             token_face: None,
         };
         self.objects.insert(id, obj);
@@ -916,11 +1098,22 @@ impl GameState {
         if count == 0 {
             return Vec::new();
         }
-        // CR 111.4: the token's name is its subtype(s), unless the effect
-        // gave it one.
-        let derived;
-        let name = if name.is_empty() && !subtypes.is_empty() {
-            derived = subtypes.join(" ");
+        // CR 111.4: unless the effect gives it a name, the token's name is
+        // its subtype(s) plus the word "Token" ("Spirit Token"; "Token", of
+        // none). It was its subtypes alone, and a card that copied one (Evil
+        // Twin entering as a copy of a Spirit token) took that name for its
+        // own.
+        let mut derived;
+        let name = if name.is_empty() {
+            // Built without `format!`, which the proofs stub to nothing, and
+            // at its full length first, which a proof holds a list to.
+            let len = subtypes.iter().map(|s| s.len() + 1).sum::<usize>() + "Token".len();
+            derived = String::with_capacity(len);
+            for s in &subtypes {
+                derived.push_str(s);
+                derived.push(' ');
+            }
+            derived.push_str("Token");
             derived.as_str()
         } else {
             name
@@ -935,8 +1128,12 @@ impl GameState {
             registry,
         );
         let extra_copies = match after {
-            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count, .. }) =>
-                count.saturating_sub(1),
+            // A replacement may leave none to create (CR 614.1b: the count it
+            // answers is the count created). The last token is made outside
+            // the loop below, so none must stop here, or it made one.
+            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count: 0, .. }) =>
+                return Vec::new(),
+            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count, .. }) => count - 1,
             // Replaced entirely, or replaced with a different kind of event:
             // no tokens are created.
             _ => return Vec::new(),
@@ -967,7 +1164,8 @@ impl GameState {
         let (power, toughness) = self.get_object(id)
             .and_then(|o| self.token_defined_pt(o, registry))
             .unwrap_or((power, toughness));
-        let described = format!("{power}/{toughness} {name}");
+        // "2 1/1 Spirit tokens", not "Spirit Token tokens".
+        let described = format!("{power}/{toughness} {}", name.strip_suffix(" Token").unwrap_or(name));
 
         // The count a player reads is the count that entered, and it is
         // counted here rather than claimed by each caller. Seventeen cards
@@ -1027,6 +1225,7 @@ impl GameState {
             card_types,
             subtypes,
             targets: Vec::new(),
+            target_zone_changes: Vec::new(),
             attached_to: None,
             attached_to_player: None,
             last_attached_to_player: None,
@@ -1046,22 +1245,27 @@ impl GameState {
             // — written afterwards it is one step too late, and everything
             // that reads the token's P/T as it enters reads 0/0 instead
             // (issue #505).
-            card_state: pt_defined_by.map_or_else(
-                std::collections::BTreeMap::new,
-                |src| std::iter::once((crate::cards::PT_DEFINED_BY.to_string(), src)).collect()),
-            counters: std::collections::BTreeMap::new(),
+            card_state: {
+                let mut card_state = CardState::new();
+                if let Some(src) = pt_defined_by {
+                    card_state.insert(crate::cards::PT_DEFINED_BY.to_string(), src);
+                }
+                card_state
+            },
+            counters: CounterMap::new(),
             regeneration_shields: 0,
             // CR 707.8a: a copy of a permanent with its back face up shows
             // that face too, and the flag is what makes every accessor agree.
             is_transformed: face.is_some_and(|f| f.is_transformed),
             transforms: 0,
             x_value: None,
-            abilities_activated_this_turn: std::collections::BTreeSet::new(),
+            abilities_activated_this_turn: IndexSet::new(),
             chosen_mode: None,
             entering_copy_choice: EnterAsCopyChoice::Unasked,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
+            last_transformed: false,
             // The token's printed half, frozen here. Everything an effect
             // grants it later goes into the vectors above, exactly as it does
             // for a card, and the two stay tellable apart.
@@ -1075,6 +1279,23 @@ impl GameState {
                 subtypes: subtypes_printed,
             }),
         };
+        // CR 614.12b, 707.2: a token copy of a card that chooses what it
+        // enters as (Back from the Brink's copy of an Evil Twin card) makes
+        // that choice as it enters, as the card would: its copiable values
+        // are the card's text, that replacement included. Its entry waits on
+        // the answer the way a card's does (`move_object`), the token held
+        // in the command zone, which nothing in this pool otherwise uses, so
+        // that nothing sees it on the battlefield as its printed self with
+        // the choice outstanding. The answer moves it onto the battlefield
+        // (`replacement::record_entry_choice`), planned then as any entry is.
+        // Built on the battlefield, it was a 0/0 that never chose and died.
+        if face.is_some_and(|f| registry.get(f.card_id).is_some_and(crate::cards::CardBehavior::chooses_copy_as_it_enters)) {
+            let mut obj = obj;
+            obj.zone = Zone::Command;
+            self.objects.insert(id, obj);
+            self.pending_entry_choices.push(id);
+            return id;
+        }
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
         // replacement effects apply (CR 614.1c/d).
@@ -1235,7 +1456,88 @@ impl GameState {
         controller: PlayerId,
         registry: &crate::cards::CardRegistry,
     ) -> bool {
-        self.move_object_inner(id, to, Some(controller), registry)
+        self.move_object_inner(id, to, Some(controller), None, registry)
+    }
+
+    /// Put `ids` onto the battlefield under `controller` in one event, as
+    /// "return all creature cards" and "return two creature cards" do
+    /// (Grimoire of the Dead, Moldgraf Monstrosity), and say of each, in the
+    /// same order, whether it moved: `false` for an entry deferred on a copy
+    /// choice, exactly as [`GameState::move_object`] says.
+    ///
+    /// CR 614.12 and 616.1: the replacement effects that modify how a
+    /// permanent enters are those that exist before the event, applied to
+    /// the event before it happens. Moved one at a time, each saw the ones
+    /// moved before it: an Essence of the Wild returned first made the
+    /// creatures returned after it copies of itself, a Dearly Departed
+    /// returned first no longer gave the Humans after it their counter, and
+    /// an Unbreathing Horde counted Zombies that had been in another
+    /// player's graveyard. So every entry is planned on the board as it was,
+    /// before any of them moves, each under the player it enters under; then
+    /// they move, each as planned. An entry deferred on its copy choice is
+    /// planned when it is answered, after the rest have entered, and keeps
+    /// where they were (`pending_entry_zones`) to be planned by.
+    pub fn move_onto_battlefield_together(
+        &mut self,
+        ids: &[ObjectId],
+        controller: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<bool> {
+        let before: Vec<(ObjectId, Zone)> = ids.iter()
+            .filter_map(|&id| self.objects.get(&id).map(|o| (id, o.zone)))
+            .collect();
+        let mut plans: Vec<Option<crate::replacement::EnteringPermanent>> = Vec::with_capacity(ids.len());
+        for &id in ids {
+            let from = self.objects.get(&id).map(|o| o.zone);
+            if from.is_none_or(|z| z == Zone::Battlefield) || self.defers_entry(id, Zone::Battlefield, registry) {
+                plans.push(None);
+                continue;
+            }
+            // Planned as entering under `controller`, which the move writes
+            // first; put back, since the card has not moved yet (CR 108.4).
+            let was = self.objects.get(&id).map(|o| o.controller);
+            if let Some(obj) = self.get_object_mut(id) {
+                obj.controller = controller;
+            }
+            plans.push(Some(self.plan_entering(id, from, registry)));
+            if let (Some(obj), Some(was)) = (self.get_object_mut(id), was) {
+                obj.controller = was;
+            }
+        }
+        let mut moved = Vec::with_capacity(ids.len());
+        for (&id, plan) in ids.iter().zip(plans) {
+            let did = self.move_object_inner(id, Zone::Battlefield, Some(controller), plan, registry);
+            if !did {
+                let others: Vec<(ObjectId, Zone)> = before.iter().filter(|(o, _)| *o != id).copied().collect();
+                self.pending_entry_zones.insert(id, others);
+            }
+            moved.push(did);
+        }
+        moved
+    }
+
+    /// Where `id` was as the entry being planned began: the zone kept for
+    /// it if it entered in the same event as a deferred entry being planned
+    /// now (`entering_zones_before`), and where it is otherwise. What a
+    /// replacement effect that modifies how a permanent enters reads of its
+    /// own source (CR 614.12).
+    pub fn zone_as_entering_began(&self, id: ObjectId) -> Option<Zone> {
+        match self.entering_zones_before.iter().find(|(o, _)| *o == id) {
+            Some((_, zone)) => Some(*zone),
+            None => self.objects.get(&id).map(|o| o.zone),
+        }
+    }
+
+    /// Whether moving `id` to `to` waits on its copy choice (CR 614.12b):
+    /// a card that chooses what it enters as, not yet asked, entering the
+    /// battlefield from elsewhere.
+    fn defers_entry(&self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) -> bool {
+        to == Zone::Battlefield
+            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
+            && self.objects.get(&id)
+                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
+            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
+                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
     }
 
     /// Returns whether the object actually moved. It is `false` for exactly
@@ -1251,14 +1553,17 @@ impl GameState {
     /// had no business having — a CR 108.4 and CR 400.7 violation the
     /// fuzzer reported from fifteen seeds (issues #335-#349).
     pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) -> bool {
-        self.move_object_inner(id, to, None, registry)
+        self.move_object_inner(id, to, None, None, registry)
     }
 
+    /// The move, with the entry already planned (`planned`) when it is one
+    /// of several made in one event ([`GameState::move_onto_battlefield_together`]).
     fn move_object_inner(
         &mut self,
         id: ObjectId,
         to: Zone,
         under: Option<PlayerId>,
+        planned: Option<crate::replacement::EnteringPermanent>,
         registry: &crate::cards::CardRegistry,
     ) -> bool {
         // CR 614.12b: a permanent that chooses what to enter as makes that
@@ -1268,13 +1573,7 @@ impl GameState {
         // its controller before anyone receives priority, and the answer
         // re-runs this move. Nothing ever sees the permanent on the
         // battlefield as its printed self with the choice outstanding.
-        if to == Zone::Battlefield
-            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
-            && self.objects.get(&id)
-                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
-            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
-                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
-        {
+        if self.defers_entry(id, to, registry) {
             if !self.pending_entry_choices.contains(&id) {
                 self.pending_entry_choices.push(id);
             }
@@ -1386,7 +1685,10 @@ impl GameState {
         let is_entering = to == Zone::Battlefield
             && from.is_some_and(|z| z != Zone::Battlefield);
         let entering = if is_entering {
-            Some(self.plan_entering(id, from, registry))
+            Some(match planned {
+                Some(plan) => plan,
+                None => self.plan_entering(id, from, registry),
+            })
         } else {
             None
         };
@@ -1405,10 +1707,9 @@ impl GameState {
             if leaving && self.get_object(id).is_some_and(|o| !o.is_token) {
                 self.get_object(id).and_then(|o| {
                     let printed_card = o.copy_grantor.unwrap_or(o.card_id);
-                    registry.get(printed_card).map(|b| {
-                        let d = b.card_data();
-                        (d.name, d.power, d.toughness)
-                    })
+                    let name = registry.printed_name(printed_card, false)?;
+                    let (power, toughness) = registry.printed_pt(printed_card, false)?;
+                    Some((name.to_string(), power, toughness))
                 })
             } else {
                 None
@@ -1431,6 +1732,7 @@ impl GameState {
                 // never reset counted the wrong one. Last known information is
                 // already captured above in `pre_move_controller`.
                 obj.last_controller = Some(obj.controller);
+                obj.last_transformed = obj.is_transformed;
                 obj.controller = obj.owner;
                 obj.tapped = false;
                 obj.summoning_sick = false;
@@ -1761,8 +2063,7 @@ impl GameState {
         // Legendary is copiable (CR 707.2): the object flag, or the printed
         // supertype when nothing has set one.
         let legendary = src.is_legendary
-            || self.face_data(source, registry)
-                .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
+            || self.face_supertypes(source, registry).contains(&crate::types::Supertype::Legendary);
         let name = self.name_of(source, registry);
         let (power, toughness) = self.printed_pt_of(source, registry);
         let keywords = self.printed_keywords_of(source, registry);
@@ -1846,49 +2147,129 @@ impl GameState {
     /// For Battlefield: filter by controller.
     #[must_use]
     pub fn objects_in_zone(&self, zone: Zone, player: PlayerId) -> Vec<&GameObject> {
-        let mut result: Vec<_> = self.objects.values().filter(|obj| {
-            obj.zone == zone && match zone {
-                Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner == player,
-                Zone::Battlefield => obj.controller == player,
-                _ => true,
-            }
-        }).collect();
         // CR 404.2: a graveyard is an ordered pile, and its order is arrival
         // order — not the order the cards happened to be created in when the
-        // decklist was built, which is what sorting by id gives (issue #222).
+        // decklist was built, which is what id order gives (issue #222).
         // Anything not in the recorded pile (a card put there by a path that
-        // predates the order) sorts after what is, by id.
-        if zone == Zone::Graveyard {
-            let pile = &self.get_player(player).graveyard_order;
-            result.sort_by_key(|o| (pile.iter().position(|&id| id == o.id).unwrap_or(usize::MAX), o.id));
-        } else {
-            result.sort_by_key(|o| o.id);
+        // predates the order) comes after what is, by id. Every other zone
+        // has no order of its own here, and is given no pile.
+        //
+        // The order is `mtg_kernel::zones::zone_order`'s, proved there for
+        // every board. It is handed every object, in id order (the map is
+        // ordered by id, and its keys are distinct, as the kernel requires).
+        //
+        // With no pile, what it lists (the members not in the pile, in the
+        // order they were handed) is the members in id order, which is a
+        // scan of the map: every zone but a graveyard is listed so, into a
+        // list allocated at the most it can hold, with no lists of every
+        // object's id and membership built first for a proof to follow.
+        if zone != Zone::Graveyard {
+            let mut members = Vec::with_capacity(self.objects.len());
+            for obj in self.objects.values() {
+                if in_zone_of(obj, zone, player) {
+                    members.push(obj);
+                }
+            }
+            return members;
         }
-        result
+        let all: Vec<&GameObject> = self.objects.values().collect();
+        let ids: Vec<u64> = all.iter().map(|obj| obj.id.0).collect();
+        let members: Vec<bool> = all.iter().map(|obj| in_zone_of(obj, zone, player)).collect();
+        let pile: Vec<u64> = self.get_player(player).graveyard_order.iter().map(|id| id.0).collect();
+        mtg_kernel::zones::zone_order(&ids, &members, &pile).into_iter().map(|k| all[k]).collect()
     }
 
     /// Every object in the game, in object-id order.
     ///
-    /// `self.objects` is a `HashMap`, and its iteration order is seeded per
-    /// process: a scan that stops at the first match, or whose result is
-    /// offered to a player as a list, gives a different answer on a replay of
-    /// the same game. Anything that cares about order goes through this or
-    /// through `objects_in_zone` / `all_objects_in_zone`, which sort the same
-    /// way. `card_data_invariants::nothing_iterates_the_object_map_in_map_order`
-    /// keeps card code out of the raw map.
+    /// A scan that stops at the first match, or whose result is offered to a
+    /// player as a list, has to see the objects in an order the game fixes,
+    /// or a replay of the same game gives a different answer. Anything that
+    /// cares about order goes through this or through `objects_in_zone` /
+    /// `all_objects_in_zone`, which list the same way.
+    /// `card_data_invariants::nothing_iterates_the_object_map_in_map_order`
+    /// keeps card code out of the raw map. The map is ordered by id
+    /// (`ObjectMap`), so its own order is this one.
     #[must_use]
     pub fn objects_in_id_order(&self) -> Vec<&GameObject> {
-        let mut result: Vec<_> = self.objects.values().collect();
-        result.sort_by_key(|o| o.id);
+        self.objects.values().collect()
+    }
+
+    /// Every object, in id order, as [`Self::objects_in_id_order`] lists
+    /// them, with no list built.
+    pub fn each_object(&self) -> impl Iterator<Item = &GameObject> + '_ {
+        self.objects.values()
+    }
+
+    /// The ids of every object in `zone`, whoever's, that `keep` accepts, in
+    /// id order as [`Self::all_objects_in_zone`] lists them, into a list
+    /// allocated at the most it can hold, with no list of the zone built
+    /// first: [`Self::count_in_zone`] says why.
+    #[must_use]
+    pub fn all_ids_in_zone(&self, zone: Zone, mut keep: impl FnMut(&GameObject) -> bool) -> Vec<ObjectId> {
+        let mut ids = Vec::with_capacity(self.objects.len());
+        for obj in self.objects.values() {
+            if obj.zone == zone && keep(obj) {
+                ids.push(obj.id);
+            }
+        }
+        ids
+    }
+
+    /// Get all objects in a zone (regardless of player), in id order.
+    #[must_use]
+    pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
+        // Allocated at the most it can hold, as `objects_in_zone` says why.
+        let mut result = Vec::with_capacity(self.objects.len());
+        for obj in self.objects.values() {
+            if obj.zone == zone {
+                result.push(obj);
+            }
+        }
         result
     }
 
-    /// Get all objects in a zone (regardless of player).
+    /// How many of `player`'s objects in `zone` `keep` accepts: the count
+    /// of `objects_in_zone(zone, player)` filtered by `keep`, with no list
+    /// built. A count has no order to keep, and a proof reads that list's
+    /// entries as pointers that could be any object's, as many as who
+    /// holds each decides: comparing subtypes through them ran out of
+    /// memory (Bloodline Keeper's five Vampires).
     #[must_use]
-    pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
-        let mut result: Vec<_> = self.objects.values().filter(|obj| obj.zone == zone).collect();
-        result.sort_by_key(|o| o.id);
-        result
+    pub fn count_in_zone(&self, zone: Zone, player: PlayerId, mut keep: impl FnMut(&GameObject) -> bool) -> usize {
+        self.objects.values().filter(|obj| in_zone_of(obj, zone, player) && keep(obj)).count()
+    }
+
+    /// Whether any of `player`'s objects in `zone` is one `want` accepts,
+    /// as [`Self::count_in_zone`] counts them: an answer with no order
+    /// either (a check land's Mountain or Plains).
+    #[must_use]
+    pub fn any_in_zone(&self, zone: Zone, player: PlayerId, mut want: impl FnMut(&GameObject) -> bool) -> bool {
+        self.objects.values().any(|obj| in_zone_of(obj, zone, player) && want(obj))
+    }
+
+    /// The ids of `player`'s objects in `zone` that `keep` accepts, in the
+    /// order `objects_in_zone` lists them, into a list allocated at the
+    /// most it can hold (as `helpers::ids_where` says why). Every zone but
+    /// a graveyard is listed in id order, so there the objects are scanned
+    /// as they are, with no list of the zone built first, for the reason
+    /// [`Self::count_in_zone`] gives.
+    #[must_use]
+    pub fn ids_in_zone(&self, zone: Zone, player: PlayerId, mut keep: impl FnMut(&GameObject) -> bool) -> Vec<ObjectId> {
+        let mut ids = Vec::with_capacity(self.objects.len());
+        if zone == Zone::Graveyard {
+            for obj in self.objects_in_zone(zone, player) {
+                if keep(obj) {
+                    ids.push(obj.id);
+                }
+            }
+        } else {
+            for obj in self.objects.values() {
+                if in_zone_of(obj, zone, player) && keep(obj) {
+                    ids.push(obj.id);
+                }
+            }
+        }
+        ids
     }
 
     /// Get the next player after the given player (turn order).
@@ -2040,12 +2421,12 @@ impl GameState {
     /// `visit` receives the effect and the permanent providing it — several
     /// effects are relative to their source's controller — and returns false
     /// to stop the walk.
-    pub(crate) fn walk_effects(
-        &self,
+    pub(crate) fn walk_effects<'a>(
+        &'a self,
         id: ObjectId,
         want: &dyn Fn(&crate::types::ContinuousEffect) -> bool,
-        registry: &crate::cards::CardRegistry,
-        visit: &mut dyn FnMut(&crate::types::ContinuousEffect, &GameObject) -> bool,
+        registry: &'a crate::cards::CardRegistry,
+        visit: &mut dyn FnMut(&'a crate::types::ContinuousEffect, &'a GameObject) -> bool,
     ) {
         #[cfg(test)]
         EFFECT_WALKS.with(|n| n.set(n.get() + 1));
@@ -2110,9 +2491,41 @@ impl GameState {
     ///
     /// Cost effects are keyed to who is casting, not to an `EffectScope`, so
     /// they cannot come through `walk_effects`. Reading them here still means
-    /// reading them through `continuous_effects_of` — the two cost functions
+    /// reading what `continuous_effects_of` returns, the active face's and
+    /// the granted ones, in that order — the two cost functions
     /// used to walk `card_data().continuous_effects` directly and so ignored
     /// a transformed permanent's back face and anything granted at runtime.
+    ///
+    /// Each is handed to `visit` where it lies rather than collected: a list
+    /// of their clones, dropped once read, is dropped as every shape of
+    /// effect and filter there is in a proof that cannot tell which it holds
+    /// (what a spell costs ran out of memory on it). `effects_controlled_by`
+    /// collects them.
+    pub fn visit_effects_controlled_by(
+        &self,
+        player: crate::ids::PlayerId,
+        registry: &crate::cards::CardRegistry,
+        visit: &mut dyn FnMut(&crate::types::ContinuousEffect),
+    ) {
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield || source.controller != player {
+                continue;
+            }
+            // Read, not built, as `walk_effects` reads them.
+            let printed = registry
+                .printed_continuous_effects(source.card_id, source.is_transformed);
+            let instance = source.instance_continuous_effects.as_deref().unwrap_or(&[]);
+            for effect in printed.iter().chain(instance.iter()) {
+                let (inner, condition) = effect.unwrap_condition();
+                if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
+                    continue;
+                }
+                visit(inner);
+            }
+        }
+    }
+
+    /// [`Self::visit_effects_controlled_by`]'s effects, collected.
     #[must_use]
     pub fn effects_controlled_by(
         &self,
@@ -2120,32 +2533,32 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> Vec<crate::types::ContinuousEffect> {
         let mut out = Vec::new();
-        for source in self.objects.values() {
-            if source.zone != Zone::Battlefield || source.controller != player {
-                continue;
-            }
-            for effect in self.continuous_effects_of(source.id, registry) {
-                let (inner, condition) = effect.unwrap_condition();
-                if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
-                    continue;
-                }
-                out.push(inner.clone());
-            }
-        }
+        self.visit_effects_controlled_by(player, registry, &mut |e| out.push(e.clone()));
         out
     }
 
-    /// Continuous effects that modify the rules of the game rather than a
-    /// permanent — the ones with no `EffectScope`. Conditions are evaluated,
-    /// so a `When`-wrapped rule modification only shows up while it holds.
-    #[must_use]
-    pub fn global_effects(&self, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
-        let mut out = Vec::new();
+    /// Visit each continuous effect that modifies the rules of the game
+    /// rather than a permanent — the ones with no `EffectScope` — where it
+    /// lies. Conditions are evaluated, so a `When`-wrapped rule
+    /// modification is visited only while it holds.
+    pub fn visit_global_effects<'a>(
+        &'a self,
+        registry: &'a crate::cards::CardRegistry,
+        visit: &mut dyn FnMut(&'a crate::types::ContinuousEffect),
+    ) {
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            for effect in self.continuous_effects_of(source.id, registry) {
+            // Read, not built, as `walk_effects` reads them: a copy of
+            // every effect, walked by value, was an `Option` of the whole
+            // effect per step, which a proof holds field by field, every
+            // variant's every field (a payment from the pool, which asks
+            // after Stony Silence at each source, ran out of memory).
+            let printed = registry
+                .printed_continuous_effects(source.card_id, source.is_transformed);
+            let instance = source.instance_continuous_effects.as_deref().unwrap_or(&[]);
+            for effect in printed.iter().chain(instance.iter()) {
                 let (inner, condition) = effect.unwrap_condition();
                 if inner.scope().is_some() {
                     continue;
@@ -2153,9 +2566,16 @@ impl GameState {
                 if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
                     continue;
                 }
-                out.push(inner.clone());
+                visit(inner);
             }
         }
+    }
+
+    /// [`Self::visit_global_effects`]'s effects, collected.
+    #[must_use]
+    pub fn global_effects(&self, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
+        let mut out = Vec::new();
+        self.visit_global_effects(registry, &mut |e| out.push(e.clone()));
         out
     }
 
@@ -2201,7 +2621,7 @@ impl GameState {
                     // carried a `dynamic_pt` that did nothing but repeat their
                     // own `back_face_data` — one derived fact written twice,
                     // in two places free to disagree.
-                    behavior.back_face_data().and_then(|d| d.power).or(obj.power)?
+                    registry.printed_back_pt(obj.card_id).and_then(|(p, _)| p).or(obj.power)?
                 } else {
                     obj.power?
                 }
@@ -2279,7 +2699,7 @@ impl GameState {
                     t
                 } else if obj.is_transformed {
                     // The back face's printed toughness — see effective_power.
-                    behavior.back_face_data().and_then(|d| d.toughness).or(obj.toughness)?
+                    registry.printed_back_pt(obj.card_id).and_then(|(_, t)| t).or(obj.toughness)?
                 } else {
                     obj.toughness?
                 }
@@ -2353,17 +2773,24 @@ impl GameState {
     /// timestamp wins).
     #[must_use]
     fn set_pt_for(&self, object: ObjectId) -> (Option<i32>, Option<i32>) {
-        let mut power = None;
-        let mut toughness = None;
-        let mut applicable: Vec<&SetPtEffect> = self.set_pt_effects.iter()
-            .filter(|e| e.object == object)
-            .collect();
-        applicable.sort_by_key(|e| e.timestamp);
-        for effect in applicable {
-            if effect.power.is_some() { power = effect.power; }
-            if effect.toughness.is_some() { toughness = effect.toughness; }
+        // The latest timestamp for each of the two, and of two with the same
+        // timestamp the one set later: what applying them in timestamp order
+        // (a stable sort) leaves standing, read off in one pass.
+        let mut power: Option<(u64, i32)> = None;
+        let mut toughness: Option<(u64, i32)> = None;
+        for effect in self.set_pt_effects.iter().filter(|e| e.object == object) {
+            if let Some(p) = effect.power {
+                if power.is_none_or(|(t, _)| effect.timestamp >= t) {
+                    power = Some((effect.timestamp, p));
+                }
+            }
+            if let Some(t) = effect.toughness {
+                if toughness.is_none_or(|(ts, _)| effect.timestamp >= ts) {
+                    toughness = Some((effect.timestamp, t));
+                }
+            }
         }
-        (power, toughness)
+        (power.map(|(_, p)| p), toughness.map(|(_, t)| t))
     }
 
     /// Check if a creature is prevented from attacking (e.g., by Pacifism).
@@ -2690,7 +3117,7 @@ impl GameState {
     /// one decision at 2,000 permanents (#641). The walk depends only on the
     /// protected permanent; only the match depends on the source.
     #[must_use]
-    pub fn protection_set(&self, target_id: ObjectId, registry: &crate::cards::CardRegistry) -> Protections {
+    pub fn protection_set<'a>(&'a self, target_id: ObjectId, registry: &'a crate::cards::CardRegistry) -> Protections<'a> {
         use crate::types::ContinuousEffect;
         let mut p = Protections {
             target: target_id,
@@ -2706,11 +3133,11 @@ impl GameState {
             registry,
             &mut |e, src_obj| {
                 match e {
-                    ContinuousEffect::ProtectionFromSubtype { subtype, .. } => p.subtypes.push(subtype.clone()),
+                    ContinuousEffect::ProtectionFromSubtype { subtype, .. } => p.subtypes.push(subtype),
                     // The filter is read against the granting permanent's
                     // controller, so this keeps the source the walk found it on.
                     ContinuousEffect::ProtectionFrom { filter, .. } =>
-                        p.statics.push((filter.clone(), src_obj.id, src_obj.controller)),
+                        p.statics.push((filter, src_obj.id, src_obj.controller)),
                     _ => {}
                 }
                 true
@@ -2720,7 +3147,7 @@ impl GameState {
         for effect in &self.until_end_of_turn {
             if let TemporaryEffect::GrantProtection { target, filter } = effect {
                 if *target == target_id {
-                    p.grants.push(filter.clone());
+                    p.grants.push(filter);
                 }
             }
         }
@@ -2787,8 +3214,15 @@ impl GameState {
     /// because CR 400.7 makes it a new object rather than because anything
     /// untapped it, and not for one entering tapped, which was never untapped.
     pub fn untap(&mut self, id: ObjectId) -> bool {
+        if self.is_new_source(id) {
+            return false;
+        }
         match self.get_object_mut(id) {
-            Some(obj) if obj.tapped => obj.tapped = false,
+            // CR 110.5, as for `tap`: tapped is a status of permanents, and
+            // only a permanent is untapped. Leaving the battlefield clears
+            // the flag (`move_object`), so this asks what the rule says
+            // rather than relying on every path that writes it.
+            Some(obj) if obj.zone == crate::types::Zone::Battlefield && obj.tapped => obj.tapped = false,
             _ => return false,
         }
         self.events.push(crate::events::GameEvent::Untapped { object: id });
@@ -2847,6 +3281,9 @@ impl GameState {
     }
 
     pub fn tap(&mut self, id: ObjectId) -> bool {
+        if self.is_new_source(id) {
+            return false;
+        }
         match self.get_object_mut(id) {
             // CR 110.5: tapped is a status of permanents. An effect resolving
             // through last-known information can name an object that has
@@ -2876,7 +3313,11 @@ impl GameState {
     /// exactly why they are two named operations rather than one assignment
     /// spelled the same way in sixteen places.
     pub fn arrives_tapped(&mut self, id: ObjectId) {
-        if let Some(obj) = self.get_object_mut(id) {
+        // A permanent, as `tap` asks: a card that never got onto the
+        // battlefield (an entry deferred for a copy choice, CR 614.12b) is
+        // not one, and a card in a graveyard or a library has no tapped
+        // status to give it.
+        if let Some(obj) = self.get_object_mut(id).filter(|o| o.zone == Zone::Battlefield) {
             obj.tapped = true;
         }
     }
@@ -2894,7 +3335,9 @@ impl GameState {
     /// summoning-sickness reset and is a bug.
     pub fn change_control(&mut self, id: ObjectId, new_controller: PlayerId) {
         let changed = match self.get_object_mut(id) {
-            Some(obj) if obj.controller != new_controller => {
+            // Only a permanent changes control: off the battlefield a card's
+            // owner is its controller (CR 108.4), whatever an effect says.
+            Some(obj) if obj.zone == Zone::Battlefield && obj.controller != new_controller => {
                 let from = obj.controller;
                 obj.controller = new_controller;
                 obj.summoning_sick = true;
@@ -3104,21 +3547,29 @@ impl GameState {
     /// Run as a state-based action, which is the closest the engine has to
     /// "the moment the condition becomes false".
     pub fn expire_control_effects(&mut self) -> bool {
-        let ended: Vec<ControlEffect> = self.control_effects.iter()
-            .filter(|e| {
-                // The source has to still be on the battlefield AND still be
-                // controlled by the player who gained control.
-                !self.get_object(e.source)
-                    .is_some_and(|s| s.zone == Zone::Battlefield && s.controller == e.source_controller)
-            })
-            .cloned()
+        // Whether each effect still holds: its source still on the
+        // battlefield AND still controlled by the player who gained control.
+        // The effects that end are then read where they lie, each beside its
+        // answer, rather than copied into a list of their own: a proof reads
+        // a list filtered out of another at positions the board decides, so
+        // every permanent it named was any of them (`proofs::actions::
+        // state_based`).
+        let holds: Vec<bool> = self.control_effects.iter()
+            .map(|e| self.get_object(e.source)
+                .is_some_and(|s| s.zone == Zone::Battlefield && s.controller == e.source_controller))
             .collect();
-        if ended.is_empty() {
+        if holds.iter().all(|&h| h) {
             return false;
         }
-        self.control_effects.retain(|e| !ended.contains(e));
-        for effect in ended {
-            if self.get_object(effect.object).is_none_or(|o| o.zone != Zone::Battlefield) {
+        let effects = std::mem::take(&mut self.control_effects);
+        self.control_effects = Vec::with_capacity(effects.len());
+        for (effect, &h) in effects.iter().zip(&holds) {
+            if h {
+                self.control_effects.push(effect.clone());
+            }
+        }
+        for (effect, &h) in effects.iter().zip(&holds) {
+            if h || self.get_object(effect.object).is_none_or(|o| o.zone != Zone::Battlefield) {
                 continue;
             }
             // With this effect gone, control is whatever the remaining ones
@@ -3239,7 +3690,9 @@ impl GameState {
         // counters regardless of zone, the Ooze it made came in 1/1 instead of
         // the 0/0 the ruling requires. The counter then rode along if the
         // Grime was ever reanimated.
-        if count == 0 || self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+        // Nor does one land on a source that has come back since its
+        // ability went on the stack: that is a new object (`is_new_source`).
+        if count == 0 || self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) || self.is_new_source(id) {
             return false;
         }
         if let Some(obj) = self.objects.get_mut(&id) {
@@ -3275,7 +3728,7 @@ impl GameState {
     /// earned. Grimoire of the Dead, Unburial Rites and Moldgraf Monstrosity
     /// are all in this set.
     pub fn add_regeneration_shield(&mut self, id: ObjectId) {
-        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) || self.is_new_source(id) {
             return;
         }
         let Some(obj) = self.objects.get_mut(&id) else { return };
@@ -3301,6 +3754,9 @@ impl GameState {
     /// sacrificed in the same cost, and the removal has to happen before the
     /// zone change clears them all (CR 601.2h).
     pub fn remove_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        if self.is_new_source(id) {
+            return;
+        }
         let before = self.get_counter_count(id, counter_type);
         if let Some(obj) = self.objects.get_mut(&id) {
             if let Some(current) = obj.counters.get_mut(&counter_type) {
@@ -3466,7 +3922,11 @@ impl GameState {
         source: Option<&str>,
         registry: &crate::cards::CardRegistry,
     ) {
-        let Some(player) = self.get_object(id).map(|o| o.owner) else { return; };
+        // CR 701.8a: a discard moves a card from its owner's hand, and a
+        // card anywhere else is not one that can be discarded. Every caller
+        // offers only a hand's cards, so this asks what the rule says
+        // rather than relying on each of them.
+        let Some(player) = self.get_object(id).filter(|o| o.zone == Zone::Hand).map(|o| o.owner) else { return; };
         // A discard is public: the card moves into a public zone (CR 400.2),
         // and CR 701.8a's discard is not a hidden action. Logged HERE rather
         // than at each caller, because a caller that forgets loses the line
@@ -3530,14 +3990,70 @@ impl GameState {
         Some(behavior.card_data())
     }
 
+    /// The card types printed on the object's active face — what
+    /// `face_data(id).card_types` says, read off the faces the registry kept
+    /// at registration instead of building the card's data again. Empty for
+    /// an object with no registry entry, where `face_data` is `None`.
+    #[must_use]
+    pub fn face_card_types<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [crate::types::CardType] {
+        self.get_object(id).map_or(&[], |o| registry.printed_card_types(o.card_id, o.is_transformed))
+    }
+
+    /// The supertypes printed on the object's active face, as
+    /// [`Self::face_card_types`].
+    #[must_use]
+    pub fn face_supertypes<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [crate::types::Supertype] {
+        self.get_object(id).map_or(&[], |o| registry.printed_supertypes(o.card_id, o.is_transformed))
+    }
+
+    /// The subtypes printed on the object's active face, as
+    /// [`Self::face_card_types`].
+    #[must_use]
+    pub fn face_subtypes<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [String] {
+        self.get_object(id).map_or(&[], |o| registry.printed_subtypes(o.card_id, o.is_transformed))
+    }
+
+    /// The mana cost printed on the object's active face, as
+    /// [`Self::face_card_types`]: `None` for a face with no mana cost and
+    /// for an object with no registry entry.
+    #[must_use]
+    pub fn face_cost<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> Option<&'r crate::types::ManaCost> {
+        let o = self.get_object(id)?;
+        registry.printed_cost(o.card_id, o.is_transformed)
+    }
+
+    /// The flashback cost printed on the object's active face (CR 702.33),
+    /// as [`Self::face_cost`].
+    #[must_use]
+    pub fn face_flashback_cost<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> Option<&'r crate::types::ManaCost> {
+        let o = self.get_object(id)?;
+        registry.printed_flashback_cost(o.card_id, o.is_transformed)
+    }
+
+    /// The name printed on the object's active face, as
+    /// [`Self::face_card_types`]; `None` for an object with no registry
+    /// entry.
+    #[must_use]
+    pub fn face_name<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> Option<&'r str> {
+        let o = self.get_object(id)?;
+        registry.printed_name(o.card_id, o.is_transformed)
+    }
+
+    /// The color indicator printed on the object's active face (CR 204), as
+    /// [`Self::face_card_types`].
+    #[must_use]
+    pub fn face_color_indicator<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [crate::types::Color] {
+        self.get_object(id).map_or(&[], |o| registry.printed_color_indicator(o.card_id, o.is_transformed))
+    }
+
     /// The object's name, from its active face — the back face when a DFC is
     /// transformed. `obj.name` is only authoritative for tokens, which have no
     /// registry face; for a real card it is a display cache that goes stale
     /// (CR 712.8a: a DFC outside the battlefield has its front face's name).
     #[must_use]
     pub fn name_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> String {
-        if let Some(data) = self.face_data(id, registry) {
-            return data.name;
+        if let Some(name) = self.face_name(id, registry) {
+            return name.to_string();
         }
         self.get_object(id).map(|o| o.name.clone()).unwrap_or_default()
     }
@@ -3573,12 +4089,13 @@ impl GameState {
     /// granted at runtime. Union, not override — see the module rule above.
     #[must_use]
     pub fn card_types_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::CardType> {
-        let mut types = self.get_object(id).map(|o| o.card_types.clone()).unwrap_or_default();
-        if let Some(data) = self.face_data(id, registry) {
-            for t in data.card_types {
-                if !types.contains(&t) {
-                    types.push(t);
-                }
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        let face = registry.printed_card_types(obj.card_id, obj.is_transformed);
+        let mut types = Vec::with_capacity(obj.card_types.len() + face.len() + 1);
+        types.extend_from_slice(&obj.card_types);
+        for t in face {
+            if !types.contains(t) {
+                types.push(*t);
             }
         }
         // CR 205.1b: power and toughness belong to creatures, so an object
@@ -3600,7 +4117,12 @@ impl GameState {
     /// Whether the object has the given card type on its active face.
     #[must_use]
     pub fn has_card_type(&self, id: ObjectId, card_type: crate::types::CardType, registry: &crate::cards::CardRegistry) -> bool {
-        self.card_types_of(id, registry).contains(&card_type)
+        // `card_types_of(id).contains(card_type)`, asked of each part of the
+        // union without building it.
+        let Some(obj) = self.get_object(id) else { return false };
+        obj.card_types.contains(&card_type)
+            || registry.printed_card_types(obj.card_id, obj.is_transformed).contains(&card_type)
+            || (card_type == crate::types::CardType::Creature && obj.power.is_some())
     }
 
     /// The player a Curse is attached to, falling back to the player it was
@@ -3645,11 +4167,17 @@ impl GameState {
     /// really does pick up creatures as they arrive.
     #[must_use]
     pub fn creatures_controlled_snapshot(&self, controller: PlayerId, registry: &crate::cards::CardRegistry) -> Vec<ObjectId> {
-        self.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == controller)
-            .filter(|o| self.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .collect()
+        // Allocated at the most it can hold, as `all_objects_in_zone` is: a
+        // filtered `collect` allocates when it keeps its first creature, so
+        // whether the list was allocated at all is a question about the
+        // board, and a proof's board leaves it open.
+        let mut ids = Vec::with_capacity(self.objects.len());
+        for o in self.objects.values() {
+            if o.zone == Zone::Battlefield && o.controller == controller && self.is_creature(o.id, registry) {
+                ids.push(o.id);
+            }
+        }
+        ids
     }
 
     /// Who controls this object, or — once it has left the battlefield — who
@@ -3693,11 +4221,9 @@ impl GameState {
     #[must_use]
     pub fn subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
         let mut subs = self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default();
-        if let Some(data) = self.face_data(id, registry) {
-            for s in data.subtypes {
-                if !subs.contains(&s) {
-                    subs.push(s);
-                }
+        for s in self.face_subtypes(id, registry) {
+            if !subs.contains(s) {
+                subs.push(s.clone());
             }
         }
         subs
@@ -3706,9 +4232,9 @@ impl GameState {
     /// Whether the object has the given subtype on its active face.
     #[must_use]
     pub fn has_subtype(&self, id: ObjectId, subtype: &str, registry: &crate::cards::CardRegistry) -> bool {
-        self.get_object(id).is_some_and(|o| o.subtypes.iter().any(|s| s == subtype))
-            || self.face_data(id, registry)
-                .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
+        let Some(obj) = self.get_object(id) else { return false };
+        obj.subtypes.iter().any(|s| s == subtype)
+            || registry.printed_subtypes(obj.card_id, obj.is_transformed).iter().any(|s| s == subtype)
     }
 
     /// CR 301.5: an Equipment is an artifact with the Equipment subtype.
@@ -3783,7 +4309,9 @@ impl GameState {
     ///
     /// Otherwise CR 702.6c: attaching it to a second object moves it off the
     /// first. That is the same "stop being attached" event, so it goes
-    /// through `unattach` and gets the same line.
+    /// through `unattach` and gets the same line. And CR 701.3a takes it
+    /// "from where it currently is", which may be a player (a Curse) as
+    /// well as an object, so it comes off a player the same way.
     ///
     /// Returns whether the attachment changed.
     pub fn attach(&mut self, id: ObjectId, host: ObjectId) -> bool {
@@ -3792,6 +4320,7 @@ impl GameState {
             return false;
         }
         self.unattach(id);
+        self.unattach_from_player(id);
         if let Some(obj) = self.get_object_mut(id) {
             obj.attached_to = Some(host);
         }
@@ -3971,33 +4500,29 @@ impl GameState {
     /// legendary creature is legendary and has no card behind it.
     #[must_use]
     pub fn is_legendary(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        if let Some(data) = self.face_data(id, registry) {
-            if data.supertypes.contains(&crate::types::Supertype::Legendary) {
-                return true;
-            }
-        }
-        self.get_object(id).is_some_and(|o| o.is_legendary)
+        self.face_supertypes(id, registry).contains(&crate::types::Supertype::Legendary)
+            || self.get_object(id).is_some_and(|o| o.is_legendary)
     }
 
     /// Colors of the object: the union of any granted at runtime (Grimoire of
-    /// the Dead's black) and those derived from the active face's mana cost.
-    /// (Color indicators are not modeled.)
+    /// the Dead's black) and those of the active face: its colour indicator
+    /// if it has one, else those derived from its mana cost (CR 204, 202.2).
     #[must_use]
     pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
         let mut cols = self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default();
-        let face = self.face_data(id, registry);
         // CR 204.2: a face with no mana cost states its colors with a color
         // indicator. Reading the cost alone made every transformed permanent
         // colorless, which Gatstaf Howler's intimidate reads directly.
-        if let Some(indicator) = face.as_ref().map(|d| d.color_indicator.clone()).filter(|i| !i.is_empty()) {
+        let indicator = self.face_color_indicator(id, registry);
+        if !indicator.is_empty() {
             for c in indicator {
-                if !cols.contains(&c) {
-                    cols.push(c);
+                if !cols.contains(c) {
+                    cols.push(*c);
                 }
             }
             return cols;
         }
-        if let Some(cost) = face.and_then(|d| d.cost) {
+        if let Some(cost) = self.face_cost(id, registry) {
             for sym in &cost.symbols {
                 if let crate::types::ManaSymbol::Colored(c) = sym {
                     if !cols.contains(c) {
@@ -4077,6 +4602,13 @@ pub struct GameObject {
     /// CR 108.4, so it cannot answer that. The Curse pair
     /// `last_attached_to_player` exists for the same reason.
     pub last_controller: Option<PlayerId>,
+    /// Whether this permanent was on its back face as it last left the
+    /// battlefield (CR 712.8, 603.10a). Leaving turns a double-faced card
+    /// face up (712.8a), so a watcher that died in the same event as the
+    /// creature it saw die reads the face it had here: a Thraben Militia
+    /// dying beside another creature is not a Thraben Sentry.
+    #[serde(default)]
+    pub last_transformed: bool,
     /// The turn this permanent was last declared as an attacker, if any
     /// (CR 508.1). "Didn't attack this turn" is a plain fact about the game,
     /// asked by Homicidal Brute among others; it is not a triggered ability,
@@ -4109,6 +4641,12 @@ pub struct GameObject {
 
     // Targets chosen when this spell was cast (only relevant while on the stack).
     pub targets: Vec<crate::actions::Target>,
+    /// Each of `targets`' objects' `zone_change_count` as the spell was put
+    /// on the stack (`GameState::put_on_stack`): a target is that object
+    /// only while it stays where it is, and one that left and came back is
+    /// a new object the spell does not target (CR 400.7, 608.2b).
+    #[serde(default)]
+    pub target_zone_changes: Vec<u32>,
 
     // Aura/equipment: what this is attached to.
     pub attached_to: Option<ObjectId>,
@@ -4170,10 +4708,10 @@ pub struct GameObject {
     /// Card-specific persistent state (e.g., Fiend Hunter stores the exiled creature ID).
     /// Keyed by purpose string, value is an `ObjectId`.
     #[serde(default)]
-    pub card_state: std::collections::BTreeMap<String, ObjectId>,
+    pub card_state: CardState,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
-    pub counters: std::collections::BTreeMap<crate::types::CounterType, u32>,
+    pub counters: CounterMap,
 
     /// Number of regeneration shields (consumed instead of destruction).
     #[serde(default)]
@@ -4208,7 +4746,7 @@ pub struct GameObject {
 
     /// Activated abilities used this turn (for once-per-turn tracking).
     #[serde(default)]
-    pub abilities_activated_this_turn: std::collections::BTreeSet<usize>,
+    pub abilities_activated_this_turn: IndexSet,
 
     /// The enters-as-a-copy choice this card's controller made for it
     /// (CR 614.12b, Evil Twin). Recorded *before* the object is put onto the
@@ -4433,14 +4971,14 @@ pub struct CombatState {
     /// Map of attacker `ObjectId` -> defending `PlayerId`. Every attacker is
     /// in here — one attacking a planeswalker defends against its controller
     /// (CR 508.1a), and additionally appears in `planeswalker_defenders`.
-    pub attackers: std::collections::BTreeMap<ObjectId, PlayerId>,
+    pub attackers: IdMap<PlayerId>,
     /// Attackers sent at a planeswalker rather than at the player:
     /// attacker -> the planeswalker it attacks.
     #[serde(default)]
-    pub planeswalker_defenders: std::collections::BTreeMap<ObjectId, ObjectId>,
+    pub planeswalker_defenders: IdMap<ObjectId>,
     /// Map of attacker `ObjectId` -> list of blockers assigned to it, in the
     /// order the blocks were declared.
-    pub blocker_assignments: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
+    pub blocker_assignments: IdMap<Vec<ObjectId>>,
     /// Map of attacker `ObjectId` -> its blockers in the damage assignment
     /// order the attacking player announced (CR 509.2). Announced once, in
     /// the declare blockers step, and used by both combat damage steps
@@ -4448,13 +4986,13 @@ pub struct CombatState {
     /// unblocked attacker; declaration order is the fallback for a state
     /// that predates the announcement.
     #[serde(default)]
-    pub damage_assignment_order: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
+    pub damage_assignment_order: IdMap<Vec<ObjectId>>,
     /// Attackers that became blocked when blockers were declared. Blocked-ness
     /// is permanent for the combat (CR 509.2): an attacker whose blockers all
     /// leave combat is still blocked (deals no combat damage without trample),
     /// which `blocker_assignments` alone can't express once its list empties.
     #[serde(default)]
-    pub blocked_attackers: std::collections::BTreeSet<ObjectId>,
+    pub blocked_attackers: IdSet,
     /// Creatures that blocked when blockers were declared and have not
     /// themselves been removed from combat: the blocking creatures (CR
     /// 509.1g). The mirror of `blocked_attackers`. A blocker whose attacker
@@ -4465,12 +5003,12 @@ pub struct CombatState {
     /// this once the attacker's entry is gone (#983, the blocker side of
     /// #725). Read through `CombatState::blocking`.
     #[serde(default)]
-    pub blocking_creatures: std::collections::BTreeSet<ObjectId>,
+    pub blocking_creatures: IdSet,
     /// Creatures that had first/double strike when first-strike combat damage
     /// was dealt (CR 510.5): they don't deal damage again in the regular
     /// combat damage step unless they have double strike.
     #[serde(default)]
-    pub dealt_first_strike: std::collections::BTreeSet<ObjectId>,
+    pub dealt_first_strike: IdSet,
     /// Whether any attackers were declared this combat. CR 508.8 skips the
     /// declare blockers and combat damage steps when none were — and the
     /// question is about the declaration, not about who is still in combat,
@@ -4486,7 +5024,7 @@ pub struct CombatState {
     /// Consumed and cleared when the step's damage is queued, so the
     /// first-strike step's answers never carry into the regular step.
     #[serde(default)]
-    pub chosen_damage: std::collections::BTreeMap<ObjectId, Vec<(ObjectId, u32)>>,
+    pub chosen_damage: IdMap<Vec<(ObjectId, u32)>>,
 }
 
 impl CombatState {
@@ -4506,12 +5044,26 @@ impl CombatState {
             || self.blocker_assignments.values().any(|bs| bs.contains(&id))
     }
 
-    /// Every blocking creature (see `is_blocking`), in id order.
-    #[must_use]
-    pub fn blocking(&self) -> std::collections::BTreeSet<ObjectId> {
-        let mut all = self.blocking_creatures.clone();
-        all.extend(self.blocker_assignments.values().flatten().copied());
-        all
+    /// Whether `f` holds of some blocking creature (see `is_blocking`).
+    ///
+    /// Two loops, not a set gathered through `flatten`: Kani follows a
+    /// `Flatten` it is asked for the next item of through every round its
+    /// loop is unwound to, and one blocker so gathered cost the combat
+    /// damage proofs half a million steps where these cost ten thousand.
+    pub fn any_blocking(&self, mut f: impl FnMut(ObjectId) -> bool) -> bool {
+        for &id in self.blocking_creatures.iter() {
+            if f(id) {
+                return true;
+            }
+        }
+        for blockers in self.blocker_assignments.values() {
+            for &id in blockers {
+                if f(id) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -4625,6 +5177,7 @@ pub struct PendingSpellCast {
 
 /// What the engine is waiting for the player to do.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum AwaitingAction {
     DeclareAttackers,
     DeclareBlockers { defending_player: PlayerId },
@@ -4669,6 +5222,7 @@ pub struct TriggerOrderOption {
 
 /// Describes what kind of mid-resolution choice is needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum ResolutionChoiceKind {
     /// Choose whether to pay a cost (Frightful Delusion's "pay {1}").
     PayOrNot {
@@ -4993,7 +5547,8 @@ pub enum ResolutionChoiceKind {
 }
 
 /// What happens to the chosen target when a `ResolutionChoice` is resolved.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum PendingEffect {
     /// Deal N damage to the chosen target.
     /// CR 119.3: damage has a source, and the source is an object — not its
@@ -5230,29 +5785,33 @@ mod tests {
 
 /// What one permanent has protection from (CR 702.16), as
 /// [`GameState::protection_set`] read it.
+///
+/// It borrows what it holds from the board it was read off: a filter cloned
+/// off the heap is one a proof cannot tell from any other, and matching a
+/// source against it matched every filter there is.
 #[derive(Debug, Clone)]
-pub struct Protections {
+pub struct Protections<'a> {
     target: ObjectId,
     target_controller: PlayerId,
     /// `ProtectionFromSubtype` — from any source with one of these subtypes.
-    subtypes: Vec<String>,
+    subtypes: Vec<&'a str>,
     /// Static `ProtectionFrom` filters, with the permanent granting each and
     /// its controller.
-    statics: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
+    statics: Vec<(&'a crate::types::CreatureFilter, ObjectId, PlayerId)>,
     /// Until-end-of-turn grants.
-    grants: Vec<crate::types::CreatureFilter>,
+    grants: Vec<&'a crate::types::CreatureFilter>,
 }
 
-impl Protections {
+impl Protections<'_> {
     /// Whether this permanent has protection from `source_id`.
     #[must_use]
     pub fn covers(&self, state: &GameState, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        if !self.subtypes.is_empty() {
-            // The source's subtypes, active face — transform-aware.
-            let source_subtypes = state.subtypes_of(source_id, registry);
-            if self.subtypes.iter().any(|s| source_subtypes.contains(s)) {
-                return true;
-            }
+        // The source's subtypes, active face — transform-aware. Asked of
+        // each subtype, not read off a list built of them: the built list
+        // was a clone of every string to compare against, which a proof
+        // follows byte by byte, and ran out of memory.
+        if self.subtypes.iter().any(|s| state.has_subtype(source_id, s, registry)) {
+            return true;
         }
         if self.statics.iter().any(|(filter, by, by_controller)|
             state.matches_filter(source_id, filter, *by, *by_controller, registry))

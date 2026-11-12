@@ -53,7 +53,7 @@ impl CardBehavior for UndeadAlchemist {
         _milled_player: PlayerId,
         registry: &CardRegistry,
     ) {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         let name = state.obj_name(milled_object);
 
         // "exile that card" means the card that was put into the graveyard.

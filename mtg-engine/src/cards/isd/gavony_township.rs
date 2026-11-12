@@ -56,11 +56,7 @@ impl CardBehavior for GavonyTownship {
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::ability_controller(state, object_id);
-        let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .collect();
+        let creatures = state.ids_in_zone(Zone::Battlefield, controller, |o| state.is_creature(o.id, registry));
         // One line per creature, from `add_counters`; a summary under them
         // said each counter twice (#762).
         for cid in creatures {

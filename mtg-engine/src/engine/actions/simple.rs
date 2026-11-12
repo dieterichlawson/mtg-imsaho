@@ -49,6 +49,11 @@ pub(crate) fn discard_cards(state: &mut GameState, cards: &[ObjectId], registry:
             }
         }
         state.awaiting_action = None;
+        // CR 514.2-514.3a: with the hand down to size, the rest of the
+        // cleanup step.
+        if is_hand_size {
+            crate::engine::finish_cleanup(state, registry);
+        }
     Applied::Continue
 }
 

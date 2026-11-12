@@ -521,8 +521,8 @@ fn howlpack_alpha_creates_wolf_token_on_end_step() {
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // Should have created a 2/2 Wolf token
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Howlpack Alpha should create one Wolf token");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1, "Howlpack Alpha should create one Wolf token");
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
     assert_eq!(state.get_object(wolf).unwrap().toughness, Some(2));
 }
@@ -536,7 +536,7 @@ fn howlpack_alpha_does_not_create_token_on_front_face() {
 
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 0,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 0,
         "Front face Mayor should not create Wolf tokens");
 }
 
@@ -552,7 +552,7 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
     fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // Should NOT create a Wolf token on opponent's end step
-    assert_eq!(count_tokens_named(&state, "Wolf"), 0,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 0,
         "Howlpack Alpha should not create Wolf tokens on opponent's end step");
 }
 
@@ -1129,9 +1129,9 @@ fn howlpack_alphas_wolf_arrives_even_if_the_alpha_dies_in_response() {
 
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1,
         "the Wolf is created even though its source is gone");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     assert_eq!(state.get_object(wolf).unwrap().controller, P0,
         "under the player who controlled the Alpha when it triggered");
 }
@@ -1252,6 +1252,31 @@ fn nightfall_predators_fight_does_nothing_if_the_predator_dies_in_response() {
 
     assert_eq!(state.get_object(victim).unwrap().damage_marked, 0,
         "neither creature fights, so the target takes nothing");
+}
+
+/// CR 113.7a: an ability on the stack is its own object, the ability of the
+/// face it was activated from. Daybreak Ranger's "{T}: This creature deals 2
+/// damage to target creature with flying", answered by Moonmist ("Transform all
+/// Humans" — the Ranger is one), resolves as itself on what is now Nightfall
+/// Predator: 2 damage to the flyer, and no fight. Both faces' abilities are
+/// index 0, and the card used to pick between them by the face up at
+/// resolution, so the Predator fought the flyer and killed it.
+#[test]
+fn daybreak_rangers_ability_is_still_its_own_after_a_transform_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let geist = named_permanent(&mut state, &reg, "Chapel Geist", P1);
+
+    activate_via_hooks(&mut state, &reg, ranger, 0, &[Target::Object(geist)]);
+    // Moonmist, in response.
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    assert_eq!(state.name_of(ranger, &reg), "Nightfall Predator");
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(geist).unwrap().zone, Zone::Battlefield, "2 damage does not kill a 2/3");
+    assert_eq!(state.get_object(geist).unwrap().damage_marked, 2);
+    assert_eq!(state.get_object(ranger).unwrap().damage_marked, 0, "no fight, so nothing back");
 }
 
 /// The other half of the same rule: the *target* leaving does not let the
@@ -1501,7 +1526,8 @@ fn only_the_permanents_own_undelayed_ability_is_refused_a_second_transform() {
     let ability = |source_id| StackEntry::Ability {
         source_id, ability_index: 0, behavior_card_id: other_card, targets: vec![],
         activator: P0, x_value: None, target_requirement: None, sacrificed: None,
-        sacrificed_toughness: None, loyalty: false, source_transforms: stale, source_name: None,
+        sacrificed_toughness: None, loyalty: false, source_transforms: stale, source_zone_changes: None, source_name: None,
+        target_zone_changes: vec![],
     };
     let trigger = |id, card_id, event| {
         let mut source = TriggerSource::new(id, card_id, P0, "test");

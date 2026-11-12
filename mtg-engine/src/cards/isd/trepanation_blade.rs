@@ -76,9 +76,9 @@ impl CardBehavior for TrepanationBlade {
 
             // Check if this card is a land via the registry (object card_types
             // may be empty for non-token cards).
-            let is_land = state.get_object(card_id)
-                .and_then(|o| state.face_data(o.id, registry))
-                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
+            // A card in a library has its printed types (CR 400.7), which
+            // `has_card_type` reads without building the whole card.
+            let is_land = state.has_card_type(card_id, CardType::Land, registry);
 
             // "That player puts the revealed cards into their graveyard" —
             // library to graveyard, so it is a mill.

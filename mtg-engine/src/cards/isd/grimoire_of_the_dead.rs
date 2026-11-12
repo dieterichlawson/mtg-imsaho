@@ -31,7 +31,7 @@ impl CardBehavior for GrimoireOfTheDead {
             _ => return vec![],
         };
         let controller = obj.controller;
-        let has_cards_in_hand = !state.objects_in_zone(Zone::Hand, controller).is_empty();
+        let has_cards_in_hand = state.any_in_zone(Zone::Hand, controller, |_| true);
 
         let mut abilities = vec![];
 
@@ -81,8 +81,7 @@ impl CardBehavior for GrimoireOfTheDead {
             return;
         }
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
-            .iter().map(|o| o.id).collect();
+        let hand = state.ids_in_zone(Zone::Hand, controller, |_| true);
 
         match hand.len() {
             // `activated_abilities` does not offer the ability with an empty
@@ -129,24 +128,45 @@ impl CardBehavior for GrimoireOfTheDead {
                 // it has additional types (ruling 2011-09-22). We check card_types
                 // for Creature in addition to checking power (which is the heuristic
                 // for creatures created by the engine).
-                let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Graveyard).into_iter()
-                    .filter(|o| o.id != object_id && state.is_card(o.id))
-                    .filter(|o| {
-                        state.is_creature(o.id, registry)
-                    })
-                    .map(|o| o.id)
-                    .collect();
+                //
+                // In id order, by a loop into a list with room for every
+                // object, not filters collected into one that grows: a proof
+                // walks a filter's inner `find` again for each item it
+                // collects, and a list allocated at its first push is one it
+                // follows into two buffers (`helpers::ids_where`).
+                let mut creatures: Vec<ObjectId> = Vec::with_capacity(state.objects.len());
+                for o in state.all_objects_in_zone(Zone::Graveyard) {
+                    if o.id != object_id && state.is_card(o.id) && state.is_creature(o.id, registry) {
+                        creatures.push(o.id);
+                    }
+                }
 
                 let count = creatures.len();
-                for cid in creatures {
-                    let name = state.obj_name(cid);
+                // All in one event (CR 614.12): what each enters as is
+                // decided by what was there before any of them, not by the
+                // ones returned beside it (an Essence of the Wild among
+                // them makes none of the others a copy of itself).
+                let names: Vec<String> = creatures.iter().map(|&cid| state.obj_name(cid)).collect();
+                let moved = state.move_onto_battlefield_together(&creatures, controller, registry);
+                for ((&cid, name), moved) in creatures.iter().zip(names).zip(moved) {
                     // A card with a copy choice outstanding (Evil Twin) has
                     // its entry deferred until its controller answers, so it
                     // has NOT moved yet. Stamping it anyway left it in its
                     // owner's graveyard wearing this Grimoire's controller
                     // and a Zombie subtype — CR 108.4 and CR 400.7, reported
                     // by the fuzzer from fifteen seeds (issues #335-#349).
-                    if !state.move_object_under_control(cid, Zone::Battlefield, controller, registry) {
+                    if !moved {
+                        // Its entry waits on what it enters as a copy of
+                        // (CR 614.12b), asked once the rest have entered: it
+                        // may copy only a creature there before any of them
+                        // (Evil Twin's ruling), and is a black Zombie as
+                        // whatever it enters as.
+                        let before: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).iter()
+                            .filter(|o| !creatures.contains(&o.id) && state.is_creature(o.id, registry))
+                            .map(|o| o.id)
+                            .collect();
+                        state.pending_entry_options.insert(cid, before);
+                        state.pending_entry_grants.insert(cid, (vec!["Zombie".into()], vec![Color::Black]));
                         state.log(crate::state::LogLevel::Event, format!(
                             "Grimoire of the Dead: {name} is choosing what to enter as"));
                         continue;
@@ -158,7 +178,7 @@ impl CardBehavior for GrimoireOfTheDead {
                     // say so.
                     if let Some(obj) = state.get_object_mut(cid) {
                         // They're black Zombies in addition to their other colors and types.
-                        if !obj.subtypes.contains(&"Zombie".into()) {
+                        if !obj.subtypes.iter().any(|s| s == "Zombie") {
                             obj.subtypes.push("Zombie".into());
                         }
                         if !obj.colors.contains(&Color::Black) {

@@ -600,6 +600,7 @@ fn violations(board: &Board, checks: Checks) -> Vec<String> {
             });
             found.push(format!("{board}: no plan offered for {}, but {:?} pays it",
                 board.cost, witness.expect("the oracle just found one")));
+            within_reach_of_a_plan(board, &mut found);
         }
         return found;
     };
@@ -624,6 +625,10 @@ fn violations(board: &Board, checks: Checks) -> Vec<String> {
         found.push(format!("{board}: the plan {plan:?} offered for {} does not pay it", board.cost));
         return found;
     };
+    // 6. A cost some plan pays is within reach, as the auto-pass gate asks
+    // it: `within_reach` may say yes to a cost no plan pays, never no to
+    // one a plan does.
+    within_reach_of_a_plan(board, &mut found);
 
     // 3. No stranding when avoidable. Avoidable without a side effect, that
     // is: the planner never taps a Deranged Assistant to keep a colour (its
@@ -654,6 +659,14 @@ fn violations(board: &Board, checks: Checks) -> Vec<String> {
         }
     }
     found
+}
+
+/// For a board whose cost some plan is known to pay: whether
+/// `within_reach` says so, a violation added if not.
+fn within_reach_of_a_plan(board: &Board, found: &mut Vec<String>) {
+    if !mana::within_reach(&board.cost, &board.pool, &board.sources) {
+        found.push(format!("{board}: a plan pays {}, but within_reach rules it out", board.cost));
+    }
 }
 
 fn sweep(shapes: Shapes, checks: Checks) -> Vec<String> {

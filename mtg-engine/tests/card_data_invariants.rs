@@ -15,7 +15,7 @@
 
 mod common;
 use common::*;
-use mtg_engine::cards::{CardData, CardRegistry, TargetRequirement};
+use mtg_engine::cards::{CardData, CardRegistry, TargetRequirement, TriggerKind};
 use mtg_engine::types::{CardType, Color, Step, Supertype};
 use std::collections::HashSet;
 
@@ -525,10 +525,10 @@ fn tokens_are_named_after_their_subtypes() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let cases: &[(&str, &[&str])] = &[
-        ("Spirit", &["Spirit"]),
-        ("Zombie", &["Zombie"]),
-        ("Wolf", &["Wolf"]),
-        ("Human Soldier", &["Human", "Soldier"]),
+        ("Spirit Token", &["Spirit"]),
+        ("Zombie Token", &["Zombie"]),
+        ("Wolf Token", &["Wolf"]),
+        ("Human Soldier Token", &["Human", "Soldier"]),
     ];
 
     for (expected, subtypes) in cases {
@@ -581,23 +581,29 @@ fn no_card_hardcodes_a_derivable_token_name() {
         offenders.len(), offenders.join("\n  "));
 }
 
-/// `GameState::objects` is a `HashMap`, and its iteration order is seeded per
-/// process. Card code that scans it directly gets a different order on every
-/// run of the same game, which shows up in three ways: a list of options
-/// offered to a player by position (Curse of the Pierced Heart's planeswalkers,
-/// Divine Reckoning's creatures), a `find`/`any` that stops at the first match,
-/// and a log that reports the same board in a different order.
+/// `GameState::objects` was a `HashMap`, whose iteration order is seeded per
+/// process, and card code that scanned it directly got a different order on
+/// every run of the same game, which showed up in three ways: a list of
+/// options offered to a player by position (Curse of the Pierced Heart's
+/// planeswalkers, Divine Reckoning's creatures), a `find`/`any` that stops at
+/// the first match, and a log that reports the same board in a different
+/// order. It is an ordered map now (`ObjectMap`), and the rule stands: the
+/// order a scan sees is one the accessors define, not whatever map the
+/// objects happen to be kept in.
 ///
 /// The reach is the whole crate, because every layer of it has an
 /// order-sensitive scan: which creature the player is offered first, which of
 /// two simultaneous triggers goes on the stack first, which of two creatures
 /// dying together is reported first, which state trigger fires when several
-/// are ready at once. Everything goes through the accessors that sort by id —
-/// `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
+/// are ready at once. Everything goes through the accessors that list in id
+/// order — `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
 ///
 /// `state.rs` is exempt: it is where those accessors are built, and where the
 /// genuinely order-free walks live (summing continuous effects over every
-/// source reaches the same total in any order).
+/// source reaches the same total in any order). So is `src/proofs/`, which
+/// only Kani builds and no game runs: its stand-in for `objects_in_zone`
+/// reads the map in the map's own order, which is id order, as the accessor
+/// it stands in for does.
 #[test]
 fn nothing_iterates_the_object_map_in_map_order() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -608,7 +614,9 @@ fn nothing_iterates_the_object_map_in_map_order() {
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let p = entry.path();
-            if p.is_dir() { stack.push(p); }
+            if p.is_dir() {
+                if p != root.join("src/proofs") { stack.push(p); }
+            }
             else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
         }
     }
@@ -635,10 +643,9 @@ fn nothing_iterates_the_object_map_in_map_order() {
         }
     }
     assert!(offenders.is_empty(),
-        "{} site(s) iterate the raw object map, whose order is \
-         seeded per process:\n  {}\n\n\
+        "{} site(s) iterate the raw object map:\n  {}\n\n\
          Use objects_in_zone / all_objects_in_zone / objects_in_id_order, \
-         which sort by id.",
+         which list in id order.",
         offenders.len(), offenders.join("\n  "));
 }
 
@@ -2363,6 +2370,84 @@ fn every_auras_enchant_ability_is_one_the_attachment_rules_model() {
     }
     assert_none(&unmodelled, "are Auras whose enchant ability the host-eligibility match has no arm for");
     assert_covers(checked, 15, "are Auras");
+}
+
+/// Every `TriggerKind`, for asking a face about each.
+const TRIGGER_KINDS: &[TriggerKind] = &[
+    TriggerKind::EntersBattlefield, TriggerKind::SelfDies, TriggerKind::AnyCreatureDies,
+    TriggerKind::AnyCreatureEnters, TriggerKind::CombatDamageToPlayer,
+    TriggerKind::AnyCombatDamageToPlayer, TriggerKind::AnyDamageToPlayer, TriggerKind::Upkeep,
+    TriggerKind::EndStep, TriggerKind::SpellCast, TriggerKind::Attacks, TriggerKind::Blocks,
+    TriggerKind::BecomesBlocked, TriggerKind::AnyCreatureAttacks,
+    TriggerKind::DealsCombatDamageToCreature, TriggerKind::EndCombat,
+    TriggerKind::LeavesBattlefield, TriggerKind::CreatureCardMilled,
+];
+
+/// `face_card_types`, `face_supertypes`, `face_subtypes`, `face_cost`,
+/// `face_flashback_cost`, `face_name` and `face_color_indicator`, and the registry's `printed_pt`,
+/// `printed_back_pt`, `has_back_face`, `printed_back_name` and
+/// `prints_trigger`, read the faces the registry kept
+/// at registration; `face_data` builds the card's
+/// data again. Card code reads the first set, so they have to say what
+/// `face_data` says — for every card, face up and face down, and for a
+/// transformed card with no back face, which shows its front.
+#[test]
+fn the_kept_faces_say_what_face_data_says() {
+    let reg = registry();
+    let mut state = GameState::new(2);
+    let mut offenders = Vec::new();
+    let mut looked = 0;
+    for name in reg.all_names() {
+        let card = reg.get_id_by_name(name).expect("every name has an id");
+        let back = reg.get(card).and_then(|b| b.back_face_data());
+        if reg.has_back_face(card) != back.is_some() {
+            offenders.push(format!("{name}: whether it has a back face"));
+        }
+        if reg.printed_back_name(card) != back.as_ref().map(|d| d.name.as_str()) {
+            offenders.push(format!("{name}: back face name"));
+        }
+        if reg.printed_back_pt(card) != back.map(|d| (d.power, d.toughness)) {
+            offenders.push(format!("{name}: back face power and toughness"));
+        }
+        for transformed in [false, true] {
+            let id = state.create_object(card, PlayerId(0), mtg_engine::types::Zone::Library, None, None);
+            state.get_object_mut(id).expect("just created").is_transformed = transformed;
+            let data = state.face_data(id, &reg).expect("a registered card has a face");
+            looked += 1;
+            if state.face_card_types(id, &reg) != data.card_types.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): card types"));
+            }
+            if state.face_supertypes(id, &reg) != data.supertypes.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): supertypes"));
+            }
+            if state.face_subtypes(id, &reg) != data.subtypes.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): subtypes"));
+            }
+            if state.face_cost(id, &reg) != data.cost.as_ref() {
+                offenders.push(format!("{name} (transformed {transformed}): mana cost"));
+            }
+            if state.face_flashback_cost(id, &reg) != data.flashback_cost.as_ref() {
+                offenders.push(format!("{name} (transformed {transformed}): flashback cost"));
+            }
+            if state.face_name(id, &reg) != Some(data.name.as_str()) {
+                offenders.push(format!("{name} (transformed {transformed}): name"));
+            }
+            if state.face_color_indicator(id, &reg) != data.color_indicator.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): color indicator"));
+            }
+            if reg.printed_pt(card, transformed) != Some((data.power, data.toughness)) {
+                offenders.push(format!("{name} (transformed {transformed}): power and toughness"));
+            }
+            for kind in TRIGGER_KINDS {
+                let prints = data.triggered_abilities.iter().any(|t| t.kind == *kind);
+                if reg.prints_trigger(card, transformed, kind) != prints {
+                    offenders.push(format!("{name} (transformed {transformed}): a {kind:?} trigger"));
+                }
+            }
+        }
+    }
+    assert_covers(looked, 500, "were read face up and face down");
+    assert_none(&offenders, "keep a face that differs from face_data");
 }
 
 /// CR 113.7a and CR 712.8: an ability on the stack is the ability that was

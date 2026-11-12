@@ -105,9 +105,8 @@ impl CardBehavior for HereticsPunishment {
 
         // "equal to the greatest mana value among them".
         let max_mv: u32 = milled.iter()
-            .map(|&id| state.face_data(id, registry)
-                .and_then(|d| d.cost.map(|c| c.mana_value()))
-                .unwrap_or(0))
+            .map(|&id| state.face_cost(id, registry)
+                .map_or(0, crate::types::ManaCost::mana_value))
             .max()
             .unwrap_or(0);
 

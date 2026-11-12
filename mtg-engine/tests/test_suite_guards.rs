@@ -518,6 +518,11 @@ fn crate_sources() -> Vec<(String, String)> {
     files.iter()
         .filter_map(|p| {
             let rel = p.strip_prefix(&src).ok()?.to_string_lossy().replace('\\', "/");
+            // The proofs, built only under Kani, set their boards up by
+            // writing the fields these guards keep card and engine code off.
+            if rel.starts_with("proofs/") {
+                return None;
+            }
             Some((rel, fs::read_to_string(p).ok()?))
         })
         .collect()
@@ -1714,4 +1719,71 @@ fn only_the_engine_names_a_keyword() {
             "a keyword is named by `Keyword::label` and nothing else; this is \
              a second copy of that table (#363): {t}");
     }
+}
+
+/// An ability's "you" is read through `helpers::ability_controller`.
+///
+/// CR 603.3a: a triggered ability's controller is the player who controlled
+/// its source as it triggered, and 602.2a: an activated ability's is the
+/// player who activated it; either stays theirs while it waits on the
+/// stack. `controller_of` on the source answers who controls the source as
+/// the ability resolves, which is someone else once Olivia Voldaren has
+/// taken it in response: Sturmgeist drew for the taker, Murder of Crows
+/// asked the taker, and Tree of Redemption exchanged the taker's life. The
+/// engine sets the ability's controller around the hook
+/// (`triggers::resolve_next_trigger`, `stack::resolve_top_of_stack`), and
+/// `ability_controller` reads it. So no hook the trigger dispatch or an
+/// activated or loyalty ability's resolution calls reads its own source's
+/// `controller_of`; a card whose entering hook is a choice made as it
+/// enters (CR 614.12, `chooses_as_it_enters`), not a trigger, is the one
+/// exception. A helper a hook calls is not followed.
+#[test]
+fn an_abilitys_you_is_the_abilitys_controller() {
+    const HOOKS: [&str; 21] = [
+        "resolve_activated_ability", "on_loyalty_ability",
+        "on_any_combat_damage_to_player", "on_any_creature_attacks", "on_any_creature_dies",
+        "on_any_creature_enters", "on_any_damage_to_player", "on_attacks", "on_becomes_blocked",
+        "on_blocks", "on_combat_damage_to_player", "on_creature_card_milled",
+        "on_deals_combat_damage_to_creature", "on_dies", "on_end_combat", "on_end_step",
+        "on_enter_battlefield", "on_leave_battlefield", "on_spell_cast", "on_state_trigger",
+        "on_upkeep",
+    ];
+    let mut offenders = Vec::new();
+    let mut hooks_seen = 0;
+    for (rel, text) in crate_sources() {
+        if !rel.starts_with("cards/") || rel == "cards/mod.rs" || rel == "cards/helpers.rs" {
+            continue;
+        }
+        let chooses_as_it_enters = text.contains("fn chooses_as_it_enters");
+        let lines: Vec<&str> = text.lines().collect();
+        for (start, end) in fn_spans(&lines) {
+            // The signature, over as many lines as it is written on.
+            let close = (start..end).find(|&i| lines[i].contains('{')).unwrap_or(start);
+            let head = lines[start..=close].join(" ");
+            let head = head.trim_start();
+            let Some(name) = head.strip_prefix("fn ").and_then(|h| h.split('(').next()) else { continue };
+            if !HOOKS.contains(&name) || (name == "on_enter_battlefield" && chooses_as_it_enters) {
+                continue;
+            }
+            // The source is the parameter after the state.
+            let params: Vec<&str> = head.split(',').collect();
+            let Some(source) = params.iter().position(|p| p.contains("GameState"))
+                .and_then(|i| params.get(i + 1))
+                .and_then(|p| p.trim().split(':').next())
+                .map(str::trim) else { continue };
+            hooks_seen += 1;
+            let read = format!("controller_of(state, {source})");
+            for (n, line) in lines.iter().enumerate().take(end).skip(start) {
+                if !line.trim_start().starts_with("//") && line.contains(&read) {
+                    offenders.push(format!("{rel}:{}: {}", n + 1, line.trim()));
+                }
+            }
+        }
+    }
+    assert!(hooks_seen > 80, "the scan found only {hooks_seen} ability hooks");
+    assert!(offenders.is_empty(),
+        "an ability's \"you\" is its controller as it went on the stack (CR 602.2a, \
+         603.3a), which `helpers::ability_controller` reads; `controller_of` on the \
+         source is whoever controls it now:\n  {}",
+        offenders.join("\n  "));
 }

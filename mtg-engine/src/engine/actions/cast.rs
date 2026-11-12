@@ -43,8 +43,12 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // asked twice, once per slot, off one stash.
         let resuming = state.pending_spell_cast.as_ref()
             .is_some_and(|p| p.object_id == object_id);
+        // Chosen, and checked, with the spell on the stack (CR 601.2a,
+        // 601.2c): the move itself comes below, once the cast is known to
+        // go ahead.
+        let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, object_id, &target_req);
         let pending_slot = crate::engine::targeting::set_slot(
-            state, player, object_id, &target_req, targets, behavior, registry)
+            &chosen_in, player, object_id, &target_req, targets, behavior, registry)
             .filter(|s| !(resuming && s.min == 0) && targets.len() == s.fixed_len && s.max > 0);
 
         // CR 601.2c: the targets are chosen as the spell is cast, and they must
@@ -60,11 +64,12 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // fills, and comes back through this gate in full once answered.
         let named_so_far_are_legal = if pending_slot.is_some() {
             crate::engine::targeting::prefix_is_legal(
-                state, &target_req, targets, player, object_id, behavior, registry)
+                &chosen_in, &target_req, targets, player, object_id, behavior, registry)
         } else {
             crate::engine::targeting::targets_are_legal(
-                state, &target_req, targets, player, object_id, behavior, registry)
+                &chosen_in, &target_req, targets, player, object_id, behavior, registry)
         };
+        drop(chosen_in);
         if !named_so_far_are_legal {
             state.log(crate::state::LogLevel::Debug, format!(
                 "{}: cast refused, illegal targets {targets:?} (CR 601.2c)", data.name));
@@ -329,14 +334,21 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // pool as it goes, so a failed payment cannot simply be unwound.
         let pay = if has_x { cost.without_x() } else { cost.clone() };
         {
-            let mut probe = state.clone();
-            for &(source_id, ability_index) in tap_plan {
-                // The cost being funded is passed along so a filter's own
-                // mana cost is not paid with mana this spell needs (#252).
-                activate_mana_source_reserving(
-                    &mut probe, source_id, ability_index, Some(&pay), registry);
-            }
-            if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
+            // With nothing to tap, the rehearsal is the pool as it is: the
+            // copy of the whole game it is made on is left out then.
+            let pays = if tap_plan.is_empty() {
+                mana::can_pay(&state.get_player(player).mana_pool, &pay)
+            } else {
+                let mut probe = state.clone();
+                for &(source_id, ability_index) in tap_plan {
+                    // The cost being funded is passed along so a filter's own
+                    // mana cost is not paid with mana this spell needs (#252).
+                    activate_mana_source_reserving(
+                        &mut probe, source_id, ability_index, Some(&pay), registry);
+                }
+                mana::can_pay(&probe.get_player(player).mana_pool, &pay)
+            };
+            if !pays {
                 // An offered action that cannot be executed is an engine
                 // contract violation, not a player mistake — but it used to
                 // be logged where no player would ever see it, so selecting
@@ -362,17 +374,22 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         mana::auto_pay_reserving(&mut state.get_player_mut(player).mana_pool, &pay, &reserve)
             .expect("legal_actions should have verified mana availability");
 
-        // CR 601.2b: additional costs are paid before the spell goes on the
-        // stack. One dispatch on the kind, shared with the exile-choice handler.
-        costs::pay_additional_cost(
-            state, registry, card_id, object_id, player, sacrifice, exile_count, exile_ids);
-
         // Move to stack and store targets. The zone the spell was cast from
         // (CR 601.2a) is read before the move, because after it the spell is
         // on the stack and nothing else remembers where it came from — which
         // is the whole of "whenever you cast a spell from your graveyard".
         let cast_from = state.get_object(object_id).map(|o| o.zone);
         state.move_object(object_id, Zone::Stack, registry);
+
+        // CR 601.2h: the additional costs are paid with the spell on the
+        // stack, where 601.2a put it before anything was announced or paid.
+        // They were paid with the card still in its owner's hand (citing
+        // 601.2b, which announces them), so a count of the hand paid for
+        // counted the spell: Sturmgeist exiled to Corpse Lunge was one too
+        // big (defect 43). One dispatch on the kind, shared with the
+        // exile-choice handler.
+        costs::pay_additional_cost(
+            state, registry, card_id, object_id, player, sacrifice, exile_count, exile_ids);
         {
             let obj = state.get_object_mut(object_id).expect("spell must exist after moving to stack");
             obj.targets = targets.to_vec();

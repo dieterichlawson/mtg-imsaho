@@ -13,6 +13,7 @@ use mtg_player::llm::MatchFormat;
 use mtg_player::Player;
 use mtg_player::cli::CliPlayer;
 use mtg_player::gui::GuiPlayer;
+use mtg_player::hidden::{hidden_stays_hidden, HIDDEN_EVERY};
 use mtg_player::llm::LlmPlayer;
 use mtg_player::random::RandomPlayer;
 
@@ -906,6 +907,9 @@ stops here — pass --save {path} to keep writing it");
     // The previous decision point and the action chosen there, for the
     // transition invariants (what one action may and must have done).
     let mut last_decision: Option<(GameState, mtg_engine::actions::Action)> = None;
+    // What has been in view so far, for the shared log's check: a card once
+    // seen may be named.
+    let mut shared_log = mtg_engine::invariants::shared_log::SharedLog::new();
 
     let registry_ref = &registry;
     // High-water mark of engine log entries already streamed to --log
@@ -1088,7 +1092,11 @@ stops here — pass --save {path} to keep writing it");
             if let Some((prev, act)) = &last_decision {
                 violations.extend(mtg_engine::invariants::check_transition(prev, Some(act), game_state, registry_ref));
             }
+            violations.extend(shared_log.check(last_decision.as_ref().map(|(prev, _)| prev), game_state));
             violations.extend(mtg_engine::invariants::check_legal(game_state, acting_player, legal, registry_ref));
+            if action_count % HIDDEN_EVERY == 0 {
+                violations.extend(hidden_stays_hidden(game_state, acting_player, legal, registry_ref));
+            }
 
             let mut counts = vec![0usize; game_state.players.len()];
             for obj in game_state.objects.values() {

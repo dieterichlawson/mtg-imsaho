@@ -19,9 +19,14 @@
 //!
 //! [Verus]: https://github.com/verus-lang/verus
 
+pub mod blocks;
 pub mod combat;
 pub mod funding;
 pub mod mana;
+pub mod reach;
+pub mod sba;
+pub mod turn;
+pub mod zones;
 
 // `verus!` erases the directive below to an empty block under rustc.
 #[allow(unused_braces)]

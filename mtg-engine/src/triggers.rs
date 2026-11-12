@@ -44,6 +44,10 @@ pub struct TriggerSource {
     /// untargeted triggers.
     #[serde(default)]
     pub chosen_targets: Vec<Target>,
+    /// Each of `chosen_targets`' objects' `zone_change_count` as the trigger
+    /// went on the stack (`GameState::put_on_stack`, CR 400.7, 608.2b).
+    #[serde(default)]
+    pub target_zone_changes: Vec<u32>,
     /// Whether the permanent was on its back face when this triggered.
     ///
     /// A double-faced card's two faces have different abilities, and the
@@ -57,13 +61,18 @@ pub struct TriggerSource {
     /// stamped by `GameState::put_on_stack`.
     #[serde(default)]
     pub source_transforms: Option<u32>,
+    /// The source's `zone_change_count` as this went on the stack (CR
+    /// 400.7); stamped by `GameState::put_on_stack` and read by
+    /// `GameState::is_new_source`.
+    #[serde(default)]
+    pub source_zone_changes: Option<u32>,
 }
 
 impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
         Self { id, card_id, controller, description: description.into(),
-               chosen_targets: Vec::new(), from_back_face: false, source_transforms: None }
+               chosen_targets: Vec::new(), target_zone_changes: Vec::new(), from_back_face: false, source_transforms: None, source_zone_changes: None }
     }
 
     /// Record which face this triggered from (CR 712.8 — the faces have
@@ -105,6 +114,7 @@ pub struct DeadCreature {
 /// `TriggerKind`s — a card can have both, and Blood Artist's "whenever this or
 /// another creature dies" must fire its watcher ability when it dies itself.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum TriggerEvent {
     /// This creature died.
     SelfDies,
@@ -394,6 +404,23 @@ impl PendingTrigger {
         self.named(registry, Some(state), true)
     }
 
+    /// [`Self::log_name`], worked out only when a log line writes it.
+    ///
+    /// Worked out before the line, the name was built for no reader in a
+    /// proof, where `format!` stands in as nothing: substituting the
+    /// event's objects into the description is string searching, which
+    /// symbolic execution ran out of memory on in every proof of a trigger
+    /// resolving with an object in its event (`proofs::actions::trigger_resolving`).
+    pub(crate) fn logged<'a>(&'a self, registry: &'a crate::cards::CardRegistry, state: &'a crate::state::GameState) -> Named<'a> {
+        Named { trigger: self, registry, state, with_id: true }
+    }
+
+    /// [`Self::display_name_with_state`], worked out only when the text it
+    /// is in is written, as [`Self::logged`].
+    pub(crate) fn shown<'a>(&'a self, registry: &'a crate::cards::CardRegistry, state: &'a crate::state::GameState) -> Named<'a> {
+        Named { trigger: self, registry, state, with_id: false }
+    }
+
     /// The source's name, from the face the ability triggered from.
     ///
     /// Not the face up now: once on the stack a triggered ability exists
@@ -473,14 +500,19 @@ impl PendingTrigger {
 /// Look up the description for a trigger from the card's `TriggeredAbilityDef`.
 /// For transformed DFCs, also check the back face's triggered abilities.
 fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
+    // The printed faces say whether there is one to find, without building
+    // the card's data: most cards asked print no trigger of the kind.
+    if !registry.prints_trigger(card_id, false, kind) && !(is_transformed && registry.prints_trigger(card_id, true, kind)) {
+        return String::new();
+    }
     if let Some(behavior) = registry.get(card_id) {
         // Check front face triggers.
-        if let Some(t) = behavior.card_data().triggered_abilities.iter().find(|t| &t.kind == kind) {
+        if let Some(t) = crate::cards::transient(behavior.card_data()).triggered_abilities.iter().find(|t| &t.kind == kind) {
             return t.description.clone();
         }
         // For transformed DFCs, also check back face triggers.
         if is_transformed {
-            if let Some(back) = behavior.back_face_data() {
+            if let Some(back) = crate::cards::transient(behavior.back_face_data()).as_ref() {
                 if let Some(t) = back.triggered_abilities.iter().find(|t| &t.kind == kind) {
                     return t.description.clone();
                 }
@@ -498,16 +530,7 @@ fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::c
 /// (b) either face having the ability means the card legitimately cares about
 /// the event.
 fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind) -> bool {
-    let Some(behavior) = registry.get(card_id) else { return false };
-    if behavior.card_data().triggered_abilities.iter().any(|t| &t.kind == kind) {
-        return true;
-    }
-    if let Some(back) = behavior.back_face_data() {
-        if back.triggered_abilities.iter().any(|t| &t.kind == kind) {
-            return true;
-        }
-    }
-    false
+    registry.prints_trigger(card_id, false, kind) || registry.prints_trigger(card_id, true, kind)
 }
 
 /// Look up a trigger description from the currently visible face only.
@@ -516,14 +539,16 @@ fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::card
 /// Used where a per-face ability (e.g. Homicidal Brute's end-step trigger)
 /// must not fire when the card is on the other face.
 fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
+    // As in `trigger_description`. The face read when transformed is the
+    // front, for a card with no back, which prints at least what the body
+    // below finds there (nothing).
+    if !registry.prints_trigger(card_id, is_transformed, kind) {
+        return String::new();
+    }
     let Some(behavior) = registry.get(card_id) else { return String::new() };
-    let abilities = if is_transformed {
-        behavior.back_face_data().map(|d| d.triggered_abilities).unwrap_or_default()
-    } else {
-        behavior.card_data().triggered_abilities
-    };
-    abilities.iter()
-        .find(|t| &t.kind == kind)
+    let face = crate::cards::transient(if is_transformed { behavior.back_face_data() } else { Some(behavior.card_data()) });
+    face.as_ref()
+        .and_then(|d| d.triggered_abilities.iter().find(|t| &t.kind == kind))
         .map(|t| t.description.clone())
         .unwrap_or_default()
 }
@@ -536,7 +561,11 @@ fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &cra
 pub mod collect;
 
 pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool {
-    let events = state.events.clone();
+    // The batch is read where it lies, held apart while the collectors take
+    // the state, rather than cloned: no collector adds an event, and in a
+    // proof a clone of events read off the heap is one of every kind of
+    // event there is, which every collector then follows.
+    let events = std::mem::take(&mut state.events);
     let start = state.trigger_event_index;
     let active_player = state.active_player;
 
@@ -551,6 +580,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
             .find(|&&b| b <= i).copied().unwrap_or(0);
         collect::for_event(state, &events[from..], event, registry, &mut c);
     }
+    debug_assert!(state.events.is_empty(), "collecting triggers added an event");
+    state.events = events;
 
     // Drain any pending triggers (e.g., state-triggered abilities added during SBA)
     // into the appropriate APNAP bucket.
@@ -568,7 +599,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
     state.pending_trigger_pushes_nap.extend(c.nap);
 
     // Mark all events as processed.
-    state.trigger_event_index = events.len();
+    state.trigger_event_index = state.events.len();
 
     // Process the queue: push triggers onto the stack one at a time, prompting
     // for targets where needed. Returns early if a prompt is set up.
@@ -622,34 +653,15 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
                 .filter(|(_, t)| t.source.controller == controller)
                 .map(|(i, _)| i)
                 .collect();
-            let first = &queue[indices[0]];
+            // The front of the group is the front of the queue: the group
+            // is every trigger its controller controls.
+            let first = &queue[0];
             let distinguishable = indices.iter().any(|&i| {
                 queue[i].source.id != first.source.id
                     || queue[i].source.description != first.source.description
             });
             if !settled && indices.len() >= 2 && distinguishable {
-                let mut options: Vec<String> = indices.iter()
-                    .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
-                    .collect();
-                let details: Vec<crate::state::TriggerOrderOption> = indices.iter()
-                    .map(|&i| queue[i].order_option(registry, state))
-                    .collect();
-
-                // CR 603.3b: an ordering choice must identify what is being
-                // ordered. Two same-named permanents' triggers rendered
-                // byte-identical (issue #116) — tag each repeated option
-                // with the source's P/T and object id, the same tail the
-                // target pickers use.
-                let repeated: Vec<bool> = options.iter()
-                    .map(|o| options.iter().filter(|x| *x == o).count() > 1)
-                    .collect();
-                for (k, &i) in indices.iter().enumerate() {
-                    if repeated[k] {
-                        options[k] = format!("{}{}", options[k],
-                            crate::engine::cards_flow::source_tag(
-                                state, registry, queue[i].source.id));
-                    }
-                }
+                let (options, details) = order_question_words(state, registry, queue, &indices);
                 let source = first.source.id;
                 state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                     player: controller,
@@ -678,27 +690,102 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
 }
 
 
+/// What an ordering question says of each trigger of the group at
+/// `indices` of `queue`: its name, and the details a seat shows beside it
+/// (its source, the source's power and toughness, what set it off).
+///
+/// CR 603.3b: an ordering choice must identify what is being ordered. Two
+/// same-named permanents' triggers rendered byte-identical (issue #116), so
+/// each repeated option is tagged with the source's P/T and object id, the
+/// same tail the target pickers use.
+///
+/// Its own function because it is display: the proofs of the order
+/// (`proofs::actions::trigger_order`) stand in for it, as for the names
+/// and details it is made of. Followed through, the comparison of every
+/// name with every other was most of what the proof of a question cost.
+fn order_question_words(
+    state: &GameState,
+    registry: &CardRegistry,
+    queue: &[PendingTrigger],
+    indices: &[usize],
+) -> (Vec<String>, Vec<crate::state::TriggerOrderOption>) {
+    let mut options: Vec<String> = indices.iter()
+        .map(|&i| queue[i].display_name_with_state(registry, Some(state)))
+        .collect();
+    let details: Vec<crate::state::TriggerOrderOption> = indices.iter()
+        .map(|&i| queue[i].order_option(registry, state))
+        .collect();
+    let repeated: Vec<bool> = options.iter()
+        .map(|o| options.iter().filter(|x| *x == o).count() > 1)
+        .collect();
+    for (k, &i) in indices.iter().enumerate() {
+        if repeated[k] {
+            options[k] = format!("{}{}", options[k],
+                crate::engine::cards_flow::source_tag(state, registry, queue[i].source.id));
+        }
+    }
+    (options, details)
+}
+
+/// A trigger's name, as [`PendingTrigger::logged`] and
+/// [`PendingTrigger::shown`] hand it out.
+pub(crate) struct Named<'a> {
+    trigger: &'a PendingTrigger,
+    registry: &'a crate::cards::CardRegistry,
+    state: &'a crate::state::GameState,
+    with_id: bool,
+}
+
+impl std::fmt::Display for Named<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.trigger.named(self.registry, Some(self.state), self.with_id))
+    }
+}
+
 /// Log the trigger that was just pushed onto the stack, with its targets.
 /// Triggered abilities were invisible in the log — nothing recorded the
 /// trigger, its controller or its target (issue #135). Called immediately
 /// after each `StackEntry::Trigger` push.
 pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards::CardRegistry) {
     let Some(crate::state::StackEntry::Trigger(t)) = state.stack.last() else { return };
-    let name = t.log_name(registry, state);
     let controller = t.controller();
 
-    let targets = t.chosen_targets().to_vec();
-    let msg = if targets.is_empty() {
-        format!("p{}'s {} goes on the stack", controller.0, name)
+    // The names are worked out as the line is written (`PendingTrigger::logged`,
+    // `TargetNames`).
+    let msg = if t.chosen_targets().is_empty() {
+        format!("p{}'s {} goes on the stack", controller.0, t.logged(registry, state))
     } else {
-        let names: Vec<String> = targets.iter().map(|tg| match tg {
-            Target::Object(id) => state.obj_name(*id),
-            Target::Player(p) => format!("p{}", p.0),
-            Target::Illegal => "an illegal target".into(),
-        }).collect();
-        format!("p{}'s {} goes on the stack targeting {}", controller.0, name, names.join(", "))
+        format!("p{}'s {} goes on the stack targeting {}", controller.0, t.logged(registry, state),
+            TargetNames { targets: t.chosen_targets(), state })
     };
     state.log(crate::state::LogLevel::Event, msg);
+}
+
+/// A trigger's targets as its line in the log names them, worked out only
+/// when the line is written, as [`PendingTrigger::logged`] is. Collected
+/// into a list of names and joined as `format!`'s argument, they were built
+/// whether or not a line was, and every proof that puts a targeted trigger
+/// on the stack, with the log stood in for, built them: a third of the
+/// proof of the delayed exile of Geist of Saint Traft's token.
+struct TargetNames<'a> {
+    targets: &'a [Target],
+    state: &'a GameState,
+}
+
+impl std::fmt::Display for TargetNames<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, target) in self.targets.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            match target {
+                Target::Object(id) => f.write_str(&self.state.obj_name(*id))?,
+                Target::Player(p) => write!(f, "p{}", p.0)?,
+                Target::Illegal => f.write_str("an illegal target")?,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Put one pending trigger onto the stack: directly when it is untargeted,
@@ -736,9 +823,8 @@ pub(crate) fn push_one_pending_trigger(
         0 => {
             // CR 603.3c: a triggered ability with no legal targets is
             // removed from the stack (i.e., never goes on it).
-            let name = trigger.log_name(registry, state);
-            state.log(crate::state::LogLevel::Event,
-                format!("Trigger removed: no legal targets ({name})"));
+            let line = format!("Trigger removed: no legal targets ({})", trigger.logged(registry, state));
+            state.log(crate::state::LogLevel::Event, line);
 
         }
         1 => {
@@ -760,10 +846,7 @@ pub(crate) fn push_one_pending_trigger(
             } else {
                 state.pending_trigger_pushes_nap.insert(0, trigger.clone());
             }
-            let description = format!(
-                "{}: choose target",
-                trigger.display_name_with_state(registry, Some(state))
-            );
+            let description = format!("{}: choose target", trigger.shown(registry, state));
             state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                 player: controller,
                 source: source_id,
@@ -781,18 +864,23 @@ pub(crate) fn push_one_pending_trigger(
 /// The `TargetRequirement` a card's `TriggeredAbilityDef` of this kind
 /// declares, if any. Used both when the trigger goes on the stack (CR 603.3d)
 /// and when its targets are re-checked on resolution (CR 608.2b).
-fn target_requirement(
+pub(crate) fn target_requirement(
     registry: &CardRegistry,
     card_id: CardId,
     kind: Option<crate::cards::TriggerKind>,
 ) -> Option<crate::cards::TargetRequirement> {
     let kind = kind?;
-    registry.get(card_id)?
-        .card_data()
+    // The printed face says whether there is one to find, as in
+    // `trigger_description`; and the data built to find it is read, not
+    // dropped, in a proof (`cards::transient`).
+    if !registry.prints_trigger(card_id, false, &kind) {
+        return None;
+    }
+    crate::cards::transient(registry.get(card_id)?.card_data())
         .triggered_abilities
-        .into_iter()
+        .iter()
         .find(|t| t.kind == kind)
-        .and_then(|t| t.target_requirement)
+        .and_then(|t| t.target_requirement.clone())
 }
 
 /// CR 603.7d: the delayed ability exiles the token it was created for, if that
@@ -835,14 +923,28 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         // against a target that had stopped satisfying the card's wording —
         // Grimgrin's "creature the defending player controls" survived the
         // creature changing controller in response.
-        let any_legal = trigger.source.chosen_targets.iter().any(|t| {
-            crate::stack::is_target_legal(state, t, &target_req, controller, Some(trigger.source.id), registry)
+        //
+        // And whether it may still be targeted at all, as an activated
+        // ability's re-check asks (`stack.rs`): `is_target_legal` asks
+        // hexproof and not protection (CR 702.16b), so a creature given
+        // protection from non-Human creatures by Spare from Evil in response
+        // was destroyed by Reaper from the Abyss's ability anyway.
+        let any_legal = trigger.source.chosen_targets.iter().enumerate().any(|(i, t)| {
+            // A new object since it went on the stack is not its target
+            // (CR 400.7), as for a spell.
+            crate::stack::still_the_object(state, t, &trigger.source.target_zone_changes, i)
+                && crate::stack::is_target_legal(state, t, &target_req, controller, Some(trigger.source.id), registry)
+                && match *t {
+                    Target::Object(id) =>
+                        crate::engine::can_be_targeted_by(state, id, controller, Some(trigger.source.id), registry),
+                    _ => true,
+                }
                 && registry.get(card_id)
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });
         if !any_legal {
-            let name = trigger.log_name(registry, state);
-            state.log(crate::state::LogLevel::Event, format!("{name} fizzled (all targets illegal)"));
+            let line = format!("{} fizzled (all targets illegal)", trigger.logged(registry, state));
+            state.log(crate::state::LogLevel::Event, line);
             return true;
         }
 
@@ -851,8 +953,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // not, so after "... trigger goes on the stack" the log went straight to
     // whatever came next, and what the trigger did had nothing to hang off
     // (#704).
-    let name = trigger.log_name(registry, state);
-    state.log(crate::state::LogLevel::Event, format!("{name} resolved"));
+    let line = format!("{} resolved", trigger.logged(registry, state));
+    state.log(crate::state::LogLevel::Event, line);
 
     // CR 113.7a: a triggered ability on the stack exists independently of its
     // source, so removing the source after the trigger is on the stack does
@@ -884,6 +986,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // "its own" means the face it triggered from — which is not necessarily the
     // face that is up now.
     state.resolving_trigger_from_back_face = Some(source.from_back_face);
+    // CR 603.3a: the ability is its controller's as it triggered, whoever
+    // controls the source now. Its "you" was read off the source as it
+    // resolved, so a Sturmgeist Olivia Voldaren took in response drew for
+    // her controller. `helpers::ability_controller` reads this.
+    state.resolving_ability_activator = Some(source.controller);
     state.resolving_ability = Some(on_stack);
     match event {
         TriggerEvent::SelfEntered => {
@@ -950,8 +1057,9 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
 
     state.resolving_trigger_from_back_face = None;
     // Finished, unless the hook asked something: then it resolves on until
-    // the answer's chain runs out (`choices.rs`).
+    // the answer's chain runs out (`choices.rs`), its "you" held with it.
     if state.awaiting_action.is_none() {
+        state.resolving_ability_activator = None;
         state.resolving_ability = None;
     }
     true

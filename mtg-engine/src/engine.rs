@@ -12,15 +12,19 @@
 //! - [`effects`] — applying a resolved effect.
 //! - [`cards_flow`] — drawing, milling, discarding.
 
-mod actions;
-mod legal;
+pub(crate) mod actions;
+pub(crate) mod legal;
 pub(crate) mod cards_flow;
-mod costs;
-mod effects;
+pub(crate) mod costs;
+pub(crate) mod effects;
 mod mana_sources;
-mod targeting;
+pub(crate) mod targeting;
 
 pub use cards_flow::{discard_cards, draw_cards, mill_cards, mill_one};
+/// What a graveyard card may be cast for, which granted flashback's proof
+/// reads (`proofs::actions::until_end_of_turn`).
+#[cfg(kani)]
+pub(crate) use legal::casting::{granted_flashback_costs, graveyard_cast_costs};
 pub use effects::apply_pending_effect;
 pub use costs::{
     AdditionalCostPlan, CastMethod, SpellCost, additional_cost_plan, alternative_costs,
@@ -36,7 +40,7 @@ pub(crate) use targeting::can_target_player;
 pub(crate) use cards_flow::{announced_targets_suffix, card_name, has_castable_with_potential_mana, notify_discard};
 pub(crate) use effects::{finalize_spell_cast, finish_spell_resolution_if_idle};
 pub(crate) use mana_sources::{
-    activatable_mana_abilities, gather_mana_sources, prevents_artifact_abilities,
+    activatable_mana_abilities, gather_mana_sources, plan_payment, prevents_artifact_abilities,
 };
 pub(crate) use targeting::{
     arity_ok,
@@ -223,10 +227,7 @@ impl LegalActions {
             Action::BottomCards { cards } => matches!(&self.set_prompt,
                 Some(p) if p.kind == SetPromptKind::BottomAfterMulligan && p.accepts(cards)),
             Action::ResolveChoice { .. } => self.resolution_prompt.is_some(),
-            row => {
-                let row = format!("{row:?}");
-                self.actions.iter().any(|a| format!("{a:?}") == row)
-            }
+            row => self.actions.iter().any(|a| a == row),
         }
     }
 }
@@ -281,7 +282,7 @@ pub(crate) fn mana_demands(state: &GameState, registry: &CardRegistry, player: P
         if prevent_artifact_abilities && state.has_card_type(obj.id, CardType::Artifact, registry) {
             continue;
         }
-        for (_, ab) in legal::abilities::activated_abilities_of(state, registry, player, obj.id) {
+        for (_, ab) in legal::abilities::activated_abilities_of(state, registry, obj.id) {
             if ab.cost.symbols.is_empty()
                 || (ab.requires_tap && (obj.tapped || state.has_summoning_sickness(obj.id, registry)))
                 || (ab.once_per_turn && obj.abilities_activated_this_turn.contains(&ab.ability_index))
@@ -365,15 +366,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             && state.active_player == player,
         mana_sources: gather_mana_sources(state, player, registry),
         demands: mana_demands(state, registry, player),
-        // Nevermore stores its chosen name as an instance effect, but reading
-        // only instance effects meant a card that declared the ban on its face
-        // would have been ignored.
-        casting_banned: state.global_effects(registry).into_iter()
-            .filter_map(|e| match e {
-                ContinuousEffect::PreventCastingNamed { name } => Some(name),
-                _ => None,
-            })
-            .collect(),
+        casting_banned: names_that_cant_be_cast(state, registry),
     };
 
     // Mana abilities: can activate anytime you have priority.
@@ -835,7 +828,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 /// `state.mulligan_round_position` past the player whose decision was
 /// just processed (or to have set `state.awaiting_action = None` for
 /// post-bottoming transitions).
-fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
+pub(crate) fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
     let num_players = u8::try_from(state.players.len()).unwrap_or(u8::MAX);
 
     loop {
@@ -914,7 +907,7 @@ AwaitingAction::BottomAfterMulligan { .. }))
 /// Black:1)"; when the step ended the mana was gone and nothing said so,
 /// so the log's own claim went false while the screen's `Mana:` row just
 /// disappeared (#708). Cleanup emptied the pools with no event either.
-fn empty_mana_pools(state: &mut GameState) {
+pub(crate) fn empty_mana_pools(state: &mut GameState) {
     let mut emptied = Vec::new();
     for player in &mut state.players {
         if !player.mana_pool.is_empty() {
@@ -939,41 +932,48 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     // Empty mana pools between steps.
     empty_mana_pools(state);
 
+    // CR 511.3: as the end of combat step ends, all creatures and
+    // planeswalkers are removed from combat. This happened as the step
+    // began, so through it an attacker was not attacking: an attacking
+    // creature's bonus (Instigator Gang) ended a step early, and nothing
+    // could target "attacking creature" in it.
+    if state.step == Step::EndCombat {
+        combat::end_combat(state, registry);
+    }
+
     // CR 510.5: with first/double strikers in combat there are TWO combat
     // damage steps. The first instance set combat_damage_step_pending; repeat
     // Step::CombatDamage (regular damage) instead of moving to EndCombat.
-    let next = if state.step == Step::CombatDamage && state.combat_damage_step_pending {
-        Some(Step::CombatDamage)
-    } else if state.step == Step::Cleanup && std::mem::take(&mut state.cleanup_repeat) {
-        // CR 514.3a: the cleanup step that opened a priority window is
-        // followed by another cleanup step, not by the next turn. Without
-        // this, damage marked and until-end-of-turn effects created in that
-        // window rode into the next turn, and the hand-size discard was
-        // skipped altogether.
-        Some(Step::Cleanup)
-    } else if state.step == Step::DeclareAttackers
-        && !state.combat.as_ref().is_some_and(|c| c.any_attackers_declared)
-    {
-        // CR 508.8: if no creatures were declared as attackers (or put onto
-        // the battlefield attacking), skip the declare blockers and combat
-        // damage steps. Observable in rules terms: a "beginning of the
-        // declare blockers step" trigger must not fire, and no priority
-        // windows open in steps that don't happen.
-        Some(Step::EndCombat)
-    } else if state.step == Step::Upkeep
-        && state.is_first_turn
-        && state.players.len() == 2
-    {
-        // CR 103.7a: in a two-player game the player on the play skips the
-        // draw STEP of their first turn — the whole step, so no
-        // beginning-of-draw-step triggers and no priority window in it.
-        // Suppressing only the card draw used to leave an extra priority
-        // round that should not exist (issue #113).
-        state.log(LogLevel::Debug, "Turn 1: draw step skipped (CR 103.7a)".into());
-        Some(Step::PrecombatMain)
-    } else {
-        state.step.next()
+    // The step that follows is proved in `mtg_kernel::turn::next_step`
+    // against CR 500.1's order and the four facts that change it:
+    //
+    // - CR 510.4: with first/double strikers in combat there are TWO combat
+    //   damage steps. The first set combat_damage_step_pending.
+    // - CR 514.3a: the cleanup step that opened a priority window is
+    //   followed by another cleanup step, not by the next turn. Without
+    //   this, damage marked and until-end-of-turn effects created in that
+    //   window rode into the next turn, and the hand-size discard was
+    //   skipped altogether.
+    // - CR 508.8: if no creatures were declared as attackers (or put onto
+    //   the battlefield attacking), skip the declare blockers and combat
+    //   damage steps. Observable in rules terms: a "beginning of the
+    //   declare blockers step" trigger must not fire, and no priority
+    //   windows open in steps that don't happen.
+    // - CR 103.7a: in a two-player game the player on the play skips the
+    //   draw STEP of their first turn — the whole step, so no
+    //   beginning-of-draw-step triggers and no priority window in it.
+    //   Suppressing only the card draw used to leave an extra priority
+    //   round that should not exist (issue #113).
+    let facts = mtg_kernel::turn::StepFacts {
+        second_damage_step_due: state.combat_damage_step_pending,
+        cleanup_repeats: state.step == Step::Cleanup && std::mem::take(&mut state.cleanup_repeat),
+        attackers_declared: state.combat.as_ref().is_some_and(|c| c.any_attackers_declared),
+        skips_first_draw: state.is_first_turn && state.players.len() == 2,
     };
+    let next = mtg_kernel::turn::next_step(state.step.index(), facts).map(Step::from_index);
+    if state.step == Step::Upkeep && next == Some(Step::PrecombatMain) {
+        state.log(LogLevel::Debug, "Turn 1: draw step skipped (CR 103.7a)".into());
+    }
     if let Some(next_step) = next {
         state.step = next_step;
     } else {
@@ -1008,7 +1008,7 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// Perform automatic actions when entering a step.
-fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
+pub(crate) fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
     let active = state.active_player;
 
     match state.step {
@@ -1105,7 +1105,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             // first-strike step (CR 510.4) though no attacker is left
             // (#983).
             let has_combatants = state.combat.as_ref()
-                .is_some_and(|c| !c.attackers.is_empty() || !c.blocking().is_empty());
+                .is_some_and(|c| !c.attackers.is_empty() || c.any_blocking(|_| true));
 
             if has_combatants {
                 if second_damage_step {
@@ -1135,110 +1135,27 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::EndCombat => {
-            combat::end_combat(state, registry);
+            // The creatures stay in combat through this step, and leave it
+            // as it ends (CR 511.3, `advance_step`).
             state.priority_player = Some(active);
         }
 
         Step::Cleanup => {
-            // CR 514.2: remove all damage marked on permanents, and with it
-            // the turn's record of who dealt it.
-            //
-            // Every permanent, not only those with damage still marked: a
-            // creature that regenerated has no marked damage but was still
-            // dealt some this turn, and a planeswalker's damage removes
-            // loyalty rather than marking. Filtering on `damage_marked > 0`
-            // left both carrying a `damaged_by` into the next turn, where
-            // "dealt damage by this creature **this turn**" would read it.
-            let on_battlefield: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield)
-                .iter()
-                .map(|o| o.id)
-                .collect();
-
-            for id in on_battlefield {
-                let obj = state.get_object_mut(id).expect("object must exist for damage clear");
-                obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false;
-                obj.damaged_by.clear();
-            }
-
-            // Remove "until end of turn" effects.
-            // First, revert control changes before clearing. Who a permanent
-            // goes to is derived from the control effects that are still in
-            // force once this one is gone (CR 613.7a): a durable "for as long
-            // as you control this" effect that outlives the cleanup step
-            // keeps it (issue #253), and with nothing left it goes to its
-            // default controller (CR 110.2a) — not to whoever happened to
-            // hold it when the temporary effect was created, which for a
-            // creature stolen back from a thief was the thief (issue #285).
-            let ending: Vec<ObjectId> = state.until_end_of_turn.iter()
-                .filter_map(|effect| match effect {
-                    crate::state::TemporaryEffect::ChangeControl { target, .. } => Some(*target),
-                    _ => None,
-                })
-                .collect();
-            // The effects are removed first so the derivation sees the board
-            // as it will be, not as it is.
-            state.until_end_of_turn.retain(|e|
-                !matches!(e, crate::state::TemporaryEffect::ChangeControl { .. }));
-            let reverts: Vec<(ObjectId, PlayerId)> = ending.into_iter()
-                .filter_map(|target| state.derived_controller(target).map(|c| (target, c)))
-                .collect();
-            for (target, controller) in reverts {
-                if state.get_object(target).is_none_or(|o| o.zone != Zone::Battlefield) {
-                    continue;
-                }
-                let changing = state.get_object(target)
-                    .is_some_and(|o| o.controller != controller);
-                let name = state.obj_name(target);
-                // `change_control`, not a direct assignment: it is the single
-                // correct way to reassign an in-play permanent's controller,
-                // and it carries the summoning-sickness reset (CR 302.6) and
-                // the removal from combat (CR 506.4d) with it (issue #256).
-                state.change_control(target, controller);
-                if changing {
-                    // The other duration (`expire_control_effects`) says so;
-                    // this one moved a permanent from one side of the board
-                    // to the other with no record at all, which in a hotseat
-                    // game is the only signal a player gets (issue #256).
-                    state.log(crate::state::LogLevel::Event, format!(
-                        "{name} returns to p{}: the control effect has ended (CR 514.2)",
-                        controller.0));
-                }
-            }
-            state.until_end_of_turn.clear();
-
-            // Clear unused regeneration shields.
-            for obj in state.objects.values_mut() {
-                if obj.zone == Zone::Battlefield {
-                    obj.regeneration_shields = 0;
-                }
-            }
-
-            // Empty mana pools.
-            empty_mana_pools(state);
-
-            // CR 514.3a: Check SBAs after clearing effects. If any SBA
-            // fires, players get priority (the cleanup step essentially restarts).
-            let registry_ref = registry;
-            let sba_fired = crate::sba::check_state_based_actions(state, registry_ref);
-            if sba_fired {
-                // SBA occurred — give active player priority. Once every
-                // player passes, `advance_step` runs this cleanup step again
-                // (CR 514.3a) rather than starting the next turn.
-                state.priority_player = Some(active);
-                state.cleanup_repeat = true;
+            // CR 514.1: first, the active player discards down to their
+            // maximum hand size. The rest of the step waits on the answer
+            // (`finish_cleanup`, which the discard calls). This came last,
+            // after the turn's effects had ended, and left its player
+            // holding priority in the cleanup step, where a spell cast left
+            // its "until end of turn" effect standing into the next turn.
+            let hand_size = state.objects_in_zone(Zone::Hand, active).len();
+            if hand_size > 7 {
+                state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
+                    player: active,
+                    discard_count: hand_size - 7,
+                });
+                state.priority_player = None;
             } else {
-                // Check hand size: max 7 cards.
-                let hand_size = state.objects_in_zone(Zone::Hand, active).len();
-                if hand_size > 7 {
-                    state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
-                        player: active,
-                        discard_count: hand_size - 7,
-                    });
-                    state.priority_player = Some(active);
-                } else {
-                    state.priority_player = None; // No priority in cleanup normally.
-                }
+                finish_cleanup(state, registry);
             }
         }
 
@@ -1247,6 +1164,127 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.priority_player = Some(active);
         }
     }
+}
+
+/// The cleanup step after the hand-size discard (CR 514.2-514.3a): all
+/// damage is removed from permanents and "until end of turn" effects end,
+/// at once; then state-based actions are checked, and if any was
+/// performed the active player receives priority and another cleanup step
+/// follows (`cleanup_repeat`); otherwise nobody receives priority (514.3).
+pub(crate) fn finish_cleanup(state: &mut GameState, registry: &CardRegistry) {
+    let active = state.active_player;
+    // CR 514.2: remove all damage marked on permanents, and with it
+    // the turn's record of who dealt it.
+    //
+    // Every permanent, not only those with damage still marked: a
+    // creature that regenerated has no marked damage but was still
+    // dealt some this turn, and a planeswalker's damage removes
+    // loyalty rather than marking. Filtering on `damage_marked > 0`
+    // left both carrying a `damaged_by` into the next turn, where
+    // "dealt damage by this creature **this turn**" would read it.
+    let on_battlefield: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield)
+        .iter()
+        .map(|o| o.id)
+        .collect();
+
+    for id in on_battlefield {
+        let obj = state.get_object_mut(id).expect("object must exist for damage clear");
+        obj.damage_marked = 0;
+        obj.dealt_deathtouch_damage = false;
+        obj.damaged_by.clear();
+    }
+
+    // Remove "until end of turn" effects.
+    end_until_end_of_turn_effects(state);
+
+    // Clear unused regeneration shields.
+    for obj in state.objects.values_mut() {
+        if obj.zone == Zone::Battlefield {
+            obj.regeneration_shields = 0;
+        }
+    }
+
+    // Empty mana pools.
+    empty_mana_pools(state);
+
+    // CR 514.3a: Check SBAs after clearing effects. If any SBA fires,
+    // players get priority (the cleanup step essentially restarts).
+    if crate::sba::check_state_based_actions(state, registry) {
+        // SBA occurred — give active player priority. Once every player
+        // passes, `advance_step` runs this cleanup step again (CR 514.3a)
+        // rather than starting the next turn.
+        state.priority_player = Some(active);
+        state.cleanup_repeat = true;
+    } else {
+        state.priority_player = None; // No priority in cleanup normally.
+    }
+}
+
+/// The names of the spells no player may cast (Nevermore's "Spells with
+/// the chosen name can't be cast"), from the effects in force, read where
+/// they lie.
+///
+/// Nevermore stores its chosen name as an instance effect, but reading
+/// only instance effects meant a card that declared the ban on its face
+/// would have been ignored.
+pub(crate) fn names_that_cant_be_cast<'a>(state: &'a GameState, registry: &'a CardRegistry) -> Vec<&'a str> {
+    let mut names = Vec::new();
+    state.visit_global_effects(registry, &mut |e| {
+        if let ContinuousEffect::PreventCastingNamed { name } = e {
+            names.push(name.as_str());
+        }
+    });
+    names
+}
+
+/// CR 514.2: the cleanup step's end of the "until end of turn" effects.
+/// Every one ends, and a permanent whose control one of them changed goes
+/// to whoever the control effects still in force give it to.
+pub(crate) fn end_until_end_of_turn_effects(state: &mut GameState) {
+    // First, revert control changes before clearing. Who a permanent
+    // goes to is derived from the control effects that are still in
+    // force once this one is gone (CR 613.7a): a durable "for as long
+    // as you control this" effect that outlives the cleanup step
+    // keeps it (issue #253), and with nothing left it goes to its
+    // default controller (CR 110.2a) — not to whoever happened to
+    // hold it when the temporary effect was created, which for a
+    // creature stolen back from a thief was the thief (issue #285).
+    let ending: Vec<ObjectId> = state.until_end_of_turn.iter()
+        .filter_map(|effect| match effect {
+            crate::state::TemporaryEffect::ChangeControl { target, .. } => Some(*target),
+            _ => None,
+        })
+        .collect();
+    // The effects are removed first so the derivation sees the board
+    // as it will be, not as it is.
+    state.until_end_of_turn.retain(|e|
+        !matches!(e, crate::state::TemporaryEffect::ChangeControl { .. }));
+    let reverts: Vec<(ObjectId, PlayerId)> = ending.into_iter()
+        .filter_map(|target| state.derived_controller(target).map(|c| (target, c)))
+        .collect();
+    for (target, controller) in reverts {
+        if state.get_object(target).is_none_or(|o| o.zone != Zone::Battlefield) {
+            continue;
+        }
+        let changing = state.get_object(target)
+            .is_some_and(|o| o.controller != controller);
+        let name = state.obj_name(target);
+        // `change_control`, not a direct assignment: it is the single
+        // correct way to reassign an in-play permanent's controller,
+        // and it carries the summoning-sickness reset (CR 302.6) and
+        // the removal from combat (CR 506.4d) with it (issue #256).
+        state.change_control(target, controller);
+        if changing {
+            // The other duration (`expire_control_effects`) says so;
+            // this one moved a permanent from one side of the board
+            // to the other with no record at all, which in a hotseat
+            // game is the only signal a player gets (issue #256).
+            state.log(crate::state::LogLevel::Event, format!(
+                "{name} returns to p{}: the control effect has ended (CR 514.2)",
+                controller.0));
+        }
+    }
+    state.until_end_of_turn.clear();
 }
 
 /// The player a pending cast-time prompt belongs to: the caster of a spell
@@ -1481,31 +1519,8 @@ fn run_game_loop_inner<F>(
             break;
         }
 
-        // CR 117.5: Before a player gets priority, check SBAs and collect
-        // triggered abilities onto the stack. Repeat until neither produces
-        // new work. Triggers resolve through the normal priority cycle,
-        // giving players a chance to respond between each resolution.
-        // CR 614.12b: a permanent whose controller must choose what it
-        // enters as is not on the battlefield until they have. Ask before
-        // anything else looks at the board — the entry itself is waiting on
-        // the answer, so SBAs and triggers have nothing to say about it yet.
-        crate::replacement::process_pending_entry_choices(state, registry);
-        loop {
-            let mut any_work = false;
-            loop {
-                let sba = check_state_based_actions(state, registry);
-                if !sba { break; }
-                any_work = true;
-            }
-            if triggers::collect_triggers(state, registry) {
-                any_work = true;
-            }
-            if !any_work { break; }
-        }
-        // The enters-as-a-copy list was built before those state-based
-        // actions ran; anything they killed is no longer a creature on the
-        // battlefield to copy (CR 608.2d).
-        crate::replacement::refresh_pending_entry_choice(state, registry);
+        // CR 117.5: state-based actions and triggered abilities first.
+        before_priority(state, registry);
         if state.is_game_over() {
             break;
         }
@@ -1689,72 +1704,131 @@ fn run_game_loop_inner<F>(
         *state = submit_action(state, &action, registry);
 
         // After submitting, handle priority flow.
-        match &action {
-            Action::PassPriority => {
-                if state.consecutive_passes >= num_players {
-                    // All players passed in succession.
-                    if state.stack.is_empty() {
-                        // Stack empty, advance step.
-                        state.priority_player = None;
-                        advance_step(state, registry);
-                    } else {
-                        let mut new_state = state.clone();
-                        stack::resolve_top_of_stack(&mut new_state, registry);
-                        *state = new_state;
-                        state.consecutive_passes = 0;
-                        state.priority_player = Some(state.active_player);
+        hand_on_priority(state, &action, cast_prompt_player, num_players, registry);
+    }
+}
+
+/// What happens each time a player would receive priority, before they do
+/// (CR 117.5, 704.3, 603.3): a permanent waiting on what it enters as is
+/// asked first (614.12b); then state-based actions are checked until none
+/// is performed, and the abilities that have triggered are put on the
+/// stack, and both again until neither does anything; and the permanents a
+/// waiting choice may copy are read again after.
+pub(crate) fn before_priority(state: &mut GameState, registry: &CardRegistry) {
+    // CR 117.5: Before a player gets priority, check SBAs and collect
+    // triggered abilities onto the stack. Repeat until neither produces
+    // new work. Triggers resolve through the normal priority cycle,
+    // giving players a chance to respond between each resolution.
+    // CR 614.12b: a permanent whose controller must choose what it
+    // enters as is not on the battlefield until they have. Ask before
+    // anything else looks at the board — the entry itself is waiting on
+    // the answer, so SBAs and triggers have nothing to say about it yet.
+    crate::replacement::process_pending_entry_choices(state, registry);
+    loop {
+        let mut any_work = false;
+        loop {
+            let sba = check_state_based_actions(state, registry);
+            if !sba { break; }
+            any_work = true;
+        }
+        if triggers::collect_triggers(state, registry) {
+            any_work = true;
+        }
+        if !any_work { break; }
+    }
+    // The enters-as-a-copy list was built before those state-based
+    // actions ran; anything they killed is no longer a creature on the
+    // battlefield to copy (CR 608.2d).
+    crate::replacement::refresh_pending_entry_choice(state, registry);
+}
+
+/// Who has priority once `action` has been played (CR 117.3-117.4): a
+/// pass hands it on, or, every player having passed in succession,
+/// resolves the top of the stack and gives it to the active player
+/// (117.3b) or ends the step with nobody holding it
+/// (`mtg_kernel::turn::after_pass`); a declaration of attackers or
+/// blockers gives it to the active player; an answer to a question gives
+/// it to whoever was casting or activating if the question was part of
+/// that (117.3c), the active player otherwise (117.3b); and anything else
+/// leaves it where it is.
+pub(crate) fn hand_on_priority(
+    state: &mut GameState,
+    action: &Action,
+    cast_prompt_player: Option<PlayerId>,
+    num_players: u32,
+    registry: &CardRegistry,
+) {
+    match action {
+        Action::PassPriority => {
+            // What all players passing in succession does is proved in
+            // `mtg_kernel::turn::after_pass` (CR 117.4).
+            let current = state.priority_player.unwrap_or(state.active_player);
+            match mtg_kernel::turn::after_pass(
+                state.consecutive_passes, num_players, state.stack.len(), u32::from(current.0),
+            ) {
+                mtg_kernel::turn::AfterPass::EndStep => {
+                    state.priority_player = None;
+                    advance_step(state, registry);
+                }
+                mtg_kernel::turn::AfterPass::ResolveTop => {
+                    stack::resolve_top_of_stack(state, registry);
+                    state.consecutive_passes = 0;
+                    state.priority_player = Some(state.active_player);
+                }
+                mtg_kernel::turn::AfterPass::NextPlayer(next) => {
+                    if state.priority_player.is_some() {
+                        state.priority_player = Some(PlayerId(u8::try_from(next).expect("a player index")));
                     }
-                } else if let Some(current) = state.priority_player {
-                    // Pass to next player.
-                    state.priority_player = Some(state.next_player(current));
                 }
             }
-
-            Action::DeclareAttackers { .. } => {
-                // After declaring attackers (even zero), give priority to active player.
-                // When zero were declared, advance_step skips straight to
-                // EndCombat (CR 508.8) once this priority round ends.
-                state.priority_player = Some(state.active_player);
-            }
-
-            Action::DeclareBlockers { .. } => {
-                // After declaring blockers, give priority to active player.
-                state.priority_player = Some(state.active_player);
-            }
-
-            Action::DiscardCards { .. } => {
-                // After discarding, cleanup continues (no priority).
-                state.priority_player = None;
-            }
-
-            Action::MulliganKeep
-            | Action::MulliganMull
-            | Action::BottomCards { .. }
-            | Action::ActivateManaAbility { .. }
-            | Action::ActivateAbility { .. }
-            | Action::ActivateLoyaltyAbility { .. }
-            | Action::Concede
-            | Action::Forfeit
-            | Action::PlayLand { .. }
-            | Action::CastSpell { .. } => {
-                // Mulligan-phase actions don't touch priority (mulligan advances via
-                // awaiting_action), ability activations and spell casts leave priority
-                // with the current player, and a Concede has ended the game itself (#764).
-            }
-
-            Action::ResolveChoice { .. } => {
-                // A choice raised while a spell or ability resolved hands
-                // priority to the active player afterwards (CR 117.3b). A
-                // choice that completed a cast or an activation — X funding,
-                // an exile cost, an "up to N" target slot — is part of that
-                // cast, so the caster keeps priority (CR 117.3c); the
-                // non-active player answering Devil's Play's funding used to
-                // lose priority to the opponent.
-                state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
-            }
-
-            // Handled above, before the submit.
-            Action::AbandonGame => unreachable!("AbandonGame returns from the loop"),
         }
+
+        Action::DeclareAttackers { .. } => {
+            // After declaring attackers (even zero), give priority to active player.
+            // When zero were declared, advance_step skips straight to
+            // EndCombat (CR 508.8) once this priority round ends.
+            state.priority_player = Some(state.active_player);
+        }
+
+        Action::DeclareBlockers { .. } => {
+            // After declaring blockers, give priority to active player.
+            state.priority_player = Some(state.active_player);
+        }
+
+        Action::DiscardCards { .. } => {
+            // The rest of the cleanup step ran on the discard
+            // (`finish_cleanup`), which gave the active player priority
+            // if a state-based action was performed (CR 514.3a) and
+            // nobody otherwise. Taking it away here skipped that window.
+        }
+
+        Action::MulliganKeep
+        | Action::MulliganMull
+        | Action::BottomCards { .. }
+        | Action::ActivateManaAbility { .. }
+        | Action::ActivateAbility { .. }
+        | Action::ActivateLoyaltyAbility { .. }
+        | Action::Concede
+        | Action::Forfeit
+        | Action::PlayLand { .. }
+        | Action::CastSpell { .. } => {
+            // Mulligan-phase actions don't touch priority (mulligan advances via
+            // awaiting_action), ability activations and spell casts leave priority
+            // with the current player, and a Concede has ended the game itself (#764).
+        }
+
+        Action::ResolveChoice { .. } => {
+            // A choice raised while a spell or ability resolved hands
+            // priority to the active player afterwards (CR 117.3b). A
+            // choice that completed a cast or an activation — X funding,
+            // an exile cost, an "up to N" target slot — is part of that
+            // cast, so the caster keeps priority (CR 117.3c); the
+            // non-active player answering Devil's Play's funding used to
+            // lose priority to the opponent.
+            state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
+        }
+
+        // Handled before the submit.
+        Action::AbandonGame => unreachable!("AbandonGame returns from the loop"),
     }
 }

@@ -43,7 +43,7 @@ impl CardBehavior for HollowhengeScavenger {
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         if state.creature_died_this_turn {
-            let controller = crate::cards::helpers::controller_of(state, object_id);
+            let controller = crate::cards::helpers::ability_controller(state, object_id);
             // One line, naming the card, with the total (#628, #706).
             state.change_life_for(controller, 5, "Hollowhenge Scavenger");
         }

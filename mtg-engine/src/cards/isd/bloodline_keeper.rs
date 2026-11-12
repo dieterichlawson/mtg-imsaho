@@ -13,10 +13,7 @@ pub struct BloodlineKeeper;
 
 impl BloodlineKeeper {
     fn count_vampires(state: &GameState, controller: crate::ids::PlayerId, registry: &CardRegistry) -> usize {
-        state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .filter(|o| state.has_subtype(o.id, "Vampire", registry))
-            .count()
+        state.count_in_zone(Zone::Battlefield, controller, |o| state.has_subtype(o.id, "Vampire", registry))
     }
 }
 
@@ -150,9 +147,5 @@ impl CardBehavior for BloodlineKeeper {
             }
             _ => {}
         }
-    }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
     }
 }

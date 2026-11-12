@@ -369,13 +369,17 @@ fn cast(state: &GameState, acting: PlayerId, id: ObjectId, targets: &[Target], s
         // requirement whose announcement carries `fixed_len` targets. Judging
         // an announcement by the full count instead reads every one of them as
         // a cast with too few targets.
+        //
+        // The targets are judged with the spell on the stack, where CR
+        // 601.2a has it as they are chosen (601.2c).
+        let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, id, &req);
         let announcing = crate::engine::set_slot(
-                state, acting, id, &req, targets, b, registry)
+                &chosen_in, acting, id, &req, targets, b, registry)
             .is_some_and(|s| targets.len() == s.fixed_len && s.max > 0);
         if !announcing && !arity_ok(&req, targets.len()) {
             v.push(format!("{what} offers {} targets for {req:?}", targets.len()));
         }
-        targets_ok(state, acting, id, true, &req, targets, &what, registry, v);
+        targets_ok(&chosen_in, acting, id, true, &req, targets, &what, registry, v);
         card_predicate_ok(state, acting, obj.card_id, targets, &what, registry, v);
     }
     for t in targets {
@@ -467,10 +471,16 @@ fn activate(state: &GameState, acting: PlayerId, id: ObjectId, index: usize, tar
         None => obj.card_id,
         Some(cid) => {
             let via_copy = crate::cards::ability_granting_grantor(state, id, registry) == Some(cid);
+            // An ability an Aura or Equipment grants is the creature's (CR
+            // 113.3b, 702.5): its controller activates it, whoever controls
+            // what is attached to it, which the check above already holds the
+            // creature's controller to. Asking the attachment's controller to
+            // be the one acting was defect 11 written into the oracle:
+            // Skeletal Grimace on an opponent's creature.
             let via_attachment = state.objects_in_id_order().iter().any(|a|
-                a.zone == Zone::Battlefield && a.attached_to == Some(id) && a.controller == acting && a.card_id == cid);
+                a.zone == Zone::Battlefield && a.attached_to == Some(id) && a.card_id == cid);
             if !via_copy && !via_attachment {
-                v.push(format!("{what} through card {} which neither grants it as a copy nor is attached under p{}", cid.0, acting.0));
+                v.push(format!("{what} through card {} which neither grants it as a copy nor is attached to it", cid.0));
             }
             cid
         }

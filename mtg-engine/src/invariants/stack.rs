@@ -245,7 +245,7 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("resolving_ability_activator p{} is not a player", p.0));
         }
         if state.awaiting_action.is_none() {
-            v.push("resolving_ability_activator set with no choice pending (CR 602.2a scope)".into());
+            v.push("resolving_ability_activator set with no choice pending (CR 602.2a, 603.3a scope)".into());
         }
     }
     if state.resolving_trigger_from_back_face.is_some() {

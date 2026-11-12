@@ -48,18 +48,21 @@ impl CardBehavior for WoodlandSleuth {
         // The Sleuth may have left the battlefield by the time the trigger resolves
         // (e.g., it died in response). We still know who controlled it when it
         // entered, so accept the controller from any zone the object is in.
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // Find creature cards in graveyard.
-        let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
+        // In the graveyard's order, by a loop rather than a filter collected
+        // (Bitterheart Witch's search says why).
+        let mut creatures: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
             // "return a creature **card** at random from your graveyard" —
             // CR 109.1. `face_data` is None for a token, and the `map_or`
             // fallback here was `is_creature`, which is true of a creature
             // token: the guard admitted exactly what it was meant to exclude.
-            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .collect();
+            if state.is_card(o.id) && state.is_creature(o.id, registry) {
+                creatures.push(o.id);
+            }
+        }
 
         if !creatures.is_empty() {
             let Some(chosen) = state.choose_at_random(&creatures, 1).first().copied()

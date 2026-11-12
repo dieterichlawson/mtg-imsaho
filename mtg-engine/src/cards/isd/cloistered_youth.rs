@@ -70,7 +70,7 @@ impl CardBehavior for CloisteredYouth {
         if !crate::cards::helpers::still_on_battlefield(state, self_id) {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
@@ -112,9 +112,5 @@ impl CardBehavior for CloisteredYouth {
         // the end step began.
         let controller = state.last_known_controller(self_id);
         state.change_life_for(controller, -1, "Unholy Fiend");
-    }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
     }
 }

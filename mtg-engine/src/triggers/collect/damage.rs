@@ -15,8 +15,16 @@ pub(super) fn combat_damage(
     c: &mut Collector,
 ) {
     let GameEvent::CombatDamageDealt { source, target, amount } = event else { return };
-    // Creature-to-creature combat damage triggers.
+    // Creature-to-creature combat damage triggers. Combat damage to an
+    // object is dealt to a creature or to a planeswalker (CR 510.1a-c), and
+    // "deals combat damage to a creature" is not set off by the second
+    // (Creepy Doll's coin used to be flipped for a Garruk it hit). A
+    // planeswalker keeps its id in the graveyard, so one the damage killed
+    // is still told apart.
     if let crate::events::DamageTarget::Object(damaged_id) = target {
+        if state.has_card_type(*damaged_id, crate::types::CardType::Planeswalker, registry) {
+            return;
+        }
         let source_id = *source;
         if let Some(obj) = state.get_object(source_id) {
             if super::was_on_the_battlefield(state, events, source_id) && state.is_creature(source_id, registry) {

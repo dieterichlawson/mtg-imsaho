@@ -157,8 +157,7 @@ impl CardBehavior for OliviaVoldaren {
                     // the player who activated the ability (CR 602.2a), which
                     // is not always whoever holds Olivia by the time it
                     // resolves.
-                    let activator = state.resolving_ability_activator
-                        .unwrap_or_else(|| crate::cards::helpers::controller_of(state, object_id));
+                    let activator = crate::cards::helpers::ability_controller(state, object_id);
                     let still_controls_olivia = state.get_object(object_id)
                         .is_some_and(|o| o.zone == Zone::Battlefield && o.controller == activator);
                     if is_vampire && still_controls_olivia {

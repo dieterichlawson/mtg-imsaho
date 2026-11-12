@@ -39,13 +39,19 @@ impl CardBehavior for EssenceOfTheWild {
     ) -> Option<crate::replacement::Replacement> {
         use crate::replacement::{ReplaceableEvent, Replacement};
         let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
-        // Not itself, only creatures, only ours, and only once.
+        // Not itself, only creatures, and only ours. A creature that would
+        // enter as a copy of something else by its own effect (Evil Twin)
+        // is a copy of this all the same (ruling 2011-09-22: "No matter
+        // what order these effects are applied, the creature will be a copy
+        // of Essence of the Wild when it enters"), so a copy already decided
+        // is replaced, not kept. Of two Essences, the one applied last (CR
+        // 616.1; the engine applies them in object order).
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             None => return None,
         };
         let is_creature = state.is_creature(e.object, registry);
-        if e.object == self_id || !is_creature || e.controller != controller || e.copy_of.is_some() {
+        if e.object == self_id || !is_creature || e.controller != controller || e.copy_of == Some(self_id) {
             return None;
         }
         let mut e = e.clone();

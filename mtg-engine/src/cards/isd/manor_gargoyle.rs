@@ -56,13 +56,13 @@ impl CardBehavior for ManorGargoyle {
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // Gain flying until end of turn.
-        state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
+        state.add_until_end_of_turn(TemporaryEffect::GrantKeyword {
             target: object_id,
             keyword: Keyword::Flying,
         });
         // Lose defender until end of turn (which also loses indestructible
         // since "has indestructible as long as it has defender").
-        state.until_end_of_turn.push(TemporaryEffect::RemoveKeyword {
+        state.add_until_end_of_turn(TemporaryEffect::RemoveKeyword {
             target: object_id,
             keyword: Keyword::Defender,
         });

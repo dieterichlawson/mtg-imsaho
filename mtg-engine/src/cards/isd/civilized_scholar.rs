@@ -29,8 +29,7 @@ impl CivilizedScholar {
     /// registry-backed card, so testing it first meant the authoritative face
     /// data was consulted only when the object field happened to be unset.
     fn is_creature_card(state: &GameState, id: ObjectId, registry: &CardRegistry) -> bool {
-        state.face_data(id, registry)
-            .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+        state.face_card_types(id, registry).contains(&CardType::Creature)
     }
 
 }
@@ -119,8 +118,7 @@ impl CardBehavior for CivilizedScholar {
         let _ = crate::engine::draw_cards(state, controller, 1, registry);
 
         // Player must choose which card to discard.
-        let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
-            .iter().map(|o| o.id).collect();
+        let hand = state.ids_in_zone(Zone::Hand, controller, |_| true);
         if hand.is_empty() {
             return;
         }
@@ -196,9 +194,5 @@ impl CardBehavior for CivilizedScholar {
             // this cannot drift from what transforming means.
             crate::cards::helpers::apply_transform(state, self_id, _registry);
         }
-    }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
     }
 }

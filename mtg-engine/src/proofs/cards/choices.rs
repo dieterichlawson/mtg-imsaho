@@ -1,0 +1,518 @@
+//! The cards whose effect stops to ask a player something and goes on with
+//! the answer: what each asks, of whom, and what it does with each answer.
+//!
+//! - Nevermore, {1}{W}{W} Enchantment: "As this enchantment enters, choose
+//!   a nonland card name. Spells with the chosen name can't be cast."
+//! - Caravan Vigil, {G} Sorcery: "Search your library for a basic land
+//!   card, reveal it, put it into your hand, then shuffle. Morbid — You may
+//!   put that card onto the battlefield instead of putting it into your
+//!   hand if a creature died this turn."
+//! - Frightful Delusion, {2}{U} Instant: "Counter target spell unless its
+//!   controller pays {1}. That player discards a card."
+//! - Divine Reckoning, {2}{W}{W} Sorcery: "Each player chooses a creature
+//!   they control. Destroy the rest. Flashback {5}{W}{W}"
+//!
+//! An answer comes back through the engine's handler for the question
+//! asked (`engine::actions::choices`), which hands it to the card; where
+//! the handler does part of what the card says (paying, or not, for
+//! "unless its controller pays"), it is run here with the card, and where
+//! it only passes the answer on (a chosen target, to the card's
+//! `resolve_card_effect`, through `engine::apply_pending_effect`), the
+//! card's own hook is called with every answer the handler accepts.
+
+use super::{acted, asked_for, board, card_proof, case_by_case, picked, were, Act, Snapshot};
+use crate::actions::{ResolvedChoice, Target};
+use crate::cards::{CardBehavior, CardRegistry};
+use crate::ids::{CardId, ObjectId, PlayerId};
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
+use crate::types::{CardType, ContinuousEffect as E, ManaCost, ManaSymbol, Zone};
+
+use crate::cards::isd;
+
+fn any_player() -> PlayerId {
+    PlayerId(u8::from(kani::any::<bool>()))
+}
+
+/// This snapshot, waiting on an answer or not.
+fn asking(before: &Snapshot, asking: bool) -> Snapshot {
+    Snapshot { asking, ..before.clone() }
+}
+
+/// Nevermore: its name is chosen as it enters (CR 614.12), which is no
+/// trigger; its controller is asked to choose among every nonland card
+/// name there is, in order; the name chosen is the one whose spells can't
+/// be cast (the `PreventCastingNamed` effect it then has, which the
+/// engine's casting rules read); an answer past the end of the names is
+/// refused, and the question stands. Nothing else. Over a registry of a
+/// nonland card, a land and Nevermore, Nevermore under player `you`
+/// answering `index`, each a constant in its harness: with both the
+/// solver's, the answer was every path through `resolve_choice` at once,
+/// and the proof was still in symbolic execution after half an hour.
+fn nevermore_names_a_nonland_card((you, index): (u8, usize)) {
+    let nevermore = isd::nevermore::Nevermore;
+    assert!(nevermore.chooses_as_it_enters() && !nevermore.has_etb_handler());
+    let (mut registry, mut state, _blank, card) = board(Box::new(nevermore));
+    registry.register(Box::new(isd::gavony_township::GavonyTownship));
+    let you = PlayerId(you);
+    let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
+    state.get_object_mut(me).expect("just created").controller = you;
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, me, &[], &registry);
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::ChooseCardName { options, source_id, .. },
+    }) if *player == you && *source == me && *source_id == me
+        && options.len() == 2 && options[0] == "Blank" && options[1] == "Nevermore");
+    assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
+    let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenIndex(index, String::new()), &registry);
+    let effects = state.get_object(me).expect("on the board").instance_continuous_effects.as_deref();
+    if index < 2 {
+        let name = if index == 0 { "Blank" } else { "Nevermore" };
+        assert!(matches!(effects, Some([E::PreventCastingNamed { name: n }]) if n == name));
+        assert!(Snapshot::of(&state) == before);
+    } else {
+        assert!(effects.is_none() && Snapshot::of(&state) == asking(&before, true));
+    }
+    assert!(acted() == 0);
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { nevermore_names_a_nonland_card;
+    nevermore_under_the_first_player_names_the_first_card: (0, 0),
+    nevermore_under_the_first_player_names_the_second_card: (0, 1),
+    nevermore_under_the_first_player_refuses_an_answer_past_the_names: (0, 2),
+    nevermore_under_the_second_player_names_the_first_card: (1, 0),
+    nevermore_under_the_second_player_names_the_second_card: (1, 1),
+    nevermore_under_the_second_player_refuses_an_answer_past_the_names: (1, 2),
+}
+
+/// Caravan Vigil's board: the spell on the stack under either player;
+/// player 0's library, of any of a nonland card, two Forests (the same
+/// card twice) and a nonbasic land, in that order; player 1's of a
+/// Forest; and whether a creature died this turn.
+struct Vigil {
+    registry: CardRegistry,
+    state: GameState,
+    card: CardId,
+    spell: ObjectId,
+    you: PlayerId,
+    /// The basic land cards in `you`'s library, one of each card, in
+    /// library order: the Forest nearest the top.
+    forest: Option<ObjectId>,
+}
+
+/// The board under player `you`, player 0's library of the cards whose
+/// bits are set in `library` (the nonland card 1, the Forests 2 and 8, the
+/// nonbasic land 4), the others in their owner's hand.
+fn vigil_of(you: PlayerId, library: u8) -> Vigil {
+    let (mut registry, mut state, blank, card) = board(Box::new(isd::caravan_vigil::CaravanVigil));
+    let forest = registry.register(Box::new(crate::cards::forest::Forest));
+    let township = registry.register(Box::new(isd::gavony_township::GavonyTownship));
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    state.get_object_mut(spell).expect("just created").controller = you;
+    let mut first_forest = [None; 2];
+    for (i, of) in [blank, forest, township, forest].into_iter().enumerate() {
+        let id = state.create_object(of, PlayerId(0), Zone::Library, None, None);
+        if library & (1 << i) != 0 {
+            state.players[0].library_order.push(id);
+            if of == forest && first_forest[0].is_none() {
+                first_forest[0] = Some(id);
+            }
+        } else {
+            state.get_object_mut(id).expect("just created").zone = Zone::Hand;
+        }
+    }
+    let theirs = state.create_object(forest, PlayerId(1), Zone::Library, None, None);
+    state.players[1].library_order.push(theirs);
+    first_forest[1] = Some(theirs);
+    state.creature_died_this_turn = kani::any();
+    let forest = if you == PlayerId(0) { first_forest[0] } else { first_forest[1] };
+    Vigil { registry, state, card, spell, you, forest }
+}
+
+/// Caravan Vigil, resolving: its controller searches their own library
+/// (CR 701.23a) for a basic land card, and is asked which, offered one
+/// of each card that is one (CR 701.23b: a player need not find a card
+/// that is there, so "none" is an answer too); with none to find,
+/// their library is shuffled and nothing else happens. Nothing else.
+///
+/// Player 0's library and the spell's controller are constants in each
+/// harness: with both the solver's, the library was a list of every
+/// length at once, searched through an index by that player, and the
+/// proof ran out of memory at four and a half gigabytes in symbolic
+/// execution.
+fn caravan_vigil_offers_one_of_each_basic_land_in_your_library((you, library): (u8, u8)) {
+    let Vigil { registry, mut state, card, spell, you, forest } = vigil_of(PlayerId(you), library);
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+    match forest {
+        Some(land) => {
+            let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source, choice: ResolutionChoiceKind::ChooseTarget {
+                    options, optional: true, effect: PendingEffect::CardEffect { source_id, .. }, ..
+                },
+            }) if *player == you && *source == spell && *source_id == spell
+                && options.len() == 1 && options[0] == Target::Object(land));
+            assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
+        }
+        None => {
+            assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { caravan_vigil_offers_one_of_each_basic_land_in_your_library;
+    caravan_vigil_under_the_first_player_over_an_empty_library: (0, 0),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card: (0, 1),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest: (0, 2),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest: (0, 3),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonbasic_land: (0, 4),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land: (0, 5),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest_and_a_nonbasic_land: (0, 6),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land: (0, 7),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_second_forest: (0, 8),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_second_forest: (0, 9),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest_and_a_second_forest: (0, 10),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_second_forest: (0, 11),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonbasic_land_and_a_second_forest: (0, 12),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land_and_a_second_forest: (0, 13),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest_and_a_nonbasic_land_and_a_second_forest: (0, 14),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land_and_a_second_forest: (0, 15),
+    caravan_vigil_under_the_second_player_over_an_empty_library: (1, 0),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card: (1, 1),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest: (1, 2),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest: (1, 3),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonbasic_land: (1, 4),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land: (1, 5),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest_and_a_nonbasic_land: (1, 6),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land: (1, 7),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_second_forest: (1, 8),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_second_forest: (1, 9),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest_and_a_second_forest: (1, 10),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_second_forest: (1, 11),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonbasic_land_and_a_second_forest: (1, 12),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land_and_a_second_forest: (1, 13),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest_and_a_nonbasic_land_and_a_second_forest: (1, 14),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land_and_a_second_forest: (1, 15),
+}
+
+/// Caravan Vigil, the land chosen: with no creature dead this turn, it
+/// goes to its controller's hand and their library is shuffled; with one
+/// (morbid), they are asked whether to put it onto the battlefield
+/// instead, and on the answer it goes there or to their hand, and the
+/// library is shuffled. No land chosen, the library is shuffled all the
+/// same, the search having happened (CR 701.23a). Nothing else.
+///
+/// For each controller and each `way`: the choice declined (0), the land
+/// chosen with no creature dead (1), and with one, answered yes (2) or no
+/// (3); each a constant in its harness, as the cases of one harness add
+/// up, and in one the proof ran out of memory at four and a half
+/// gigabytes. Over player 0's library of all four cards: which cards a
+/// library holds is the search's (the proof above, over each), and here
+/// the land is in hand as chosen, the library shuffled by an action whose
+/// proof is `proofs::actions`'.
+fn caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_the_battlefield((you, way): (u8, u8)) {
+    let Vigil { registry, mut state, card, spell, you, forest } = vigil_of(PlayerId(you), 0b1111);
+    let land = forest.expect("a Forest in each player's library");
+    state.creature_died_this_turn = way >= 2;
+    let vigil = registry.get(card).expect("registered");
+    let before = Snapshot::of(&state);
+    if way == 0 {
+        vigil.on_declined_choice(&mut state, spell, &registry);
+        assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state));
+        return;
+    }
+    vigil.resolve_card_effect(&mut state, spell, "", &Target::Object(land), &registry);
+    if way == 1 {
+        assert!(asked_for(&[Act::Move(land, Zone::Hand), Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state));
+        return;
+    }
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
+    }) if *player == you && *source == spell && *source_card == spell);
+    assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
+    crate::proofs::cards::clear_prompt(&mut state);
+    let yes = way == 2;
+    vigil.on_yes_no_choice(&mut state, spell, yes, &registry);
+    let to = if yes { Zone::Battlefield } else { Zone::Hand };
+    assert!(asked_for(&[Act::Move(land, to), Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_the_battlefield;
+    caravan_vigil_of_the_first_player_declined_shuffles: (0, 0),
+    caravan_vigil_of_the_first_player_puts_the_land_into_hand_without_morbid: (0, 1),
+    caravan_vigil_of_the_first_player_with_morbid_puts_the_land_onto_the_battlefield_on_yes: (0, 2),
+    caravan_vigil_of_the_first_player_with_morbid_puts_the_land_into_hand_on_no: (0, 3),
+    caravan_vigil_of_the_second_player_declined_shuffles: (1, 0),
+    caravan_vigil_of_the_second_player_puts_the_land_into_hand_without_morbid: (1, 1),
+    caravan_vigil_of_the_second_player_with_morbid_puts_the_land_onto_the_battlefield_on_yes: (1, 2),
+    caravan_vigil_of_the_second_player_with_morbid_puts_the_land_into_hand_on_no: (1, 3),
+}
+
+/// Frightful Delusion's board: the spell, and its target, a spell under
+/// `them` on the stack or gone from it to its owner's graveyard; `them`
+/// with `in_hand` cards in hand, and the other player with one.
+fn delusion(them: PlayerId, gone: bool, in_hand: usize) -> (CardRegistry, GameState, CardId, ObjectId, ObjectId, Vec<ObjectId>) {
+    let (registry, mut state, blank, card) = board(Box::new(isd::frightful_delusion::FrightfulDelusion));
+    let me = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    let spell = state.create_object(blank, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Stack }, None, None);
+    if gone {
+        state.players[0].graveyard_order.push(spell);
+    } else {
+        state.get_object_mut(spell).expect("just created").controller = them;
+    }
+    let mut cards = Vec::with_capacity(2);
+    for _ in 0..in_hand {
+        cards.push(state.create_object(blank, them, Zone::Hand, None, None));
+    }
+    state.create_object(blank, PlayerId(1 - them.0), Zone::Hand, None, None);
+    (registry, state, card, me, spell, cards)
+}
+
+card_proof! {
+    /// Frightful Delusion, its target gone from the stack or illegal:
+    /// nothing at all (CR 608.2b). For a spell under either player.
+    fn frightful_delusion_does_nothing_with_its_target_gone() {
+        let them = any_player();
+        let gone: bool = kani::any();
+        let (registry, mut state, card, me, spell, _) = delusion(them, gone, 1);
+        let target = if gone && kani::any() { Target::Object(spell) } else { Target::Illegal };
+        let before = Snapshot::of(&state);
+        registry.get(card).expect("registered").on_resolve(&mut state, me, &[target], &registry);
+        assert!(acted() == 0 && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state));
+    }
+}
+
+/// Frightful Delusion: its target still a spell on the stack, that
+/// spell's controller is asked whether to pay {1}; then, paying and able
+/// to, the spell is not countered, and otherwise it is; and either way
+/// that player discards a card (the card's ruling: "The player discards a
+/// card even if they pay {1}"), chosen by them when they have more than
+/// one (CR 701.9a), and with none, nothing. For the target's controller
+/// `them`, whether they `pay`, and the cards in their hand, up to two,
+/// each a constant in its harness: with all three the solver's, in one
+/// harness, the proof ran out of memory at four and a half gigabytes in
+/// symbolic execution.
+fn frightful_delusion_counters_unless_paid_and_that_player_discards((them, pay, in_hand): (u8, bool, usize)) {
+    let them = PlayerId(them);
+    let (registry, mut state, card, me, spell, cards) = delusion(them, false, in_hand);
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_resolve(&mut state, me, &[Target::Object(spell)], &registry);
+    let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
+    }) if *player == them && *source == me && *spell_id == spell && *source_spell_id == me && *cost == one);
+    assert!(asked && acted() == 0);
+    let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::PayDecision(pay), &registry);
+    let paid = pay && matches!(super::act(0), Some(Act::Pay(_, _, true)));
+    // Each action that may or may not come compared on its own, at its
+    // place, rather than through a list of one of four lengths.
+    let (p, c) = (usize::from(pay), usize::from(!paid));
+    assert!(acted() == p + c + usize::from(cards.len() == 1));
+    if pay {
+        assert!(were(0, 1, |_| Act::Pay(them, one.clone(), paid)));
+    }
+    if !paid {
+        assert!(were(p, 1, |_| Act::Counter { spell, exile: false }));
+    }
+    if cards.len() == 1 {
+        assert!(were(p + c, 1, |_| Act::Discard(cards[0])));
+    }
+    if cards.len() == 2 {
+        let asks_to_discard = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
+                player: from, cards: offered, discard_immediately: true, remaining: 1, ..
+            },
+        }) if *player == them && *from == them && *source == me && *offered == cards);
+        assert!(asks_to_discard && Snapshot::of(&state) == asking(&before, true));
+    } else {
+        assert!(Snapshot::of(&state) == before);
+    }
+    std::mem::forget((registry, state, one, cards));
+}
+
+case_by_case! { frightful_delusion_counters_unless_paid_and_that_player_discards;
+    frightful_delusion_against_the_first_players_spell_paid_for_with_no_card_in_hand: (0, true, 0),
+    frightful_delusion_against_the_first_players_spell_paid_for_with_one_card_in_hand: (0, true, 1),
+    frightful_delusion_against_the_first_players_spell_paid_for_with_two_cards_in_hand: (0, true, 2),
+    frightful_delusion_against_the_first_players_spell_not_paid_for_with_no_card_in_hand: (0, false, 0),
+    frightful_delusion_against_the_first_players_spell_not_paid_for_with_one_card_in_hand: (0, false, 1),
+    frightful_delusion_against_the_first_players_spell_not_paid_for_with_two_cards_in_hand: (0, false, 2),
+    frightful_delusion_against_the_second_players_spell_paid_for_with_no_card_in_hand: (1, true, 0),
+    frightful_delusion_against_the_second_players_spell_paid_for_with_one_card_in_hand: (1, true, 1),
+    frightful_delusion_against_the_second_players_spell_paid_for_with_two_cards_in_hand: (1, true, 2),
+    frightful_delusion_against_the_second_players_spell_not_paid_for_with_no_card_in_hand: (1, false, 0),
+    frightful_delusion_against_the_second_players_spell_not_paid_for_with_one_card_in_hand: (1, false, 1),
+    frightful_delusion_against_the_second_players_spell_not_paid_for_with_two_cards_in_hand: (1, false, 2),
+}
+
+/// Divine Reckoning's board: the spell on the stack, either player active,
+/// and three permanents, each either player's, each a creature or not.
+struct Reckoning {
+    registry: CardRegistry,
+    state: GameState,
+    card: CardId,
+    spell: ObjectId,
+    permanents: [ObjectId; 3],
+}
+
+/// The board with player `active` active, and each permanent of `shape`
+/// a creature of player 0 (0), of player 1 (1), or not a creature and
+/// either player's (2).
+fn reckoning_of(active: PlayerId, shape: [u8; 3]) -> Reckoning {
+    let (registry, mut state, blank, card) = board(Box::new(isd::divine_reckoning::DivineReckoning));
+    state.active_player = active;
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    let mut permanents = [spell; 3];
+    for (slot, kind) in permanents.iter_mut().zip(shape) {
+        let controller = if kind == 2 { any_player() } else { PlayerId(kind) };
+        let id = state.create_object(blank, controller, Zone::Battlefield, None, None);
+        let o = state.get_object_mut(id).expect("just created");
+        o.card_types = Vec::with_capacity(1);
+        if kind != 2 {
+            o.card_types.push(CardType::Creature);
+        }
+        *slot = id;
+    }
+    Reckoning { registry, state, card, spell, permanents }
+}
+
+impl Reckoning {
+    fn creatures_of(&self, p: PlayerId) -> Vec<ObjectId> {
+        let mut ids = Vec::with_capacity(3);
+        for id in self.permanents {
+            let o = self.state.get_object(id).expect("on the board");
+            if o.controller == p && o.card_types.contains(&CardType::Creature) {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    /// The player asked, and the creatures offered, if one is.
+    fn asked(&self) -> Option<(PlayerId, Vec<ObjectId>)> {
+        match &self.state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice {
+                player, source, choice: ResolutionChoiceKind::ChooseTarget {
+                    options, optional: false, effect: PendingEffect::CardEffect { source_id, .. }, ..
+                },
+            }) if *source == self.spell && *source_id == self.spell => {
+                // Not allocated at the length of `options`, which the
+                // solver leaves open (`picked`).
+                let ids = picked(options, |t| match t { Target::Object(id) => Some(*id), _ => None });
+                (ids.len() == options.len()).then_some((*player, ids))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Divine Reckoning: each player, the active player first and then in
+/// turn order (CR 101.4), chooses a creature they control: asked when
+/// they control more than one, the one when they control one, none when
+/// none; then every creature not chosen is destroyed, all at once (CR
+/// 701.8a, one event), and nothing is left kept on the spell. Over three permanents, each a creature of either
+/// player or not a creature, either player active, and every choice of a
+/// player asked. The active player and which permanents are whose
+/// creatures (`reckoning_of`'s shape) are constants in each harness: with
+/// them the solver's, each player's creatures were a list of every length
+/// at once, and the proof ran out of memory at four and a half gigabytes
+/// in symbolic execution.
+fn divine_reckoning_keeps_one_creature_each_and_destroys_the_rest((active, shape): (u8, [u8; 3])) {
+    let mut r = reckoning_of(PlayerId(active), shape);
+    let before = Snapshot::of(&r.state);
+    let spell = r.spell;
+    let active = r.state.active_player;
+    r.registry.get(r.card).expect("registered").on_resolve(&mut r.state, spell, &[], &r.registry);
+    let mut kept = Vec::with_capacity(2);
+    for player in [active, PlayerId(1 - active.0)] {
+        let theirs = r.creatures_of(player);
+        match theirs.len() {
+            0 => {}
+            1 => kept.push(theirs[0]),
+            _ => {
+                let Some((asked, offered)) = r.asked() else { panic!("a player with a choice is asked it") };
+                assert!(asked == player && offered == theirs && acted() == 0);
+                let chosen = theirs[usize::from(kani::any::<bool>()) % theirs.len()];
+                crate::proofs::cards::clear_prompt(&mut r.state);
+                r.registry.get(r.card).expect("registered").resolve_card_effect(&mut r.state, spell, "", &Target::Object(chosen), &r.registry);
+                kept.push(chosen);
+            }
+        }
+    }
+    assert!(r.state.awaiting_action.is_none());
+    let mut destroyed = Vec::with_capacity(3);
+    for id in r.permanents {
+        if r.state.get_object(id).expect("on the board").card_types.contains(&CardType::Creature) && !kept.contains(&id) {
+            destroyed.push(id);
+        }
+    }
+    let Some(Act::DestroyAll(outcomes)) = super::act(0) else { panic!("destroys the rest") };
+    assert!(acted() == 1 && outcomes.len() == destroyed.len());
+    for (i, (id, _)) in outcomes.iter().enumerate() {
+        assert!(*id == destroyed[i]);
+    }
+    assert!(Snapshot::of(&r.state) == before && crate::proofs::cards::no_ids_kept());
+    std::mem::forget((r, kept, destroyed, outcomes));
+}
+
+case_by_case! { divine_reckoning_keeps_one_creature_each_and_destroys_the_rest;
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_first_players_creature_and_a_first_players_creature: (0, [0, 0, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_first_players_creature_and_a_second_players_creature: (0, [0, 0, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_first_players_creature_and_a_noncreature: (0, [0, 0, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_second_players_creature_and_a_first_players_creature: (0, [0, 1, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_second_players_creature_and_a_second_players_creature: (0, [0, 1, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_second_players_creature_and_a_noncreature: (0, [0, 1, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_noncreature_and_a_first_players_creature: (0, [0, 2, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_noncreature_and_a_second_players_creature: (0, [0, 2, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_noncreature_and_a_noncreature: (0, [0, 2, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_first_players_creature_and_a_first_players_creature: (0, [1, 0, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_first_players_creature_and_a_second_players_creature: (0, [1, 0, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_first_players_creature_and_a_noncreature: (0, [1, 0, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_second_players_creature_and_a_first_players_creature: (0, [1, 1, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_second_players_creature_and_a_second_players_creature: (0, [1, 1, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_second_players_creature_and_a_noncreature: (0, [1, 1, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_noncreature_and_a_first_players_creature: (0, [1, 2, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_noncreature_and_a_second_players_creature: (0, [1, 2, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_noncreature_and_a_noncreature: (0, [1, 2, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_first_players_creature_and_a_first_players_creature: (0, [2, 0, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_first_players_creature_and_a_second_players_creature: (0, [2, 0, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_first_players_creature_and_a_noncreature: (0, [2, 0, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_second_players_creature_and_a_first_players_creature: (0, [2, 1, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_second_players_creature_and_a_second_players_creature: (0, [2, 1, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_second_players_creature_and_a_noncreature: (0, [2, 1, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_noncreature_and_a_first_players_creature: (0, [2, 2, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_noncreature_and_a_second_players_creature: (0, [2, 2, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_noncreature_and_a_noncreature: (0, [2, 2, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_first_players_creature_and_a_first_players_creature: (1, [0, 0, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_first_players_creature_and_a_second_players_creature: (1, [0, 0, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_first_players_creature_and_a_noncreature: (1, [0, 0, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_second_players_creature_and_a_first_players_creature: (1, [0, 1, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_second_players_creature_and_a_second_players_creature: (1, [0, 1, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_second_players_creature_and_a_noncreature: (1, [0, 1, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_noncreature_and_a_first_players_creature: (1, [0, 2, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_noncreature_and_a_second_players_creature: (1, [0, 2, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_noncreature_and_a_noncreature: (1, [0, 2, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_first_players_creature_and_a_first_players_creature: (1, [1, 0, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_first_players_creature_and_a_second_players_creature: (1, [1, 0, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_first_players_creature_and_a_noncreature: (1, [1, 0, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_second_players_creature_and_a_first_players_creature: (1, [1, 1, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_second_players_creature_and_a_second_players_creature: (1, [1, 1, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_second_players_creature_and_a_noncreature: (1, [1, 1, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_noncreature_and_a_first_players_creature: (1, [1, 2, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_noncreature_and_a_second_players_creature: (1, [1, 2, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_noncreature_and_a_noncreature: (1, [1, 2, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_first_players_creature_and_a_first_players_creature: (1, [2, 0, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_first_players_creature_and_a_second_players_creature: (1, [2, 0, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_first_players_creature_and_a_noncreature: (1, [2, 0, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_second_players_creature_and_a_first_players_creature: (1, [2, 1, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_second_players_creature_and_a_second_players_creature: (1, [2, 1, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_second_players_creature_and_a_noncreature: (1, [2, 1, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_noncreature_and_a_first_players_creature: (1, [2, 2, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_noncreature_and_a_second_players_creature: (1, [2, 2, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_noncreature_and_a_noncreature: (1, [2, 2, 2]),
+}

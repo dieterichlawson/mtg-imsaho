@@ -47,7 +47,7 @@ impl CardBehavior for FiendHunter {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
         // CR 603.3d: the target was chosen when the trigger went on the
         // stack; legality was re-checked before resolution. Only the "you
         // may" decision remains — offer exactly the locked target (or
@@ -85,6 +85,12 @@ impl CardBehavior for FiendHunter {
         // `move_object` logs the exile; a line of the card's own told it a
         // second time in other words (#738).
         state.move_object(*id, Zone::Exile, registry);
+        // A Hunter gone before this resolved has had its leaves trigger, so
+        // the creature stays exiled (the card's ruling); one back since is a
+        // new object whose own leaving returns nothing (CR 400.7, 607.2a).
+        if !crate::cards::helpers::still_on_battlefield(state, source_id) {
+            return;
+        }
         if let Some(source_obj) = state.get_object_mut(source_id) {
             source_obj.card_state.insert("exiled_creature".into(), *id);
         }

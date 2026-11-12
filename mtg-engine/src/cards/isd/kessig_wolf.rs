@@ -47,7 +47,7 @@ impl CardBehavior for KessigWolf {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
+        state.add_until_end_of_turn(TemporaryEffect::GrantKeyword {
             target: object_id,
             keyword: Keyword::FirstStrike,
         });

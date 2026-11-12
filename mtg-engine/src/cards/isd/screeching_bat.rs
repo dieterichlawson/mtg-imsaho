@@ -80,7 +80,7 @@ impl CardBehavior for ScreechingBat {
         if !crate::cards::helpers::still_on_battlefield(state, self_id) {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         // "You may pay {2}{B}{B}. If you do, transform."
@@ -116,7 +116,7 @@ impl CardBehavior for ScreechingBat {
         if !crate::cards::helpers::still_on_battlefield(state, self_id) {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
 
         // Recompute the tap plan and execute it. State hasn't changed since
         // `on_upkeep` set up the prompt (no intervening triggers / priority),
@@ -129,9 +129,5 @@ impl CardBehavior for ScreechingBat {
 
         // Transform — uses the generic helper to update name, keywords, and subtypes.
         helpers::apply_transform(state, self_id, registry);
-    }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
     }
 }

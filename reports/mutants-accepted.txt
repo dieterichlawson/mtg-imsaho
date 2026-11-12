@@ -695,3 +695,16 @@ mtg-engine/src/engine.rs: replace < with <= in mana_demands
 mtg-engine/src/engine.rs: replace < with == in mana_demands
 mtg-engine/src/engine.rs: replace < with > in mana_demands
 mtg-engine/src/engine.rs: replace || with && in mana_demands
+# The proofs' stand-ins outside `proofs/`, 2026-11-09: the Kani twins of
+# `transient`, `discard` and `Collector::list`, compiled only under
+# cfg(kani), and the two maps' `reserve`, which changes capacity alone.
+# Reasons in reports/mutation-testing.md, "The proofs' stand-ins".
+mtg-engine/src/cards/mod.rs: replace discard with ()
+mtg-engine/src/cards/mod.rs: replace transient -> std::mem::ManuallyDrop<T> with ManuallyDrop::from(Default::default())
+mtg-engine/src/cards/mod.rs: replace transient -> std::mem::ManuallyDrop<T> with ManuallyDrop::from_iter([Default::default()])
+mtg-engine/src/cards/mod.rs: replace transient -> std::mem::ManuallyDrop<T> with ManuallyDrop::new()
+mtg-engine/src/cards/mod.rs: replace transient -> std::mem::ManuallyDrop<T> with ManuallyDrop::new(Default::default())
+mtg-engine/src/triggers/collect/mod.rs: replace Collector::list -> Vec<PendingTrigger> with vec![Default::default()]
+mtg-engine/src/triggers/collect/mod.rs: replace Collector::list -> Vec<PendingTrigger> with vec![]
+mtg-engine/src/vec_map.rs: replace VecMap<K, V>::reserve with ()
+mtg-engine/src/vec_map.rs: replace VecSet<K>::reserve with ()

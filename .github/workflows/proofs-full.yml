@@ -1,0 +1,129 @@
+# Every Kani proof, twice a month: the run the pull request's tier
+# (proofs.yml) samples. Some 85 hours of solver time, shared out over 30
+# jobs by how long each harness took last time (scripts/kani/times.txt),
+# each under the six hours a job may take, with a cbmc held to 12 GB.
+#
+# Color semantics: GREEN means every harness that proved last time proved
+# again. RED means one did not (an issue is filed, labelled phase:proofs,
+# naming each), or a shard broke. A harness in
+# scripts/kani/expected-open.txt (known not to prove) is not counted, and
+# one of them that now proves is said so in the summary, to be taken off.
+# The merged results are kept as an artifact: scripts/kani-tiers.py
+# write reads them to refresh the tiers' lists.
+name: proofs-full
+
+on:
+  schedule:
+    # The 1st and the 15th, before the day's other scheduled work.
+    - cron: "23 2 1,15 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+                16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Kani built from source and its toolchain set up is minutes of a
+      # half-hour job; kept between runs, keyed on scripts/prove.sh, which
+      # pins the version.
+      - name: Cache Kani
+        id: kani-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-kani
+            ~/.cargo/bin/kani
+            ~/.kani
+          key: kani-${{ runner.os }}-${{ hashFiles('scripts/prove.sh') }}
+
+      - name: Install Kani
+        if: steps.kani-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked kani-verifier --version "$(sed -n 's/^KANI_VERSION=//p' scripts/prove.sh)"
+          cargo kani setup
+
+      - name: Prove shard ${{ matrix.shard }} of 30
+        run: scripts/prove.sh kani-shard ${{ matrix.shard }}/30
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kani-shard-${{ matrix.shard }}
+          path: logs/kani/shard-${{ matrix.shard }}.txt
+          if-no-files-found: warn
+
+  report:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: shards
+          pattern: kani-shard-*
+          merge-multiple: true
+
+      - name: Merge the shards
+        run: |
+          mkdir -p logs/kani
+          cat shards/*.txt > logs/kani/full.txt 2>/dev/null || true
+          echo "$(wc -l < logs/kani/full.txt) result lines from $(ls shards | wc -l) shards"
+
+      - name: Compare with the harnesses known not to prove
+        id: verdict
+        run: |
+          set +e
+          python3 - > verdict.txt <<'EOF'
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location('kb', 'scripts/kani-bounded.py')
+          kb = importlib.util.module_from_spec(spec); spec.loader.exec_module(kb)
+          every = kb.list_harnesses('mtg-engine/src')
+          sys.exit(kb.verdict(every, 'logs/kani/full.txt', kb.read_names('scripts/kani/expected-open.txt')))
+          EOF
+          status=$?
+          cat verdict.txt
+          { echo '```'; cat verdict.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: File an issue for the harnesses that no longer prove
+        if: steps.verdict.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Kani: harnesses that proved no longer do"
+          body=$(printf 'The scheduled run of every Kani proof (%s, run %s) found harnesses that\nproved in the last run and do not now, or have no result (a shard broke):\n\n```\n%s\n```\n\nscripts/prove.sh kani NAME reruns one. A harness that cannot be made to\nprove again goes in scripts/kani/expected-open.txt, with why, in the same\nchange that says so in docs/plans/formal-verification.md.\n' \
+            "${GITHUB_SHA::7}" "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            "$(grep -E '^(NOT PROVED|[0-9]+ harnesses)' verdict.txt)")
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label phase:proofs \
+              || gh issue create --title "$title" --body "$body"
+          fi
+          exit 1
+
+      - name: Keep the merged results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kani-full-results
+          path: logs/kani/full.txt
+          if-no-files-found: warn

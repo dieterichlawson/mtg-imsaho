@@ -494,11 +494,14 @@ impl GameView {
             .map(|obj| card_view(state, obj, registry))
             .collect();
 
-        // Your library cards (you know what's in your deck, not the order).
-        let your_library_cards: Vec<CardView> = player_state.library_order.iter()
+        // Your library cards (you know what's in your deck, not the order):
+        // listed by name, not as they lie, which would say what is drawn
+        // next (CR 401.2).
+        let mut your_library_cards: Vec<CardView> = player_state.library_order.iter()
             .filter_map(|&obj_id| state.get_object(obj_id))
             .map(|obj| card_view(state, obj, registry))
             .collect();
+        your_library_cards.sort_by(|a, b| a.name.cmp(&b.name).then(a.object_id.cmp(&b.object_id)));
 
         // Opponents.
         let opponents = state.players.iter()
@@ -816,11 +819,14 @@ impl GameView {
         }
 
         // Collect names of objects referenced in pending resolution choices
-        // that might not be in any visible zone (e.g. opponent's hand, library).
+        // that might not be in any visible zone (e.g. opponent's hand, library),
+        // for the player asked alone: the hand a discard is chosen from, the
+        // top card looked at, the library searched are theirs to see, and
+        // the other seat is sent this view too (CR 402.3, 701.16, 701.19).
         let mut revealed_names = std::collections::HashMap::new();
         if let Some(ref awaiting) = state.awaiting_action {
             let ids_to_resolve: Vec<ObjectId> = match awaiting {
-                crate::state::AwaitingAction::ResolutionChoice { choice, .. } => {
+                crate::state::AwaitingAction::ResolutionChoice { player: asked, choice, .. } if *asked == player => {
                     use crate::state::ResolutionChoiceKind;
                     match choice {
                         ResolutionChoiceKind::ChooseTarget { options, .. } => {

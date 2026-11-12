@@ -41,25 +41,61 @@ jobs:
       - name: Prove
         run: scripts/prove.sh verus
 
+  # The pull request's tier of the Kani proofs (scripts/prove.sh kani-pr):
+  # scripts/kani/pr.list, the fastest proved harness of each of most of
+  # the proof modules, and the proofs of each proof module the change
+  # edits, all under half an hour. Every harness is run by
+  # proofs-full.yml, twice a month. RED means a harness that proved does
+  # not now (the log's NOT PROVED lines name it); one of
+  # scripts/kani/expected-open.txt is not counted.
   kani:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Kani built from source and its toolchain set up is minutes of a
+      # half-hour job; kept between runs, keyed on scripts/prove.sh, which
+      # pins the version.
+      - name: Cache Kani
+        id: kani-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-kani
+            ~/.cargo/bin/kani
+            ~/.kani
+          key: kani-${{ runner.os }}-${{ hashFiles('scripts/prove.sh') }}
 
       - name: Install Kani
+        if: steps.kani-cache.outputs.cache-hit != 'true'
         run: |
           cargo install --locked kani-verifier --version "$(sed -n 's/^KANI_VERSION=//p' scripts/prove.sh)"
           cargo kani setup
 
       - name: Prove
-        run: scripts/prove.sh kani
+        env:
+          KANI_PR_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: scripts/prove.sh kani-pr
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kani-pr-results
+          path: logs/kani/pr.txt
+          if-no-files-found: ignore
 
   # The bounded exhaustive checks at the scope `cargo test` is too slow
   # for in a debug build: every board of up to three mana sources, up to
   # two mana floating and every cost shape, the autotap planner held to
-  # tapping by hand (scripts/prove.sh exhaustive). GREEN means no board in
-  # that space breaks the planner's contract.
+  # tapping by hand; every Equipment and Aura the card grammar reads on
+  # every creature it reads, fought against every other; every creature it
+  # fights with blocked by every pair of kinds of them; and every two kinds
+  # of them attacking together (scripts/prove.sh exhaustive). GREEN means no board in that space breaks the planner's
+  # contract, and no such combat disagrees with the cards' text.
   exhaustive:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -71,5 +107,5 @@ jobs:
         with:
           toolchain: "1.97.0"
 
-      - name: Check every small board
+      - name: Check every small board and every equipped or enchanted fight
         run: scripts/prove.sh exhaustive

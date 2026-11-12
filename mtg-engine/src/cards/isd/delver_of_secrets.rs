@@ -75,7 +75,7 @@ impl CardBehavior for DelverOfSecrets {
         if !crate::cards::helpers::still_on_battlefield(state, self_id) {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // The front face's trigger; the back face has none. Which face the
         // trigger came from is recorded with it, not read off the permanent
         // now (`trigger_face_is_back`): a Delver flipped in response still resolves the front face's
@@ -133,7 +133,7 @@ impl CardBehavior for DelverOfSecrets {
             return;
         }
         // Player reveals the top card. Only transform if it's an instant or sorcery.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         let top_card_id = state.get_player(controller).library_order.first().copied();
         let top_card_name = top_card_id.map_or_else(|| "a card".into(), |id| state.name_of(id, registry));
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);

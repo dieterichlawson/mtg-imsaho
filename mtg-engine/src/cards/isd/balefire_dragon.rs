@@ -45,10 +45,8 @@ impl CardBehavior for BalefireDragon {
         // source that can stop existing: a token copy of the Dragon (Cackling
         // Counterpart) destroyed in response ceases to exist under SBA 704.5d,
         // and the board was spared.
-        let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, damaged_player).into_iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .collect();
+        let creatures = crate::cards::helpers::ids_where(state.objects_in_zone(Zone::Battlefield, damaged_player),
+            |o| state.is_creature(o.id, registry));
 
         // One batch: "each creature" is dealt its damage at once, so every
         // event is settled (CR 616.1) before any of it lands.

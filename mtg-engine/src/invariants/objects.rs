@@ -225,10 +225,11 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("{tag} is a token with subtypes {:?} but no creature type", obj.subtypes));
         }
 
-        // CR 111.4: an unnamed token's name is its subtype(s) — the rule's own
-        // example, a "Goblin Scout creature token", is named "Goblin Scout".
-        // No literal "Token" in it: that word is the renderer's, and a name
-        // carrying it matches nothing a card can be named.
+        // CR 111.4: an unnamed token's name is its subtype(s) plus the word
+        // "Token" — the rule's own example, Dwarven Reinforcements' Dwarf
+        // Berserker, is named "Dwarf Berserker Token". (An older edition of
+        // the rule named it after its subtypes alone, which this used to
+        // check, and which a card copying a token took for its own name.)
         //
         // Against the token's PRINTED subtypes, not its current ones. The same
         // rule ends "once a token is on the battlefield, changing its name
@@ -243,11 +244,16 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             // whole rule used to do, so falling back to it leaves no token
             // unchecked.
             let printed = obj.token_face.as_ref().map_or(&obj.subtypes, |f| &f.subtypes);
+            // Its subtypes plus the word "Token" ("Spirit Token").
             let words: Vec<&str> = obj.name.split_whitespace().collect();
-            if words.len() != printed.len()
-                || !words.iter().all(|w| printed.iter().any(|s| s == w))
+            let Some((&last, types)) = words.split_last() else {
+                v.push(format!("{tag}: token has no name (CR 111.4)"));
+                continue;
+            };
+            if last != "Token" || types.len() != printed.len()
+                || !types.iter().all(|w| printed.iter().any(|s| s == w))
             {
-                v.push(format!("{tag}: token name {:?} is not its subtypes {:?} (CR 111.4)",
+                v.push(format!("{tag}: token name {:?} is not its subtypes {:?} plus \"Token\" (CR 111.4)",
                     obj.name, printed));
             }
         }

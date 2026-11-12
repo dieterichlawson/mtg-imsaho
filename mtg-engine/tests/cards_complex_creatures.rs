@@ -243,10 +243,10 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     // Should have 3 Wolf tokens on the battlefield. CR 111.4 names a token
     // after its subtypes, so these are named "Wolf" — a filter on any other
     // string matches nothing and asserts nothing.
-    assert_eq!(count_tokens_named(&state, "Wolf"), 3, "Should have created 3 Wolf tokens");
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 3, "Should have created 3 Wolf tokens");
 
     let wolves: Vec<ObjectId> = state.objects.values()
-        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Wolf")
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Wolf Token")
         .map(|o| o.id)
         .collect();
     assert_eq!(wolves.len(), 3);
@@ -295,7 +295,7 @@ fn duplicate_attacker_entries_collapse_to_one_attack_and_one_trigger() {
     while !state.stack.is_empty() {
         mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     }
-    assert_eq!(count_tokens_named(&state, "Wolf"), 2,
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 2,
         "one trigger resolution: one wolf per creature card in the graveyard");
 }
 
@@ -348,7 +348,7 @@ fn kessig_wolves_attack_the_cagebreakers_defender_and_not_just_the_next_player()
         choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Player(P2))),
     }, &reg);
 
-    let wolf = find_token_named(&state, "Wolf").expect("should have created a Wolf token");
+    let wolf = find_token_named(&state, "Wolf Token").expect("should have created a Wolf token");
     assert_eq!(state.combat.as_ref().and_then(|c| c.attackers.get(&wolf).copied()), Some(P2),
         "the Wolf attacks the player its controller chose");
 }
@@ -567,10 +567,10 @@ fn gutter_grime_creates_ooze_on_creature_death() {
         "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
-    assert_eq!(count_tokens_named(&state, "Ooze"), 1, "Should have created 1 Ooze token");
+    assert_eq!(count_tokens_named(&state, "Ooze Token"), 1, "Should have created 1 Ooze token");
 
     // "create a **green Ooze creature** token" — every word of it.
-    let ooze = find_token_named(&state, "Ooze").unwrap();
+    let ooze = find_token_named(&state, "Ooze Token").unwrap();
     assert_eq!(state.colors_of(ooze, &reg), vec![Color::Green], "the Ooze is green");
     assert!(state.is_creature(ooze, &reg), "and a creature");
     assert!(state.has_subtype(ooze, "Ooze", &reg), "and an Ooze");
@@ -601,7 +601,7 @@ fn the_ooze_is_announced_at_the_size_its_own_ability_gives_it() {
         "the size that entered, not the placeholder: {lines:?}");
     assert!(!lines.iter().any(|l| l.contains("0/0 Ooze")), "{lines:?}");
 
-    let ooze = find_token_named(&state, "Ooze").expect("the token is there");
+    let ooze = find_token_named(&state, "Ooze Token").expect("the token is there");
     assert_eq!(state.effective_power(ooze, &reg), Some(1), "and it really is one");
 
     // A second death, and the line moves with the slime count.
@@ -627,7 +627,7 @@ fn the_ooze_carries_its_own_pt_defining_ability_into_the_view() {
     state.move_object(dead, Zone::Graveyard, &reg);
     let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
     behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &[], &reg);
-    let ooze = find_token_named(&state, "Ooze").expect("the token is there");
+    let ooze = find_token_named(&state, "Ooze Token").expect("the token is there");
     let spirit = state.create_token_with_subtypes(
         "", P0, 1, 1, vec![Color::White], vec![CardType::Creature],
         vec![Keyword::Flying], vec!["Spirit".into()], &reg);
@@ -870,7 +870,7 @@ fn undead_alchemist_mills_instead_of_damage() {
 
     // Should have created Zombie tokens.
     // 2 creature cards milled = 2 Zombie tokens + the original zombie we created.
-    assert!(count_tokens_named_by(&state, "Zombie", P0) >= 2,
+    assert!(count_tokens_named_by(&state, "Zombie Token", P0) >= 2,
         "Should create Zombie tokens for each milled creature");
 }
 
@@ -1109,7 +1109,7 @@ fn cellar_door_mills_the_bottom_card_and_zombies_only_for_a_creature() {
             "the bottom card ({bottom_name}) is the one that goes");
         assert_eq!(state.get_object(top).unwrap().zone, Zone::Library,
             "and the top card ({top_name}) stays where it is");
-        assert_eq!(count_tokens_named(&state, "Zombie"), usize::from(expect_zombie),
+        assert_eq!(count_tokens_named(&state, "Zombie Token"), usize::from(expect_zombie),
             "milled {bottom_name}: 'if it's a creature card' is {expect_zombie}");
     }
 }
@@ -1132,12 +1132,12 @@ fn cellar_doors_zombie_is_a_two_two_black_zombie_for_the_activating_player() {
     activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 1,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P0), 1,
         "the token belongs to whoever activated the ability");
-    assert_eq!(count_tokens_named_by(&state, "Zombie", P1), 0,
+    assert_eq!(count_tokens_named_by(&state, "Zombie Token", P1), 0,
         "not to the player whose library was milled");
 
-    let token = find_token_named(&state, "Zombie").unwrap();
+    let token = find_token_named(&state, "Zombie Token").unwrap();
     assert_eq!(state.effective_power(token, &reg), Some(2));
     assert_eq!(state.effective_toughness(token, &reg), Some(2));
     assert!(state.colors_of(token, &reg).contains(&Color::Black), "black");
@@ -1158,7 +1158,7 @@ fn cellar_door_does_nothing_to_an_empty_library() {
     activate_via_hooks(&mut state, &reg, door, 0, &[mtg_engine::actions::Target::Player(P1)]);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Zombie"), 0,
+    assert_eq!(count_tokens_named(&state, "Zombie Token"), 0,
         "nothing was milled, so nothing was a creature card");
     assert!(state.awaiting_action.is_none(),
         "and the ability finished rather than stalling");
@@ -3070,6 +3070,30 @@ fn trigger_does_not_fire_on_combat_damage_to_player() {
         "Should NOT trigger on combat damage to player");
 }
 
+/// "Whenever this creature deals combat damage to a creature": a
+/// planeswalker it attacks and damages is not one (CR 510.1a-c, 120.3c).
+/// The collector used to raise the trigger for damage to any object, and
+/// a won flip destroyed the Garruk it hit. Found by the card reference
+/// (`every_attack_on_a_planeswalker_is_what_the_rules_say`).
+#[test]
+fn creepy_doll_flips_no_coin_for_a_planeswalker_it_damages() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let doll = named_permanent(&mut state, &reg, "Creepy Doll", P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P1);
+    attacks_unblocked(&mut state, doll, P1);
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source: doll,
+        target: DamageTarget::Object(garruk),
+        amount: 1,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    assert!(!state.stack.iter().any(|entry| matches!(entry, StackEntry::Trigger(_))),
+        "no coin is flipped for damage to a planeswalker");
+}
+
 /// "Flip a coin. If you win the flip, destroy that creature." Both outcomes,
 /// named rather than sampled: the game's randomness lives on `GameState`, so
 /// a test says which way the coin went.
@@ -3272,7 +3296,7 @@ fn every_ooze_is_sized_by_the_current_slime_count() {
 
         assert_eq!(counters_of(&state, grime, CounterType::Slime), expected,
             "one slime counter per nontoken creature death");
-        assert_eq!(count_tokens_named(&state, "Ooze"), expected as usize,
+        assert_eq!(count_tokens_named(&state, "Ooze Token"), expected as usize,
             "and one Ooze per death");
 
         // Every Ooze, including the ones made earlier, is the current size.
@@ -3280,7 +3304,7 @@ fn every_ooze_is_sized_by_the_current_slime_count() {
         // "Ooze" — a filter on any other string matches nothing and
         // asserts nothing.
         let oozes: Vec<_> = state.objects.values()
-            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze")
+            .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze Token")
             .map(|o| o.id)
             .collect();
         assert_eq!(oozes.len(), expected as usize);
@@ -3327,7 +3351,7 @@ fn gutter_grime_counts_only_your_own_nontoken_creatures() {
 
         assert_eq!(counters_of(&state, grime, CounterType::Slime), u32::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
-        assert_eq!(count_tokens_named(&state, "Ooze"), usize::from(counts),
+        assert_eq!(count_tokens_named(&state, "Ooze Token"), usize::from(counts),
             "controller=p{}, is_token={is_token}", controller.0);
     }
 }
@@ -3411,7 +3435,7 @@ fn the_oozes_die_when_gutter_grime_leaves() {
     kill_by_damage(&mut state, &reg, creature);
     triggers::process_triggers(&mut state, &reg);
 
-    let ooze = find_token_named(&state, "Ooze").expect("an Ooze was made");
+    let ooze = find_token_named(&state, "Ooze Token").expect("an Ooze was made");
     assert_eq!(state.effective_power(ooze, &reg), Some(1), "test precondition: a 1/1");
 
     state.move_object(grime, Zone::Graveyard, &reg);
@@ -3775,6 +3799,39 @@ fn a_horde_entering_from_the_graveyard_counts_the_graveyard_it_leaves() {
          it came out of, got {counters}");
 }
 
+/// "Each other Zombie YOU control and each Zombie card in YOUR graveyard":
+/// "you" is the player the Horde enters under (CR 614.12, the permanent as
+/// it would exist on the battlefield), which is not its owner when Grimoire
+/// of the Dead returns an opponent's Horde under its own controller.
+///
+/// The count was of the Horde's last controller, read off the card in the
+/// graveyard: an opponent's Horde that had died under them and was
+/// reanimated by P0 counted the opponent's Zombies and graveyard, not P0's.
+/// Found by the card's proof (`proofs::cards::replacements`).
+#[test]
+fn a_horde_entering_under_another_player_counts_that_players_zombies() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // P1's Horde, dead under P1.
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P1);
+    state.move_object(horde, Zone::Graveyard, &reg);
+    // P0 controls two Zombies; P1 controls none, and has no other Zombie
+    // card in their graveyard.
+    for _ in 0..2 {
+        named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    }
+    state.events.clear();
+
+    // Grimoire of the Dead's "under your control".
+    state.move_object_under_control(horde, Zone::Battlefield, P0, &reg);
+
+    let counters = state.get_object(horde).unwrap().counters
+        .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    assert_eq!(counters, 2,
+        "the Horde entered under P0 counts P0's two Zombies and P0's graveyard, \
+         where it is not; it counted its last controller's instead");
+}
+
 /// One study counter is one line: `add_counters`' "gets a study counter
 /// (now 1)", not that and the card's own "study counter added (1/3)" (#762).
 #[test]
@@ -3789,4 +3846,227 @@ fn grimoire_of_the_dead_logs_its_study_counter_once() {
         .filter(|m| m.contains("study counter")).collect();
     assert_eq!(lines.len(), 1, "one counter, one line: {lines:?}");
     assert!(lines[0].contains("(now 1)"), "{lines:?}");
+}
+
+/// Evil Twin's ruling: "If Evil Twin somehow enters the battlefield at the
+/// same time as another creature, Evil Twin can't become a copy of that
+/// creature. You may choose only a creature that's already on the
+/// battlefield." Grimoire of the Dead returns an Evil Twin card with the
+/// rest of the graveyards' creature cards, and the Twin's entry waits on
+/// its choice (CR 614.12b), asked once the others have entered: it was
+/// offered them as copies. And "They're black Zombies" was never given to
+/// it, the return having moved on past the entry that waited. Now its
+/// choice is among the creatures there before the return, and it enters,
+/// as whatever it copied, black and a Zombie besides.
+#[test]
+fn grimoires_evil_twin_copies_only_what_was_there_and_is_a_black_zombie() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grimoire = named_permanent(&mut state, &reg, "Grimoire of the Dead", P0);
+    state.get_object_mut(grimoire).unwrap().counters.insert(CounterType::Study, 3);
+    let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let returning = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+    let twin = named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
+
+    let mut state = activate(&state, &reg, grimoire, 1, vec![]);
+    if state.stack.last().is_some() {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    }
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.clone(),
+        other => panic!("the Twin should be asked what to copy, got {other:?}"),
+    };
+    assert_eq!(state.get_object(returning).map(|o| o.zone), Some(Zone::Battlefield), "the Walking Corpse came back");
+    assert_eq!(options, vec![Target::Object(there)], "only the Moon Heron was there before the return");
+
+    state.awaiting_action = None;
+    mtg_engine::replacement::record_entry_choice(&mut state, twin, mtg_engine::state::EnterAsCopyChoice::Copy(there), &reg);
+    assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.name_of(twin, &reg), "Moon Heron");
+    assert!(state.has_subtype(twin, "Zombie", &reg), "a Zombie in addition to its other types");
+    assert!(state.colors_of(twin, &reg).contains(&Color::Black), "and black in addition to its other colors");
+}
+
+/// Defect 28 for Moldgraf Monstrosity, which returns two creature cards
+/// at once: an Evil Twin card one of them may copy only a creature already
+/// on the battlefield (its ruling), not the one returning with it. With
+/// exactly two creature cards in the graveyard, both return.
+#[test]
+fn moldgrafs_evil_twin_copies_only_what_was_there() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let returning = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
+
+    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+    let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, monstrosity, &[], &reg);
+    assert_eq!(state.get_object(returning).map(|o| o.zone), Some(Zone::Battlefield), "the Walking Corpse came back");
+
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.clone(),
+        other => panic!("the Twin should be asked what to copy, got {other:?}"),
+    };
+    assert_eq!(options, vec![Target::Object(there)], "only the Moon Heron was there before the return");
+}
+
+/// Grimoire of the Dead's return, with three study counters on it,
+/// activated and resolved.
+fn grimoire_returns_everything(mut state: GameState, reg: &CardRegistry) -> GameState {
+    let grimoire = named_permanent(&mut state, reg, "Grimoire of the Dead", P0);
+    state.get_object_mut(grimoire).unwrap().counters.insert(CounterType::Study, 3);
+    let mut state = activate(&state, reg, grimoire, 1, vec![]);
+    if state.stack.last().is_some() {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, reg);
+    }
+    state
+}
+
+/// Defect 44, found by the generated boards (Moldgraf Monstrosity
+/// returning an Essence of the Wild and a Skaab Goliath): CR 614.12, the
+/// replacement effects that modify how a permanent enters are those that
+/// already exist, and an Essence of the Wild returned in the same event is
+/// not yet on the battlefield to have one. The engine moved the two one at
+/// a time, so the Essence, moved first, made the Goliath a copy of itself.
+///
+/// The two come back in a random order, so each of several seeds: in some
+/// the Essence is the one moved first.
+#[test]
+fn moldgraf_returning_an_essence_of_the_wild_returns_the_other_as_itself() {
+    let reg = registry();
+    for seed in 0..16u64 {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.rng_state = seed;
+        let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+        let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
+        let goliath = named_card_in_graveyard(&mut state, &reg, "Skaab Goliath", P0);
+
+        mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+        let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
+        behavior.on_dies(&mut state, monstrosity, &[], &reg);
+
+        for id in [essence, goliath] {
+            assert_eq!(state.get_object(id).map(|o| o.zone), Some(Zone::Battlefield), "both came back (seed {seed})");
+        }
+        assert_eq!(state.name_of(goliath, &reg), "Skaab Goliath", "the Essence was not there to make it a copy (seed {seed})");
+        assert_eq!((state.effective_power(goliath, &reg), state.effective_toughness(goliath, &reg)), (Some(6), Some(9)));
+    }
+}
+
+/// Defect 44 for Grimoire of the Dead, which returns every creature card
+/// at once: the Essence among them makes none of the others a copy.
+#[test]
+fn grimoire_returning_an_essence_of_the_wild_returns_the_rest_as_themselves() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let state = grimoire_returns_everything(state, &reg);
+    assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.name_of(corpse, &reg), "Walking Corpse");
+}
+
+/// CR 614.12 the other way round: a Dearly Departed's effect exists while
+/// it is in the graveyard, so one returned in the same event as a Human
+/// still gives the Human its counter. Moved first, it had left the
+/// graveyard before the Human's entry was worked out, and gave nothing.
+#[test]
+fn grimoire_returning_a_dearly_departed_gives_the_human_beside_it_its_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+    let traveler = named_card_in_graveyard(&mut state, &reg, "Doomed Traveler", P0);
+    let state = grimoire_returns_everything(state, &reg);
+    assert_eq!(state.get_object(traveler).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.get_object(traveler).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(), Some(1),
+        "the Dearly Departed was in the graveyard as the event began");
+}
+
+/// CR 614.12, 616.1: Unbreathing Horde's count is of the board before the
+/// return. A creature returned before it, under Grimoire's controller and
+/// made a Zombie by the Grimoire, is not one of "your" Zombies yet, nor is
+/// a Zombie card from the other player's graveyard. Counted one at a time,
+/// both were. The Horde counts itself (its ruling), and nothing else.
+#[test]
+fn grimoire_returning_an_unbreathing_horde_counts_the_board_before_the_return() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Moon Heron", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
+    let horde = named_card_in_graveyard(&mut state, &reg, "Unbreathing Horde", P0);
+    let state = grimoire_returns_everything(state, &reg);
+    assert_eq!(state.get_object(horde).map(|o| o.zone), Some(Zone::Battlefield));
+    assert_eq!(state.get_object(horde).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(), Some(1),
+        "one: the Horde itself, a Zombie card in its controller's graveyard");
+}
+
+/// Defect 44 for a deferred entry: an Evil Twin returned beside an Essence
+/// of the Wild chooses after the Essence has entered, but its entry is
+/// worked out against the board before the return, where there was no
+/// Essence to make it a copy. It is what it chose, a copy of a creature
+/// there before or its printed self.
+#[test]
+fn an_evil_twin_returned_beside_an_essence_of_the_wild_is_what_it_chose() {
+    let reg = registry();
+    for (copy, expected) in [(true, "Moon Heron"), (false, "Evil Twin")] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
+        let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
+        let twin = named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
+        let mut state = grimoire_returns_everything(state, &reg);
+        assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Battlefield));
+        mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+        state.awaiting_action = None;
+        let choice = if copy { mtg_engine::state::EnterAsCopyChoice::Copy(there) } else { mtg_engine::state::EnterAsCopyChoice::Declined };
+        mtg_engine::replacement::record_entry_choice(&mut state, twin, choice, &reg);
+        assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield));
+        assert_eq!(state.name_of(twin, &reg), expected);
+        assert!(state.entering_zones_before.is_empty() && state.pending_entry_zones.is_empty(), "nothing kept past the entry");
+    }
+}
+
+/// Defect 46, found by the generated boards: a Dearly Departed in its
+/// owner's graveyard gives each Human creature entering under them a
+/// counter, and an Evil Twin entering as a copy of a Human is one (CR
+/// 614.12: the permanent as it would exist, its copy effect applied first).
+/// The engine read the Twin's own subtypes, a Shapeshifter's, and gave it
+/// nothing.
+#[test]
+fn an_evil_twin_entering_as_a_copy_of_a_human_gets_dearly_departeds_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
+    let human = named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(human));
+    assert_eq!(state.name_of(twin, &reg), "Doomed Traveler");
+    assert_eq!(state.get_object(twin).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(), Some(1));
+    // And one entering as a copy of a non-Human gets none.
+    let heron = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let other = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(heron));
+    assert_eq!(state.get_object(other).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0), 0);
+}
+
+/// Essence of the Wild's ruling (2011-09-22): "If a creature such as Clone
+/// is entering under your control, there will be two copy effects to
+/// apply: the creature's own and Essence of the Wild's. No matter what
+/// order these effects are applied, the creature will be a copy of Essence
+/// of the Wild when it enters." The engine applied the Twin's own first
+/// and the Essence then stood aside, so the Twin was what it chose.
+#[test]
+fn an_evil_twin_entering_under_essence_of_the_wild_is_an_essence_whatever_it_chose() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Essence of the Wild", P0);
+    let heron = named_permanent(&mut state, &reg, "Moon Heron", P1);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(heron));
+    assert_eq!(state.name_of(twin, &reg), "Essence of the Wild");
+    assert_eq!((state.effective_power(twin, &reg), state.effective_toughness(twin, &reg)), (Some(6), Some(6)));
 }

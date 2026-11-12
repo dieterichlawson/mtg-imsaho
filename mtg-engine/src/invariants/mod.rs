@@ -22,6 +22,12 @@
 //! - [`check_legal`] looks at the legal action set offered at a decision
 //!   point: nothing the rules forbid is on the menu, and what they require
 //!   is.
+//! - [`shared_log::SharedLog`] holds the log every seat is sent to naming no
+//!   card no one has seen (CR 400.2), from one decision to the next. The
+//!   runner's `hidden_stays_hidden` holds each view and menu to the same:
+//!   none changes when every library is reversed or another player's hand
+//!   is dealt anew (401.2, 402.3). It is the runner's, which serializes
+//!   views already.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
@@ -34,6 +40,7 @@ mod legal;
 mod objects;
 mod permanents;
 mod prompts;
+pub mod shared_log;
 mod stack;
 mod transition;
 mod turn;
@@ -178,9 +185,11 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
     }
 
     // Nothing in this pool uses the command zone; an object landing there is
-    // a move to the wrong zone, not a mechanic.
+    // a move to the wrong zone, not a mechanic. The one exception is a
+    // token held there for its enters-as-a-copy choice (CR 614.12b), which
+    // has not entered yet.
     for obj in state.objects_in_id_order() {
-        if obj.zone == Zone::Command {
+        if obj.zone == Zone::Command && !(obj.is_token && state.pending_entry_choices.contains(&obj.id)) {
             v.push(format!("{} ({}) in the unused command zone", obj.id.0, obj.name));
         }
     }
@@ -386,7 +395,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
     // (Nothing in this pool copies a spell, so no token is ever on the
     // stack either.)
     for obj in state.objects_in_id_order() {
-        if obj.is_token && obj.zone != Zone::Battlefield {
+        if obj.is_token && obj.zone != Zone::Battlefield && !state.pending_entry_choices.contains(&obj.id) {
             v.push(format!("token {} ({}) still exists in {:?}", obj.id.0, obj.name, obj.zone));
         }
     }
@@ -450,12 +459,13 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // Combat state exists only during the steps that use it: it is created
     // when attackers are declared and cleared as the end-of-combat step
-    // begins.
+    // ends (CR 511.3).
     if state.combat.is_some()
         && !matches!(state.step,
             crate::types::Step::DeclareAttackers
             | crate::types::Step::DeclareBlockers
-            | crate::types::Step::CombatDamage)
+            | crate::types::Step::CombatDamage
+            | crate::types::Step::EndCombat)
     {
         v.push(format!("combat state present in step {:?}", state.step));
     }

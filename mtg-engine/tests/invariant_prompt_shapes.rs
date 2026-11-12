@@ -185,9 +185,14 @@ fn the_cleanup_discard_prompt_asks_for_the_cards_over_seven() {
         spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
     }
     state.step = Step::Cleanup;
-    state.priority_player = Some(P0);
+    state.priority_player = None;
     state.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 2 });
     assert_eq!(check_core(&state, &reg), Vec::<String>::new());
+
+    // CR 514.3: nobody holds priority while the discard is asked for.
+    let mut s = state.clone();
+    s.priority_player = Some(P0);
+    flags(&s, &reg, "discard-to-hand-size prompt with p0 holding priority (CR 514.3)");
 
     let mut s = state.clone();
     s.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 1 });

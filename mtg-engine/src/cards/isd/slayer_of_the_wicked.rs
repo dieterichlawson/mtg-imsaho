@@ -42,7 +42,7 @@ impl CardBehavior for SlayerOfTheWicked {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
         // CR 603.3d: the target was chosen when the trigger went on the stack
         // and its legality re-checked before resolution. Only the "you may"
         // decision is left — offer the locked target, never a fresh pick.

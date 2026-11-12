@@ -293,8 +293,11 @@ fn zone_ledger(prev: &GameState, cur: &GameState, events: &[GameEvent], v: &mut 
             None => (None, 0),
         };
         let expected = b.zone_change_count.saturating_sub(from_count) as usize;
-        // CR 111.2: a token is created on the battlefield, and says so.
+        // CR 111.2: a token is created on the battlefield, and says so; one
+        // held for its enters-as-a-copy choice says so when it enters
+        // (614.12b).
         if from_zone.is_none()
+            && !cur.pending_entry_choices.contains(&b.id)
             && !events.iter().any(|e| matches!(e, GameEvent::EnteredBattlefield { object, .. } if *object == b.id))
         {
             v.push(format!("#{} ({}) appeared without entering the battlefield (CR 111.2)", b.id.0, b.name));
@@ -357,7 +360,10 @@ fn zone_ledger(prev: &GameState, cur: &GameState, events: &[GameEvent], v: &mut 
 /// Status flips and per-object ledgers that need a witness in the buffer.
 fn status_ledgers(prev: &GameState, cur: &GameState, events: &[GameEvent], stayed: &dyn Fn(ObjectId) -> bool,
                   registry: &CardRegistry, v: &mut Violations) {
-    let cleanup = events.iter().any(|e| matches!(e, GameEvent::StepStarted { step: Step::Cleanup }));
+    // The cleanup step's removals (CR 514.2) happen as it begins, or, when
+    // its player has a hand to discard down first (514.1), on the answer.
+    let cleanup = events.iter().any(|e| matches!(e, GameEvent::StepStarted { step: Step::Cleanup }))
+        || (prev.step == Step::Cleanup && matches!(prev.awaiting_action, Some(AwaitingAction::DiscardToHandSize { .. })));
     let untap = events.iter().any(|e| matches!(e, GameEvent::StepStarted { step: Step::Untap }));
     for b in cur.objects_in_id_order() {
         let Some(a) = prev.get_object(b.id) else { continue };
@@ -836,13 +842,13 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
         Action::DiscardCards { cards } => {
             if let Some(AwaitingAction::DiscardToHandSize { player, discard_count }) = &prev.awaiting_action {
                 let who = *player;
-                // CR 514.2: "the active player discards down to that many
+                // CR 514.1: "the active player discards down to that many
                 // cards" — not "may". The sibling `BottomCards` arm below
                 // has always said so and this one did not, so a seat that
                 // answered the cleanup with the empty set kept its whole
                 // hand and nothing in the program disagreed (issue #567).
                 if cards.len() != *discard_count {
-                    v.push(format!("p{} discarded {} cards, asked for {discard_count} (CR 514.2)",
+                    v.push(format!("p{} discarded {} cards, asked for {discard_count} (CR 514.1)",
                         who.0, cards.len()));
                 }
                 let discarded: Vec<ObjectId> = events.iter().filter_map(|e| match e {

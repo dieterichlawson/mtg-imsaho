@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 use crate::ids::{ObjectId, PlayerId};
 
 /// A target for a spell or ability.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Target {
     /// Target a permanent or creature on the stack.
     Object(ObjectId),
@@ -24,7 +24,7 @@ pub enum Target {
 }
 
 /// An action a player can take.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     /// Pass priority to the next player.
     PassPriority,
@@ -135,7 +135,7 @@ pub enum Action {
 }
 
 /// A player's response to a mid-resolution choice.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ResolvedChoice {
     /// Pay or don't pay (Frightful Delusion).
     PayDecision(bool),

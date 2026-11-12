@@ -1513,3 +1513,77 @@ Accepted:
   (bucket 3). The planner's contract (an offered plan pays, a `None` means
   none would) is held by the `compute_autotap` property tests, whatever this
   list contains.
+
+## The proofs' stand-ins — 2026-11-09, before the weekly sweep sees them
+
+The formal-verification branch builds the engine under Kani with stand-ins
+for what CBMC cannot get through: `VecMap` and `VecSet` for the B-trees,
+`KindMap` for the counter and mana maps, `NameList` for the card-name
+`HashMap`, and Kani twins of `transient`, `discard` and `Collector::list`.
+cargo-mutants does not read `cfg` attributes, so it mutates all of them,
+and before this none had a `cargo test`: the weekly sweep would have filed
+every mutation of them as a survivor. `cargo mutants --list` over the four
+files gives 115 mutants in the two map files alone.
+
+- **Killed by new tests.** `vec_map.rs` and `kind_map.rs` carry unit tests
+  that play 64 seeded sequences of 300 to 400 random operations, each
+  checked against `BTreeMap` or `BTreeSet` after every step, read every
+  way the map is read (`iter`, `for`, `keys`, `values`, `len`, `get`,
+  `contains_key`). Values are strings, so an entry `exchange` moved
+  twice or not at all is a double free or a lost value. `KindMap`'s test
+  also checks each kind's slot against its place in sorted order.
+  `kind_map` and `NameList` are compiled for tests now (`any(kani, test)`),
+  and `NameList` is held to the `HashMap` it stands in for, over every
+  name the registry registers, and to refusing a name registered twice.
+  Each file run with its tests in a scratch crate of its own, so that each
+  mutant rebuilds in a second: 115 mutants in the maps, 82 caught, 3
+  timed out (livelocks the tests catch by hanging), 27 unviable, 3 missed.
+  One of the 3 was a weak test: `values_mut` returning nothing passed,
+  because the test zipped the two maps' `values_mut`, so an empty one
+  wrote to neither. It writes through each on its own now and kills it.
+  All of `NameList`'s viable mutants are caught.
+- **Accepted.** The two `reserve`s made a no-op change only capacity,
+  which no test can see. They are there so a proof's push does not
+  reallocate (`proofs::cards::no_growing`), and only a proof can tell.
+  The Kani twins of `transient` (`ManuallyDrop::new`), `discard`
+  (`mem::forget`) and `Collector::list` (`Vec::with_capacity(2)`) are
+  compiled only under `cfg(kani)`, as `proofs/` is (`-e proofs`, #985). Each
+  differs from the twin every other build runs only in what is dropped
+  or in capacity, which only a proof can see. Mutated to `()`, the
+  non-Kani `discard` still drops its argument at the end of the body, and
+  `vec![]` is `Vec::new()`, so those two mutants are equivalent in every
+  other build too.
+
+## The shared log's check — 2026-11-09
+
+`mtg-engine/src/invariants/shared_log.rs` (the check that the log every
+seat is sent names no card no one has seen) run against its own tests,
+`tests/invariant_shared_log.rs`: 29 mutants, 14 caught, 12 unviable, 3
+missed at first. The 3 were two gaps in the tests. Requiring a card hidden
+at only one of the two decisions (`&&` to `||` in the filter of what is
+unseen) was not seen because no test played a card out of a hand: a land
+played and named is flagged under the mutant, and
+`a_card_played_from_hand_may_be_named` kills it. And the names a reveal
+makes public were not followed past the reveal: the mutants that mark
+every hidden name revealed, or none, are killed by
+`a_name_revealed_is_seen_and_no_other` (Mulch reveals Moon Heron; a later
+line naming it is fine, one naming the unrevealed Delver beside it is
+not). With both: 17 of 17 viable mutants caught.
+
+## An ability's source gone and back — 2026-11-09
+
+Defect 40's check (`GameState::is_new_source`, its guards in
+`add_counters_quiet` and `add_regeneration_shield`, `add_until_end_of_turn`,
+`helpers::still_on_battlefield` and `transform_quietly`'s battlefield arm)
+run against `tests/ability_source_new_object.rs`, `werewolf_cards.rs` and
+`cards_transforming_permanents.rs`: 23 mutants, 15 caught, 6 unviable, 2
+missed at first. The 2 replaced the match on the resolving ability's own
+source with `true`, for a trigger and for an activated ability, so that any
+object whose zone change count differs from the source's was refused. No
+test had an ability act on another object that had changed zones: now
+Mikaeus, the Lunarch's second ability counters a creature that came back
+before it was activated, and Rakish Heir's trigger a Vampire that did
+(`an_abilitys_effects_on_other_objects_are_not_held_to_its_sources_count`),
+and both mutants are caught. The `if self.is_new_source(id) { return }`
+guards of `tap`, `untap` and `remove_counters` give cargo-mutants nothing
+to mutate but the whole function, which the tests of those already catch.
