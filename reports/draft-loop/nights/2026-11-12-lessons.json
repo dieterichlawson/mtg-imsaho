@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-12",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "3-0-0",
+   "lessons": [
+    "Keep Traitorous Blood and Curse of the Pierced Heart: the guide urged cutting them for a clean WR core, but this WR kept both and went 3-0 (6-2 in games).",
+    "Commit earlier: my pick-one Dead Weight and Riot Devils were stranded in WR, so the guide's commit-by-pick-five rule matters more than one early black removal spell.",
+    "A two-colour WR with three flier sources won 2-1 in 18-to-25-turn grinds against U and UG decks, so long games need not be lost if fliers and removal are present."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 10277,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3029,
+    "output_tokens_details": {
+     "thinking_tokens": 2830
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 10277
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3029,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 10277,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 10277,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "U",
+   "record": "2-1-0",
+   "lessons": [
+    "Mono-blue with 16 Islands and Nephalia Drownyard went 5-2 in games, but my wins came in 25 to 34-turn games, so the deck needed more early plays to keep up with the WR table leader.",
+    "Lost in the Mist arrived at picks 6 and 7 of pack 1, so blue was open early; commit to it sooner and cut the off-colour filler before pack 2.",
+    "The 1-2 loss to seat 0's WR deck, with Rally the Peasants and Smite the Monstrous, came in games of 16, 25 and 13 turns, so the next drafter should prioritise cheap blockers over Stitched Drake-style late threats."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3233,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2575,
+    "output_tokens_details": {
+     "thinking_tokens": 2343
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3233
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2575,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3233,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3233,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UG",
+   "record": "1-2-0",
+   "lessons": [
+    "The guide calls Spider Spawning premium, but UG self-mill went 1-2 in matches with 26- and 31-turn games, so prioritise cheap fliers like Moon Heron over mill payoffs and slow Boneyard Wurm.",
+    "I spent early picks on Fiend Hunter, two Rebukes, Curse of Oblivion and Bloodcrazed Neonate, none of which made the blue-green deck; commit to a lane by mid pack 1 as the guide advises.",
+    "Blue-green's removal was thin (Prey Upon, Naturalize, Silent Departure), so take Claustrophobia, Blazing Torch or Dead Weight over filler fliers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4893,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3711,
+    "output_tokens_details": {
+     "thinking_tokens": 3472
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4893
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3711,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4893,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4893,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "0-3-0",
+   "lessons": [
+    "Games here ran 18 to 34 turns, and my cheap-evasion BR aggro lost every long grind to UG and U control, so prioritize card advantage and late bombs over another two-drop flier.",
+    "Blue opponents here ran Claustrophobia twice, Sensory Deprivation, Lost in the Mist twice, and Stitched Drake; take removal that answers fliers early, since my Vampire Interlopers did not race them.",
+    "Seat 5, also black-red, beat me 2-1 with overlapping staples like Crossway Vampire, Falkenrath Noble, and Harvest Pyre; read the table's colours by pick 5 and avoid mirrored commons."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3268,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2507,
+    "output_tokens_details": {
+     "thinking_tokens": 2271
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3268
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2507,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3268,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3268,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "My WG lost 0-2 to a WG with two Orchard Spirit, Abbey Griffin and two Spidery Grasp, while I ran two Festerhide Boar; take the flier or cheap answer over the second Boar.",
+    "Ghostly Possession and Smite the Monstrous worked as my answers in the 2-1 BR and 2-0 UR wins, so the guide's flier-answer advice holds.",
+    "The guide says not to main Naturalize without self-mill, yet my WG maindecked one in a 4-3 game deck, so that warning is untested here."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 10243,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3871,
+    "output_tokens_details": {
+     "thinking_tokens": 3673
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 10243
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3871,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 10243,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 10243,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Seat 3 was also black-red and went 0-3, sharing Crossway Vampire, Falkenrath Noble, Harvest Pyre and Corpse Lunge with my deck, so check neighbours' colours and pivot before pack 2 locks you in.",
+    "The 25, 23 and 62-turn games against WG show ground-based black-red aggro stalling, so prioritise evasive finishers like Falkenrath Noble and Crossway Vampire over filler bodies.",
+    "Don't treat the 2-0 over seat 7 as proof: that 0-3 UR deck was the weakest opposition, so judge the black-red build against WG's Ghostly Possession and Fiend Hunter."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3271,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2222,
+    "output_tokens_details": {
+     "thinking_tokens": 1981
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3271
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2222,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3271,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3271,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Commit to your second colour by pick 5 of pack 2: I took Moon Heron and Makeshift Mauler, then cut blue, so those picks went unused while green or white playables could have filled the slots.",
+    "The guide's 'fliers win' was contradicted: WR's Smite the Monstrous, Rebuke and Midnight Haunting answered my Abbey Griffin and Chapel Geist, and I lost 0-2 in 15 and 14 turns.",
+    "The guide's GW travellers plan was under-built: my WG deck ran few humans and no Avacynian Priest, so Travel Preparations had little board to lift. Prioritise human creatures in pack 2."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4902,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2794,
+    "output_tokens_details": {
+     "thinking_tokens": 2561
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4902
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2794,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4902,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4902,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "0-3-0",
+   "lessons": [
+    "Late in pack 1 I took Think Twice, Curiosity, and Forbidden Alchemy over bodies, leaving too few early creatures; take cheap creatures like Doomed Traveler over card-draw filler.",
+    "Cutting Bloodcrazed Neonate left my UR deck with no one-drop, and my 1-6 game record suggests cheap plays matter, so keep one main.",
+    "I drafted without a guide, so none was contradicted; my UR Skaab-mill and Galvanic Juggernaut plan lost all three matches, so test it before committing to mill enablers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3229,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3101,
+    "output_tokens_details": {
+     "thinking_tokens": 2897
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3229
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3101,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3229,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3229,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
