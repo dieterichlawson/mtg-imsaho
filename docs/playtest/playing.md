@@ -30,10 +30,15 @@ every pass. Two edits keep the position legal and the invariants checked:
   untouched, so `--resume` accepts it.
 - **Place a board on turn 1, main phase 1:** move objects out of
   `players[*].library_order` into the battlefield, the hand, the graveyard
-  or the library top. The validator then wants `state.events` cleared and
-  `trigger_event_index` set to 0. A planeswalker placed this way needs
-  `is_legendary` and its loyalty counters set by hand. Permanents cannot be
-  placed during the mulligan.
+  or the library top. The validator then wants `state.events` cleared,
+  `trigger_event_index` set to 0 and `sba_check_starts` emptied. A
+  planeswalker placed this way needs `is_legendary` and its loyalty counters
+  set by hand. A double-faced card placed back face up needs
+  `is_transformed: true`, `transforms: 1`, and the back face's `name`,
+  `power` and `toughness` written on the object (2026-11-12, Terror of Kruin
+  Pass). `--stop-after 5` on two random seats usually lands on turn 1, main
+  phase 1; check `state.step`, since `--stop-after 1` is still the mulligan.
+  Permanents cannot be placed during the mulligan.
 
 A repro built this way lists the board it built, or ships the edit script,
 so a fresh reader gets the same position.
