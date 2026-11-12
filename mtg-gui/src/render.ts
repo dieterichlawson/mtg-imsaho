@@ -739,26 +739,28 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
     ctx.fillStyle = on ? "#c9a84a" : "#2a2430"; ctx.fillRect(sx, sy, 13, 12);
     text(ctx, STEP_SHORT[s], sx + 7, sy + 3, { align: "center", font: "7px Silkscreen", color: on ? "#101010" : "#9a90a0" });
   });
+  // The flags and the effects in force share 40..176, short of the stack.
+  // Drawn in turn, an effect was dropped whenever both flags were on — the
+  // regular damage step after first-strike deaths, which is when Moonmist's
+  // prevention matters — and a third effect vanished behind one "…" (#993).
+  // So the row is fitted as a whole: the flags shorten before an effect
+  // loses its name, and an effect that is not named is counted.
+  ctx.font = "7px Silkscreen";
+  const flagRow = bandFlagRow(
+    (s) => ctx.measureText(s).width, 176 - 40,
+    !!view.first_strike_damage_step,
+    // What morbid reads, which nothing on the board shows once the log has
+    // moved past the death (#832).
+    !!view.creature_died_this_turn,
+    // An effect in force for the rest of the turn on no one permanent, by
+    // its source: Moonmist's prevention was in the log only (#953).
+    bandTurnEffects(view));
   let flagX = 40;
-  if (view.first_strike_damage_step) {
-    text(ctx, "first strike", flagX, y + 3, { color: "#e0c0a0", font: "7px Silkscreen" });
-    ctx.font = "7px Silkscreen"; flagX += ctx.measureText("first strike").width + 6;
-  }
-  // What morbid reads, which nothing on the board shows once the log has
-  // moved past the death (#832). After "first strike" — after first-strike
-  // damage is exactly when both are on — and clipped short of the stack.
-  if (view.creature_died_this_turn) {
-    const t = clip(ctx, "creature died", 176 - flagX, "7px Silkscreen");
-    text(ctx, t, flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
+  for (const part of flagRow) {
+    const t = clip(ctx, part.text, 176 - flagX, "7px Silkscreen");
+    text(ctx, t, flagX, y + 3, { color: part.color, font: "7px Silkscreen" });
     ctx.font = "7px Silkscreen"; flagX += ctx.measureText(t).width + 6;
   }
-  // An effect in force for the rest of the turn on no one permanent, by its
-  // source: Moonmist's prevention was in the log only (#953). Its card is
-  // in a graveyard to read; clipped short of the stack like the rest.
-  const inForce = bandTurnEffects(view).join(" ");
-  // Only where a name can be read: `clip` keeps a letter and its ellipsis
-  // however narrow the room, and those ran into "STACK →" (#953's review).
-  if (inForce && 176 - flagX >= 24) text(ctx, clip(ctx, inForce, 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#a0c0e0", font: "7px Silkscreen" });
   // The stack: the top (next to resolve) on the left, as the view lists it.
   const sx0 = 180;
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
@@ -830,6 +832,31 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
  * words.
  */
 /** The band's name for each effect in force this turn: its source, the part of the sentence before the colon (#953). */
+/** The band's flag row, fitted to `room` as a whole (#993): the full
+ *  words if they fit; then the flags shortened; then the first effect named
+ *  and the rest counted; then the effects only counted. The last choice
+ *  that is still too wide is clipped by the caller. Pure, for a test. */
+export function bandFlagRow(measure: (s: string) => number, room: number, firstStrike: boolean, died: boolean,
+  effects: string[]): { text: string; color: string }[] {
+  const FS = "#e0c0a0", DIED = "#e09080", FX = "#a0c0e0";
+  const flags = (short: boolean) => [
+    ...(firstStrike ? [{ text: short ? "1st str" : "first strike", color: FS }] : []),
+    ...(died ? [{ text: short ? "died" : "creature died", color: DIED }] : []),
+  ];
+  const fx = (shape: number): { text: string; color: string }[] => {
+    if (effects.length === 0) return [];
+    if (shape === 0) return [{ text: effects.join(" "), color: FX }];
+    if (shape === 1 && effects.length > 1) return [{ text: `${effects[0]} +${effects.length - 1}`, color: FX }];
+    return [{ text: effects.length === 1 ? "1 in force" : `${effects.length} in force`, color: FX }];
+  };
+  const width = (row: { text: string }[]) => row.reduce((w, p) => w + measure(p.text), 0) + 6 * Math.max(0, row.length - 1);
+  const tries = [
+    [...flags(false), ...fx(0)], [...flags(true), ...fx(0)],
+    [...flags(true), ...fx(1)], [...flags(true), ...fx(2)],
+  ];
+  return tries.find(r => width(r) <= room) ?? tries[tries.length - 1];
+}
+
 export function bandTurnEffects(view: { turn_effects?: string[] }): string[] {
   return (view.turn_effects || []).map(e => e.split(":")[0]);
 }

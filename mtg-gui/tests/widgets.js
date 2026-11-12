@@ -1372,7 +1372,8 @@ async function main() {
       }
     }
     // 24c. An effect in force for the rest of the turn is named in the band
-    // by its source, beside "creature died" and short of the stack (#953).
+    // by its source, beside "creature died" and short of the stack (#953),
+    // with "first strike" on too: both flags left it no room at all (#993).
     {
       const drawn = await page.evaluate(() => {
         const m = window.mtg;
@@ -1387,7 +1388,7 @@ async function main() {
             return orig.apply(this, arguments);
           };
           m.view.creature_died_this_turn = true;
-          m.view.first_strike_damage_step = false;
+          m.view.first_strike_damage_step = true;
           m.view.turn_effects = ["Moonmist: combat damage that would be dealt this turn by creatures other than Wolves or Werewolves is prevented"];
           window.mtgDebug.render();
         } finally {
@@ -1397,7 +1398,7 @@ async function main() {
         }
         return out;
       });
-      const died = drawn.find(d => d.s === "creature died");
+      const died = drawn.find(d => d.left >= 40 && d.left < 180 && /died$/.test(d.s));
       const moon = drawn.find(d => d.s.startsWith("Moon"));
       if (!moon) fail(`turn-effects: the band does not name Moonmist: ${JSON.stringify(drawn.filter(d => d.left < 180 && d.left >= 40).slice(0, 6))}`);
       else if (moon.right > 180) fail(`turn-effects: it runs into the stack: ${JSON.stringify(moon)}`);
@@ -1439,12 +1440,18 @@ async function main() {
         }
         return out;
       });
-      const died = drawn.find(d => d.s === "creature died");
+      // With first strike and an effect in force beside it, the flags may be
+      // shortened ("1st str", "died") so the effect keeps its name (#993).
+      const died = drawn.find(d => d.left >= 40 && d.left < 180 && (d.s === "creature died" || d.s === "died"));
+      const fs = d => d.s === "first strike" || d.s === "1st str";
       if (!died) fail("turn-facts: no \"creature died\" in the band");
       else if (died.right > 180) fail(`turn-facts: "creature died" runs into the stack: ${JSON.stringify(died)}`);
-      else if (drawn.some(d => d.s === "first strike" && d.right > died.left))
-        fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => d.s === "first strike" || d === died))}`);
-      else ok("turn-facts: the band says a creature died");
+      else if (drawn.some(d => fs(d) && d.right > died.left))
+        fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => fs(d) || d === died))}`);
+      else if (!drawn.some(fs)) fail("turn-facts: first strike is not said");
+      else if (!drawn.some(d => d.s.startsWith("Moonmist") && d.left >= died.right && d.right <= 180))
+        fail(`turn-facts: both flags on, the effect in force is not named (#993): ${JSON.stringify(drawn.filter(d => d.left >= 40 && d.left < 180 && d.s.length > 1))}`);
+      else ok("turn-facts: the band says a creature died, and names the effect beside both flags");
       // Where the band has no readable room left, the effect is not drawn
       // as a letter and an ellipsis over the stack (#953).
       if (drawn.some(d => d.s.startsWith("Moon") && d.right > 180)) fail(`turn-facts: the effect runs into the stack: ${JSON.stringify(drawn.filter(d => d.s.startsWith("Moon")))}`);
