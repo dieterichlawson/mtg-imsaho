@@ -7610,6 +7610,8 @@ impl CliPlayer {
         // the rest like any other input it will not honour.
         let fundable = mtg_engine::funding::fundable_x_values(options);
         let contiguous = fundable.len() as u32 == options.max_announceable_x() + 1;
+        // Under the Max X line: why the sources sum to less than it (#979).
+        let discount_line = mtg_engine::funding::describe_x_discount(options);
         // The frame and the funding lines, painted for the terminal as it is
         // now; returns the reader's row. A resize at this prompt used to
         // leave the frame drawn for the old width, hard-wrapped by the
@@ -7637,7 +7639,7 @@ impl CliPlayer {
                 &Self::x_plan_row(options, &options.max_announceable_x().to_string()), mid_w, usize::from(X_PLAN_ROWS)).len().max(1);
             let pool_rows = usize::from(options.pool.values().any(|n| *n > 0));
             Self::render_reserving(view, Some(description), &view.display_log,
-                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 2 + plan_rows);
+                1 + usize::from(discount_line.is_some()) + pool_rows + options.groups.len() + usize::from(!contiguous) + 2 + plan_rows);
             let clip = |s: &str| -> String { Self::clip_closed_or_cut(s, mid_w) };
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
@@ -7647,6 +7649,11 @@ impl CliPlayer {
                 Print(clip(&format!("  Max X = {}", options.max_announceable_x()))),
                 SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
+            if let Some(line) = &discount_line {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    Print(clip(&format!("  {line}"))));
+                r += 1;
+            }
             let pool_summary: Vec<String> = [
                 ManaType::White, ManaType::Blue, ManaType::Black,
                 ManaType::Red, ManaType::Green, ManaType::Colorless,

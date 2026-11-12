@@ -213,6 +213,26 @@ async function main() {
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }
+      // #979: under a cost reduction on X the sources sum to less than the
+      // largest X, and the modal says why, and the plan says what it pays.
+      const reduced = { pool: {}, groups: [{ name: "Island", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Blue" }], max_x: 2, x_discount: 2 };
+      if (await stage("choose-x-reduced", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Mikaeus, the Lunarch", options: reduced, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
+        await page.keyboard.type("2");
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        if (!drawn.some(t => t.includes("A cost reduction pays the first 2 of X"))) fail(`choose-x-reduced: the reduction is not said: ${JSON.stringify(drawn.filter(s => /X|reduction/.test(s)))}`);
+        else if (!drawn.some(t => t.includes("X = 2: nothing for X (the cost reduction pays 2)"))) fail(`choose-x-reduced: the plan does not say what the reduction pays: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
+        else ok("choose-x-reduced → the reduction's share of X is said");
+        await page.keyboard.press("Enter");
+        await expectSent("choose-x-reduced", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && !f.taps.Island; });
+      }
       // #938: a long plan was one clipped line, and the cut fell on the
       // creatures the allocator spends last. It wraps, whole, in the modal
       // and in the panel beside it.

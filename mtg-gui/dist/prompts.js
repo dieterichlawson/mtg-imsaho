@@ -1240,7 +1240,10 @@ export function describeXPlan(opts, x) {
     }
     if (taps.length > 0)
         parts.push(`tap ${taps.join(", ")}`);
-    return parts.length === 0 ? `X = ${x}: nothing for X` : `X = ${x}: for X, ${parts.join(", ")}`;
+    // What a cost reduction pays of X, said as the engine says it (#979).
+    const reducedBy = Math.min(x, opts.x_discount || 0);
+    const reduced = reducedBy > 0 ? ` (the cost reduction pays ${reducedBy})` : "";
+    return parts.length === 0 ? `X = ${x}: nothing for X${reduced}` : `X = ${x}: for X, ${parts.join(", ")}${reduced}`;
 }
 /** The payable set as one line, runs collapsed, capped, both ends kept —
  *  the terminal's `describe_fundable_x` (#595). */
@@ -1279,6 +1282,10 @@ function beginNumber(state, ui, opts, title, send) {
     ui.value = "";
     const summary = [];
     ui.summary = summary;
+    // Why the sources sum to less than the largest X: the engine's
+    // `funding::describe_x_discount` (#979).
+    if ((opts.x_discount || 0) > 0)
+        summary.push(`A cost reduction pays the first ${opts.x_discount} of X`);
     const pool = Object.entries(opts.pool || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n} ${k}`).join(", ");
     if (pool)
         summary.push(`Pool: ${pool}`);
