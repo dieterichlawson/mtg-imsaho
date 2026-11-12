@@ -975,7 +975,11 @@ impl GameState {
         let (power, toughness) = self.effective_power(id, registry)
             .zip(self.effective_toughness(id, registry))
             .unwrap_or((power, toughness));
-        let described = format!("{power}/{toughness} {name}");
+        // The name the same object has, so size and name are of one thing:
+        // a token made a copy of something else as it entered would read
+        // with its own size beside the name it was asked for (#1021's review).
+        let entered_name = self.get_object(id).map_or_else(|| name.to_string(), |o| o.name.clone());
+        let described = format!("{power}/{toughness} {entered_name}");
 
         // The count a player reads is the count that entered, and it is
         // counted here rather than claimed by each caller. Seventeen cards
