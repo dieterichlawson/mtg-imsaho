@@ -3790,3 +3790,26 @@ fn grimoire_of_the_dead_logs_its_study_counter_once() {
     assert_eq!(lines.len(), 1, "one counter, one line: {lines:?}");
     assert!(lines[0].contains("(now 1)"), "{lines:?}");
 }
+
+/// CR 614.1c: a token copy of Festerhide Boar made while morbid is on
+/// enters with two +1/+1 counters, so it is a 5/5 from the instant it
+/// exists. The creation line said "created 1 3/3 Festerhide Boar token"
+/// one line after "enters with 2 +1/+1 counters" — #505's shape, reached
+/// through counters rather than a P/T-defining ability (issue #1021).
+#[test]
+fn a_token_that_enters_with_counters_is_announced_at_the_size_it_entered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let boar = named_card_in_graveyard(&mut state, &reg, "Festerhide Boar", P0);
+    state.creature_died_this_turn = true;
+    state.game_log.clear();
+
+    state.create_token_copy(boar, P0, &reg);
+
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(lines.iter().any(|l| l.contains("created 1 5/5 Festerhide Boar token")),
+        "the size that entered, counters included: {lines:?}");
+    assert!(!lines.iter().any(|l| l.contains("3/3 Festerhide Boar")), "{lines:?}");
+    let token = find_token_named(&state, "Festerhide Boar").expect("the copy is there");
+    assert_eq!(state.effective_power(token, &reg), Some(5), "and it really is a 5/5");
+}

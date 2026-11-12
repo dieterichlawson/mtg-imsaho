@@ -964,8 +964,16 @@ impl GameState {
         // was announced as a "0/0 Ooze token" when the slime counter was
         // already on, so it was a 1/1 from the instant it existed and never a
         // 0/0 at any point a player or a rule could observe (issue #505).
-        let (power, toughness) = self.get_object(id)
-            .and_then(|o| self.token_defined_pt(o, registry))
+        //
+        // The same holds for counters a replacement put on it as it entered
+        // (CR 614.1c): Back from the Brink's copy of a morbid Festerhide Boar
+        // was announced as a "3/3 Festerhide Boar token" one line after it
+        // "enters with 2 +1/+1 counters", a 5/5 from the instant it existed
+        // (issue #1021). So the line reads the size the board shows, every
+        // layer and counter applied, and the printed size only when the
+        // token has none to show.
+        let (power, toughness) = self.effective_power(id, registry)
+            .zip(self.effective_toughness(id, registry))
             .unwrap_or((power, toughness));
         let described = format!("{power}/{toughness} {name}");
 
