@@ -1005,7 +1005,13 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   guide every game call's argv carries (a `CLAUDE_CODE_BIN` wrapper
   around `scripts/llm-prompt-stub.py`). Then check what the resume note
   and the log header say was used. The games are asked under the guide
-  as well as the picks, and the note said otherwise
+  as well as the picks, and the note said otherwise. [2026-11-12 R1: holds
+  after the fix; the resume warns per seat "only the games still to play are
+  asked", in the phrase `ledger.py` counts.] The wrapper must exec the stub
+  by an **absolute** path: the draft seat runs `claude` in a temp directory
+  (`/tmp/mtg-draft-claude-code-…`), so a relative one fails every pick and
+  the run dies at pack 1 pick 1 after ~9 minutes of retries (#1015's own
+  repro now does this; #540 is the same lesson)
 - D47 [proposed 2026-10-21, from #822-#825] where everybody is: with a
   person in a match, close their game page, then their draft page, then
   reopen each; kick them mid-game; Ctrl-C the server. At every step read
