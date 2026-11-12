@@ -440,17 +440,36 @@ illegal or dubious resolutions do.
 
 - L1 stack battles: respond to everything; 3+ deep stacks; order triggers
   differently each time a ChooseTriggerOrder prompt appears
+  [tried 2026-11-12; APNAP with a Falkenrath Noble on each side, three
+  triggers ordered by the non-active player, a Noble that dies with its own
+  trigger on the stack: all held] Next: the *active* player ordering two of
+  its own triggers while the opponent also has one, and a trigger whose
+  target dies before it resolves (CR 608.2b)
 - L2 targeting edges: target own permanents with removal, retarget-bait
   with hexproof/protection, fizzle spells deliberately
 - L3 optional everything: decline every "may"; verify nothing forces
 - L4 combat rules: menace/multi-block, first-strike ordering, trample
   assignment, mid-combat removal of blockers/attackers/walkers
+  [tried 2026-11-12 → #1020; deathtouch+trample (Typhoid Rats under Kessig
+  Wolf Run), a trampler with every blocker gone (702.19e), double strike with
+  lethal recomputed from marked damage, and a regenerated blocker leaving
+  combat all held] Next: a blocker removed by bounce or exile rather than
+  death or regeneration; damage to an attacking planeswalker's controller
+  when the walker leaves mid-combat; and a creature that gains first strike
+  between the two damage steps (CR 702.7c: it still deals regular damage),
+  once a card in the pool can grant it at instant speed (Vampiric Fury, to a
+  Vampire)
 - L5 cost edges: flashback from graveyard, X=0 and X=max, additional
   costs (sacrifice/exile), Snapcaster-granted flashback
 - L6 copy/DFC: Evil Twin copies of transformed werewolves, token copies,
   legend-rule keep choices
 - L7 zone identity: reanimate, bounce, and re-cast the same card;
   verify new-object rules (counters/attachments/damage gone)
+  [tried 2026-11-12 → #1021; Back from the Brink's token copy and Unburial
+  Rites both apply Festerhide Boar's morbid "enters with"] Next: a card that
+  dies with counters, an aura and damage and comes back the same turn (none
+  of the three may follow it), and a log line for every way a token enters
+  read against the board
 - L8 SBA order: simultaneous deaths, Angelic-Overseer-style dependency,
   both players to 0 life. [tried 2026-11-07 → #1000] The SBA loop runs
   several checks in one action, and they are separate events (CR 704.3). A
