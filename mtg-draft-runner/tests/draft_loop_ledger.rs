@@ -22,6 +22,13 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         "    {\"pick\": 99}".to_string(),
         String::new(),
         format!("{at}REASK [Seat1]\tthat action is not offered"),
+        // A why that quotes a string with ": {" in it, and a pick's reply
+        // that ran to several lines, logged under a bare header (#992's review).
+        format!("{at}REASK [Seat0]\t`then` is \"Plan: {{G}}\"; it must be one of the listed: {{\"then\": \"Plan: {{G}}\"}}"),
+        format!("{at}REASK"),
+        "`pick` is 20; it must be 0 to 13: {".to_string(),
+        "  \"pick\": 20".to_string(),
+        "}".to_string(),
         format!("{at}API_WARN\tclaude -p returned no structured object (attempt 1): I pick the {{G}} card."),
         format!("{at}UNREADABLE [Seat0]\tno JSON object"),
         format!("{at}USAGE [Seat0]\tin 10 out 5 thinking n/a cache_read 7 cache_write 0"),
@@ -42,7 +49,7 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         .output().expect("python3 runs");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(h["reasks"], 2, "{h}");
+    assert_eq!(h["reasks"], 4, "{h}");
     assert_eq!(h["unreadable"], 2, "{h}");
     assert_eq!(h["game_calls"], 2, "{h}");
     assert_eq!(h["out"], 11, "{h}");
@@ -57,7 +64,10 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     // kind, so a question that invited the wrong answer can be told from
     // a model's slip after the log is gone.
     assert_eq!(h["reask_reasons"], serde_json::json!([
+        {"who": "game", "reason": "`then` is \"Plan: {G}\"; it must be one of the listed", "count": 1,
+         "answer": "{\"then\": \"Plan: {G}\"}"},
         {"who": "game", "reason": "that action is not offered", "count": 1, "answer": ""},
+        {"who": "pick", "reason": "`pick` is 20; it must be 0 to 13", "count": 1, "answer": "{ \"pick\": 20 }"},
         {"who": "pick", "reason": "`pick` is 99; it must be 0 to 13", "count": 1, "answer": "{\"pick\": 99}"},
     ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);

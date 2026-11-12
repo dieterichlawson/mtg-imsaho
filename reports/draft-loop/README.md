@@ -45,7 +45,9 @@ commits what is here.
    stands. Sections in another order are put in order.
 5. `report.py` — `nights/DATE.md`, with what went wrong (re-asks, replies
    no answer could be read from, panics, substituted picks and decks)
-   counted from the run's log.
+   counted from the run's log, and each re-ask's reason with the first
+   answer it quoted, so a question that invited the wrong answer can be
+   told from a model's slip after the log is gone (#992).
 
 A night that stopped partway carries on from its snapshot when
 `night.sh` is run again with the same date; a date already in the ledger

@@ -230,8 +230,27 @@ def log_health(path):
     # result gave no thinking figure says `thinking n/a`. Each was missed,
     # so the night said "0 calls" beside the runner's 1274 (#900).
     reasons = {}
+    # A re-ask whose content ran to several lines (a pick's raw reply,
+    # pretty-printed) is logged as a header with no content and the text on
+    # the lines under it, up to the next timestamped header (#992's review).
+    pending = None
+
+    def note(who, text):
+        why, answer = split_reask(text)
+        key = (who, why)
+        if key not in reasons:
+            reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
+        reasons[key]["count"] += 1
+
+    header = re.compile(r"^\d{4}-\d\d-\d\d \d")
     usage = re.compile(r"\tUSAGE \[.*out (\d+) thinking (\d+|n/a) cache_read (\d+) cache_write (\d+)")
     for line in open(path, encoding="utf-8", errors="replace"):
+        if pending is not None:
+            if not header.match(line):
+                pending[1].append(line.rstrip("\n"))
+                continue
+            note(pending[0], " ".join(l.strip() for l in pending[1]).strip())
+            pending = None
         # A resume under another guide, setting or set file: picks or
         # matches of one night made under two system prompts (#948, #949).
         if "its system prompt is not the live one" in line or "those picks were made under" in line:
@@ -242,11 +261,10 @@ def log_health(path):
             # model's slip from a question that invited the wrong answer,
             # and the log that had the reasons is not kept (#992).
             who = "game" if m.group(1) else "pick"
-            why, answer = split_reask(m.group(3).strip())
-            key = (who, why)
-            if key not in reasons:
-                reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
-            reasons[key]["count"] += 1
+            if m.group(3).strip():
+                note(who, m.group(3).strip())
+            else:
+                pending = (who, [])
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
         # A worker's panic reaches the log as its `FATAL` line (the panic
@@ -261,16 +279,28 @@ def log_health(path):
             h["game_calls"] += 1
             for k, v in zip(("out", "thinking", "cache_read", "cache_write"), m.groups()):
                 h[k] += int(v) if v != "n/a" else 0
+    if pending is not None:
+        note(pending[0], " ".join(l.strip() for l in pending[1]).strip())
     h["reask_reasons"] = sorted(reasons.values(), key=lambda r: (-r["count"], r["who"], r["reason"]))
     return h
 
 
 def split_reask(text, cap=240):
     """A `REASK` line's content is `<why>: <the answer>`, or the why alone.
-    The answer is JSON (or a reply's text), so the split is at the first
-    `: ` that a JSON value follows. Both are capped: the record is kept in
-    the repository every night."""
-    m = re.search(r": (?=[\[{\"])", text)
+    The answer is JSON (or a reply's text), and the why can quote a
+    string with `: {` in it, so the split is at the first `: ` after which
+    the rest parses as JSON; failing that, the first one a JSON value could
+    follow. Both are capped: the record is kept in the repository every
+    night."""
+    cuts = [m for m in re.finditer(r": (?=[\[{\"])", text)]
+
+    def parses(t):
+        try:
+            json.loads(t)
+            return True
+        except ValueError:
+            return False
+    m = next((c for c in cuts if parses(text[c.end():])), cuts[0] if cuts else None)
     why, answer = (text[:m.start()], text[m.end():]) if m else (text, "")
     clip = lambda t: t if len(t) <= cap else t[:cap - 1] + "\u2026"
     return clip(why), clip(answer)
