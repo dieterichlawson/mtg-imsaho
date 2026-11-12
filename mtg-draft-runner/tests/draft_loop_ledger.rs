@@ -53,6 +53,13 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     assert_eq!(h["panics"], 1, "{h}");
     assert_eq!(h["harness_chose"], 2, "{h}");
     assert_eq!(h["prompt_unlike"], 2, "{h}");
+    // #992: each re-ask keeps its reason and the answer it quoted, by
+    // kind, so a question that invited the wrong answer can be told from
+    // a model's slip after the log is gone.
+    assert_eq!(h["reask_reasons"], serde_json::json!([
+        {"who": "game", "reason": "that action is not offered", "count": 1, "answer": ""},
+        {"who": "pick", "reason": "`pick` is 99; it must be 0 to 13", "count": 1, "answer": "{\"pick\": 99}"},
+    ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -70,7 +77,9 @@ fn the_night_report_says_one_call_in_the_singular() {
         "seed": 1, "players": 2, "best_of": 3, "guide_hash": "x",
         "seats": [seat(0, true, 1), seat(1, false, 0)],
         "health": {"reasks": 1, "unreadable": 1, "panics": 0, "harness_chose": 1, "game_calls": 1,
-                   "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0},
+                   "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0,
+                   "reask_reasons": [{"who": "game", "reason": "`indices` has 0 entries; it needs at least 1",
+                                      "count": 1, "answer": "{\"indices\": []}"}]},
     }).to_string()).unwrap();
     std::fs::write(dir.join("nights/2099-01-01-lessons.json"), serde_json::json!({
         "seats": [{"seat": 0, "colors": "G", "record": "1-0", "lessons": [], "usage": {"output_tokens": 5}}],
@@ -85,7 +94,9 @@ fn the_night_report_says_one_call_in_the_singular() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let report = std::fs::read_to_string(dir.join("nights/2099-01-01.md")).unwrap();
     for said in ["debriefs: 1 call,", "curator: 1 call,", "1 re-ask,", "1 reply no answer", "1 game answer the harness",
-                 "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |"] {
+                 "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |",
+                 // #992: what the re-ask was for.
+                 "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}`"] {
         assert!(report.contains(said), "{said:?} in:\n{report}");
     }
     assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");

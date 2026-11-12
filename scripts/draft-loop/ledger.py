@@ -229,14 +229,24 @@ def log_health(path):
     # structured object`, the game seat's `UNREADABLE`; and a call whose
     # result gave no thinking figure says `thinking n/a`. Each was missed,
     # so the night said "0 calls" beside the runner's 1274 (#900).
+    reasons = {}
     usage = re.compile(r"\tUSAGE \[.*out (\d+) thinking (\d+|n/a) cache_read (\d+) cache_write (\d+)")
     for line in open(path, encoding="utf-8", errors="replace"):
         # A resume under another guide, setting or set file: picks or
         # matches of one night made under two system prompts (#948, #949).
         if "its system prompt is not the live one" in line or "those picks were made under" in line:
             h["prompt_unlike"] += 1
-        elif re.search(r"\tREASK(\t| \[|$)", line):
+        elif (m := re.search(r"\tREASK( \[[^\]]*\])?(\t|$)(.*)", line)):
             h["reasks"] += 1
+            # Why, and what was answered: a count alone cannot tell a
+            # model's slip from a question that invited the wrong answer,
+            # and the log that had the reasons is not kept (#992).
+            who = "game" if m.group(1) else "pick"
+            why, answer = split_reask(m.group(3).strip())
+            key = (who, why)
+            if key not in reasons:
+                reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
+            reasons[key]["count"] += 1
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
         # A worker's panic reaches the log as its `FATAL` line (the panic
@@ -251,7 +261,19 @@ def log_health(path):
             h["game_calls"] += 1
             for k, v in zip(("out", "thinking", "cache_read", "cache_write"), m.groups()):
                 h[k] += int(v) if v != "n/a" else 0
+    h["reask_reasons"] = sorted(reasons.values(), key=lambda r: (-r["count"], r["who"], r["reason"]))
     return h
+
+
+def split_reask(text, cap=240):
+    """A `REASK` line's content is `<why>: <the answer>`, or the why alone.
+    The answer is JSON (or a reply's text), so the split is at the first
+    `: ` that a JSON value follows. Both are capped: the record is kept in
+    the repository every night."""
+    m = re.search(r": (?=[\[{\"])", text)
+    why, answer = (text[:m.start()], text[m.end():]) if m else (text, "")
+    clip = lambda t: t if len(t) <= cap else t[:cap - 1] + "\u2026"
+    return clip(why), clip(answer)
 
 
 def usage_lines(path):
