@@ -8645,6 +8645,12 @@ impl CliPlayer {
         let mut ks = Vec::new();
         for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
             let Ok(k) = tok.parse::<usize>() else {
+                // A number too long to read is a number out of range, as
+                // the other prompts say, not "not a number" (#1017).
+                if tok.bytes().all(|b| b.is_ascii_digit()) {
+                    return SetInput::Invalid(format!("'{}' is out of range — the cards are numbered 0-{}",
+                        quote_input(tok), n.saturating_sub(1)));
+                }
                 return SetInput::Invalid(format!(
                     "'{}' is not a number — type the number of a card to mark or unmark it", quote_input(tok)));
             };
@@ -10316,6 +10322,12 @@ any target (tap Mountain (your))", 92),
         assert!(matches!(CliPlayer::parse_card_set_input("a", 7, false), All));
         assert!(matches!(CliPlayer::parse_card_set_input("none", 7, false), None));
         assert!(matches!(CliPlayer::parse_card_set_input("g", 7, false), Pane('g')));
+        // #1017: a number past usize is out of range, as 7 is, not "not a
+        // number"; a word still is not a number.
+        assert!(matches!(CliPlayer::parse_card_set_input("99999999999999999999", 7, false),
+            Invalid(ref m) if m.contains("out of range") && m.contains("0-6")));
+        assert!(matches!(CliPlayer::parse_card_set_input("7", 7, false), Invalid(ref m) if m.contains("out of range")));
+        assert!(matches!(CliPlayer::parse_card_set_input("x", 7, false), Invalid(ref m) if m.contains("not a number")));
         assert!(matches!(CliPlayer::parse_card_set_input("m", 7, false), NextPage));
         assert!(matches!(CliPlayer::parse_card_set_input("p", 7, false), PrevPage));
         match CliPlayer::parse_card_set_input("7", 7, false) {
