@@ -701,6 +701,40 @@ function drawRow(ctx: Ctx, hits: Hit[], state: LiveState, all: PermanentView[][]
   }
 }
 
+const STRIP_GAP = 10;
+
+/** One count on a player strip, and the zone a click on it opens. */
+export interface StripPart { text: string; zone: "graveyard" | "exile" | "library" | null }
+
+/**
+ * A player strip's counts and floating mana, in the widest form that fits.
+ *
+ * The strip ran `Hand`, `Lib`, `GY`, `Exile`, `Cast` and `Pool` left to
+ * right and clipped the last at the board's edge. The pool is the last and
+ * the longest, so six kinds floating beside double-digit zones read "Pool
+ * 2W 2U 2B 3R 2…": which mana was floating was shown nowhere on the page,
+ * and nothing counted what was cut (#995). Before anything is clipped the
+ * pool is written without spaces, then the labels are shortened; every
+ * count and every kind of mana is kept in each form.
+ */
+export function stripParts(c: { hand: number; library: number; gy: number; exile: number; cast: number },
+  pool: Partial<Record<string, number>>, fits: (texts: string[]) => boolean): StripPart[] {
+  const kinds = Object.entries(pool).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`);
+  const form = (short: boolean, sep: string): StripPart[] => {
+    const out: StripPart[] = [
+      { text: short ? `H${c.hand}` : `Hand ${c.hand}`, zone: null },
+      { text: short ? `L${c.library}` : `Lib ${c.library}`, zone: "library" },
+      { text: short ? `GY${c.gy}` : `GY ${c.gy}`, zone: "graveyard" },
+    ];
+    if (c.exile) out.push({ text: short ? `Ex${c.exile}` : `Exile ${c.exile}`, zone: "exile" });
+    if (c.cast) out.push({ text: short ? `Cast${c.cast}` : `Cast ${c.cast}`, zone: null });
+    if (kinds.length) out.push({ text: `Pool ${kinds.join(sep)}`, zone: null });
+    return out;
+  };
+  const forms = [form(false, " "), form(false, ""), form(true, "")];
+  return forms.find(f => fits(f.map(p => p.text))) ?? forms[forms.length - 1];
+}
+
 function drawStrip(ctx: Ctx, hits: Hit[], state: LiveState, y: number, pid: PlayerId, life: number, handSize: number,
   library: number, gy: number, exile: number, pool: ManaPool | undefined, isYou: boolean): void {
   const key = `p${pid}`;
@@ -721,28 +755,26 @@ function drawStrip(ctx: Ctx, hits: Hit[], state: LiveState, y: number, pid: Play
   // else on the board.
   text(ctx, clip(ctx, `${isYou ? "You" : "Opponent"} (p${pid})${active ? " ★" : ""}${priority ? " ●" : ""}`, 98),
     50, y + 3, { color: active ? "#ffe080" : "#c0b8c8" });
-  const parts = [`Hand ${handSize}`, `Lib ${library}`, `GY ${gy}`];
-  if (exile) parts.push(`Exile ${exile}`);
   // Spells this player cast this turn: a werewolf transforms at the next
   // upkeep on it, and no zone shows it (#832).
   const cast = ((state.view.spells_cast_this_turn || []).find(([p]) => p === pid) || [pid, 0])[1];
-  if (cast) parts.push(`Cast ${cast}`);
-  const poolText = Object.entries((pool && pool.mana) || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`).join(" ");
-  if (poolText) parts.push(`Pool ${poolText}`);
-  let x = 150;
-  for (const whole of parts) {
-    // Hand, library, graveyard, exile, cast and a five-colour pool can be
-    // wider than the strip: the run is clipped at the board's edge rather
-    // than painted into the side panel (#832 added "Cast N").
+  const x0 = 150, room = BOARD_W - 4 - x0;
+  ctx.font = "8px Silkscreen";
+  const parts = stripParts({ hand: handSize, library, gy, exile, cast }, (pool && pool.mana) || {},
+    texts => texts.reduce((w, t) => w + ctx.measureText(t).width, 0) + STRIP_GAP * (texts.length - 1) <= room);
+  let x = x0;
+  for (const { text: whole, zone } of parts) {
+    // Only a strip that fits in no form is clipped, at the board's edge
+    // rather than painted into the side panel; stripParts has already
+    // shortened the labels and the pool before that (#832, #995).
     if (x > BOARD_W - 24) break;
     const part = clip(ctx, whole, BOARD_W - 4 - x);
     ctx.font = "8px Silkscreen"; const w = ctx.measureText(part).width;
-    const zone: Hit["zone"] | null = part.startsWith("GY") ? "graveyard" : part.startsWith("Exile") ? "exile" : part.startsWith("Lib") ? "library" : null;
     text(ctx, part, x, y + 3, { color: zone ? "#b0c0e0" : "#c0b8c8" });
     if (zone) hits.push({ x: x - 2, y, w: w + 4, h: 14, kind: "zone", zone, pid, onClick: () => {
       state.overlay = state.overlay && state.overlay.zone === zone && state.overlay.pid === pid ? null : { zone, pid };
     } });
-    x += w + 10;
+    x += w + STRIP_GAP;
   }
   hits.push({ x: 0, y, w: 140, h: 14, kind: "player", key, pid, onClick: clickFor(state, key) });
 }

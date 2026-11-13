@@ -975,6 +975,31 @@ async function main() {
       }
       await page.evaluate((h) => { window.mtg.view.your_hand = JSON.parse(h); window.mtg.overlay = null; window.mtgDebug.stage(window.mtg.lastDecision); }, savedHand);
 
+      // (b5) #995: the opponent's strip with six kinds floating beside
+      // double-digit zones kept "Pool 2W 2U 2B 3R 2…", in the real font.
+      const strip = await page.evaluate(() => {
+        const m = window.mtg; const v = m.view; const opp = v.opponents[0];
+        const saved = JSON.stringify({ pool: opp.mana_pool, hand: opp.hand_size, cast: v.spells_cast_this_turn, gys: v.graveyards, exile: v.exile });
+        opp.mana_pool = { mana: { White: 2, Blue: 2, Black: 2, Red: 3, Green: 2, Colorless: 2 } };
+        opp.hand_size = 9; v.spells_cast_this_turn = [[opp.id, 4]];
+        v.graveyards = v.graveyards.map(([p]) => [p, Array.from({ length: 22 }, (_, i) => ({ ...v.your_hand[0], object_id: 9000 + i + 100 * p, owner: p }))]);
+        v.exile = Array.from({ length: 12 }, (_, i) => ({ ...v.your_hand[0], object_id: 9500 + i, owner: opp.id }));
+        const ctx = document.querySelector("canvas").getContext("2d");
+        const orig = ctx.fillText; const drawn = [];
+        ctx.fillText = function (s, x, y, ...rest) { if (y < 14 && x >= 150 && x < 480) drawn.push({ s, x, w: this.measureText(s).width }); return orig.call(this, s, x, y, ...rest); };
+        window.mtgDebug.render();
+        // An own property would shadow the prototype that later tests wrap.
+        delete ctx.fillText;
+        const r = JSON.parse(saved);
+        Object.assign(opp, { mana_pool: r.pool, hand_size: r.hand }); Object.assign(v, { spells_cast_this_turn: r.cast, graveyards: r.gys, exile: r.exile });
+        window.mtgDebug.stage(window.mtg.lastDecision);
+        return drawn;
+      });
+      const stripText = strip.map(d => d.s).join(" ");
+      const stripRight = Math.max(...strip.map(d => d.x + d.w));
+      if (!/2W ?2U ?2B ?3R ?2G ?2C/.test(stripText) || stripText.includes("…") || stripRight > 480) fail(`strip-pool: drew ${JSON.stringify(stripText)} to x=${stripRight}`);
+      else ok(`strip-pool → ${JSON.stringify(stripText)}`);
+
       // (c) the facts the CLI's detail page carries and the panel dropped.
       const facts = await page.evaluate((perm) => {
         const m = window.mtg;
@@ -1500,7 +1525,8 @@ async function main() {
       // Where the band has no readable room left, the effect is not drawn
       // as a letter and an ellipsis over the stack (#953).
       if (drawn.some(d => d.s.startsWith("Moon") && d.right > 180)) fail(`turn-facts: the effect runs into the stack: ${JSON.stringify(drawn.filter(d => d.s.startsWith("Moon")))}`);
-      const casts = drawn.filter(d => d.s === "Cast 2" || d.s === "Cast 1");
+      // A strip too full for its labels shortens them before it clips (#995).
+      const casts = drawn.filter(d => /^Cast ?[12]$/.test(d.s));
       if (casts.length !== 2) fail(`turn-facts: each strip says its spells cast, got ${JSON.stringify(casts)}`);
       else if (casts.some(d => d.right > 480)) fail(`turn-facts: a strip's cast count leaves the board: ${JSON.stringify(casts)}`);
       else ok("turn-facts: both strips carry their cast counts");
@@ -1508,6 +1534,8 @@ async function main() {
       if (!pool.length) fail("turn-facts: the pool is not drawn at all");
       else if (!pool[0].s.includes("19U") || !pool[0].s.includes("19B"))
         fail(`turn-facts: blue and black are written apart in the pool (#808): ${pool[0].s}`);
+      else if (!["W", "U", "B", "R", "G", "C"].every(k => pool[0].s.includes(`19${k}`)) || pool[0].s.includes("…"))
+        fail(`turn-facts: the pool is cut, not every kind is drawn (#995): ${pool[0].s}`);
       else if (pool.some(d => d.right > 480)) fail(`turn-facts: a strip runs past the board: ${JSON.stringify(pool)}`);
       else ok("turn-facts: a full pool after the cast count stays on the board");
     }
