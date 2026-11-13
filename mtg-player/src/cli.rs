@@ -4874,6 +4874,31 @@ impl CliPlayer {
         terminal::size().unwrap_or((100, 30)).0 as usize
     }
 
+    /// A refusal in at most `rows` rows of `width` columns: wrapped where it
+    /// fits; else on one row, shortened deliberately — the "(CR …)"
+    /// citation dropped first, then the part before " — " cut in its
+    /// middle so the instruction after it is kept whole (#1020).
+    fn notice_rows(msg: &str, width: usize, rows: usize) -> Vec<String> {
+        let wrapped = Self::word_wrap(msg, width);
+        if wrapped.len() <= rows.max(1) {
+            return wrapped;
+        }
+        let mut short = msg.to_string();
+        while let Some(at) = short.find(" (CR ") {
+            match short[at..].find(')') {
+                Some(end) => short.replace_range(at..at + end + 1, ""),
+                None => break,
+            }
+        }
+        if str_cols(&short) <= width {
+            return vec![short];
+        }
+        match short.rfind(" — ") {
+            Some(at) => vec![Self::elide_middle("", &short[..at], &short[at..], width)],
+            None => vec![Self::clip_closed_or_cut(&short, width)],
+        }
+    }
+
     fn term_height() -> usize {
         terminal::size().unwrap_or((100, 30)).1 as usize
     }
@@ -7159,10 +7184,18 @@ return",
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + 1);
+            // A refusal's end is what it says to do, and a bare clip lost it
+            // ("— add" of "add blockers or drop the block", #1020): it
+            // takes the row under it too where that row is on the screen.
+            let room = if (r as usize) + 2 < Self::term_height() { 2 } else { 1 };
+            for k in 1..=room as u16 {
+                Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + k);
+            }
             if let Some(msg) = msg {
-                let _ = execute!(stdout(), SetForegroundColor(Color::Red),
-                    Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
+                for (k, line) in Self::notice_rows(msg, Self::middle_panel_width_at(Self::term_width()), room).iter().enumerate() {
+                    let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1 + k as u16),
+                        SetForegroundColor(Color::Red), Print(line), ResetColor);
+                }
             }
             // Back to the prompt row: `read_line` prints its prompt at the
             // cursor, so leaving it here put the prompt on the end of the
@@ -7455,10 +7488,18 @@ return",
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + 1);
+            // A refusal's end is what it says to do, and a bare clip lost it
+            // ("— add" of "add blockers or drop the block", #1020): it
+            // takes the row under it too where that row is on the screen.
+            let room = if (r as usize) + 2 < Self::term_height() { 2 } else { 1 };
+            for k in 1..=room as u16 {
+                Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + k);
+            }
             if let Some(msg) = msg {
-                let _ = execute!(stdout(), SetForegroundColor(Color::Red),
-                    Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
+                for (k, line) in Self::notice_rows(msg, Self::middle_panel_width_at(Self::term_width()), room).iter().enumerate() {
+                    let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1 + k as u16),
+                        SetForegroundColor(Color::Red), Print(line), ResetColor);
+                }
             }
             // Back to the prompt row: `read_line` prints its prompt at the
             // cursor, so leaving it here put the prompt on the end of the
@@ -11533,6 +11574,19 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(CliPlayer::set_count_error(1, 2, 2), "1 marked — mark exactly 2 cards");
         assert_eq!(CliPlayer::set_count_error(4, 0, 3), "4 marked — mark at most 3 cards");
         assert_eq!(CliPlayer::set_count_error(1, 2, 5), "1 marked — mark between 2 and 5 cards");
+        // #1020: a combat refusal wider than the pane is wrapped onto the
+        // row under it, or, given one row, shortened with its instruction
+        // kept: a bare clip ended the menace refusal at "— add".
+        let menace = "Terror of Kruin Pass 4/3 (opp) can't be blocked by fewer than 2 creatures (CR 509.1b) \
+— add blockers or drop the block.";
+        let two = CliPlayer::notice_rows(menace, 94, 2);
+        assert!(two.len() == 2 && two.iter().all(|l| str_cols(l) <= 94) && two[1].ends_with("drop the block."), "{two:?}");
+        for w in [94, 70, 63] {
+            let one = CliPlayer::notice_rows(menace, w, 1);
+            assert!(one.len() == 1 && str_cols(&one[0]) <= w && one[0].ends_with("— add blockers or drop the block."),
+                "{one:?} in {w}");
+        }
+        assert_eq!(CliPlayer::notice_rows("short", 94, 1), vec!["short".to_string()]);
         // #1016: `a`'s refusal says the count the screen takes, as the
         // heading and Confirm do: "exactly" on a discard or mulligan bottom.
         assert_eq!(CliPlayer::all_refused(10, 3, 3), "a marks all 10 — this takes exactly 3; mark the ones you want");
