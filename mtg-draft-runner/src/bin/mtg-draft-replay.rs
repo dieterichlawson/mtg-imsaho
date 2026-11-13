@@ -62,6 +62,11 @@ fn load_set(key: &str, registry: &CardRegistry) -> LoadedSet {
 }
 
 fn main() {
+    // A seat's spent retries stop the replay as they stop a draft: one line
+    // naming the reason, not a thread panic and its backtrace, whose last
+    // line is all draft-replay.py kept of why a pick has no answer (#1009,
+    // #218's fix in the runner).
+    mtg_draft_runner::install_panic_hook();
     let args: Vec<String> = std::env::args().collect();
     // A repeated flag's last occurrence, as the runners and the server take
     // one (#952).
@@ -142,7 +147,8 @@ fn main() {
             + &DraftLlmClient::build_pick_prompt(table, count("pack_number"), count("pick_index"),
                 &available, &pool, &set.lines);
         let before = llm_client::get_model_usage();
-        let response = client.send_pick_message(&prompt, available.len());
+        let response = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| client.send_pick_message(&prompt, available.len())))
+            .unwrap_or_else(|payload| die(&format!("{positions} line {}: {}", id + 1, mtg_draft_runner::panic_message(&payload))));
         let after = llm_client::get_model_usage();
         let pick = parse_pick_response(&response, &available);
 

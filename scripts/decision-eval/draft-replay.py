@@ -60,7 +60,12 @@ def run_one(args, pid, position, sample):
         rc = out.returncode
         # Why a pick has no answer, which is otherwise nowhere: the binary
         # says it on stderr and the row would keep only the exit status.
-        err = (out.stderr.strip().splitlines() or [""])[-1][:300] if rc else ""
+        # The binary's own "mtg-draft-replay: ..." line when it said one:
+        # the last line was a panic's backtrace footer, "note: Some details
+        # are omitted...", in every row that had no answer (#1009).
+        said = [l for l in out.stderr.splitlines()
+                if l.startswith("mtg-draft-replay: ") and ": its system prompt is not the live one: " not in l]
+        err = (said or out.stderr.strip().splitlines() or [""])[-1][:300] if rc else ""
         # A pick asked under another system prompt than the live one (#920):
         # said with exit 0, and kept in the row so the run can say it.
         unlike = [l.split(": its system prompt is not the live one: ", 1)[1]
