@@ -231,12 +231,23 @@ pub fn log_sideboard(seat: usize, game: usize, before: &DraftDeck, decision: &Si
         (None, Some(e)) => format!("kept the deck (the answer's could not be played: {e})"),
         (None, None) => "kept the deck".to_string(),
     };
-    let choice = match (chooses, decision.play_first) {
-        (false, _) => String::new(),
-        (true, Some(false)) => " | draws first".to_string(),
-        (true, _) => " | plays first".to_string(),
-    };
+    let choice = play_draw_suffix(chooses, decision.play_first);
     w(&format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
+}
+
+/// A between-games line's play/draw: what the seat chose when it chose,
+/// and "(no choice was made)" when its answer chose nothing, which plays
+/// first. log_sideboard had its own copy that said "plays first" for both,
+/// so an AI seat that chose to play read as one whose answer dropped the
+/// field (#1023).
+#[must_use]
+pub fn play_draw_suffix(chooses: bool, play_first: Option<bool>) -> &'static str {
+    match (chooses, play_first) {
+        (false, _) => "",
+        (true, Some(true)) => " | plays first",
+        (true, Some(false)) => " | draws first",
+        (true, None) => " | plays first (no choice was made)",
+    }
 }
 
 /// The log's record of what a seat no model answered for went into a game
@@ -253,12 +264,7 @@ pub fn log_between(seat: usize, game: usize, before: &DraftDeck, after: Option<&
         (None, Some(why)) => format!("kept the deck ({why})"),
         (None, None) => "no change".to_string(),
     };
-    let choice = match (chooses, play_first) {
-        (false, _) => "",
-        (true, Some(true)) => " | plays first",
-        (true, Some(false)) => " | draws first",
-        (true, None) => " | plays first (no choice was made)",
-    };
+    let choice = play_draw_suffix(chooses, play_first);
     mtg_player::game_log::write(file!(), line!(),
         &format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
 }
@@ -349,6 +355,21 @@ pub fn write_deck_file(path: &std::path::Path, deck: &DraftDeck) -> std::io::Res
         let _ = writeln!(text, "{count} {name}");
     }
     std::fs::write(path, text)
+}
+
+#[cfg(test)]
+mod play_draw_tests {
+    use super::play_draw_suffix;
+
+    /// #1023: log_sideboard said "plays first" for an AI seat whose answer
+    /// chose nothing, where log_between says it made no choice.
+    #[test]
+    fn a_seat_that_chose_nothing_is_said_to_have_made_no_choice() {
+        assert_eq!(play_draw_suffix(true, None), " | plays first (no choice was made)");
+        assert_eq!(play_draw_suffix(true, Some(true)), " | plays first");
+        assert_eq!(play_draw_suffix(true, Some(false)), " | draws first");
+        assert_eq!(play_draw_suffix(false, None), "");
+    }
 }
 
 #[cfg(test)]
