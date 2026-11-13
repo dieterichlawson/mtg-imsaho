@@ -96,7 +96,7 @@ export interface Ui {
   submit?: () => void;
 }
 
-export interface Popover { id: ObjectId; items: Verb[]; x: number; y: number }
+export interface Popover { id: ObjectId; items: Verb[]; x: number; y: number; /** The clicked card's height, which the menu clears. */ h?: number }
 export interface Overlay { zone: "graveyard" | "exile" | "library" | "stack" | "hand"; pid: PlayerId; page?: number }
 
 export interface State {

@@ -484,8 +484,8 @@ function noAnswerHere(ui: Ui, key: string): string {
 window.addEventListener("keydown", (ev) => {
   if (ev.target === field) {
     // The box owns the typing — it has to, for a filter — but not the two
-    // keys that answer a prompt and not the eight that open the log and the
-    // zone overlays (`k`, the stack, since #991). It used to own all of them: `l g G e d s f` were typed
+    // keys that answer a prompt and not the ones that open the log and the
+    // zone overlays (`k`, the stack, since #991; `h`, the hand, since #994). It used to own all of them: `l g G e d s f` were typed
     // into the box at exactly the two prompts that ask you about cards, so a
     // `ChooseCardName` was the one decision you could not look anything up
     // to answer, and the box ended up filtered to nothing with no on-screen

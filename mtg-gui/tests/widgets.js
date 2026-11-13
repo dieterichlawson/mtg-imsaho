@@ -928,6 +928,20 @@ async function main() {
         if (a !== "stack" || b !== null) fail(`stack-key: k opened ${a} and left ${JSON.stringify(b)}`);
         else ok("stack-key: k opens and closes the whole stack");
       }
+      // A stack option past the overlay's first page opens at its page.
+      await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = Array.from({ length: 60 }, (_, i) => ({ object_id: 950 + i, card_id: 1, name: `Brimstone Volley ${i}`,
+          controller: 1 - m.view.you, targets: [], x_value: null, cost: null, card_types: ["Instant"] }));
+      });
+      const deepTarget = { Object: 1005 };
+      if (await stage("deep-stack-page", legal({ actions: [rc({ ChosenTarget: deepTarget }), rc({ ChosenTarget: null })],
+        resolution_prompt: { ChooseTarget: { description: "Counter target spell", options: [deepTarget], optional: true, effect: "Counter" } } }), null, "pick")) {
+        const o = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, page: m.overlay && m.overlay.page, chip: m.hits.some(h => h.kind === "stack" && h.key === "o1005") }; });
+        if (o.zone !== "stack" || o.page !== 1 || !o.chip) fail(`deep-stack-page: entry 56 is not shown: ${JSON.stringify(o)}`);
+        else ok("deep-stack-page: the stack opens at the page holding its option");
+      }
       await page.evaluate(() => { window.mtg.view.stack = []; window.mtg.overlay = null; window.mtgDebug.render(); });
 
       // (b4) #994: the hand row has the battlefield's fit contract. From 42
@@ -943,7 +957,7 @@ async function main() {
           m.view.your_hand = Array.from({ length: n }, (_, i) => ({ ...base[i % base.length], object_id: 9000 + i }));
           window.mtgDebug.stage(window.mtg.decision);
           const hs = m.hits.filter(h => h.kind === "hand");
-          const more = m.hits.find(h => h.kind === "zone" && h.zone === "hand");
+          const more = m.hits.find(h => h.kind === "zone" && h.zone === "hand" && h.y >= 260);
           const right = Math.max(...hs.map(h => h.x + h.w), more ? more.x + more.w : 0);
           out.push({ n, drawn: hs.length, more: !!more, right });
         }
@@ -954,7 +968,7 @@ async function main() {
       else ok(`hand-fit → ${JSON.stringify(handFit.map(d => [d.n, d.drawn, d.more]))}`);
       await page.evaluate(() => { window.mtg.overlay = null; });
       try {
-        await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand'");
+        await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && h.y >= 260");
         const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
           return { zone: m.overlay && m.overlay.zone, cards: m.hits.filter(h => h.kind === "card").length }; });
         if (opened.zone !== "hand" || opened.cards !== 50) fail(`hand-more: the "+N" slot opened ${JSON.stringify(opened)}`);
@@ -980,6 +994,14 @@ async function main() {
         const b = await page.evaluate(() => window.mtg.overlay);
         if (a !== "hand" || b !== null) fail(`hand-key: h opened ${a} and left ${JSON.stringify(b)}`);
         else ok("hand-key: h opens and closes the whole hand");
+        // Your strip's hand count opens it too, as GY and Lib open theirs.
+        try {
+          await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && h.y < 268");
+          const c = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
+          if (c !== "hand") fail(`hand-count: the strip's Hand count opened ${c}`);
+          else ok("hand-count: the strip's Hand count opens the whole hand");
+        } catch (e) { fail(`hand-count: ${e.message}`); }
+        await page.evaluate(() => { window.mtg.overlay = null; });
       }
       await page.evaluate((h) => { window.mtg.view.your_hand = JSON.parse(h); window.mtg.overlay = null; window.mtgDebug.stage(window.mtg.lastDecision); }, savedHand);
 

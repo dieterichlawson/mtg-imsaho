@@ -26,10 +26,10 @@ if (JSON.stringify(labels) !== JSON.stringify(["Mountain (your graveyard)", "Mou
 if (state.overlay !== null) fail(`one overlay cannot show two graveyards, but ${JSON.stringify(state.overlay)} opened`);
 if (P.targetLabel(state, { Object: 64 }) !== "Mountain (opponent's graveyard)") fail("the stack's Targets: line says whose");
 
-// One graveyard: its overlay opens, as before.
+// One graveyard: its overlay opens, at the page holding the option (#994's review).
 const one = { view, index: P.indexView(view), overlay: null };
 P.beginPick(one, { title: "t", options: [{ Object: 64 }], onPick: () => {} });
-if (JSON.stringify(one.overlay) !== JSON.stringify({ zone: "graveyard", pid: 1 })) fail(`the one graveyard opens: ${JSON.stringify(one.overlay)}`);
+if (JSON.stringify(one.overlay) !== JSON.stringify({ zone: "graveyard", pid: 1, page: 0 })) fail(`the one graveyard opens: ${JSON.stringify(one.overlay)}`);
 
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: graveyard targets say whose graveyard");

@@ -554,6 +554,10 @@ function offBoardRows(state, ui, run) {
             continue;
         if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null)
             zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });
+        // Your library's cards are drawn by the `d` overlay, so an option there
+        // opens it as one in a graveyard opens that (#994's review).
+        else if (e && e.zone === "library" && state.view.your_library_cards.some(c => c.object_id === id))
+            zones.set("library", { zone: "library", pid: state.view.you });
         const label = id === null ? targetLabel(state, t) : nameWithZone(state, id);
         rows.push({ label, run: () => run(key), key, cardName: e ? e.obj.name : null });
     }
@@ -567,13 +571,16 @@ function offBoardRows(state, ui, run) {
     if (zones.size === 1) {
         const z = [...zones.values()][0];
         const cards = z.zone === "graveyard" ? (state.view.graveyards.find(([p]) => p === z.pid)?.[1] ?? [])
-            : state.view.exile.filter(c => c.owner === z.pid);
+            : z.zone === "library" ? state.view.your_library_cards
+                : state.view.exile.filter(c => c.owner === z.pid);
         state.overlay = { ...z, page: pageOf(cards) };
     }
     // An option behind the band's "+N" chip is not clickable where the band
     // draws: the stack is opened for it, as a graveyard is (#991's review).
-    else if (zones.size === 0 && [...hiddenKeys].some(k => ui.options?.has(k)))
-        state.overlay = { zone: "stack", pid: state.view.you };
+    else if (zones.size === 0 && [...hiddenKeys].some(k => ui.options?.has(k))) {
+        const i = state.view.stack.findIndex((it, j) => ui.options?.has(stackChipKey(it, j)));
+        state.overlay = { zone: "stack", pid: state.view.you, page: i < 0 ? 0 : Math.floor(i / ZONE_OVERLAY_PAGE) };
+    }
     else if (zones.size === 0 && [...hiddenHand].some(k => ui.options?.has(k)))
         state.overlay = { zone: "hand", pid: state.view.you, page: pageOf(hand) };
     return rows;

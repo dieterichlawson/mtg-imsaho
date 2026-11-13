@@ -432,7 +432,7 @@ export function clickFor(state: State, key: string): Hit["onClick"] {
       if (ui.attackers!.has(key)) return () => ui.clickAttacker!(key);
       return null;
     case "menu":
-      if (ui.verbs && id !== null && ui.verbs.has(id)) return (hit) => { state.popover = { id, items: ui.verbs!.get(id)!, x: hit.x, y: hit.y }; };
+      if (ui.verbs && id !== null && ui.verbs.has(id)) return (hit) => { state.popover = { id, items: ui.verbs!.get(id)!, x: hit.x, y: hit.y, h: hit.h }; };
       return null;
     default: return null;
   }
@@ -704,7 +704,7 @@ function drawRow(ctx: Ctx, hits: Hit[], state: LiveState, all: PermanentView[][]
 const STRIP_GAP = 10;
 
 /** One count on a player strip, and the zone a click on it opens. */
-export interface StripPart { text: string; zone: "graveyard" | "exile" | "library" | null }
+export interface StripPart { text: string; zone: "graveyard" | "exile" | "library" | "hand" | null }
 
 /**
  * A player strip's counts and floating mana, in the widest form that fits.
@@ -718,11 +718,12 @@ export interface StripPart { text: string; zone: "graveyard" | "exile" | "librar
  * count and every kind of mana is kept in each form.
  */
 export function stripParts(c: { hand: number; library: number; gy: number; exile: number; cast: number },
-  pool: Partial<Record<string, number>>, fits: (texts: string[]) => boolean): StripPart[] {
+  pool: Partial<Record<string, number>>, fits: (texts: string[]) => boolean, isYou = false): StripPart[] {
   const kinds = Object.entries(pool).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`);
   const form = (short: boolean, sep: string): StripPart[] => {
     const out: StripPart[] = [
-      { text: short ? `H${c.hand}` : `Hand ${c.hand}`, zone: null },
+      // Your own count opens your whole hand, as `h` does (#994's review).
+      { text: short ? `H${c.hand}` : `Hand ${c.hand}`, zone: isYou ? "hand" : null },
       { text: short ? `L${c.library}` : `Lib ${c.library}`, zone: "library" },
       { text: short ? `GY${c.gy}` : `GY ${c.gy}`, zone: "graveyard" },
     ];
@@ -761,7 +762,7 @@ function drawStrip(ctx: Ctx, hits: Hit[], state: LiveState, y: number, pid: Play
   const x0 = 150, room = BOARD_W - 4 - x0;
   ctx.font = "8px Silkscreen";
   const parts = stripParts({ hand: handSize, library, gy, exile, cast }, (pool && pool.mana) || {},
-    texts => texts.reduce((w, t) => w + ctx.measureText(t).width, 0) + STRIP_GAP * (texts.length - 1) <= room);
+    texts => texts.reduce((w, t) => w + ctx.measureText(t).width, 0) + STRIP_GAP * (texts.length - 1) <= room, isYou);
   let x = x0;
   for (const { text: whole, zone } of parts) {
     // Only a strip that fits in no form is clipped, at the board's edge
@@ -1581,7 +1582,7 @@ function popover(ctx: Ctx, hits: Hit[], state: LiveState): void {
   ctx.font = "8px Silkscreen";
   const w = Math.min(260, Math.max(80, ...items.map(i => ctx.measureText(i.label).width + 12)));
   const h = items.length * 12 + 6;
-  const x = Math.min(BOARD_W - w - 2, p.x), y = Math.min(H - h - 2, Math.max(2, p.y - h - 4 > 0 ? p.y - h - 4 : p.y + CARD.h + 4));
+  const x = Math.min(BOARD_W - w - 2, p.x), y = Math.min(H - h - 2, Math.max(2, p.y - h - 4 > 0 ? p.y - h - 4 : p.y + (p.h ?? CARD.h) + 4));
   hits.push({ x, y, w, h, kind: "popover" });
   panel(ctx, x, y, w, h, "#1a1620", "#c9a84a");
   items.forEach((it, i) => {
@@ -1622,7 +1623,11 @@ function zoneOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
     ctx.fillStyle = "#201828"; ctx.fillRect(x, y, cw, ch);
     drawArt(ctx, x + 6, y + 3, ART_S.w, ART_S.h, c.name, colorsOfCost(c.cost), false);
     wrapCapped(ctx, c.name, cw - 4, "6px Silkscreen", 3).forEach((l, j) => text(ctx, l, x + 2, y + 30 + j * 7, { font: "6px Silkscreen" }));
-    hits.push({ x: x - 1, y: y - 1, w: cw + 2, h: ch + 2, kind: "card", key, id: c.object_id, onClick: clickFor(state, key) });
+    // What the open menu offers on the card, as the hand row and the board
+    // mark it and as a double-click acts on its one verb (#994's review).
+    const verbs = state.ui && state.ui.mode === "menu" && state.ui.verbs ? state.ui.verbs.get(c.object_id) : undefined;
+    if (verbs) { ctx.fillStyle = highlightColor("verb"); ctx.fillRect(x + 2, y + 2, 6, 6); ctx.fillStyle = "#101010"; ctx.fillRect(x + 3, y + 3, 4, 4); ctx.fillStyle = highlightColor("verb"); ctx.fillRect(x + 4, y + 4, 2, 2); }
+    hits.push({ x: x - 1, y: y - 1, w: cw + 2, h: ch + 2, kind: "card", key, id: c.object_id, verbs, onClick: clickFor(state, key) });
   });
   if (cards.length > perPage) {
     button(ctx, hits, 8, H - 20, 60, 13, "◀ prev", () => { ov.page = Math.max(0, page - 1); });
@@ -1642,8 +1647,7 @@ function stackOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
   text(ctx, `The stack (${view.stack.length}, next to resolve first)`, 8, 6, { font: "8px PressStart", color: "#ffe080" });
   text(ctx, "click outside or press Esc to close", 8, 18, { font: "7px Silkscreen", color: "#8a8090" });
   const cols = 10, cw = 44, ch = 58;
-  const rows = Math.floor((H - 32) / (ch + 2));
-  const perPage = cols * rows;
+  const perPage = ZONE_OVERLAY_PAGE;
   const ov = state.overlay!;
   const pages = Math.max(1, Math.ceil(view.stack.length / perPage));
   const page = Math.min(ov.page || 0, pages - 1);
