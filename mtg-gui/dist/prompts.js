@@ -1351,7 +1351,10 @@ function beginNumber(state, ui, opts, title, send) {
     // `funding::describe_x_discount` (#979).
     if ((opts.x_discount || 0) > 0)
         summary.push(`A cost reduction pays the first ${opts.x_discount} of X`);
-    const pool = Object.entries(opts.pool || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n} ${k}`).join(", ");
+    // In letters, as the strip writes it: "Pool: 2 White, 2 Blue, …" was
+    // cut in the 152px side panel with nothing counting what went (#995's
+    // review).
+    const pool = Object.entries(opts.pool || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`).join(" ");
     if (pool)
         summary.push(`Pool: ${pool}`);
     for (const g of opts.groups || [])

@@ -213,6 +213,24 @@ async function main() {
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }
+      // #995's review: six kinds floating are written in letters, so the
+      // side panel draws every kind rather than "Pool: 2 White, 2 Blue, …".
+      {
+        const six = { ...options, pool: { White: 2, Blue: 2, Black: 2, Red: 3, Green: 2, Colorless: 2 }, max_x: 15 };
+        if (await stage("choose-x-pool", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options: six, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
+          const drawn = await page.evaluate(() => {
+            const orig = CanvasRenderingContext2D.prototype.fillText;
+            const out = [];
+            try {
+              CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+              window.mtgDebug.render();
+            } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+            return out;
+          });
+          if (!drawn.includes("Pool: 2W 2U 2B 3R 2G 2C")) fail(`choose-x-pool: ${JSON.stringify(drawn.filter(s => s.startsWith("Pool")))}`);
+          else ok("choose-x-pool → every kind drawn");
+        }
+      }
       // #979: under a cost reduction on X the sources sum to less than the
       // largest X, and the modal says why, and the plan says what it pays.
       const reduced = { pool: {}, groups: [{ name: "Island", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Blue" }], max_x: 2, x_discount: 2 };
