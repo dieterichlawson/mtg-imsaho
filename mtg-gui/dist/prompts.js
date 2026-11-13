@@ -533,7 +533,7 @@ const ON_BOARD = new Set(["battlefield", "hand", "stack"]);
  * a looked-at card, a library card. A graveyard or exile that holds an
  * option is also opened, so the card can be clicked where it lives.
  */
-function offBoardRows(state, ui, run) {
+function offBoardRows(state, ui, run, lent) {
     const rows = [];
     // The zones the off-board options are in. One overlay can show one of
     // them, so it opens only when there is one: it used to open the first
@@ -552,6 +552,10 @@ function offBoardRows(state, ui, run) {
         const e = id === null ? null : state.index.get(id);
         if (key[0] === "p" || (e && ON_BOARD.has(e.zone) && !hiddenKeys.has(key) && !hiddenHand.has(key)))
             continue;
+        // A copy lent an offered card's answer is one more place to click it,
+        // not one more answer: seventeen Forests in a search were one row.
+        if (lent?.has(key))
+            continue;
         if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null)
             zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });
         // Your library's cards are drawn by the `d` overlay, so an option there
@@ -565,7 +569,7 @@ function offBoardRows(state, ui, run) {
     // shows 50 cards a page, and the 51st card's option was on a page the
     // person was not shown (#994's review).
     const pageOf = (cards) => {
-        const i = cards.findIndex(c => ui.options?.has(`o${c.object_id}`));
+        const i = cards.findIndex(c => ui.options?.has(`o${c.object_id}`) && !lent?.has(`o${c.object_id}`));
         return i < 0 ? 0 : Math.floor(i / ZONE_OVERLAY_PAGE);
     };
     if (zones.size === 1) {
@@ -930,7 +934,7 @@ function abilityFlow(state, ab, send) {
         onPick: (key, t) => withSacrifice(targets.find(x => targetKey(x[0]) === key) || [t]), onCancel: back });
 }
 /** Pick one thing on the board. `options` are targets or object ids. */
-export function beginPick(state, { title, options, onPick, onCancel, declineLabel, onDecline }) {
+export function beginPick(state, { title, options, onPick, onCancel, declineLabel, onDecline, lent }) {
     const ui = newUi("pick", title);
     ui.hint = "Click a highlighted card or player.";
     withOptions(ui, options);
@@ -940,7 +944,7 @@ export function beginPick(state, { title, options, onPick, onCancel, declineLabe
     if (onCancel)
         ui.buttons.push({ label: "Cancel", run: onCancel });
     ui.onCancel = onCancel;
-    ui.rows = offBoardRows(state, ui, (key) => ui.onPick(key));
+    ui.rows = offBoardRows(state, ui, (key) => ui.onPick(key), lent);
     state.ui = ui;
     state.selected = null;
     return ui;
@@ -1026,17 +1030,29 @@ function beginMark(state, ui, { title, options, min, max, onConfirm, onCancel, c
 /** Actions that are each one choice of a card or target: pick on the board. */
 /** The other copies, in your hand, of the card `id` is, if `id` is in your hand. */
 export function copiesInHand(state, id) {
-    const hand = state.view.your_hand || [];
-    const card = hand.find(c => c.object_id === id);
+    return copiesAmong(state.view.your_hand || [], id);
+}
+/** The other copies of `id`'s card in the zone the engine collapses copies
+ *  in: your hand (#739) and your library as the `d` overlay shows it,
+ *  where every search offers one copy of each card (`one_of_each_card`,
+ *  #1004). A copy elsewhere — a graveyard, the battlefield — is not the
+ *  same answer to the rules, so none is lent there. */
+export function copiesInZone(state, id) {
+    const hand = copiesInHand(state, id);
+    return hand.length ? hand : copiesAmong(state.view.your_library_cards || [], id);
+}
+function copiesAmong(cards, id) {
+    const card = cards.find(c => c.object_id === id);
     if (!card)
         return [];
-    return hand.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
+    return cards.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
 }
 function beginPickFromActions(state, ui, actions, title, send) {
     const options = [];
     const byKey = new Map();
     let decline = null;
     const rows = [];
+    const lent = new Set();
     for (const a of actions) {
         const c = isObj(a) && "ResolveChoice" in a ? a.ResolveChoice.choice : null;
         if (!c || typeof c === "string") {
@@ -1053,17 +1069,30 @@ function beginPickFromActions(state, ui, actions, title, send) {
                 options.push(c.ChosenTarget);
                 byKey.set(k, a);
             }
+            // A library search offers one copy of each card (#1004), as a hand
+            // choice does: any copy in the library overlay is the same answer.
+            const t = c.ChosenTarget;
+            if (typeof t === "object" && "Object" in t) {
+                for (const id of copiesAmong(state.view.your_library_cards || [], t.Object)) {
+                    if (!byKey.has(`o${id}`)) {
+                        options.push({ Object: id });
+                        byKey.set(`o${id}`, a);
+                        lent.add(`o${id}`);
+                    }
+                }
+            }
         }
         else if ("ChosenCard" in c) {
             options.push(c.ChosenCard);
             byKey.set(`o${c.ChosenCard}`, a);
-            // The engine offers one copy of each card in a hand (#739): a click
-            // on any other copy of it is the same answer, or four of five
-            // Scholars in the hand would not respond.
-            for (const id of copiesInHand(state, c.ChosenCard)) {
+            // The engine offers one copy of each card in a hand (#739) and in a
+            // library search (#1004): a click on any other copy of it is the same
+            // answer, or four of five Scholars in the hand would not respond.
+            for (const id of copiesInZone(state, c.ChosenCard)) {
                 if (!byKey.has(`o${id}`)) {
                     options.push(id);
                     byKey.set(`o${id}`, a);
+                    lent.add(`o${id}`);
                 }
             }
         }
@@ -1074,8 +1103,17 @@ function beginPickFromActions(state, ui, actions, title, send) {
     if (options.length === 0)
         return beginList(state, ui, actions, title, send, false);
     const declined = decline;
+    // An offer the engine named later can also be a copy lent earlier: it
+    // is an answer of its own, with its own row.
+    for (const a of actions) {
+        const c = isObj(a) && "ResolveChoice" in a ? a.ResolveChoice.choice : null;
+        if (c && typeof c === "object" && "ChosenCard" in c)
+            lent.delete(`o${c.ChosenCard}`);
+        if (c && typeof c === "object" && "ChosenTarget" in c && c.ChosenTarget && typeof c.ChosenTarget === "object" && "Object" in c.ChosenTarget)
+            lent.delete(`o${c.ChosenTarget.Object}`);
+    }
     const pick = beginPick(state, { title, options, onPick: (key) => send(byKey.get(key)),
-        onDecline: declined ? () => send(declined) : null });
+        onDecline: declined ? () => send(declined) : null, lent });
     pick.rows.push(...rows);
     return pick;
 }
