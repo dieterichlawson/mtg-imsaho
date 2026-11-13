@@ -23,6 +23,9 @@ export interface Hit {
   stackIndex?: number;
   pid?: PlayerId;
   zone?: "graveyard" | "exile" | "library" | "stack" | "hand";
+  /** A row's "+N" slot standing for the cards it has no room for (#994),
+   *  as against a strip's count that opens the same zone. */
+  more?: boolean;
   label?: string;
   group?: ObjectId[] | null;
   cardName?: string | null;

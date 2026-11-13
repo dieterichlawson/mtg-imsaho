@@ -525,13 +525,13 @@ function drawHandMore(ctx: Ctx, hits: Hit[], state: LiveState, hidden: CardView[
   const carried = hidden.map(c => highlightFor(state, `o${c.object_id}`));
   const hl = (["target", "selected", "marked", "option", "verb"] as Highlight[]).find(h => carried.includes(h))
     ?? (verbs && hidden.some(c => verbs.has(c.object_id)) ? "verb" : null);
-  const hovered = state.hover !== null && state.hover.kind === "zone" && state.hover.zone === "hand";
+  const hovered = state.hover !== null && state.hover.kind === "zone" && state.hover.zone === "hand" && !!state.hover.more;
   ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : "#6a5a7a";
   ctx.fillRect(x - 1, y - 1, w + 2, HAND.h + 2);
   ctx.fillStyle = "#241d2c"; ctx.fillRect(x, y, w, HAND.h);
   text(ctx, `+${hidden.length}`, x + 3, y + HAND.h / 2 - 4, { font: "8px PressStart", color: "#ffe080" });
   const pid = state.view.you;
-  hits.push({ x: x - 1, y: y - 1, w: w + 2, h: HAND.h + 2, kind: "zone", zone: "hand", pid, onClick: () => {
+  hits.push({ x: x - 1, y: y - 1, w: w + 2, h: HAND.h + 2, kind: "zone", zone: "hand", more: true, pid, onClick: () => {
     state.overlay = state.overlay && state.overlay.zone === "hand" ? null : { zone: "hand", pid };
   } });
 }
@@ -991,7 +991,8 @@ function stackLines(ctx: Ctx, hits: Hit[], state: LiveState): void {
       // A card behind the hand row's "+N" slot is drawn to from the slot
       // (#994's review), as a hidden stack entry is from the stack's.
       const inHand = key !== null && view.your_hand.some(c => `o${c.object_id}` === key);
-      const handMore = inHand ? hits.find(h => h.kind === "zone" && h.zone === "hand") : undefined;
+      // The slot, not your strip's "Hand N", which opens the same zone.
+      const handMore = inHand ? hits.find(h => h.kind === "zone" && h.zone === "hand" && h.more) : undefined;
       const to = key ? rectOf(key) ?? (onStack ? more : handMore) : null;
       if (!to) continue;
       // The chip's own key: an ability's is its slot (#807), so hovering its

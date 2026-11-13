@@ -975,7 +975,7 @@ async function main() {
           m.view.your_hand = Array.from({ length: n }, (_, i) => ({ ...base[i % base.length], object_id: 9000 + i }));
           window.mtgDebug.stage(window.mtg.decision);
           const hs = m.hits.filter(h => h.kind === "hand");
-          const more = m.hits.find(h => h.kind === "zone" && h.zone === "hand" && h.y >= 260);
+          const more = m.hits.find(h => h.kind === "zone" && h.zone === "hand" && h.more);
           const right = Math.max(...hs.map(h => h.x + h.w), more ? more.x + more.w : 0);
           out.push({ n, drawn: hs.length, more: !!more, right });
         }
@@ -986,7 +986,7 @@ async function main() {
       else ok(`hand-fit → ${JSON.stringify(handFit.map(d => [d.n, d.drawn, d.more]))}`);
       await page.evaluate(() => { window.mtg.overlay = null; });
       try {
-        await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && h.y >= 260");
+        await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && h.more");
         const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
           return { zone: m.overlay && m.overlay.zone, cards: m.hits.filter(h => h.kind === "card").length }; });
         if (opened.zone !== "hand" || opened.cards !== 50) fail(`hand-more: the "+N" slot opened ${JSON.stringify(opened)}`);
@@ -1014,13 +1014,30 @@ async function main() {
         else ok("hand-key: h opens and closes the whole hand");
         // Your strip's hand count opens it too, as GY and Lib open theirs.
         try {
-          await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && h.y < 268");
+          await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && !h.more");
           const c = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
           if (c !== "hand") fail(`hand-count: the strip's Hand count opened ${c}`);
           else ok("hand-count: the strip's Hand count opens the whole hand");
         } catch (e) { fail(`hand-count: ${e.message}`); }
         await page.evaluate(() => { window.mtg.overlay = null; });
       }
+      // A stack target behind the "+N" slot is drawn to from the slot, not
+      // to your strip's "Hand N" that opens the same zone (#994's review).
+      const arrow = await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = [{ object_id: 990, card_id: 1, name: "Brimstone Volley", controller: 1 - m.view.you,
+          targets: [{ Object: 9055 }], x_value: null, cost: null, card_types: ["Instant"] }];
+        const orig = CanvasRenderingContext2D.prototype.lineTo; const pts = [];
+        try {
+          CanvasRenderingContext2D.prototype.lineTo = function (x, y) { pts.push([x, y]); return orig.apply(this, arguments); };
+          window.mtgDebug.render();
+        } finally { CanvasRenderingContext2D.prototype.lineTo = orig; }
+        const slot = m.hits.find(h => h.kind === "zone" && h.zone === "hand" && h.more);
+        m.view.stack = []; window.mtgDebug.render();
+        return { slot, hit: !!slot && pts.some(([x, y]) => x >= slot.x && x <= slot.x + slot.w && y >= slot.y && y <= slot.y + slot.h) };
+      });
+      if (!arrow.hit) fail(`hand-arrow: no arrow ends in the "+N" slot ${JSON.stringify(arrow.slot)}`);
+      else ok("hand-arrow: a target behind the slot is drawn to the slot");
       await page.evaluate((h) => { window.mtg.view.your_hand = JSON.parse(h); window.mtg.overlay = null; window.mtgDebug.stage(window.mtg.lastDecision); }, savedHand);
 
       // (b5) #995: the opponent's strip with six kinds floating beside
