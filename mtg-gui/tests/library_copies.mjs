@@ -37,5 +37,16 @@ for (const [what, answer] of [["ChosenCard", id => ({ ChosenCard: id })], ["Chos
   if (JSON.stringify(sent) !== JSON.stringify([act(50)])) fail(`${what}: a copy sends the offered copy: ${JSON.stringify(sent)}`);
 }
 
+// A look at the top cards (Forbidden Alchemy) is not a search: a copy
+// further down the library was never looked at, and answers nothing.
+{
+  const act = id => ({ ResolveChoice: { choice: { ChosenCard: id } } });
+  const state = { view, index: P.indexView(view), overlay: null,
+    decision: { legal: { actions: [act(50), act(52)], context: "look",
+      resolution_prompt: { ChooseFromLookedAt: { description: "Forbidden Alchemy: choose a card to put into your hand", options: [50, 52] } } } } };
+  const ui = P.beginDecision(state, () => {});
+  if (!ui.options.has("o50") || ui.options.has("o51") || ui.options.has("o53")) fail(`looked-at: ${JSON.stringify([...ui.options.keys()])}`);
+}
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: any copy in the library answers a search");

@@ -703,9 +703,12 @@ function beginResolution(state: LiveState, ui: Ui, legal: LegalActions, actions:
       return beginOrder(state, ui, rp, desc, send);
     case "ChooseTarget":
     case "ChooseCardFromHand":
-    case "ChooseFromLookedAt":
     case "ChooseFromLibrary":
-      return beginPickFromActions(state, ui, actions, desc, send);
+      return beginPickFromActions(state, ui, actions, desc, send, true);
+    // The looked-at cards are a few of the library's: a copy further down
+    // was never looked at, and is lent nothing (#1004's review).
+    case "ChooseFromLookedAt":
+      return beginPickFromActions(state, ui, actions, desc, send, false);
     case "ChooseCardName": {
       // Every nonland name in the pool, most of them cards in no zone: each
       // row names its card, which the view carries for this question, so
@@ -1007,7 +1010,9 @@ function copiesAmong(cards: { object_id: ObjectId; card_id: unknown }[], id: Obj
   return cards.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
 }
 
-function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title: string, send: Send): Ui {
+/** `lendLibrary`: the question's offers stand for every copy of their card
+ *  in your library, as a search's do (`one_of_each_card`). */
+function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title: string, send: Send, lendLibrary = false): Ui {
   const options: (Target | ObjectId)[] = []; const byKey = new Map<string, Action>(); let decline: Action | null = null; const rows: Row[] = [];
   const lent = new Set<string>();
   for (const a of actions) {
@@ -1020,7 +1025,7 @@ function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title
       // choice does: any copy in the library overlay is the same answer.
       const t = c.ChosenTarget;
       if (typeof t === "object" && "Object" in t) {
-        for (const id of copiesAmong(state.view.your_library_cards || [], t.Object)) {
+        for (const id of lendLibrary ? copiesAmong(state.view.your_library_cards || [], t.Object) : []) {
           if (!byKey.has(`o${id}`)) { options.push({ Object: id }); byKey.set(`o${id}`, a); lent.add(`o${id}`); }
         }
       }
@@ -1029,7 +1034,7 @@ function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title
       // The engine offers one copy of each card in a hand (#739) and in a
       // library search (#1004): a click on any other copy of it is the same
       // answer, or four of five Scholars in the hand would not respond.
-      for (const id of copiesInZone(state, c.ChosenCard)) {
+      for (const id of lendLibrary ? copiesInZone(state, c.ChosenCard) : copiesInHand(state, c.ChosenCard)) {
         if (!byKey.has(`o${id}`)) { options.push(id); byKey.set(`o${id}`, a); lent.add(`o${id}`); }
       }
     } else {
