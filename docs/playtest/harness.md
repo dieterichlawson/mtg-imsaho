@@ -1160,6 +1160,15 @@ say what your stub says.
   hour on every sideboarding call and five minutes on every pick and deck
   build — a sideboarding call a game after the last one wrote the seat's
   whole 15,000-token prefix again until b143c20
+  — **played 2026-11-13: holds but for two sentences.** TTLs, the one
+  sideboard schema and public-only shown cards all held. A chooser whose
+  answer omits `play_first` is logged "plays first" as if chosen (#1023).
+  The game seat's match paragraph promises "2 more games follow it" in a
+  game 1 that can end the match a game later (#1022). Read every SYSTEM
+  record's `## This match` section across a 2-0 and a 2-1 match, not only
+  the sideboard prompt. A wrapper that answers `"Between games"` prompts
+  badly reaches the keep-the-deck path in seconds. The match is 2-0 at
+  `--seed 37`, so use another seed for a game 3
 - H38 [proposed 2026-10-21, from 0ab9837, 0ff770c and the draft loop's
   "What went wrong" line] every re-ask has a cause: read the re-ask and
   unreadable counts of the latest nights in `reports/draft-loop/nights/`,
@@ -1172,6 +1181,12 @@ say what your stub says.
   another — or whether the reply held no JSON object at all. A re-ask the
   prompt invited is a harness bug: file it with the format line and the
   reply
+  — **2026-11-13, the first night with reasons:** a re-ask's answer alone
+  explains a `then` slip (a flashback card, a card a trigger will return),
+  but not `action` missing under `ask_again: true`. The answer's
+  `thoughts` is the `THOUGHT` line before the `REASK`, and the night
+  record drops it (#1024). Until that is kept, reproduce such a re-ask
+  under a wrapper that drops a field, and read the two lines together
 - H39 [proposed 2026-10-22, from #897 and #896] every field the format
   line leaves out, and every brace around the answer: for each field
   `answer_format` filters (`x-unread`, `maxItems: 0`, `x-only-value`, an
