@@ -513,7 +513,7 @@ random game happened to reach.
   is a filtered `list` or a `number`, and the window's keydown handler opens
   with `if (ev.target === field) { ...Enter, Escape... return; }`. So while any
   filter box or X box is up, every other key the page documents — `l` for the
-  log, `g`/`G`/`e`/`d` for the zones, `s` for stop-at-every-priority, `f` for
+  log, `g`/`G`/`e`/`d` for the zones (now also `k` the stack, `h` the hand), `s` for stop-at-every-priority, `f` for
   auto-pass — is typed into the filter instead of doing its job, and Escape
   only blurs the field rather than backing out. Open a `ChooseCardName` prompt
   (a filtered list) and a `ChooseXFunding` prompt (a number) and press each of

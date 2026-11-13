@@ -56,7 +56,10 @@ that turn is reached, or that main phase — or the first priority after
 it, if it offered nothing and went by unseen — the CLI's stops; it will not
 start where it would stop at once, and says what it passed up), `l`
 opens the log, `g`/`G` a
-graveyard, `e` exile, `d` your library, `s` stops at every priority
+graveyard, `e` exile, `d` your library, `k` the whole stack (the band
+shows five entries; past that a "+N" chip, which a click also opens),
+`h` your whole hand (the hand row shows what fits; past that a "+N"
+slot, which a click also opens), `s` stops at every priority
 instead of passing when there is nothing to do.
 
 ## The draft page
