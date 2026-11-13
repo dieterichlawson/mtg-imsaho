@@ -5,7 +5,7 @@
 // view; it looks at the last frame.
 
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown, handCardsShown, HAND_ROW } from "./prompts.js";
 import type { CardView, Color, FaceText, GameView, ManaCost, ManaPool, ObjectId, PermanentView, PlayerId, Step, ViewObject } from "./protocol.js";
 import type { Hit, IndexEntry, LiveState, Row, State, Ui } from "./state.js";
 
@@ -396,7 +396,7 @@ type Highlight = "option" | "marked" | "selected" | "target" | "verb";
  * creature's verbs (#807). An ability's chip is keyed by its slot, `s<i>`,
  * which names no object.
  */
-export { stackChipKey, stackChipsShown } from "./prompts.js";
+export { stackChipKey, stackChipsShown, handCardsShown } from "./prompts.js";
 
 export function highlightFor(state: State, key: string): Highlight | null {
   const ui = state.ui;
@@ -514,6 +514,26 @@ function drawHandCard(ctx: Ctx, hits: Hit[], state: LiveState, card: CardView, x
   const verbs = state.ui && state.ui.mode === "menu" && state.ui.verbs ? state.ui.verbs.get(card.object_id) : undefined;
   if (verbs) { ctx.fillStyle = highlightColor("verb"); ctx.fillRect(x + 2, y + 2, 6, 6); ctx.fillStyle = "#101010"; ctx.fillRect(x + 3, y + 3, 4, 4); ctx.fillStyle = highlightColor("verb"); ctx.fillRect(x + 4, y + 4, 2, 2); }
   hits.push({ x: x - 1, y: y - 1, w: HAND.w + 2, h: HAND.h + 2, kind: "hand", key, id: card.object_id, verbs, onClick: clickFor(state, key) });
+}
+
+/** The hand row's "+N" slot (#994): it counts the cards the row has no
+ *  room for, lights in the strongest highlight one of them carries, and
+ *  opens the whole hand. */
+function drawHandMore(ctx: Ctx, hits: Hit[], state: LiveState, hidden: CardView[], x: number, y: number): void {
+  const w = Math.min(HAND.w, HAND_ROW.x0 + HAND_ROW.width - x);
+  const verbs = state.ui && state.ui.mode === "menu" && state.ui.verbs ? state.ui.verbs : null;
+  const carried = hidden.map(c => highlightFor(state, `o${c.object_id}`));
+  const hl = (["target", "selected", "marked", "option", "verb"] as Highlight[]).find(h => carried.includes(h))
+    ?? (verbs && hidden.some(c => verbs.has(c.object_id)) ? "verb" : null);
+  const hovered = state.hover !== null && state.hover.kind === "zone" && state.hover.zone === "hand";
+  ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : "#6a5a7a";
+  ctx.fillRect(x - 1, y - 1, w + 2, HAND.h + 2);
+  ctx.fillStyle = "#241d2c"; ctx.fillRect(x, y, w, HAND.h);
+  text(ctx, `+${hidden.length}`, x + 3, y + HAND.h / 2 - 4, { font: "8px PressStart", color: "#ffe080" });
+  const pid = state.view.you;
+  hits.push({ x: x - 1, y: y - 1, w: w + 2, h: HAND.h + 2, kind: "zone", zone: "hand", pid, onClick: () => {
+    state.overlay = state.overlay && state.overlay.zone === "hand" ? null : { zone: "hand", pid };
+  } });
 }
 
 export function colorsOfCost(cost: ManaCost | null | undefined): Color[] {
@@ -1546,6 +1566,7 @@ function zoneOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
   if (ov.zone === "graveyard") { const g = view.graveyards.find(([pid]) => pid === ov.pid); cards = g ? g[1] : []; title = `${playerLabel(state, ov.pid)}: graveyard (${cards.length})`; }
   else if (ov.zone === "exile") { cards = view.exile.filter(c => c.owner === ov.pid); title = `${playerLabel(state, ov.pid)}: exile (${cards.length})`; }
   else if (ov.zone === "library") { cards = ov.pid === view.you ? view.your_library_cards : []; title = ov.pid === view.you ? `Your library (${cards.length}, order unknown)` : "Opponent's library"; }
+  else if (ov.zone === "hand") { cards = view.your_hand; title = `Your hand (${cards.length})`; }
   else if (ov.zone === "stack") { stackOverlay(ctx, hits, state); return; }
   hits.push({ x: 0, y: 0, w: BOARD_W, h: H, kind: "overlay", onClick: () => { state.overlay = null; } });
   ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, BOARD_W, H);
@@ -1653,10 +1674,17 @@ export function render(ctx: Ctx, state: State): Hit[] {
   const hand = view.your_hand;
   const stripY = ROWS.hand - 14;
   drawStrip(ctx, hits, live, stripY, view.you, view.your_life, hand.length, view.your_library_size, gyCount(view.you), exCount(view.you), view.your_mana_pool, true);
-  const { stride, x0 } = rowLayout(hand.length, HAND.w, 4, BOARD_W - 8, 2);
-  const hoveredIdx = hand.findIndex(c => state.hover !== null && state.hover.key === `o${c.object_id}`);
-  hand.forEach((c, i) => { if (i !== hoveredIdx) drawHandCard(ctx, hits, live, c, x0 + i * stride, ROWS.hand, false); });
-  if (hoveredIdx >= 0) drawHandCard(ctx, hits, live, hand[hoveredIdx], x0 + hoveredIdx * stride, ROWS.hand, true);
+  const { stride, x0 } = rowLayout(hand.length, HAND_ROW.cardW, HAND_ROW.x0, HAND_ROW.width, HAND_ROW.gap);
+  // What fits is drawn; the rest is counted in a "+N" slot that opens the
+  // whole hand. Every card used to be drawn and pushed a hit, so from 42
+  // cards the row ran under the side panel, where the cards could not be
+  // seen and still answered clicks (#994, #513's shape).
+  const handShown = handCardsShown(hand.length);
+  const drawn = hand.slice(0, handShown);
+  const hoveredIdx = drawn.findIndex(c => state.hover !== null && state.hover.key === `o${c.object_id}`);
+  drawn.forEach((c, i) => { if (i !== hoveredIdx) drawHandCard(ctx, hits, live, c, x0 + i * stride, ROWS.hand, false); });
+  if (hoveredIdx >= 0) drawHandCard(ctx, hits, live, drawn[hoveredIdx], x0 + hoveredIdx * stride, ROWS.hand, true);
+  if (handShown < hand.length) drawHandMore(ctx, hits, live, hand.slice(handShown), x0 + handShown * stride, ROWS.hand);
 
   // Panel.
   ctx.fillStyle = "#14111a"; ctx.fillRect(PANEL_X, 0, W - PANEL_X, H);

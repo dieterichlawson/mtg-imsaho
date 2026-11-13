@@ -930,6 +930,51 @@ async function main() {
       }
       await page.evaluate(() => { window.mtg.view.stack = []; window.mtg.overlay = null; window.mtgDebug.render(); });
 
+      // (b4) #994: the hand row has the battlefield's fit contract. From 42
+      // cards the row ran under the side panel at x=480, where cards could
+      // not be seen and still answered clicks. What fits is drawn; a "+N"
+      // slot counts the rest and opens the whole hand, and a question whose
+      // option is behind it opens the hand for it.
+      const savedHand = await page.evaluate(() => JSON.stringify(window.mtg.view.your_hand));
+      const handFit = await page.evaluate(() => {
+        const m = window.mtg; const base = JSON.parse(JSON.stringify(m.view.your_hand));
+        const out = [];
+        for (const n of [7, 40, 42, 45, 60]) {
+          m.view.your_hand = Array.from({ length: n }, (_, i) => ({ ...base[i % base.length], object_id: 9000 + i }));
+          window.mtgDebug.stage(window.mtg.decision);
+          const hs = m.hits.filter(h => h.kind === "hand");
+          const more = m.hits.find(h => h.kind === "zone" && h.zone === "hand");
+          const right = Math.max(...hs.map(h => h.x + h.w), more ? more.x + more.w : 0);
+          out.push({ n, drawn: hs.length, more: !!more, right });
+        }
+        return out;
+      });
+      const badFit = handFit.filter(d => d.right > 480 || (d.n <= 40 ? d.drawn !== d.n || d.more : !d.more || d.drawn >= d.n));
+      if (badFit.length) fail(`hand-fit: ${JSON.stringify(badFit)}`);
+      else ok(`hand-fit → ${JSON.stringify(handFit.map(d => [d.n, d.drawn, d.more]))}`);
+      await page.evaluate(() => { window.mtg.overlay = null; });
+      try {
+        await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand'");
+        const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, cards: m.hits.filter(h => h.kind === "card").length }; });
+        if (opened.zone !== "hand" || opened.cards !== 50) fail(`hand-more: the "+N" slot opened ${JSON.stringify(opened)}`);
+        else ok("hand-more: the \"+N\" slot opens the whole hand");
+      } catch (e) { fail(`hand-more: ${e.message}`); }
+      const hiddenCard = { Object: 9055 };
+      if (await stage("hidden-hand-option", legal({ actions: [rc({ ChosenTarget: hiddenCard }), rc({ ChosenTarget: null })],
+        resolution_prompt: { ChooseTarget: { description: "Choose a card in your hand", options: [hiddenCard], optional: true, effect: "Discard" } } }), null, "pick")) {
+        const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, page: m.overlay && m.overlay.page };
+        });
+        if (opened.zone !== "hand") fail(`hidden-hand-option: the hand did not open for it: ${JSON.stringify(opened)}`);
+        else {
+          await page.evaluate(() => { window.mtg.overlay.page = 1; });
+          await clickHit("(h) => h.kind === 'card' && h.key === 'o9055'");
+          await expectSent("hidden-hand-option", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenTarget && a.ResolveChoice.choice.ChosenTarget.Object === 9055);
+        }
+      }
+      await page.evaluate((h) => { window.mtg.view.your_hand = JSON.parse(h); window.mtg.overlay = null; window.mtgDebug.stage(window.mtg.lastDecision); }, savedHand);
+
       // (c) the facts the CLI's detail page carries and the panel dropped.
       const facts = await page.evaluate((perm) => {
         const m = window.mtg;

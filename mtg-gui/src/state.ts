@@ -22,7 +22,7 @@ export interface Hit {
   /** For a stack chip: which slot of `view.stack` it was drawn for. */
   stackIndex?: number;
   pid?: PlayerId;
-  zone?: "graveyard" | "exile" | "library" | "stack";
+  zone?: "graveyard" | "exile" | "library" | "stack" | "hand";
   label?: string;
   group?: ObjectId[] | null;
   cardName?: string | null;
@@ -97,7 +97,7 @@ export interface Ui {
 }
 
 export interface Popover { id: ObjectId; items: Verb[]; x: number; y: number }
-export interface Overlay { zone: "graveyard" | "exile" | "library" | "stack"; pid: PlayerId; page?: number }
+export interface Overlay { zone: "graveyard" | "exile" | "library" | "stack" | "hand"; pid: PlayerId; page?: number }
 
 export interface State {
   ws: WebSocket | null;

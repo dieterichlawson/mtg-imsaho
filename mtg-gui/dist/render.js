@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown, handCardsShown, HAND_ROW } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -411,7 +411,7 @@ export function permBadges(p, state) {
  * creature's verbs (#807). An ability's chip is keyed by its slot, `s<i>`,
  * which names no object.
  */
-export { stackChipKey, stackChipsShown } from "./prompts.js";
+export { stackChipKey, stackChipsShown, handCardsShown } from "./prompts.js";
 export function highlightFor(state, key) {
     const ui = state.ui;
     if (!ui)
@@ -562,6 +562,26 @@ function drawHandCard(ctx, hits, state, card, x, y, raised) {
         ctx.fillRect(x + 4, y + 4, 2, 2);
     }
     hits.push({ x: x - 1, y: y - 1, w: HAND.w + 2, h: HAND.h + 2, kind: "hand", key, id: card.object_id, verbs, onClick: clickFor(state, key) });
+}
+/** The hand row's "+N" slot (#994): it counts the cards the row has no
+ *  room for, lights in the strongest highlight one of them carries, and
+ *  opens the whole hand. */
+function drawHandMore(ctx, hits, state, hidden, x, y) {
+    const w = Math.min(HAND.w, HAND_ROW.x0 + HAND_ROW.width - x);
+    const verbs = state.ui && state.ui.mode === "menu" && state.ui.verbs ? state.ui.verbs : null;
+    const carried = hidden.map(c => highlightFor(state, `o${c.object_id}`));
+    const hl = ["target", "selected", "marked", "option", "verb"].find(h => carried.includes(h))
+        ?? (verbs && hidden.some(c => verbs.has(c.object_id)) ? "verb" : null);
+    const hovered = state.hover !== null && state.hover.kind === "zone" && state.hover.zone === "hand";
+    ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : "#6a5a7a";
+    ctx.fillRect(x - 1, y - 1, w + 2, HAND.h + 2);
+    ctx.fillStyle = "#241d2c";
+    ctx.fillRect(x, y, w, HAND.h);
+    text(ctx, `+${hidden.length}`, x + 3, y + HAND.h / 2 - 4, { font: "8px PressStart", color: "#ffe080" });
+    const pid = state.view.you;
+    hits.push({ x: x - 1, y: y - 1, w: w + 2, h: HAND.h + 2, kind: "zone", zone: "hand", pid, onClick: () => {
+            state.overlay = state.overlay && state.overlay.zone === "hand" ? null : { zone: "hand", pid };
+        } });
 }
 export function colorsOfCost(cost) {
     const out = [];
@@ -1754,6 +1774,10 @@ function zoneOverlay(ctx, hits, state) {
         cards = ov.pid === view.you ? view.your_library_cards : [];
         title = ov.pid === view.you ? `Your library (${cards.length}, order unknown)` : "Opponent's library";
     }
+    else if (ov.zone === "hand") {
+        cards = view.your_hand;
+        title = `Your hand (${cards.length})`;
+    }
     else if (ov.zone === "stack") {
         stackOverlay(ctx, hits, state);
         return;
@@ -1869,12 +1893,20 @@ export function render(ctx, state) {
     const hand = view.your_hand;
     const stripY = ROWS.hand - 14;
     drawStrip(ctx, hits, live, stripY, view.you, view.your_life, hand.length, view.your_library_size, gyCount(view.you), exCount(view.you), view.your_mana_pool, true);
-    const { stride, x0 } = rowLayout(hand.length, HAND.w, 4, BOARD_W - 8, 2);
-    const hoveredIdx = hand.findIndex(c => state.hover !== null && state.hover.key === `o${c.object_id}`);
-    hand.forEach((c, i) => { if (i !== hoveredIdx)
+    const { stride, x0 } = rowLayout(hand.length, HAND_ROW.cardW, HAND_ROW.x0, HAND_ROW.width, HAND_ROW.gap);
+    // What fits is drawn; the rest is counted in a "+N" slot that opens the
+    // whole hand. Every card used to be drawn and pushed a hit, so from 42
+    // cards the row ran under the side panel, where the cards could not be
+    // seen and still answered clicks (#994, #513's shape).
+    const handShown = handCardsShown(hand.length);
+    const drawn = hand.slice(0, handShown);
+    const hoveredIdx = drawn.findIndex(c => state.hover !== null && state.hover.key === `o${c.object_id}`);
+    drawn.forEach((c, i) => { if (i !== hoveredIdx)
         drawHandCard(ctx, hits, live, c, x0 + i * stride, ROWS.hand, false); });
     if (hoveredIdx >= 0)
-        drawHandCard(ctx, hits, live, hand[hoveredIdx], x0 + hoveredIdx * stride, ROWS.hand, true);
+        drawHandCard(ctx, hits, live, drawn[hoveredIdx], x0 + hoveredIdx * stride, ROWS.hand, true);
+    if (handShown < hand.length)
+        drawHandMore(ctx, hits, live, hand.slice(handShown), x0 + handShown * stride, ROWS.hand);
     // Panel.
     ctx.fillStyle = "#14111a";
     ctx.fillRect(PANEL_X, 0, W - PANEL_X, H);

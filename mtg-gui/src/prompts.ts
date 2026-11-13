@@ -457,6 +457,23 @@ export function stackChipsShown(n: number): number {
   return n > 5 ? 4 : n;
 }
 
+/** The hand row's geometry: a card is 66 wide, the row runs from x=4 to 4
+ *  short of the side panel at x=480, and cards overlap down to a 10px
+ *  stride. */
+export const HAND_ROW = { cardW: 66, x0: 4, width: 480 - 8, gap: 2 };
+
+/** How many of `n` hand cards the row draws (#994). Past what fits at the
+ *  narrowest stride, the last place is a "+N" slot that opens the whole
+ *  hand, as the battlefield rows do (#513): a card drawn past x=480 was
+ *  painted over by the side panel and still answered clicks there. */
+export function handCardsShown(n: number): number {
+  const { cardW, width, gap } = HAND_ROW;
+  if (n === 0) return 0;
+  const stride = Math.max(10, Math.min(cardW + gap, Math.floor((width - cardW) / Math.max(1, n - 1))));
+  const fits = Math.floor((width - cardW) / stride) + 1;
+  return n > fits ? fits - 1 : n;
+}
+
 /** A widget over a set of targets or object ids. */
 function withOptions(ui: Ui, list: readonly (Target | ObjectId)[]): Ui {
   const options = new Map<string, Target | ObjectId>();
@@ -488,10 +505,13 @@ function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void): Row
   // a row, so it can be answered whichever overlay opens (#991's review).
   const shown = stackChipsShown(state.view.stack.length);
   const hiddenKeys = new Set(state.view.stack.map((it, i) => stackChipKey(it, i)).filter((_, i) => i >= shown));
+  // So is a hand card behind the hand row's "+N" slot (#994).
+  const hand = state.view.your_hand;
+  const hiddenHand = new Set(hand.slice(handCardsShown(hand.length)).map(c => `o${c.object_id}`));
   for (const [key, t] of ui.options ?? []) {
     const id = objectOfKey(key);
     const e = id === null ? null : state.index.get(id);
-    if (key[0] === "p" || (e && ON_BOARD.has(e.zone) && !hiddenKeys.has(key))) continue;
+    if (key[0] === "p" || (e && ON_BOARD.has(e.zone) && !hiddenKeys.has(key) && !hiddenHand.has(key))) continue;
     if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null) zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });
     const label = id === null ? targetLabel(state, t as Target) : nameWithZone(state, id);
     rows.push({ label, run: () => run(key), key, cardName: e ? e.obj.name : null });
@@ -500,6 +520,7 @@ function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void): Row
   // An option behind the band's "+N" chip is not clickable where the band
   // draws: the stack is opened for it, as a graveyard is (#991's review).
   else if (zones.size === 0 && [...hiddenKeys].some(k => ui.options?.has(k))) state.overlay = { zone: "stack", pid: state.view.you };
+  else if (zones.size === 0 && [...hiddenHand].some(k => ui.options?.has(k))) state.overlay = { zone: "hand", pid: state.view.you };
   return rows;
 }
 
