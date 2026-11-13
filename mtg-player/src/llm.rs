@@ -440,6 +440,13 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                 let Some(items) = value.as_array() else {
                     return Some(format!("`{path}` is {value}, not a list"));
                 };
+                // "Exactly" where the list takes one length — the mulligan's
+                // bottom, a fixed set of targets — as the CLI's set screen
+                // says it (#1016's review): "at most 1" read as "0 will do".
+                let exact = count("minItems").filter(|min| count("maxItems") == Some(*min));
+                if let Some(n) = exact.filter(|n| items.len() != *n) {
+                    return Some(format!("`{path}` has {} entries; it takes exactly {n}", items.len()));
+                }
                 if let Some(min) = count("minItems").filter(|min| items.len() < *min) {
                     return Some(format!("`{path}` has {} entries; it needs at least {min}", items.len()));
                 }

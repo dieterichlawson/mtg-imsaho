@@ -8553,7 +8553,9 @@ impl CliPlayer {
     /// a screen that takes exactly 3, the mulligan's bottom among them
     /// (CR 103.5), whose heading and Confirm both say "exactly" (#1016).
     fn all_refused(rows: usize, min: usize, max: usize) -> String {
-        let takes = if min == max { format!("exactly {max}") } else { format!("at most {max}") };
+        let takes = if min == max { format!("exactly {max}") }
+            else if min == 0 { format!("at most {max}") }
+            else { format!("between {min} and {max}") };
         format!("a marks all {rows} — this takes {takes}; mark the ones you want")
     }
 
@@ -11592,6 +11594,7 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(CliPlayer::all_refused(10, 3, 3), "a marks all 10 — this takes exactly 3; mark the ones you want");
         assert_eq!(CliPlayer::all_refused(7, 1, 1), "a marks all 7 — this takes exactly 1; mark the ones you want");
         assert_eq!(CliPlayer::all_refused(8, 0, 2), "a marks all 8 — this takes at most 2; mark the ones you want");
+        assert_eq!(CliPlayer::all_refused(8, 1, 3), "a marks all 8 — this takes between 1 and 3; mark the ones you want");
     }
 
     /// Issue #288: a bare Enter meant three different things at the three

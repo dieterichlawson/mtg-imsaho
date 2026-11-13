@@ -366,7 +366,16 @@ fn a_stable_schema_drops_the_values_that_change_and_nothing_else() {
     assert_eq!(schema_violation(&full, &serde_json::json!({"order": [2, 0, 3]})).as_deref(),
         Some("`order[2]` is 3; it must be 0 to 2"));
     assert_eq!(schema_violation(&full, &serde_json::json!({"order": [2, 0]})).as_deref(),
-        Some("`order` has 2 entries; it needs at least 3"));
+        Some("`order` has 2 entries; it takes exactly 3"));
+    // #1016's review: a list of one length says "exactly", too long or short.
+    assert_eq!(schema_violation(&full, &serde_json::json!({"order": [2, 0, 1, 1]})).as_deref(),
+        Some("`order` has 4 entries; it takes exactly 3"));
+    let range = serde_json::json!({"type": "object", "properties": {
+        "pick": {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "integer"}}}, "required": ["pick"]});
+    assert_eq!(schema_violation(&range, &serde_json::json!({"pick": []})).as_deref(),
+        Some("`pick` has 0 entries; it needs at least 1"));
+    assert_eq!(schema_violation(&range, &serde_json::json!({"pick": [0, 1, 2]})).as_deref(),
+        Some("`pick` has 3 entries; it takes at most 2"));
     assert_eq!(schema_violation(&full, &serde_json::json!({})).as_deref(), Some("`order` is missing"));
     let plan = serde_json::json!({"type": "object", "properties": {
         "then": {"type": "array", "items": {"type": "string", "enum": ["Mountain", "Lightning Bolt"]}}},
