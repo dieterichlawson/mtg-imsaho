@@ -8245,6 +8245,10 @@ impl CliPlayer {
                 refused_number(t, a as usize))),
             Ok(a) => AmountInput::Invalid(format!(
                 "  {} is more than is left — at most {max}", refused_number(t, a as usize))),
+            // Digits too many to read are more than is left, as the page
+            // reads them (#1017's review).
+            Err(_) if t.bytes().all(|b| b.is_ascii_digit()) => AmountInput::Invalid(format!(
+                "  '{}' is more than is left — at most {max}", quote_input(t))),
             Err(_) => AmountInput::Invalid(format!(
                 "  '{}' is not a number — enter an amount from {min} to {max}", quote_input(t))),
         }
@@ -8270,6 +8274,11 @@ impl CliPlayer {
         let mut order = Vec::with_capacity(n);
         for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
             let Ok(k) = tok.parse::<usize>() else {
+                // Out of range, not "not a number" (#1017's review).
+                if tok.bytes().all(|b| b.is_ascii_digit()) {
+                    return OrderInput::Invalid(format!("'{}' is out of range — the entries are numbered 0-{}",
+                        quote_input(tok), n.saturating_sub(1)));
+                }
                 return OrderInput::Invalid(format!(
                     "'{}' is not a number — type the indices in order, e.g. \"2 0 1\"", quote_input(tok)));
             };
@@ -10378,6 +10387,12 @@ any target (tap Mountain (your))", 92),
             Invalid(ref m) if m.contains("out of range") && m.contains("0-6")));
         assert!(matches!(CliPlayer::parse_card_set_input("7", 7, false), Invalid(ref m) if m.contains("out of range")));
         assert!(matches!(CliPlayer::parse_card_set_input("x", 7, false), Invalid(ref m) if m.contains("not a number")));
+        // The same for the damage-division amount and the ordering screen.
+        assert!(matches!(CliPlayer::parse_amount_input("99999999999", 1, 4),
+            AmountInput::Invalid(ref m) if m.contains("more than is left") && m.contains("at most 4")));
+        assert!(matches!(CliPlayer::parse_amount_input("x", 1, 4), AmountInput::Invalid(ref m) if m.contains("not a number")));
+        assert!(matches!(CliPlayer::parse_order_input("99999999999999999999", 3),
+            OrderInput::Invalid(ref m) if m.contains("out of range") && m.contains("0-2")));
         assert!(matches!(CliPlayer::parse_card_set_input("m", 7, false), NextPage));
         assert!(matches!(CliPlayer::parse_card_set_input("p", 7, false), PrevPage));
         match CliPlayer::parse_card_set_input("7", 7, false) {
