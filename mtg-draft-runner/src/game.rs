@@ -301,6 +301,25 @@ pub fn seats_with_matches_left(matches: &[(usize, &MatchResult)], players: usize
     left
 }
 
+/// The matches of the round the records stop in that have no record yet:
+/// `(round, seat a, seat b)`, byes left out. A snapshot is written after
+/// each match, so these are the matches a resume plays from their first
+/// game, the one in progress at the stop among them (#999). Empty once the
+/// tournament is complete.
+#[must_use]
+pub fn unrecorded_matches(matches: &[(usize, &MatchResult)], players: usize, best_of: usize) -> Vec<(usize, usize, usize)> {
+    let (tournament, _) = walk_tournament(matches, players, best_of);
+    if tournament.is_complete() {
+        return Vec::new();
+    }
+    let round = tournament.rounds.len() + 1;
+    tournament.generate_pairings().into_iter()
+        .filter(|&(a, b)| b != tournament::BYE
+            && !matches.iter().any(|m| m.0 == round && m.1.player_a == a && m.1.player_b == b))
+        .map(|(a, b)| (round, a, b))
+        .collect()
+}
+
 /// The tournament as far as the records carry it, and which records it
 /// paired.
 fn walk_tournament(matches: &[(usize, &MatchResult)], players: usize, best_of: usize)

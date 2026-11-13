@@ -172,6 +172,10 @@ fn a_stopped_table_carries_on_from_its_snapshot() {
     second.type_line("kick 0");
     let log = second.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
     assert!(log.contains("NOTE the table carries on from the snapshot"), "{log}");
+    // Stopped while drafting: no match had started, and the note says none
+    // is played again (#999).
+    let note = log.lines().find(|l| l.contains("NOTE the table carries on from the snapshot")).unwrap();
+    assert!(!note.contains("match that was") && !note.contains("first game"), "{note}");
     assert_eq!(log.matches("DRAFT POOLS").count() + log.matches("BOOSTER PACKS").count(), 0,
         "the replay wrote nothing the first log already had:\n{log}");
     let _ = std::fs::remove_file(&kept);

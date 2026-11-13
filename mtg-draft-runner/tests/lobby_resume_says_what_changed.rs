@@ -237,3 +237,48 @@ fn a_seat_whose_last_match_is_played_has_nothing_left() {
         assert_eq!(left[seat], seat != bye, "seat {seat}, the bye is seat {bye}");
     }
 }
+
+/// #999: the resume note said "a match that was in progress is played
+/// again from its first game" on every resume, a table stopped while
+/// building included. It names the round's unfinished matches only once
+/// every deck is final, and says nothing of a match otherwise.
+#[test]
+fn a_resume_names_the_matches_it_plays_again_and_only_those() {
+    use mtg_draft::tournament::{MatchResult, Tournament, TournamentConfig, BYE};
+    use mtg_draft_runner::lobby::{SavedDeck, SavedMatch, SavedSeat, TableSave};
+    let seat = |kind: &str| SavedSeat { kind: kind.to_string(), name: kind.to_string(), key: Some("k".to_string()),
+        joined: true, kicked: false, gave_up: false, notes: None };
+    let deck = |seat: usize, ready: bool| SavedDeck { seat, main: Vec::new(), lands: std::collections::HashMap::new(),
+        sideboard: Vec::new(), fallback: false, ready };
+    let mut save = TableSave { version: 1, set: "ISD".to_string(), seed: 5101, best_of: 1,
+        seats: vec![seat("human"), seat("ai:x"), seat("ai:x")], picks: Vec::new(),
+        decks: vec![deck(1, true), deck(2, true)], matches: Vec::new(), deal: None, prompt: None };
+    // Still building: the human seat has no deck.
+    assert_eq!(save.resumed_matches_clause(), None);
+    // A deck sent and not final is still building too.
+    save.decks.push(deck(0, false));
+    assert_eq!(save.resumed_matches_clause(), None);
+    // Every deck final: round 1's one match (three seats, one bye) is named.
+    save.decks[2].ready = true;
+    let t = Tournament::new(3, TournamentConfig { best_of: 1 });
+    let pairings = t.generate_pairings();
+    let &(a, b) = pairings.iter().find(|&&(_, b)| b != BYE).unwrap();
+    assert_eq!(save.resumed_matches_clause().as_deref(),
+        Some(format!("round 1's unfinished match, seat {a} v seat {b}, is played from its first game").as_str()));
+    // Every match played: nothing is played again.
+    let mut t = t;
+    let mut round = 1;
+    while !t.is_complete() {
+        let pairings = t.generate_pairings();
+        let results: Vec<MatchResult> = pairings.iter().filter(|&&(_, b)| b != BYE).map(|&(a, b)| MatchResult {
+            player_a: a, player_b: b, wins_a: 1, wins_b: 0,
+            games: vec![serde_json::from_value(serde_json::json!({ "winner": a, "turns": 5 })).unwrap()],
+        }).collect();
+        for r in &results {
+            save.matches.push(SavedMatch { round, a: r.player_a, b: r.player_b, result: r.clone() });
+        }
+        t.record_round(pairings, results);
+        round += 1;
+    }
+    assert_eq!(save.resumed_matches_clause(), None, "every match is played");
+}

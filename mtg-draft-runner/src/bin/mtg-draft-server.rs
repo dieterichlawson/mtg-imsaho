@@ -320,8 +320,10 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     let mut resumed_warnings: Vec<String> = Vec::new();
     if let (Some(save), Some(path)) = (&save, &args.resume) {
         lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
+        // Which matches are played again, only when one is (#999).
+        let matches = save.resumed_matches_clause().map_or_else(String::new, |c| format!("; {c}"));
         resumed_note = Some(format!("the table carries on from the snapshot {path} (seed {}, seats {}): {}, {} \
-and {} replayed; a match that was in progress is played again from its first game",
+and {} replayed{matches}",
             save.seed, save.seats.iter().map(|s| s.kind.as_str()).collect::<Vec<_>>().join(","),
             mtg_draft_runner::count(save.picks.len(), "pick", "picks"), mtg_draft_runner::count(save.decks.len(), "deck", "decks"),
             mtg_draft_runner::count(save.matches.len(), "finished match", "finished matches")));

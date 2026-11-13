@@ -743,6 +743,30 @@ impl TableSave {
         Ok(())
     }
 
+    /// What a resume of this snapshot says of its matches: `None` while a
+    /// deck is still to be made, when no match was started, or once every
+    /// match is played; else the round's unrecorded matches by seat, which
+    /// are played from their first game. The note said "a match that was
+    /// in progress is played again from its first game" on every resume,
+    /// a table stopped mid-build included (#999).
+    #[must_use]
+    pub fn resumed_matches_clause(&self) -> Option<String> {
+        let every_deck = (0..self.seats.len()).all(|seat| self.decks.iter().any(|d| d.seat == seat && d.ready));
+        if !every_deck {
+            return None;
+        }
+        let records: Vec<(usize, &mtg_draft::tournament::MatchResult)> =
+            self.matches.iter().map(|m| (m.round, &m.result)).collect();
+        let left = crate::game::unrecorded_matches(&records, self.seats.len(), self.best_of);
+        let (round, ..) = *left.first()?;
+        let names: Vec<String> = left.iter().map(|&(_, a, b)| format!("seat {a} v seat {b}")).collect();
+        Some(if names.len() == 1 {
+            format!("round {round}'s unfinished match, {}, is played from its first game", names[0])
+        } else {
+            format!("round {round}'s unfinished matches, {}, are played from their first game", names.join(", "))
+        })
+    }
+
     /// The seats as `--seats` would name them.
     ///
     /// # Errors
