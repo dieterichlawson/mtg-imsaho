@@ -2040,10 +2040,9 @@ impl CliPlayer {
 
         // `Ncast`: the spells each side has cast this turn, which a werewolf
         // transforms on at the next upkeep and no zone shows (#832).
-        let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
-            your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
+        let your_line = |gap: &str| format!("{your_caret}You: {}hp{gap}{}lib{gap}{}gy{gap}{}ex{gap}{}hand{gap}{}cast",
+            view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
             Self::spells_cast_this_turn(view, true));
-        let opp_stats = Self::opponent_stats(view, mid_w);
 
         // The prompt block's least height, measured before the board is
         // drawn: the block is anchored at `h - min_block` when the board
@@ -2086,8 +2085,13 @@ impl CliPlayer {
         };
         // A side given no row at all, not even its marker's, is counted on
         // its status line: it vanished unmarked on a short pane (#960).
-        let opp_stats = Self::with_unshown(&opp_stats, Self::board_cut(&opp_bf, limits[0]).1, limits[0]);
-        let your_stats = Self::with_unshown(&your_stats, Self::board_cut(&your_bf, limits[1]).1, limits[1]);
+        // Each line's form is chosen for the room the note leaves: chosen
+        // for the whole panel, the note then pushed the hand and cast
+        // counts past the clip (#995's review).
+        let (opp_hidden, your_hidden) = (Self::board_cut(&opp_bf, limits[0]).1, Self::board_cut(&your_bf, limits[1]).1);
+        let opp_stats = Self::status_with_unshown(|room| Self::opponent_stats(view, room), opp_hidden, limits[0], mid_w);
+        let your_stats = Self::status_with_unshown(|room| [your_line("  "), your_line(" ")].into_iter()
+            .find(|l| str_cols(l) <= room).unwrap_or_else(|| your_line(" ")), your_hidden, limits[1], mid_w);
 
         // Opponent status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -2881,6 +2885,30 @@ impl CliPlayer {
             Some((who, rest)) => format!("{who} (+{hidden} {noun} unshown): {rest}"),
             None => format!("{stats}  (+{hidden} {noun} unshown)"),
         }
+    }
+
+    /// A status line with [`Self::with_unshown`]'s note, its form chosen by
+    /// `line(room)` for the room the note leaves in `width`. Chosen for the
+    /// whole panel, the note then pushed the hand and cast counts past the
+    /// clip (#995's review). Where the note's words leave too little room
+    /// it is "(+N unshown)", which still counts them.
+    fn status_with_unshown(line: impl Fn(usize) -> String, hidden: usize, limit: usize, width: usize) -> String {
+        let long = |stats: &str| Self::with_unshown(stats, hidden, limit);
+        let short = |stats: &str| if limit > 0 || hidden == 0 { stats.to_string() } else {
+            match stats.split_once(": ") {
+                Some((who, rest)) => format!("{who} (+{hidden} unshown): {rest}"),
+                None => format!("{stats}  (+{hidden} unshown)"),
+            }
+        };
+        let mut last = String::new();
+        for note in [&long as &dyn Fn(&str) -> String, &short] {
+            let room = width.saturating_sub(str_cols(&note("a: b")) - str_cols("a: b"));
+            last = note(&line(room));
+            if str_cols(&last) <= width {
+                return last;
+            }
+        }
+        last
     }
 
     /// The row that stands in for the part of a side the pane cannot hold.
@@ -11825,6 +11853,30 @@ Wolves or Werewolves is prevented".into()];
         assert!(str_cols(&stats) <= narrow, "{stats:?} in {narrow} columns");
         assert!(stats.contains("2U") && stats.contains("1B") && stats.contains("1G") && stats.contains("53lib")
             && stats.contains("7hand") && stats.contains("0cast"), "{stats:?}");
+    }
+
+    /// #995's review: the "(+N permanents unshown)" note was added after the
+    /// line's form was chosen for the whole panel, and pushed the hand and
+    /// cast counts past the clip. The form is chosen for the room the note
+    /// leaves.
+    #[test]
+    fn the_unshown_note_leaves_the_counts_their_room() {
+        let w = CliPlayer::middle_panel_width_at(80);
+        let mut v = view(Step::Draw, 32, false);
+        v.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1), life: 20, hand_size: 9, library_size: 40,
+            mana_pool: ManaPool::new(), mulligan_count: 0,
+        }];
+        v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Green, 2);
+        let line = CliPlayer::status_with_unshown(|room| CliPlayer::opponent_stats(&v, room), 12, 0, w);
+        assert!(str_cols(&line) <= w && line.contains("9hand") && line.contains("cast") && line.contains("+12"),
+            "{line:?} in {w} columns");
+        // Room for the note's words: they are kept.
+        let wide = CliPlayer::status_with_unshown(|room| CliPlayer::opponent_stats(&v, room), 12, 0, 120);
+        assert!(wide.contains("+12 permanents unshown") && wide.contains("9hand"), "{wide:?}");
+        // Nothing hidden: the line as it was.
+        assert_eq!(CliPlayer::status_with_unshown(|room| CliPlayer::opponent_stats(&v, room), 0, 0, w),
+            CliPlayer::opponent_stats(&v, w));
     }
 
     /// #995's review: six kinds floating beside double-digit zones ran the
