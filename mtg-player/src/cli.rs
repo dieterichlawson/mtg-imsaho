@@ -8429,9 +8429,7 @@ impl CliPlayer {
                 }
                 // Only where every row is an answer the screen can take: on
                 // "discard 1 of 8" `a` could lead only to a refusal (#997).
-                SetInput::All if !Self::set_takes_all(pick) => notice = Some(format!(
-                    "a marks all {} — this takes at most {}; mark the ones you want",
-                    pick.rows.len(), pick.max)),
+                SetInput::All if !Self::set_takes_all(pick) => notice = Some(Self::all_refused(pick.rows.len(), pick.min, pick.max)),
                 SetInput::All => { touched = true; marked.iter_mut().for_each(|m| *m = true); }
                 SetInput::None => { touched = true; marked.iter_mut().for_each(|m| *m = false); }
                 SetInput::Cancel => return None,
@@ -8509,6 +8507,15 @@ impl CliPlayer {
 
     /// Why a confirmed selection was refused, in the terms the screen asks
     /// in: an exact count, a ceiling, or a range.
+    /// Why `a` is refused on a screen that takes fewer than all its rows
+    /// (#997), in the count the screen asks for: "at most 3" read wrong on
+    /// a screen that takes exactly 3, the mulligan's bottom among them
+    /// (CR 103.5), whose heading and Confirm both say "exactly" (#1016).
+    fn all_refused(rows: usize, min: usize, max: usize) -> String {
+        let takes = if min == max { format!("exactly {max}") } else { format!("at most {max}") };
+        format!("a marks all {rows} — this takes {takes}; mark the ones you want")
+    }
+
     fn set_count_error(have: usize, min: usize, max: usize) -> String {
         let card = |n: usize| if n == 1 { "card" } else { "cards" };
         if min == max {
@@ -11526,6 +11533,11 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(CliPlayer::set_count_error(1, 2, 2), "1 marked — mark exactly 2 cards");
         assert_eq!(CliPlayer::set_count_error(4, 0, 3), "4 marked — mark at most 3 cards");
         assert_eq!(CliPlayer::set_count_error(1, 2, 5), "1 marked — mark between 2 and 5 cards");
+        // #1016: `a`'s refusal says the count the screen takes, as the
+        // heading and Confirm do: "exactly" on a discard or mulligan bottom.
+        assert_eq!(CliPlayer::all_refused(10, 3, 3), "a marks all 10 — this takes exactly 3; mark the ones you want");
+        assert_eq!(CliPlayer::all_refused(7, 1, 1), "a marks all 7 — this takes exactly 1; mark the ones you want");
+        assert_eq!(CliPlayer::all_refused(8, 0, 2), "a marks all 8 — this takes at most 2; mark the ones you want");
     }
 
     /// Issue #288: a bare Enter meant three different things at the three
