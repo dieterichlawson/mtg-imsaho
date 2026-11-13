@@ -761,9 +761,9 @@ impl TableSave {
         let (round, ..) = *left.first()?;
         let names: Vec<String> = left.iter().map(|&(_, a, b)| format!("seat {a} v seat {b}")).collect();
         Some(if names.len() == 1 {
-            format!("round {round}'s unfinished match, {}, is played from its first game", names[0])
+            format!("round {round}'s match still to play, {}, is played from its first game", names[0])
         } else {
-            format!("round {round}'s unfinished matches, {}, are played from their first game", names.join(", "))
+            format!("round {round}'s matches still to play, {}, are played from their first game", names.join(", "))
         })
     }
 

@@ -264,7 +264,7 @@ fn a_resume_names_the_matches_it_plays_again_and_only_those() {
     let pairings = t.generate_pairings();
     let &(a, b) = pairings.iter().find(|&&(_, b)| b != BYE).unwrap();
     assert_eq!(save.resumed_matches_clause().as_deref(),
-        Some(format!("round 1's unfinished match, seat {a} v seat {b}, is played from its first game").as_str()));
+        Some(format!("round 1's match still to play, seat {a} v seat {b}, is played from its first game").as_str()));
     // Every match played: nothing is played again.
     let mut t = t;
     let mut round = 1;
