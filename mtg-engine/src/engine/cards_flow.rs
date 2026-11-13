@@ -158,6 +158,22 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
 pub fn mill_one(state: &mut GameState, obj_id: ObjectId, registry: &CardRegistry) {
     state.move_object(obj_id, Zone::Graveyard, registry);
 }
+/// Cards that went to a public zone, for a log line: their names in the
+/// order they went, a name that went more than once counted once ("Forest
+/// x3, Doomed Traveler"), so a library milled whole is a line of its kinds
+/// rather than of its forty cards (#1001).
+pub(crate) fn card_list(names: &[String]) -> String {
+    let mut kinds: Vec<(&str, usize)> = Vec::new();
+    for n in names {
+        match kinds.iter_mut().find(|(k, _)| *k == n.as_str()) {
+            Some((_, c)) => *c += 1,
+            None => kinds.push((n.as_str(), 1)),
+        }
+    }
+    kinds.iter().map(|&(k, c)| if c > 1 { format!("{k} x{c}") } else { k.to_string() })
+        .collect::<Vec<_>>().join(", ")
+}
+
 /// Mill up to `count` cards, and say how many actually went (CR 701.13b: a
 /// player with fewer cards than that mills all of them and does not lose).
 ///
@@ -175,6 +191,7 @@ pub fn mill_one(state: &mut GameState, obj_id: ObjectId, registry: &CardRegistry
 /// they ended up logging their own unsourced line next to nothing at all.
 pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source: &str, registry: &CardRegistry) -> Vec<ObjectId> {
     let mut milled_ids = Vec::new();
+    let mut names: Vec<String> = Vec::new();
     for _ in 0..count {
         let obj_id = {
             let player_state = state.get_player_mut(player);
@@ -183,15 +200,19 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, source:
             }
             player_state.library_order[0]
         };
+        names.push(state.get_object(obj_id).map(|o| o.name.clone()).unwrap_or_default());
         mill_one(state, obj_id, registry);
         milled_ids.push(obj_id);
     }
     let milled = milled_ids.len();
     if milled > 0 {
         let short = if milled < count { format!(" (of {count} — library ran out)") } else { String::new() };
+        // The cards are named: a graveyard is public (CR 400.2), and "milled
+        // 2 cards" left a person diffing the graveyard viewer and a model
+        // seat, sent no earlier prompt, with no way to learn which (#1001).
         state.log(LogLevel::Event, format!(
-            "{source}: p{} milled {milled} card{}{short}",
-            player.0, if milled == 1 { "" } else { "s" }));
+            "{source}: p{} milled {milled} card{}{short}: {}",
+            player.0, if milled == 1 { "" } else { "s" }, card_list(&names)));
     } else if count > 0 {
         state.log(LogLevel::Event, format!("{source}: p{} has an empty library, nothing to mill", player.0));
     }

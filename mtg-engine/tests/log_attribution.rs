@@ -482,8 +482,14 @@ fn a_mill_says_when_the_library_ran_out_under_it() {
     }
     let lines = cast_dream_twist(&full);
     assert!(index_of(&lines, "Dream Twist: p1 milled 3 cards").is_some(), "{lines:?}");
+    // And it names them: a graveyard is public (CR 400.2), and "milled 3
+    // cards" left the reader diffing the graveyard to learn which (#1001).
+    // A name that went more than once is counted once.
+    assert!(index_of(&lines, "Dream Twist: p1 milled 3 cards: Walking Corpse x3").is_some(), "{lines:?}");
     assert!(index_of(&lines, "library ran out").is_none(),
         "nothing ran out: {lines:?}");
+    let lines = cast_dream_twist(&state);
+    assert!(index_of(&lines, "Dream Twist: p1 milled 1 card (of 3 — library ran out): Walking Corpse").is_some(), "{lines:?}");
 }
 
 /// "Target player discards two cards" is two choices, not one. The engine
@@ -1327,4 +1333,40 @@ fn an_exile_x_cost_names_the_cards_and_the_cast_carries_x() {
     let cast = lines.iter().find(|l| l.starts_with("p0 cast Harvest Pyre"))
         .unwrap_or_else(|| panic!("the cast is logged; log was {lines:#?}"));
     assert!(cast.contains("(X=2)"), "{cast}");
+}
+
+/// #1001: Curse of Oblivion's exile from a graveyard named no card, in
+/// either of its paths: "p1 exiled 2 card(s) from graveyard" when it took
+/// what there was, and "exiled a card from p1's graveyard" once per card
+/// chosen. Both zones are public (CR 400.2); Graveyard Shovel already
+/// named its card.
+#[test]
+fn curse_of_oblivion_names_the_cards_it_exiles() {
+    use mtg_engine::actions::ResolvedChoice;
+    let reg = registry();
+    let named = |state: &mut GameState, name: &str| {
+        let id = state.create_object(reg.get_id_by_name(name).unwrap(), P1, Zone::Graveyard, None, None);
+        state.get_object_mut(id).unwrap().name = name.into();
+        id
+    };
+
+    let mut state = game_at_step(Step::Upkeep, P1);
+    attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
+    named(&mut state, "Doomed Traveler");
+    named(&mut state, "Forest");
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+    let lines = log_lines(&state);
+    assert_line(&lines, "Curse of Oblivion: p1 exiled Doomed Traveler and Forest from graveyard");
+
+    let mut state = game_at_step(Step::Upkeep, P1);
+    attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
+    let a = named(&mut state, "Doomed Traveler");
+    named(&mut state, "Forest");
+    let c = named(&mut state, "Plains");
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+    let state = mtg_engine::engine::submit_action(&state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenObjectSet(vec![a, c]) }, &reg);
+    let lines = log_lines(&state);
+    assert_line(&lines, "Curse of Oblivion: exiled Doomed Traveler from p1's graveyard");
+    assert_line(&lines, "Curse of Oblivion: exiled Plains from p1's graveyard");
 }

@@ -65,6 +65,7 @@ impl CardBehavior for TrepanationBlade {
 
         // Reveal cards from defending player's library until a land is revealed.
         let mut cards_revealed = 0;
+        let mut names: Vec<String> = Vec::new();
         loop {
             let card_id = {
                 let player = state.get_player(defending_player);
@@ -82,6 +83,7 @@ impl CardBehavior for TrepanationBlade {
 
             // "That player puts the revealed cards into their graveyard" —
             // library to graveyard, so it is a mill.
+            names.push(state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default());
             crate::engine::mill_one(state, card_id, registry);
             cards_revealed += 1;
 
@@ -92,8 +94,8 @@ impl CardBehavior for TrepanationBlade {
 
         if cards_revealed > 0 {
             state.log(crate::state::LogLevel::Event,
-                format!("Trepanation Blade: p{} revealed and milled {} card{}", defending_player.0, cards_revealed,
-                    if cards_revealed == 1 { "" } else { "s" }));
+                format!("Trepanation Blade: p{} revealed and milled {} card{}: {}", defending_player.0, cards_revealed,
+                    if cards_revealed == 1 { "" } else { "s" }, crate::engine::card_list(&names)));
 
             // The buff needs a creature to land on: skipped if the attacker
             // died, and it goes on the creature that attacked even if the

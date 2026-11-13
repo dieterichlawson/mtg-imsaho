@@ -151,8 +151,10 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // graveyard, so it goes through `mill_one` and emits
                     // CreatureCardMilled. Moving them directly hid them from
                     // an opponent's Undead Alchemist.
+                    let mut rest: Vec<String> = Vec::new();
                     for &card_id in looked_at {
                         if card_id != *keep_id {
+                            rest.push(state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default());
                             crate::engine::mill_one(state, card_id, registry);
                         }
                     }
@@ -162,7 +164,13 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // rest land in the graveyard where everyone can count them
                     // (issue #217).
                     state.log(LogLevel::Private, format!("Kept {keep_name}"));
-                    state.log(LogLevel::Event, "Kept one card, the rest go to the graveyard".to_string());
+                    // The rest are named: they are in the graveyard, a
+                    // public zone, for everyone to read (#1001).
+                    state.log(LogLevel::Event, if rest.is_empty() {
+                        "Kept one card, the rest go to the graveyard".to_string()
+                    } else {
+                        format!("Kept one card, the rest go to the graveyard: {}", crate::engine::card_list(&rest))
+                    });
                 }
                 (ResolutionChoiceKind::ChooseFromLibrary { searcher, destination, tapped, .. },
                  ResolvedChoice::ChosenCard(chosen_id)) => {

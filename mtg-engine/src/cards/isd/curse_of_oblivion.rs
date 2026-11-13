@@ -83,13 +83,17 @@ impl CardBehavior for CurseOfOblivion {
         }
         // Nothing to decide when the graveyard holds exactly what is owed.
         if ids.len() <= 2 {
-            let count = ids.len();
+            // Named, as Graveyard Shovel's exile is: both zones are public
+            // (CR 400.2), and "exiled 2 card(s)" said neither (#1001).
+            let names: Vec<String> = ids.iter()
+                .map(|&id| state.get_object(id).map(|o| o.name.clone()).unwrap_or_default())
+                .collect();
             for id in ids {
                 state.move_object(id, Zone::Exile, registry);
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Curse of Oblivion: p{} exiled {count} card(s) from graveyard",
-                    cursed_player.0));
+                format!("Curse of Oblivion: p{} exiled {} from graveyard",
+                    cursed_player.0, names.join(" and ")));
             return;
         }
         let owed = 2.min(ids.len());
@@ -113,9 +117,9 @@ impl CardBehavior for CurseOfOblivion {
     /// the answer to the last one and carrying the remaining count in `key`.
     fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
+        let (owner, name) = state.get_object(*id).map_or((crate::ids::PlayerId(0), String::new()), |o| (o.owner, o.name.clone()));
         state.move_object(*id, Zone::Exile, registry);
         state.log(crate::state::LogLevel::Event,
-            format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
+            format!("Curse of Oblivion: exiled {name} from p{}'s graveyard", owner.0));
     }
 }

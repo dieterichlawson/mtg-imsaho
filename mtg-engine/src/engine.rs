@@ -21,6 +21,7 @@ mod mana_sources;
 mod targeting;
 
 pub use cards_flow::{discard_cards, draw_cards, mill_cards, mill_one};
+pub(crate) use cards_flow::card_list;
 pub use effects::apply_pending_effect;
 pub use costs::{
     AdditionalCostPlan, CastMethod, SpellCost, additional_cost_plan, alternative_costs,
