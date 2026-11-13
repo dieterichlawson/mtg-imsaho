@@ -7820,7 +7820,10 @@ impl CliPlayer {
                 Self::clear_panel_row(&mut stdout(), col, row);
             }
             if let Some(msg) = notice {
-                let msg: String = msg.chars().take(mid_w).collect();
+                // Cut by columns and deliberately, keeping what it says to
+                // do (#1020's review): a character count with no marker
+                // cut "payable X: …" off the end.
+                let msg = Self::notice_rows(&msg, mid_w, 1).concat();
                 let _ = execute!(stdout(), cursor::MoveTo(col, r + 1 + room),
                     SetForegroundColor(Color::Red), Print(msg), ResetColor);
             }
@@ -8196,7 +8199,7 @@ impl CliPlayer {
                 let mut out = stdout();
                 Self::clear_mid_from(&mut out, r);
                 if let Some(msg) = notice {
-                    let shown: String = msg.chars().take(Self::middle_panel_width_at(w)).collect();
+                    let shown = Self::notice_rows(msg, Self::middle_panel_width_at(w), 1).concat();
                     let _ = execute!(out, cursor::MoveTo(col, r + 1),
                         SetForegroundColor(Color::Red), Print(shown), ResetColor);
                 }
@@ -8900,7 +8903,7 @@ impl CliPlayer {
         for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
         if let Some(msg) = notice {
             let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
-                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+                Print(Self::notice_rows(&format!("  {msg}"), w, 1).concat()), ResetColor);
         }
         row += 1;
         let _ = execute!(out, cursor::MoveTo(0, row));
