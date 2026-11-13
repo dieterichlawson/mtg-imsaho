@@ -1618,8 +1618,12 @@ match is yours, lose it and it is theirs.\n");
                     }
                     s.push('\n');
                 } else {
+                    // Neither result ends the match, so the next game is
+                    // played; the rest may not be. "2 more games follow it"
+                    // in game 1 of a best-of-3 promised a game 3 that a 2-0
+                    // never plays (#1022).
                     let more = if left == 1 { "1 more game follows it" }
-                        else { &format!("{left} more games follow it") };
+                        else { &format!("at least 1 more game follows it, and at most {left}") };
                     writeln!(s, "Neither of you can win the match with this game; {more}.").unwrap();
                 }
                 if !(already_won || already_lost) {

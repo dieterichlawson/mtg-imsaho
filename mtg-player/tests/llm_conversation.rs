@@ -671,3 +671,15 @@ fn a_match_score_counts_a_game_with_no_winner() {
     assert!(played_out.contains("**you 1, your opponent 1**."), "{played_out}");
     assert!(!played_out.contains("game had no winner") && !played_out.contains("games had no winner"), "{played_out}");
 }
+
+/// #1022: "Neither of you can win the match with this game; 2 more games
+/// follow it" in game 1 of a best-of-3, which a 2-0 ends after game 2. The
+/// next game is certain there; the rest are not.
+#[test]
+fn a_game_that_settles_nothing_promises_only_the_next_game() {
+    let bo3 = MatchFormat::best_of(3).match_section();
+    assert!(bo3.contains("at least 1 more game follows it, and at most 2"), "{bo3}");
+    assert!(!bo3.contains("2 more games follow it"), "{bo3}");
+    let bo5 = MatchFormat::BestOf { best_of: 5, game: 2, your_wins: 1, their_wins: 0 }.match_section();
+    assert!(bo5.contains("at least 1 more game follows it, and at most 3"), "{bo5}");
+}
