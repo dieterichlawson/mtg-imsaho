@@ -141,7 +141,12 @@ fn main() {
             }
         }
         let guide = override_guide.clone().or_else(|| p["guide"].as_str().map(str::to_string));
-        let mut client = DraftLlmClient::new(&model, &set.name, guide.as_deref(), &set.reference, table);
+        // Inside the same catch as the pick: a backend that cannot start
+        // (a key its client expects) panicked here with a backtrace whose
+        // footer draft-replay.py kept as the reason (#1009's review).
+        let mut client = std::panic::catch_unwind(std::panic::AssertUnwindSafe(||
+            DraftLlmClient::new(&model, &set.name, guide.as_deref(), &set.reference, table)))
+            .unwrap_or_else(|payload| die(&format!("{positions} line {}: {}", id + 1, mtg_draft_runner::panic_message(&payload))));
         client.restore_notes(p["notes"].as_str().map(str::to_string));
         let prompt = DraftLlmClient::notes_section(client.notes())
             + &DraftLlmClient::build_pick_prompt(table, count("pack_number"), count("pick_index"),
