@@ -492,6 +492,8 @@ export function stackChipKey(item, i) {
 export function stackChipsShown(n) {
     return n > 5 ? 4 : n;
 }
+/** Cards a graveyard, exile, library or hand overlay shows a page. */
+export const ZONE_OVERLAY_PAGE = 50;
 /** The hand row's geometry: a card is 66 wide, the row runs from x=4 to 4
  *  short of the side panel at x=480, and cards overlap down to a 10px
  *  stride. */
@@ -555,14 +557,25 @@ function offBoardRows(state, ui, run) {
         const label = id === null ? targetLabel(state, t) : nameWithZone(state, id);
         rows.push({ label, run: () => run(key), key, cardName: e ? e.obj.name : null });
     }
-    if (zones.size === 1)
-        state.overlay = [...zones.values()][0];
+    // Opened at the page that holds the first option there: a zone overlay
+    // shows 50 cards a page, and the 51st card's option was on a page the
+    // person was not shown (#994's review).
+    const pageOf = (cards) => {
+        const i = cards.findIndex(c => ui.options?.has(`o${c.object_id}`));
+        return i < 0 ? 0 : Math.floor(i / ZONE_OVERLAY_PAGE);
+    };
+    if (zones.size === 1) {
+        const z = [...zones.values()][0];
+        const cards = z.zone === "graveyard" ? (state.view.graveyards.find(([p]) => p === z.pid)?.[1] ?? [])
+            : state.view.exile.filter(c => c.owner === z.pid);
+        state.overlay = { ...z, page: pageOf(cards) };
+    }
     // An option behind the band's "+N" chip is not clickable where the band
     // draws: the stack is opened for it, as a graveyard is (#991's review).
     else if (zones.size === 0 && [...hiddenKeys].some(k => ui.options?.has(k)))
         state.overlay = { zone: "stack", pid: state.view.you };
     else if (zones.size === 0 && [...hiddenHand].some(k => ui.options?.has(k)))
-        state.overlay = { zone: "hand", pid: state.view.you };
+        state.overlay = { zone: "hand", pid: state.view.you, page: pageOf(hand) };
     return rows;
 }
 /**

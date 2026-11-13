@@ -569,6 +569,11 @@ window.addEventListener("keydown", (ev) => {
             if (v)
                 toggleZone("stack", v.you);
             break;
+        // The whole hand, which the hand row shows only what fits of (#994).
+        case "h":
+            if (v)
+                toggleZone("hand", v.you);
+            break;
         case "s":
             // A toggle is one press: a held key flipped it per repeat, ending
             // where the parity left it (#852's review).
@@ -658,7 +663,7 @@ function releaseField() {
     field.value = "";
     releasedFor = ui;
     field.blur();
-    state.notice = "Box cleared — the board keys (l g G e d k s f) work again; click the box to type.";
+    state.notice = "Box cleared — the board keys (l g G e d k h s f) work again; click the box to type.";
 }
 /**
  * The widget whose typing box Escape handed back: while it is on screen, the

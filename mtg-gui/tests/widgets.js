@@ -966,12 +966,20 @@ async function main() {
         const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
           return { zone: m.overlay && m.overlay.zone, page: m.overlay && m.overlay.page };
         });
-        if (opened.zone !== "hand") fail(`hidden-hand-option: the hand did not open for it: ${JSON.stringify(opened)}`);
+        // Card 55 is on the overlay's second page, which is the one opened.
+        if (opened.zone !== "hand" || opened.page !== 1) fail(`hidden-hand-option: the hand did not open at it: ${JSON.stringify(opened)}`);
         else {
-          await page.evaluate(() => { window.mtg.overlay.page = 1; });
           await clickHit("(h) => h.kind === 'card' && h.key === 'o9055'");
           await expectSent("hidden-hand-option", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenTarget && a.ResolveChoice.choice.ChosenTarget.Object === 9055);
         }
+      }
+      if (await stage("hand-key", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
+        await page.keyboard.press("h");
+        const a = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
+        await page.keyboard.press("h");
+        const b = await page.evaluate(() => window.mtg.overlay);
+        if (a !== "hand" || b !== null) fail(`hand-key: h opened ${a} and left ${JSON.stringify(b)}`);
+        else ok("hand-key: h opens and closes the whole hand");
       }
       await page.evaluate((h) => { window.mtg.view.your_hand = JSON.parse(h); window.mtg.overlay = null; window.mtgDebug.stage(window.mtg.lastDecision); }, savedHand);
 

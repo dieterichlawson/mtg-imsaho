@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown, handCardsShown, HAND_ROW } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown, handCardsShown, HAND_ROW, ZONE_OVERLAY_PAGE } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -1062,7 +1062,11 @@ function stackLines(ctx, hits, state) {
         for (const t of item.targets) {
             const key = typeof t === "object" ? ("Object" in t ? `o${t.Object}` : `p${t.Player}`) : null;
             const onStack = key !== null && view.stack.some((it, j) => stackChipKey(it, j) === key);
-            const to = key ? rectOf(key) ?? (onStack ? more : undefined) : null;
+            // A card behind the hand row's "+N" slot is drawn to from the slot
+            // (#994's review), as a hidden stack entry is from the stack's.
+            const inHand = key !== null && view.your_hand.some(c => `o${c.object_id}` === key);
+            const handMore = inHand ? hits.find(h => h.kind === "zone" && h.zone === "hand") : undefined;
+            const to = key ? rectOf(key) ?? (onStack ? more : handMore) : null;
             if (!to)
                 continue;
             // The chip's own key: an ability's is its slot (#807), so hovering its
@@ -1813,8 +1817,10 @@ function zoneOverlay(ctx, hits, state) {
     text(ctx, title, 8, 6, { font: "8px PressStart", color: "#ffe080" });
     text(ctx, "click outside or press Esc to close", 8, 18, { font: "7px Silkscreen", color: "#8a8090" });
     const cols = 10, cw = 44, ch = 58;
-    const perPage = cols * 5;
-    const page = ov.page || 0;
+    const perPage = ZONE_OVERLAY_PAGE;
+    // Clamped, as the stack's is: a zone that shrank under an open page drew
+    // an empty one (#994's review).
+    const page = Math.min(ov.page || 0, Math.max(0, Math.ceil(cards.length / perPage) - 1));
     cards.slice(page * perPage, (page + 1) * perPage).forEach((c, i) => {
         const x = 8 + (i % cols) * (cw + 2), y = 32 + Math.floor(i / cols) * (ch + 2);
         const key = `o${c.object_id}`;
