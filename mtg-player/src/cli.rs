@@ -4879,8 +4879,11 @@ impl CliPlayer {
     /// citation dropped first, then the part before " — " cut in its
     /// middle so the instruction after it is kept whole (#1020).
     fn notice_rows(msg: &str, width: usize, rows: usize) -> Vec<String> {
-        let wrapped = Self::word_wrap(msg, width);
-        if wrapped.len() <= rows.max(1) {
+        // Every row keeps the message's indent, and is measured in columns:
+        // word_wrap counts characters, and a typed wide character in a
+        // quoted input would run a row past the border (#1020's review).
+        let wrapped = Self::wrap_indented(msg, width);
+        if wrapped.len() <= rows.max(1) && wrapped.iter().all(|l| str_cols(l) <= width && !l.trim().is_empty()) {
             return wrapped;
         }
         let mut short = msg.to_string();
@@ -6194,9 +6197,9 @@ impl CliPlayer {
         match notice {
             Some(n) => {
                 let room = w.saturating_sub(3);
-                let n = if str_cols(&n) > room {
-                    format!("{}\u{2026}", clip_cols(&n, room.saturating_sub(1)))
-                } else { n };
+                // Cut keeping what it says to do, as the prompts' refusals
+                // are (#1020's review).
+                let n = Self::notice_rows(&n, room, 1).concat();
                 format!("  {n}\n{hint}")
             }
             None => format!("\n{hint}"),
@@ -11607,6 +11610,12 @@ Wolves or Werewolves is prevented".into()];
                 "{one:?} in {w}");
         }
         assert_eq!(CliPlayer::notice_rows("short", 94, 1), vec!["short".to_string()]);
+        // Wrapped rows keep the indent, and a wide-character input is
+        // measured in columns, not characters.
+        let indented = CliPlayer::notice_rows(&format!("  {menace}"), 94, 2);
+        assert!(indented.iter().all(|l| l.starts_with("  ") && str_cols(l) <= 94), "{indented:?}");
+        let wide = CliPlayer::notice_rows("'\u{4e00}\u{4e00}\u{4e00}\u{4e00}\u{4e00}\u{4e00}' is not a number — type a number", 20, 2);
+        assert!(wide.iter().all(|l| str_cols(l) <= 20), "{wide:?}");
         // #1016: `a`'s refusal says the count the screen takes, as the
         // heading and Confirm do: "exactly" on a discard or mulligan bottom.
         assert_eq!(CliPlayer::all_refused(10, 3, 3), "a marks all 10 — this takes exactly 3; mark the ones you want");
@@ -13038,7 +13047,8 @@ Wolves or Werewolves is prevented".into()];
                     — enter a number 0-6, or press enter to return".to_string();
         let clipped = CliPlayer::viewer_footer(Some(long), hint, 80);
         let first = clipped.lines().next().unwrap();
-        assert!(str_cols(first) <= 79 && first.ends_with('\u{2026}'), "{first:?}");
+        // Cut in its middle, keeping what it says to do (#1020's review).
+        assert!(str_cols(first) <= 79 && first.contains('\u{2026}') && first.ends_with("or press enter to return"), "{first:?}");
         assert_eq!(clipped.lines().count(), plain.lines().count());
     }
 
