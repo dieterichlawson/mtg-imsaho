@@ -2043,7 +2043,7 @@ impl CliPlayer {
         let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
             your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
             Self::spells_cast_this_turn(view, true));
-        let opp_stats = Self::opponent_stats(view);
+        let opp_stats = Self::opponent_stats(view, mid_w);
 
         // The prompt block's least height, measured before the board is
         // drawn: the block is anchored at `h - min_block` when the board
@@ -2187,12 +2187,8 @@ impl CliPlayer {
 
         // Mana pool at bottom of hand area
         if mana_shown {
-            let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
-                .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{t:?}:{v}"))
-                .collect();
             Self::mid_print(&mut out, mid_col, &mut row, mid_w,
-                &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
+                &Self::your_mana_row(&view.your_mana_pool, mid_w), Some(Color::Yellow), false);
         }
 
         // The prompt block — the separator that carries the notice, the menu,
@@ -5032,9 +5028,14 @@ impl CliPlayer {
     /// The spells your side (`mine`) or the other has cast this turn.
     /// The opponent's status line: life, the mana floating in its pool,
     /// which the board's tapped lands do not say (#865), zones and spells
-    /// cast this turn. The caller clips it to the panel, so the mana comes
-    /// right after life, where a narrow panel cuts the counts instead.
-    fn opponent_stats(view: &GameView) -> String {
+    /// cast this turn, in the widest form that fits `width` columns. The
+    /// mana comes right after life. Six kinds floating ran the line to
+    /// about 98 columns, and the panel's clip cut the counts with nothing
+    /// saying so (#995's review): before anything is cut, the mana is
+    /// written in letters ("2W 1U") and the gaps are narrowed, keeping
+    /// every count and every kind. The caller clips only a line that fits
+    /// in no form.
+    fn opponent_stats(view: &GameView, width: usize) -> String {
         let opp_gy: usize = view.graveyards.iter()
             .filter(|(pid, _)| *pid != view.you)
             .map(|(_, cards)| cards.len()).sum();
@@ -5042,15 +5043,41 @@ impl CliPlayer {
             .filter(|c| c.owner != view.you).count();
         let opp_caret = if view.active_player == view.you { "  " } else { "▸ " };
         view.opponents.first().map(|opp| {
-            let pool: Vec<String> = opp.mana_pool.mana.iter()
-                .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{t:?}:{v}"))
-                .collect();
-            let floating = if pool.is_empty() { String::new() } else { format!("  mana {}", pool.join(" ")) };
-            format!("{}Opp: {}hp{floating}  {}lib  {}gy  {}ex  {}hand  {}cast",
-                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
-                Self::spells_cast_this_turn(view, false))
+            let form = |letters: bool, gap: &str| {
+                let pool = Self::pool_text(&opp.mana_pool, letters);
+                let floating = if pool.is_empty() { String::new() } else { format!("{gap}mana {pool}") };
+                format!("{}Opp: {}hp{floating}{gap}{}lib{gap}{}gy{gap}{}ex{gap}{}hand{gap}{}cast",
+                    opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
+                    Self::spells_cast_this_turn(view, false))
+            };
+            let forms = [form(false, "  "), form(true, "  "), form(true, " ")];
+            forms.iter().find(|f| str_cols(f) <= width).unwrap_or(&forms[2]).clone()
         }).unwrap_or_default()
+    }
+
+    /// A mana pool's floating kinds: "Blue:2 Black:1", or in `letters`
+    /// "2U 1B", the narrower form a status line falls back to (#995's review).
+    fn pool_text(pool: &mtg_engine::types::ManaPool, letters: bool) -> String {
+        pool.mana.iter()
+            .filter(|(_, &v)| v > 0)
+            .map(|(t, v)| if letters { format!("{v}{}", Self::mana_type_letter(*t)) } else { format!("{t:?}:{v}") })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn mana_type_letter(t: mtg_engine::types::ManaType) -> char {
+        use mtg_engine::types::ManaType;
+        match t {
+            ManaType::White => 'W', ManaType::Blue => 'U', ManaType::Black => 'B',
+            ManaType::Red => 'R', ManaType::Green => 'G', ManaType::Colorless => 'C',
+        }
+    }
+
+    /// Your "Mana:" row under the hand, in the widest form that fits
+    /// `width` columns: the names, then the letters (#995's review).
+    fn your_mana_row(pool: &mtg_engine::types::ManaPool, width: usize) -> String {
+        let long = format!("  Mana: {}", Self::pool_text(pool, false));
+        if str_cols(&long) <= width { long } else { format!("  Mana: {}", Self::pool_text(pool, true)) }
     }
 
     fn spells_cast_this_turn(view: &GameView, mine: bool) -> u32 {
@@ -7673,8 +7700,19 @@ impl CliPlayer {
                 if n > 0 { Some(format!("{n} {mt:?}")) } else { None }
             }).collect();
             if !pool_summary.is_empty() {
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(clip(&format!("  Pool: {}", pool_summary.join(", ")))));
+                // In letters where the names do not fit, so no kind is cut
+                // (#995's review).
+                let long = format!("  Pool: {}", pool_summary.join(", "));
+                let line = if str_cols(&long) <= mid_w { long } else {
+                    format!("  Pool: {}", [
+                        ManaType::White, ManaType::Blue, ManaType::Black,
+                        ManaType::Red, ManaType::Green, ManaType::Colorless,
+                    ].iter().filter_map(|mt| {
+                        let n = options.pool.get(mt).copied().unwrap_or(0);
+                        (n > 0).then(|| format!("{n}{}", Self::mana_type_letter(*mt)))
+                    }).collect::<Vec<_>>().join(" "))
+                };
+                let _ = execute!(out, cursor::MoveTo(col, r), Print(clip(&line)));
                 r += 1;
             }
             for g in &options.groups {
@@ -11774,18 +11812,49 @@ Wolves or Werewolves is prevented".into()];
             id: PlayerId(1), life: 20, hand_size: 7, library_size: 53,
             mana_pool: ManaPool::new(), mulligan_count: 0,
         }];
-        assert!(!CliPlayer::opponent_stats(&v).contains("mana"), "{}", CliPlayer::opponent_stats(&v));
+        assert!(!CliPlayer::opponent_stats(&v, 200).contains("mana"), "{}", CliPlayer::opponent_stats(&v, 200));
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Black, 1);
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Blue, 2);
-        let stats = CliPlayer::opponent_stats(&v);
+        let stats = CliPlayer::opponent_stats(&v, 200);
         assert!(stats.starts_with("▸ Opp: 20hp  mana Blue:2 Black:1  53lib"), "{stats}");
-        // An 80-column terminal's panel cuts the counts, not the mana.
+        // An 80-column terminal's panel shortens the line before it cuts
+        // anything: every kind and every count stays (#995's review).
         let narrow = CliPlayer::middle_panel_width_at(80);
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Green, 1);
-        let stats = CliPlayer::opponent_stats(&v);
-        assert!(str_cols(&stats) > narrow, "test precondition: {stats:?} is wider than {narrow}");
-        let cut = clip_cols(&stats, narrow);
-        assert!(str_cols(&cut) <= narrow && cut.contains("Black:1"), "{cut:?} in {narrow} columns");
+        let stats = CliPlayer::opponent_stats(&v, narrow);
+        assert!(str_cols(&stats) <= narrow, "{stats:?} in {narrow} columns");
+        assert!(stats.contains("2U") && stats.contains("1B") && stats.contains("1G") && stats.contains("53lib")
+            && stats.contains("7hand") && stats.contains("0cast"), "{stats:?}");
+    }
+
+    /// #995's review: six kinds floating beside double-digit zones ran the
+    /// opponent's line to about 98 columns, and the panel's clip cut every
+    /// count after the mana with nothing saying so. It fits in letters.
+    #[test]
+    fn six_kinds_floating_keep_every_count_on_the_opponents_line() {
+        use mtg_engine::types::ManaType;
+        let mut v = view(Step::Draw, 32, false);
+        v.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1), life: 20, hand_size: 9, library_size: 40,
+            mana_pool: ManaPool::new(), mulligan_count: 0,
+        }];
+        for (t, n) in [(ManaType::White, 2), (ManaType::Blue, 2), (ManaType::Black, 2),
+            (ManaType::Red, 3), (ManaType::Green, 2), (ManaType::Colorless, 2)] {
+            v.opponents[0].mana_pool.add(t, n);
+        }
+        // Your own row falls back to letters only where the names do not fit.
+        let tight = CliPlayer::your_mana_row(&v.opponents[0].mana_pool, 40);
+        assert!(str_cols(&tight) <= 40 && tight.contains("2C"), "{tight:?} in 40 columns");
+        for cols in [80, 120] {
+            let w = CliPlayer::middle_panel_width_at(cols);
+            let stats = CliPlayer::opponent_stats(&v, w);
+            assert!(str_cols(&stats) <= w, "{stats:?} in {w} columns");
+            for part in ["2W", "2U", "2B", "3R", "2G", "2C", "40lib", "9hand", "cast"] {
+                assert!(stats.contains(part), "{part} is gone from {stats:?} in {w} columns");
+            }
+            let mine = CliPlayer::your_mana_row(&v.opponents[0].mana_pool, w);
+            assert!(str_cols(&mine) <= w && (mine.contains("Colorless:2") || mine.contains("2C")), "{mine:?} in {w} columns");
+        }
     }
 
     pub(crate) fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
