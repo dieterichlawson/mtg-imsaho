@@ -265,6 +265,11 @@ fn a_resume_names_the_matches_it_plays_again_and_only_those() {
     let &(a, b) = pairings.iter().find(|&&(_, b)| b != BYE).unwrap();
     assert_eq!(save.resumed_matches_clause().as_deref(),
         Some(format!("round 1's match still to play, seat {a} v seat {b}, is played from its first game").as_str()));
+    // A kicked seat's match is a forfeit, not played from its first game
+    // (#1029's review: the seats are not told it is either).
+    let mut forfeit = save.clone();
+    forfeit.seats[a].kicked = true;
+    assert_eq!(forfeit.resumed_matches_clause(), None, "the one match left is a forfeit");
     // Every match played: nothing is played again.
     let mut t = t;
     let mut round = 1;

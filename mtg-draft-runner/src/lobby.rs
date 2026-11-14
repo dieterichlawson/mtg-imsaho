@@ -759,6 +759,14 @@ impl TableSave {
             self.matches.iter().map(|m| (m.round, &m.result)).collect();
         let left = crate::game::unrecorded_matches(&records, self.seats.len(), self.best_of);
         let (round, ..) = *left.first()?;
+        // A match with a kicked or given-up seat in it is a forfeit, not a
+        // game played again; the seats are told nothing of it either
+        // (#1029's review).
+        let gone = |s: usize| self.seats.get(s).is_some_and(|x| x.kicked || x.gave_up);
+        let left: Vec<_> = left.into_iter().filter(|&(_, a, b)| !gone(a) && !gone(b)).collect();
+        if left.is_empty() {
+            return None;
+        }
         let names: Vec<String> = left.iter().map(|&(_, a, b)| format!("seat {a} v seat {b}")).collect();
         Some(if names.len() == 1 {
             format!("round {round}'s match still to play, {}, is played from its first game", names[0])
