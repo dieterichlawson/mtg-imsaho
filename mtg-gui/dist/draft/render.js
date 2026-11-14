@@ -237,7 +237,7 @@ function drafting(view, state, actions) {
             }
         }
         else {
-            detail.append(h("p", { class: "muted", text: "Click a card to read it; click it again or press Enter to pick it. Digits and arrows move the selection." }));
+            detail.append(h("p", { class: "muted", text: "Click a card to read it; click it again or press Enter to pick it. Digits (0 is the tenth card) and arrows move the selection." }));
         }
         side.append(detail);
     }

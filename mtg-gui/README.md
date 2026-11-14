@@ -97,8 +97,8 @@ move it between main and side, or move the cursor with the arrows and
 press Enter to move the card under it (Esc clears the cursor); step the
 basics, and press Ready when the count line reaches 40 (the button says
 why it is disabled until then). The same keys build the deck between
-the games of a match. Esc first dismisses a refusal or a notice, when
-one is up. Playing: the game link is a link to the game page.
+the games of a match. Where a pack or a pool is on screen, Esc first
+dismisses a refusal or a notice, when one is up. Playing: the game link is a link to the game page.
 
 `window.mtgDraft` holds the state, the last view and every message the
 page sent (`.sent`); `window.mtgDraftDebug.stage(view)` renders a view

@@ -156,6 +156,13 @@ building opens its text under it and a second tap moves it between main
 and side. If the page is not in the checkout yet the
 server says so at start-up and the client below still works.
 
+Keys: while drafting, a digit selects a card (`1`-`9`, and `0` for the
+tenth), the arrows move the selection, Enter picks the selected card and
+Esc clears it. While building (and between the games of a match) the
+arrows move a cursor down the checklist, Enter moves the card under it
+between main and side, and Esc clears it. Esc first dismisses a refusal
+or a notice when one is up.
+
 ### In a terminal
 
 ```
