@@ -157,6 +157,7 @@ impl LegalActions {
             && self.activatable_abilities.is_empty()
             && self.resolution_prompt.is_none()
             && self.set_prompt.is_none()
+            && self.mana_ability_copies.is_empty()
     }
 
     /// Whether this offers the acting player nothing at all — no menu and

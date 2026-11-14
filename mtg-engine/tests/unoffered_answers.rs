@@ -370,3 +370,37 @@ fn every_permanent_that_could_tap_for_a_folded_mana_row_is_admitted() {
         assert!(!legal.permits(&tap(id)), "#{id:?} cannot tap and is refused");
     }
 }
+
+/// The copies are admitted like the row and no fuzzed seat sends one, so
+/// the invariant checker is the only thing that would see a wrong one: a
+/// tapped Forest, a copy of a card the menu offers no row for, or a copy
+/// that repeats its row (#1003's review).
+#[test]
+fn the_invariant_checker_judges_the_folded_mana_copies() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forests: Vec<ObjectId> = (0..2).map(|_| named_permanent(&mut state, &reg, "Forest", P0)).collect();
+    let tapped = named_permanent(&mut state, &reg, "Forest", P0);
+    state.get_object_mut(tapped).unwrap().tapped = true;
+    let plains = named_permanent(&mut state, &reg, "Plains", P0);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert_eq!(mtg_engine::invariants::check_legal(&state, P0, &legal, &reg), Vec::<String>::new());
+    assert_eq!(legal.mana_ability_copies.len(), 1, "{:?}", legal.mana_ability_copies);
+
+    let tap = |id: ObjectId| Action::ActivateManaAbility { object_id: id, ability_index: 0 };
+    let offered = forests.iter().copied().find(|&id|
+        legal.actions.iter().any(|a| format!("{a:?}") == format!("{:?}", tap(id)))).unwrap();
+    for (bad, says) in [(tap(tapped), "not available"), (tap(offered), "offered twice")] {
+        let mut wrong = legal.clone();
+        wrong.mana_ability_copies.push(bad);
+        let v = mtg_engine::invariants::check_legal(&state, P0, &wrong, &reg);
+        assert!(v.iter().any(|m| m.contains(says)), "{says}: {v:?}");
+    }
+    // A Plains offered only as a copy: no row of its own card.
+    let mut wrong = legal.clone();
+    wrong.actions.retain(|a| format!("{a:?}") != format!("{:?}", tap(plains)));
+    wrong.mana_ability_copies.push(tap(plains));
+    let v = mtg_engine::invariants::check_legal(&state, P0, &wrong, &reg);
+    assert!(v.iter().any(|m| m.contains("copy of no row")), "{v:?}");
+}
