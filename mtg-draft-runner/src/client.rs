@@ -434,12 +434,28 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
                 let Some((land, n)) = word.split_once('=') else {
                     return Command::Print("lands takes plains=7 island=10 ...".into());
                 };
-                let Ok(n) = n.parse::<u32>() else { return Command::Print(format!("'{n}' is not a count")) };
+                let Ok(n) = n.parse::<u32>() else {
+                    // A count too long to read is a count over the server's
+                    // bound, as the page says it, not "not a count" (#1017).
+                    if all_digits(n) {
+                        return Command::Print(format!("'{n}' is more than the server allows: at most {} of one basic",
+                            mtg_draft::deckbuilding::MAX_CARD_COUNT));
+                    }
+                    return Command::Print(format!("'{n}' is not a count"));
+                };
                 let mut land = land.to_lowercase();
                 if let Some(c) = land.get_mut(0..1) { c.make_ascii_uppercase(); }
                 if n == 0 { build.lands.remove(&land); } else { build.lands.insert(land, n); }
             }
             send_edit(v, build)
+        }
+        // A number too long to read is past the end of the pack, as 9 is in
+        // a pack of two, not "'999…'? type help" (#1017). The server says
+        // it of a number it can read; this one never reaches it.
+        word if all_digits(word) && word.parse::<usize>().is_err()
+            && phase == "drafting" && view.is_some_and(|v| v["pack"]["cards"].is_array()) => {
+            let n = view.and_then(|v| v["pack"]["cards"].as_array()).map_or(0, Vec::len);
+            Command::Print(format!("card '{word}' is past the end of the pack ({})", crate::count(n, "card", "cards")))
         }
         word => match (word.parse::<usize>(), view) {
             (Ok(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
@@ -804,6 +820,34 @@ mod tests {
         v["matches"] = serde_json::json!([]);
         let Command::Print(t) = command("add 0", Some(&v), &mut Build::default(), None) else { panic!("sent") };
         assert!(t.contains("sideboards before the next"), "{t}");
+    }
+
+    /// #1017: a number too long to read is out of range, as 9 in a pack of
+    /// two is: past the end of the pack, over the server's bound on a
+    /// basic, no card of that number — not "'999…'? type help", "not a
+    /// count" or a card named "999…". A word keeps its own answers.
+    #[test]
+    fn a_number_too_long_to_read_is_out_of_range() {
+        const BIG: &str = "99999999999999999999";
+        let mut v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd",
+            "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}],
+            "pack": {"id": 1, "round": 1, "pick": 13, "size": 2, "waiting": 0, "deadline_ms": null, "cards": [
+                {"index": 0, "name": "Brain Weevil", "line": "Brain Weevil", "text": ""},
+                {"index": 1, "name": "Moan of the Unhallowed", "line": "Moan of the Unhallowed", "text": ""}]}});
+        let print = |line: &str, v: &Value| match command(line, Some(v), &mut Build::default(), None) {
+            Command::Print(t) => t,
+            _ => panic!("{line} was not answered here"),
+        };
+        assert_eq!(print(BIG, &v), format!("card '{BIG}' is past the end of the pack (2 cards)"));
+        assert!(matches!(command("9", Some(&v), &mut Build::default(), None), Command::Send(_)),
+            "a number it can read is the server's to judge");
+        assert!(print("zz", &v).ends_with("type help"));
+        assert_eq!(print(&format!("text {BIG}"), &v), format!("no card '{BIG}': text takes a card number from the pack"));
+        v["phase"] = "building".into();
+        assert_eq!(print(&format!("text {BIG}"), &v), format!("no card '{BIG}': text takes a pool number"));
+        assert_eq!(print(&format!("lands plains={BIG}"), &v),
+            format!("'{BIG}' is more than the server allows: at most 200 of one basic"));
+        assert_eq!(print("lands plains=x", &v), "'x' is not a count");
     }
 
     #[test]
@@ -1327,8 +1371,16 @@ fn pool_listing(v: &Value) -> String {
 /// pool's. A name instead of a number reads the card by name from the
 /// pack, the pool or the last review, whose cards passed over could not be
 /// read at all (#889).
+/// Whether `s` is a number as typed: one or more ASCII digits, whether or
+/// not it fits a `usize`.
+fn all_digits(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
+
 fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
-    if let Some(name) = arg.filter(|a| a.parse::<usize>().is_err()) {
+    // A run of digits is a number, however long: "text 99999999999999999999"
+    // looked for a card of that name (#1017).
+    if let Some(name) = arg.filter(|a| !all_digits(a)) {
         return card_by_name(v, review, name);
     }
     // While drafting the pool is listed by counts, not numbers, so the only
@@ -1343,8 +1395,9 @@ fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
         v["pool"].as_array().into_iter().flatten().collect()
     };
     let what = if drafting { "a card number from the pack" } else { "a pool number" };
-    let Some(n) = arg.and_then(|a| a.parse::<usize>().ok()) else {
-        return format!("text takes {what}");
+    let Some(typed) = arg else { return format!("text takes {what}") };
+    let Ok(n) = typed.parse::<usize>() else {
+        return format!("no card '{typed}': text takes {what}");
     };
     let card = if drafting {
         cards.iter().find(|c| c["index"].as_u64() == Some(n as u64)).copied()
