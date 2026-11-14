@@ -1024,8 +1024,10 @@ function lineAboutYou(state, l) {
  * Which line of an interval the band leads with, when it cannot show them
  * all: the first line an opponent wrote that names you or something of
  * yours ("p1 cast Swords to Plowshares (#70) targeting Goblin Piker (#24)");
- * failing that, the first line that is neither yours nor about yours (a
- * turn banner, the opponent's land); failing that, the first line.
+ * failing that, the first thing an opponent chose to do (a cast, an
+ * attack), then any line of theirs (a land, a draw); failing that, a line
+ * nobody wrote that is not about yours (a turn banner); failing that, the
+ * first line.
  *
  * It used to be the interval's first line, and the interval is measured
  * from the frame the person answered, so that line was nearly always the
@@ -1039,8 +1041,17 @@ function lineAboutYou(state, l) {
 export function bandHeadline(state, lines) {
     const you = state.view.you;
     const author = (l) => { const m = /^p(\d+)\b/.exec(l); return m ? Number(m[1]) : null; };
+    // An opponent's line, which a turn banner or an "X resolved" is not: a
+    // line with no author counted as one (null !== you), and came first, so
+    // "── Turn 5 (p1) ──" or your own "Coral Merfolk resolved" led an
+    // interval holding the opponent's Doom Blade (#1026).
+    const theirs = (l) => { const a = author(l); return a !== null && a !== you; };
+    // What they chose to do, over what every turn holds.
+    const routine = /^p\d+ (drew|tapped|played|passed)\b/;
     return lines.find(l => doneToYou(state, l))
-        ?? lines.find(l => author(l) !== you && !lineAboutYou(state, l))
+        ?? lines.find(l => theirs(l) && !routine.test(l) && !lineAboutYou(state, l))
+        ?? lines.find(l => theirs(l) && !lineAboutYou(state, l))
+        ?? lines.find(l => author(l) === null && !lineAboutYou(state, l))
         ?? lines[0];
 }
 /** Lines from each stack item to what it targets. */
