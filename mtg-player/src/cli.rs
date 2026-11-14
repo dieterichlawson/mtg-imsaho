@@ -709,6 +709,21 @@ fn describe_fundable_x(values: &[u32]) -> String {
     format!("{}, \u{2026} {last}", kept.join(", "))
 }
 
+thread_local! {
+    /// Set while a reader is handling a typed `concede` itself, and until it
+    /// hands the screen its next line: the screen's last refusal is about
+    /// the input before, which the concede question replaced (#1019).
+    static NOTICE_HELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A screen's notice as its redraw paints it: none while a reader holds it
+/// (#1019). "Invalid input 'zz'" was drawn above "Are you sure you want to
+/// concede?", which read as though `concede` was the invalid input, and on
+/// the X prompt it was drawn again after the "no" had been accepted.
+fn unheld(notice: Option<&str>) -> Option<&str> {
+    notice.filter(|_| !NOTICE_HELD.with(std::cell::Cell::get))
+}
+
 /// A typed index, read as `str::parse::<usize>` reads it, except that a run
 /// of digits too long for a `usize` is `usize::MAX`: a number out of
 /// range, which the prompt answers with its range, not a syntax error
@@ -4046,8 +4061,9 @@ impl CliPlayer {
             // draws is the one m/p then turn: paging by the page measured
             // before the resize skipped rows or did nothing (#780).
             let input = Self::read_line_redrawing("", &|| {
+                let title = if unheld(Some("")).is_some() { title.as_str() } else { label };
                 *page.borrow_mut() = Self::render_paged(
-                    view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
+                    view, Some(&labels), Some(title), &view.display_log, "", None, menu_offset);
             });
             let page = page.take();
             match Self::parse_target_input(&input, options.len(), rows) {
@@ -5282,8 +5298,14 @@ impl CliPlayer {
         loop {
             let line = Self::read_line_redrawing_raw(prompt, redraw, on_edit);
             if !is_concede_word(&line) {
+                NOTICE_HELD.with(|h| h.set(false));
                 return line;
             }
+            // The screen's last refusal is not about this word: it is
+            // repainted without it before the question, and stays away
+            // after a "no" until the screen reads its next line (#1019).
+            NOTICE_HELD.with(|h| h.set(true));
+            redraw();
             // Declined: the screen asks its question again, as it was.
             Self::concede_if_confirmed(Some(redraw));
             redraw();
@@ -5549,10 +5571,14 @@ impl CliPlayer {
         loop {
             let line = Self::read_line_with_search_redrawing_raw(col, redraw);
             if !line.as_deref().is_some_and(is_concede_word) {
+                NOTICE_HELD.with(|h| h.set(false));
                 return line;
             }
             // The same word as at every other prompt (#676); declined, the
-            // menu is drawn again and asks again.
+            // menu is drawn again and asks again. Its last refusal is
+            // repainted away first (#1019).
+            NOTICE_HELD.with(|h| h.set(true));
+            redraw();
             Self::concede_if_confirmed(Some(redraw));
             redraw();
         }
@@ -6162,7 +6188,7 @@ impl CliPlayer {
             } else {
                 " INSPECT BATTLEFIELD".to_string()
             };
-            let footer = Self::viewer_footer(notice.borrow().clone(),
+            let footer = Self::viewer_footer(unheld(notice.borrow().as_deref()).map(str::to_string),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer, w);
@@ -6909,7 +6935,7 @@ return",
             } else {
                 format!(" YOUR DECK ({total_cards} cards)")
             };
-            let footer = Self::viewer_footer(notice.borrow().clone(),
+            let footer = Self::viewer_footer(unheld(notice.borrow().as_deref()).map(str::to_string),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer, w);
@@ -7874,7 +7900,7 @@ impl CliPlayer {
         let mut notice: Option<String> = None;
         let x: u32 = loop {
             paint(notice.as_deref());
-            let input = Self::read_line_live(&hint, &|| paint(notice.as_deref()), Some(&plan));
+            let input = Self::read_line_live(&hint, &|| paint(unheld(notice.as_deref())), Some(&plan));
             let input = input.trim();
             // Cancelling a spell's X prompt backs out of the whole cast —
             // the engine un-stashes it with nothing spent (issue #123).
@@ -8228,7 +8254,7 @@ impl CliPlayer {
             };
             let shown = notice.take();
             draw(shown.as_deref());
-            let input = Self::read_line_redrawing(&hint, &|| draw(shown.as_deref()));
+            let input = Self::read_line_redrawing(&hint, &|| draw(unheld(shown.as_deref())));
             match Self::parse_amount_input(&input, min, max) {
                 AmountInput::Amount(a) => {
                     let index = (a - min) as usize;
@@ -11905,6 +11931,18 @@ Wolves or Werewolves is prevented".into()];
             "You have no blockers.");
         assert_eq!(CliPlayer::parse_block_pair("0:0", 1, 0).unwrap_err(),
             "There are no attackers.");
+    }
+
+    /// #1019: while a reader holds the screen's notice — a typed `concede`
+    /// being asked about, or declined and not yet followed by a line the
+    /// screen reads — a redraw paints none.
+    #[test]
+    fn a_held_notice_is_not_repainted() {
+        assert_eq!(unheld(Some("Invalid input 'zz'")), Some("Invalid input 'zz'"));
+        NOTICE_HELD.with(|h| h.set(true));
+        assert_eq!(unheld(Some("Invalid input 'zz'")), None);
+        NOTICE_HELD.with(|h| h.set(false));
+        assert_eq!(unheld(None), None);
     }
 
     /// #1017: a number too long to read is out of range on the attack and
