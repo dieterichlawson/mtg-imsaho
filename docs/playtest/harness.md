@@ -1184,9 +1184,9 @@ say what your stub says.
   — **2026-11-13, the first night with reasons:** a re-ask's answer alone
   explains a `then` slip (a flashback card, a card a trigger will return),
   but not `action` missing under `ask_again: true`. The answer's
-  `thoughts` is the `THOUGHT` line before the `REASK`, and the night
-  record drops it (#1024). Until that is kept, reproduce such a re-ask
-  under a wrapper that drops a field, and read the two lines together
+  `thoughts` is the `THOUGHT` line before the `REASK`, which the night
+  record keeps beside the answer since #1024 ("It thought: …"), as it
+  does a pick's, a refused deck's and an unplayable sideboard answer's
 - H39 [proposed 2026-10-22, from #897 and #896] every field the format
   line leaves out, and every brace around the answer: for each field
   `answer_format` filters (`x-unread`, `maxItems: 0`, `x-only-value`, an

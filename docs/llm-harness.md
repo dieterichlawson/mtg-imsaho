@@ -363,8 +363,10 @@ header rows are the ones starting with a timestamp digit.
   JSON (`DEBUG`), and the option that was taken. Every backend records a
   `THOUGHT`: the Messages API reads it from the extended-thinking block,
   while Gemini and the `claude -p` seat — whose result object carries no
-  thinking block — ask for it in the JSON as a `thoughts` field and take it
-  out of the payload once captured.
+  thinking block — ask for it in the JSON as a `thoughts` field. The
+  `claude -p` seat takes it out of the payload once captured; the game's
+  Gemini seat leaves it in, so its `RESPONSE` and a `REASK` quote it too
+  (the night record takes it out again, #1024).
 - `FORMAT` — the lines a text-answering `claude -p` seat puts under the
   prompt ("Answer with only this JSON object: ..." and its fields), which
   the `PROMPT` record does not hold; one per call, so a retried call

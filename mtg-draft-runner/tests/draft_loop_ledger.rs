@@ -671,6 +671,15 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         format!("{at}REASK [Seat0]\t`action` is missing: {{\"ask_again\":true,\"then\":[]}}"),
         format!("{at}PROMPT [Seat1]\tDECLARE BLOCKERS"),
         format!("{at}REASK [Seat1]\tthat block is not offered: {{\"blocks\":[]}}"),
+        // #1024's review: a pick quotes its `thoughts` inside its answer,
+        // where a long one cut off `pick`; a refused deck and a sideboard
+        // answer that could not be played are no `REASK` lines at all.
+        format!("{at}REASK\t`pick` is 20; it must be 0 to 13: {{\"thoughts\": \"{}\", \"pick\": 20}}", "x".repeat(300)),
+        format!("{at}[Seat 2] DECK_RESPONSE attempt 1/3 (invalid: Deck has 39 cards)\t{{\"thoughts\": \"two colours\","),
+        "  \"lands\": {\"Forest\": 16}}".to_string(),
+        format!("{at}[Seat 2] DECK_RESPONSE attempt 2/3 (accepted)\t{{}}"),
+        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2\t{{\"thoughts\": \"bring in removal\", \"swap_in\": [\"Dead Weight\"]}}"),
+        format!("{at}[Seat 3] SIDEBOARD before game 2: kept the deck (the answer's could not be played: Dead Weight is not in your pool)\t"),
     ].join("\n") + "\n").unwrap();
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop");
     let out = Command::new("python3")
@@ -679,11 +688,17 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         .output().expect("python3 runs");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(h["reasks"], 2, "{h}");
+    assert_eq!(h["reasks"], 4, "{h}");
+    assert_eq!(h["harness_chose"], 1, "{h}");
+    let long = format!("{}\u{2026}", "x".repeat(239));
     assert_eq!(h["reask_reasons"], serde_json::json!([
+        {"who": "deck", "reason": "Deck has 39 cards", "count": 1, "answer": "{\"lands\":{\"Forest\":16}}", "thought": "two colours"},
         {"who": "game", "reason": "`action` is missing", "count": 1, "answer": "{\"ask_again\":true,\"then\":[]}",
          "thought": "I want to see the next card first, so I will be asked again."},
         {"who": "game", "reason": "that block is not offered", "count": 1, "answer": "{\"blocks\":[]}"},
+        {"who": "pick", "reason": "`pick` is 20; it must be 0 to 13", "count": 1, "answer": "{\"pick\":20}", "thought": long},
+        {"who": "sideboard", "reason": "Dead Weight is not in your pool", "count": 1,
+         "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal"},
     ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }

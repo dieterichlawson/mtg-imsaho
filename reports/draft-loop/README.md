@@ -46,8 +46,10 @@ commits what is here.
 5. `report.py` — `nights/DATE.md`, with what went wrong (re-asks, replies
    no answer could be read from, panics, substituted picks and decks)
    counted from the run's log, and each re-ask's reason with the first
-   answer it quoted, so a question that invited the wrong answer can be
-   told from a model's slip after the log is gone (#992).
+   answer it quoted and what the seat thought when it gave it, so a
+   question that invited the wrong answer can be told from a model's slip
+   after the log is gone (#992, #1024). A refused deck and a sideboard
+   answer that could not be played are recorded the same way.
 
 A night that stopped partway carries on from its snapshot when
 `night.sh` is run again with the same date; a date already in the ledger

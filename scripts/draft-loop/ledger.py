@@ -240,14 +240,30 @@ def log_health(path):
     # seat slipped or read the question as inviting it (#1024). The seat's
     # last THOUGHT since its last PROMPT goes with its re-ask.
     thoughts = {}
+    # A seat's last between-games answer, for the line that says it could
+    # not be played (#1024's review).
+    sideboard = {}
 
     def note(who, text, thought=None):
-        why, answer = split_reask(text)
+        why, answer = split_reask(text, cap=None)
+        # An answer that carries its own `thoughts` (a pick, a deck, a
+        # Gemini game seat's) has them taken out into `thought`, as a game
+        # seat's are: inside the answer they shared its cap and cut off the
+        # very field the re-ask was about (#1024's review).
+        try:
+            obj = json.loads(answer)
+        except ValueError:
+            obj = None
+        if isinstance(obj, dict) and isinstance(obj.get("thoughts"), str):
+            thought = thought or obj.pop("thoughts")
+            obj.pop("thoughts", None)
+            answer = json.dumps(obj, separators=(",", ":"))
+        why, answer = clip(why), clip(answer)
         key = (who, why)
         if key not in reasons:
             reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
             if thought:
-                reasons[key]["thought"] = thought if len(thought) <= 240 else thought[:239] + "\u2026"
+                reasons[key]["thought"] = clip(thought)
         reasons[key]["count"] += 1
 
     def settle(p):
@@ -255,6 +271,11 @@ def log_health(path):
         text = " ".join(l.strip() for l in lines).strip()
         if kind == "THOUGHT":
             thoughts[bracket] = text
+        elif kind == "SIDEBOARD_RESPONSE":
+            sideboard[bracket] = text
+        elif kind == "DECK":
+            # `who` carries the reason the deck was refused.
+            note("deck", f"{who}: {text}" if text else who)
         else:
             note(who, text, thoughts.get(bracket))
 
@@ -267,6 +288,25 @@ def log_health(path):
                 continue
             settle(pending)
             pending = None
+        # A deck answer the validator refused: the seat is asked again with
+        # the error, or, at its last attempt, the table builds the deck. Not
+        # a `REASK` line, so the record had neither (#1024's review).
+        if (m := re.search(r"\[Seat (\d+)\] DECK_RESPONSE attempt (\d+)/(\d+) \(invalid: (.*)\)\t(.*)", line)):
+            if m.group(2) == m.group(3):
+                h["harness_chose"] += 1
+            else:
+                h["reasks"] += 1
+            pending = ("DECK", m.group(4), m.group(1), [m.group(5)])
+            continue
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE [^\t]*\t(.*)", line)):
+            pending = ("SIDEBOARD_RESPONSE", None, m.group(1), [m.group(2)])
+            continue
+        # A between-games answer that could not be played: the deck is kept
+        # in the seat's place, and why is the record's to keep.
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD before game \d+: kept the deck \(the answer's could not be played: (.*)\)", line)):
+            h["harness_chose"] += 1
+            note("sideboard", f"{m.group(2)}: {sideboard.get(m.group(1), '')}".rstrip(": "))
+            continue
         if (m := re.search(r"\t(PROMPT|THOUGHT)( \[[^\]]*\])?(\t|$)(.*)", line)):
             if m.group(1) == "PROMPT":
                 thoughts.pop(m.group(2), None)
@@ -325,8 +365,14 @@ def split_reask(text, cap=240):
             return False
     m = next((c for c in cuts if parses(text[c.end():])), cuts[0] if cuts else None)
     why, answer = (text[:m.start()], text[m.end():]) if m else (text, "")
-    clip = lambda t: t if len(t) <= cap else t[:cap - 1] + "\u2026"
-    return clip(why), clip(answer)
+    if cap is None:
+        return why, answer
+    return clip(why, cap), clip(answer, cap)
+
+
+def clip(t, cap=240):
+    """A record field, capped: the record is kept in the repository."""
+    return t if len(t) <= cap else t[:cap - 1] + "\u2026"
 
 
 def usage_lines(path):
