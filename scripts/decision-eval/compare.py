@@ -140,6 +140,12 @@ def main():
         print(f"{name:<22} {n:>4} {pct(agree_s, n_s):>14} {pct(agree_a, n_a):>10} "
               f"{calls / max(n, 1):>6.2f} {out / max(n, 1):>8.0f} {think / max(n, 1):>9.0f} "
               f"{avg(sysb):>7.0f} {avg(pb):>9.0f} {fb:>8}")
+        # A position no row of which has an answer is not in `n` at all,
+        # so a config whose runs failed read as a small sample (#1009).
+        unanswered = sorted((pos, rs[-1]) for pos, rs in rows.items() if all(r["action"] is None for r in rs))
+        if unanswered:
+            pos, r = unanswered[0]
+            print(f"    {len(unanswered)} position(s) with no answer, e.g. {pos} (exit {r.get('exit')}): {r.get('error', '')}")
         for pos, got, want in disagreements[: args.show]:
             nm = namer(args.positions, pos)
             print(f"    {pos}{' (settled)' if pos in settled else ''}\n      got  {nm(got)}\n      ref  {nm(want)}")

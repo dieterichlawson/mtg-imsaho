@@ -449,6 +449,10 @@ last also moves every priority menu's engine actions down a row), and a
 resume under others says on
 stderr that its system prompt is not the live one; `replay.py` keeps that
 in the row as `unlike_live` and counts it in a WARN at the end of the run.
+A position the runner stopped on (a save it refused, a panic, an invariant
+break) has `exit` non-zero and the runner's reason in `error`, is said in a
+WARN as it happens and counted at the end, and `compare.py` counts the
+positions of a config with no answer (#1009).
 
 `--stop-after <N>` ends the run after the Nth decision either seat makes and
 prints `DECISION <n> p<seat> <action as JSON>`. With `--resume` it replays one
@@ -608,7 +612,9 @@ reference and rarities), and is asked again under that guide;
 A position whose system prompt the replay cannot make as it was live (kept
 before guides were recorded, or replayed under another history, answer
 format or set file) is said on stderr, and `draft-replay.py` keeps it in the row as
-`unlike_live` and counts it in a WARN at the end of the run (#920). The positions and reference
+`unlike_live` and counts it in a WARN at the end of the run (#920). A pick the
+replay stopped on has the binary's own "mtg-draft-replay: " line in `error`
+(#1009). The positions and reference
 behind phase 4 are kept in `reports/decision-eval/2026-10-20-draft/`.
 
 To draft *with* people — a hosted table where humans join from a browser

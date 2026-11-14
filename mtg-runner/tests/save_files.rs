@@ -520,4 +520,23 @@ fn replay_py_keeps_the_runners_reason_for_a_position_it_could_not_resume() {
     assert_ne!(row["exit"], serde_json::json!(0), "{row}");
     let error = row["error"].as_str().unwrap_or_else(|| panic!("the row says why: {row}"));
     assert!(error.starts_with("Error: ") && error.contains("0001.save"), "{row}");
+
+    // The other ways the runner stops, from #1009's review: a panic (no
+    // hook here, so the last line is the backtrace footer), an invariant
+    // break and an invalid save, whose reasons are the lines after the
+    // opener.
+    let shapes = r#"
+import sys; sys.path.insert(0, "scripts/decision-eval")
+from replay import reason
+assert reason("WARN x\nthread 'main' (4) panicked at a.rs:1:1:\nboom\nstack backtrace:\nnote: Some details are omitted") \
+    == "thread 'main' (4) panicked at a.rs:1:1: boom"
+assert reason("INVARIANT VIOLATION at action 3 (turn 1):\n  - two lands\nlast game log entries:\n  | x\nTokens: 0") \
+    == "INVARIANT VIOLATION at action 3 (turn 1): - two lands"
+assert reason("Error: save file 'p' describes an invalid game state:\n  - no library\nTokens: 0") \
+    == "Error: save file 'p' describes an invalid game state: - no library"
+assert reason("something else\nlast") == "last"
+"#;
+    let py = std::process::Command::new("python3").current_dir(repo_root()).args(["-I", "-c", shapes])
+        .output().expect("python3 runs");
+    assert!(py.status.success(), "{}", String::from_utf8_lossy(&py.stderr));
 }

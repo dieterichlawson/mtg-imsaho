@@ -15,7 +15,8 @@ tokens every call of the decision recorded (a cast and its target are two
 calls), and the bytes of the system prompt and first prompt. A position
 already answered in the file is skipped, so an interrupted run picks up
 where it stopped; one that failed or that the harness answered in the
-seat's place (`"fallback": true`) is asked again. `compare.py` reads the files. A position the runner says it
+seat's place (`"fallback": true`) is asked again; a row whose runner
+failed carries the runner's reason in `error`. `compare.py` reads the files. A position the runner says it
 resumed under another system prompt than the live one (another
 MTG_LLM_HISTORY, MTG_CLAUDE_CODE_ANSWERS or MTG_LLM_PASS_UNTIL) carries
 `unlike_live` in its row, and the run ends with a WARN counting them.
@@ -88,6 +89,31 @@ def substituted(log):
     return bool(SUBSTITUTED.search(log))
 
 
+# The lines mtg-runner opens a fatal stop with: `die` ("Error: "), a signal
+# ("Stopped: "), an invariant break under --check-invariants, and a panic.
+FATAL_OPENERS = re.compile(r"^(Error: |Stopped: |INVARIANT VIOLATION )|^thread '[^']*'.* panicked at ")
+
+
+def reason(stderr):
+    """Why the runner stopped, from its stderr: the last line that opens a
+    fatal stop, with the lines that finish it — a panic's message, the
+    `  - ` list of an invalid save or an invariant break — else the last
+    line. The row kept only the exit status, and the last line is the token
+    usage or a backtrace footer, never the reason (#1009, the game twin of
+    draft-replay.py's fix)."""
+    lines = stderr.strip().splitlines()
+    opens = [i for i, l in enumerate(lines) if FATAL_OPENERS.match(l)]
+    if not opens:
+        return (lines or [""])[-1][:300]
+    i = opens[-1]
+    said = [lines[i]]
+    if lines[i].startswith("thread "):
+        said += lines[i + 1:i + 2]
+    else:
+        said += [l.strip() for l in lines[i + 1:] if l.startswith("  - ")][:5]
+    return " ".join(said)[:300]
+
+
 def run_one(args, position, sample, logdir):
     base = os.path.basename(position)[: -len(".save")]
     log = os.path.join(logdir, f"{base}.s{sample}.log")
@@ -108,13 +134,7 @@ def run_one(args, position, sample, logdir):
         # A position resumed under another system prompt than the live one
         # (#920's game twin): said with exit 0, and kept in the row.
         unlike = [l.split(UNLIKE, 1)[1] for l in out.stderr.splitlines() if UNLIKE in l]
-        # Why a position has no answer, which is otherwise nowhere: the
-        # runner says it on stderr ("Error: ..." from `die`, "Stopped: ..."
-        # on a signal) and then prints its token usage, so the last line is
-        # not the reason. The row kept only the exit status (#1009, the
-        # game twin of draft-replay.py's fix).
-        said = [l for l in out.stderr.splitlines() if l.startswith(("Error: ", "Stopped: "))]
-        err = (said or out.stderr.strip().splitlines() or [""])[-1][:300] if rc else ""
+        err = reason(out.stderr) if rc else ""
     except subprocess.TimeoutExpired:
         stdout, rc, unlike, err = "", "timeout", [], ""
     m = re.search(r"^DECISION 1 p(\d) (.*)$", stdout, re.M)
@@ -178,6 +198,7 @@ def main():
     with cf.ThreadPoolExecutor(args.jobs) as pool, open(result_path, "a") as out:
         futures = [pool.submit(run_one, args, p, s, logdir) for p, s in todo]
         unlike = {}
+        failed = 0
         for n, f in enumerate(cf.as_completed(futures), 1):
             r = f.result()
             for why in r.get("unlike_live", []):
@@ -185,10 +206,19 @@ def main():
                     print(f"{args.name}: WARN position {r['position']}'s system prompt is not the live one: {why}",
                           file=sys.stderr)
                 unlike[why] = unlike.get(why, 0) + 1
+            # A position with no answer is said as it happens, with why,
+            # and counted at the end: the row alone was easy to miss (#1009).
+            if r.get("exit") != 0:
+                failed += 1
+                print(f"{args.name}: WARN position {r['position']} has no answer (exit {r['exit']}): {r.get('error', '')}",
+                      file=sys.stderr)
             out.write(json.dumps(r) + "\n")
             out.flush()
             if n % 10 == 0 or n == len(futures):
                 print(f"{args.name}: {n}/{len(futures)}", file=sys.stderr)
+    if failed:
+        print(f"{args.name}: WARN {failed} {'decision has' if failed == 1 else 'decisions have'} no answer; "
+              f"each row's `error` says why, and a rerun asks them again", file=sys.stderr)
     for why, count in unlike.items():
         print(f"{args.name}: WARN {count} {'decision was' if count == 1 else 'decisions were'} asked under another system prompt than the live one: {why}",
               file=sys.stderr)
