@@ -91,10 +91,14 @@ reason, and the page goes back to what the last view describes.
 - `src/draft/main.ts` — the socket, the state, the keys, and the hooks.
 
 Drafting: click a card to read it, click it again or press Enter to
-pick it; digits and arrows move the selection, Esc clears it. Building:
-click a card to move it between main and side, step the basics, and
-press Ready when the count line reaches 40 (the button says why it is
-disabled until then). Playing: the game link is a link to the game page.
+pick it; digits and arrows move the selection (`1`-`9` are the first
+nine cards, `0` the tenth), Esc clears it. Building: click a card to
+move it between main and side, or move the cursor with the arrows and
+press Enter to move the card under it (Esc clears the cursor); step the
+basics, and press Ready when the count line reaches 40 (the button says
+why it is disabled until then). The same keys build the deck between
+the games of a match. Esc first dismisses a refusal or a notice, when
+one is up. Playing: the game link is a link to the game page.
 
 `window.mtgDraft` holds the state, the last view and every message the
 page sent (`.sent`); `window.mtgDraftDebug.stage(view)` renders a view
