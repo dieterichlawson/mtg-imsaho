@@ -700,7 +700,8 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         {"who": "game", "reason": "that block is not offered", "count": 1, "answer": "{\"blocks\":[]}"},
         {"who": "pick", "reason": "`pick` is 20; it must be 0 to 13", "count": 1, "answer": "{\"pick\":20}", "thought": long},
         {"who": "sideboard", "reason": "Dead Weight is not in your pool", "count": 1,
-         "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal"},
+         "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal",
+         "settled": "not asked again: the deck was kept"},
     ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }

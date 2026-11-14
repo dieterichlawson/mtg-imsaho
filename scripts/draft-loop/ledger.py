@@ -244,7 +244,7 @@ def log_health(path):
     # not be played (#1024's review).
     sideboard = {}
 
-    def note(who, text, thought=None):
+    def note(who, text, thought=None, settled=None):
         why, answer = split_reask(text, cap=None)
         # An answer that carries its own `thoughts` (a pick, a deck, a
         # Gemini game seat's) has them taken out into `thought`, as a game
@@ -264,6 +264,10 @@ def log_health(path):
             reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
             if thought:
                 reasons[key]["thought"] = clip(thought)
+            # Recorded with the re-asks, but not asked again: what the
+            # table did instead, so the list adds up to the count above it.
+            if settled:
+                reasons[key]["settled"] = settled
         reasons[key]["count"] += 1
 
     def settle(p):
@@ -274,8 +278,10 @@ def log_health(path):
         elif kind == "SIDEBOARD_RESPONSE":
             sideboard[bracket] = text
         elif kind == "DECK":
-            # `who` carries the reason the deck was refused.
-            note("deck", f"{who}: {text}" if text else who)
+            # `who` carries the reason the deck was refused, and
+            # `bracket` whether it was the last attempt.
+            note("deck", f"{who}: {text}" if text else who,
+                 settled="not asked again: the table built the deck" if bracket == "last" else None)
         else:
             note(who, text, thoughts.get(bracket))
 
@@ -296,7 +302,7 @@ def log_health(path):
             # `fallback_deck` already counts as a deck substituted.
             if m.group(2) != m.group(3):
                 h["reasks"] += 1
-            pending = ("DECK", m.group(4), m.group(1), [m.group(5)])
+            pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(1), [m.group(5)])
             continue
         if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE [^\t]*\t(.*)", line)):
             pending = ("SIDEBOARD_RESPONSE", None, m.group(1), [m.group(2)])
@@ -306,7 +312,8 @@ def log_health(path):
         if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD before game \d+: kept the deck \(the answer's could not be played: (.*)\)", line)):
             # Its reason, not a count: "the harness chose" counts game
             # answers, and this is the deck kept between games.
-            note("sideboard", f"{m.group(2)}: {sideboard.get(m.group(1), '')}".rstrip(": "))
+            note("sideboard", f"{m.group(2)}: {sideboard.get(m.group(1), '')}".rstrip(": "),
+                 settled="not asked again: the deck was kept")
             continue
         if (m := re.search(r"\t(PROMPT|THOUGHT)( \[[^\]]*\])?(\t|$)(.*)", line)):
             if m.group(1) == "PROMPT":
