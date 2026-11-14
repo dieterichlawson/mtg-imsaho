@@ -449,16 +449,16 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
             }
             send_edit(v, build)
         }
-        // A number too long to read is past the end of the pack, as 9 is in
-        // a pack of two, not "'999…'? type help" (#1017). The server says
-        // it of a number it can read; this one never reaches it.
-        word if all_digits(word) && word.parse::<usize>().is_err()
-            && phase == "drafting" && view.is_some_and(|v| v["pack"]["cards"].is_array()) => {
-            let n = view.and_then(|v| v["pack"]["cards"].as_array()).map_or(0, Vec::len);
-            Command::Print(format!("card '{word}' is past the end of the pack ({})", crate::count(n, "card", "cards")))
-        }
-        word => match (word.parse::<usize>(), view) {
-            (Ok(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
+        // A number too long to read takes the number arms, as 9 does, not
+        // "'999…'? type help" (#1017): past the end of the pack, said here
+        // since the server never sees it; no pack; not drafting.
+        word => match (read_number(word), view) {
+            (Some(usize::MAX), Some(v)) if phase == "drafting" && word.parse::<usize>().is_err()
+                && v["pack"]["cards"].is_array() => {
+                let n = v["pack"]["cards"].as_array().map_or(0, Vec::len);
+                Command::Print(format!("card '{word}' is past the end of the pack ({})", crate::count(n, "card", "cards")))
+            }
+            (Some(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
                 Some(_) if early.is_some() => Command::Print(format!(
                     "{index} was not picked: it was typed {} this pack came up; type it again to pick from this pack",
                     match early.map(|e| PICK_GRACE.saturating_sub(e)) {
@@ -468,7 +468,7 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
                 Some(id) => Command::Send(vec![serde_json::json!({"type": "pick", "pack_id": id, "index": index})]),
                 None => Command::Print("no pack in front of you right now".into()),
             },
-            (Ok(_), _) => Command::Print(format!("a number picks a card while drafting (phase: {phase})")),
+            (Some(_), _) => Command::Print(format!("a number picks a card while drafting (phase: {phase})")),
             _ => Command::Print(format!("'{word}'? type help")),
         },
     }
@@ -848,6 +848,11 @@ mod tests {
         assert_eq!(print(&format!("lands plains={BIG}"), &v),
             format!("'{BIG}' is more than the server allows: at most 200 of one basic"));
         assert_eq!(print("lands plains=x", &v), "'x' is not a count");
+        // Every other number arm takes it too (#1017's review).
+        assert_eq!(print(BIG, &v), "a number picks a card while drafting (phase: building)");
+        v["phase"] = "drafting".into();
+        v["pack"] = Value::Null;
+        assert_eq!(print(BIG, &v), "no pack in front of you right now");
     }
 
     #[test]
@@ -1373,8 +1378,15 @@ fn pool_listing(v: &Value) -> String {
 /// read at all (#889).
 /// Whether `s` is a number as typed: one or more ASCII digits, whether or
 /// not it fits a `usize`.
-fn all_digits(s: &str) -> bool {
+pub(crate) fn all_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// A typed number: `str::parse` reads it, and a run of digits too long for
+/// a `usize` is `usize::MAX`, a number out of range rather than a word
+/// (#1017). A word is `None`.
+pub(crate) fn read_number(s: &str) -> Option<usize> {
+    s.parse::<usize>().ok().or_else(|| all_digits(s).then_some(usize::MAX))
 }
 
 fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {

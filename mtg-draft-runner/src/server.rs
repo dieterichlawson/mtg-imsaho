@@ -638,8 +638,7 @@ fn host_loop(shared: &Arc<Shared>) {
                 }
             }
             Some("kick") => {
-                let result = words.get(1).and_then(|n| n.parse::<usize>().ok())
-                    .ok_or_else(|| "kick takes a seat number".to_string())
+                let result = kick_seat(words.get(1).copied())
                     .and_then(|seat| {
                         // The host's own seat is at this keyboard, and a kick
                         // is for good: a mistyped seat number ended the
@@ -1399,8 +1398,27 @@ fn pump(
     }
 }
 
+/// The seat a console `kick` names. A seat number too long to read is no
+/// seat, as 9 is at a table of two, not "kick takes a seat number" (#1017).
+fn kick_seat(word: Option<&str>) -> Result<usize, String> {
+    match word.map(|n| (n, crate::client::read_number(n))) {
+        Some((n, Some(usize::MAX))) if n.parse::<usize>().is_err() => Err(format!("there is no seat '{n}'")),
+        Some((_, Some(seat))) => Ok(seat),
+        _ => Err("kick takes a seat number".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    /// #1017: a seat number too long to read is no seat, said as typed.
+    #[test]
+    fn kick_names_a_seat_number_too_long_to_read_as_no_seat() {
+        assert_eq!(super::kick_seat(Some("1")), Ok(1));
+        assert_eq!(super::kick_seat(Some("99999999999999999999")), Err("there is no seat '99999999999999999999'".to_string()));
+        assert_eq!(super::kick_seat(Some("bo")), Err("kick takes a seat number".to_string()));
+        assert_eq!(super::kick_seat(None), Err("kick takes a seat number".to_string()));
+    }
+
     use super::*;
 
     /// #895: after `closed` no view goes out. A view sent while the sockets
