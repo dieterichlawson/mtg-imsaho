@@ -334,6 +334,8 @@ export interface ResolutionPayload {
   fixed?: Target[];
   source_id?: ObjectId;
   cards?: ObjectId[];
+  /** ChooseFromLookedAt: every card looked at, offered or not (#1004). */
+  looked_at?: ObjectId[];
   player?: PlayerId;
   [k: string]: unknown;
 }

@@ -746,7 +746,7 @@ function beginResolution(state, ui, legal, actions, send) {
         // offers one of each card among them, and the prompt carries all of
         // them: a second looked-at Forest is the same answer as the first.
         case "ChooseFromLookedAt":
-            return beginPickFromActions(state, ui, actions, desc, send, false, (rp.looked_at ?? []));
+            return beginPickFromActions(state, ui, actions, desc, send, false, rp.looked_at ?? []);
         case "ChooseCardName": {
             // Every nonland name in the pool, most of them cards in no zone: each
             // row names its card, which the view carries for this question, so
