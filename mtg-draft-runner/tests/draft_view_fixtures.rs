@@ -885,8 +885,15 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     // page and client, not only the host; the one whose match is over is
     // told nothing.
     let told = jv(&c, 1)["notice"].as_str().unwrap_or_default().to_string();
-    assert!(told.contains("played again from its first game") && told.contains("seat 2"), "{told:?}");
+    assert!(told.contains("starts from its first game") && told.contains("does not count") && told.contains("seat 2"), "{told:?}");
     assert!(jv(&c, 0)["notice"].is_null(), "seat 0's match is finished: {}", jv(&c, 0)["notice"]);
+    // A match with a kicked seat in it is a forfeit, not a game to play:
+    // neither side is told it starts over (#1029's review).
+    let mut kicked = through_json(a.snapshot());
+    kicked.seats[1].kicked = true;
+    let (mut e, _) = lobby(seats());
+    e.restore(&kicked).unwrap();
+    assert!(jv(&e, 1)["notice"].as_str().is_none_or(|n| !n.contains("first game")), "{}", jv(&e, 1)["notice"]);
     assert_eq!(c.begin_tournament(), vec![(2, 1, 2)], "and what the tournament thread is handed");
     for seat in 0..POD {
         let (va, vc) = (jv(&a, seat), jv(&c, seat));

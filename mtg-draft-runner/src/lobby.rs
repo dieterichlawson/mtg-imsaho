@@ -2354,11 +2354,22 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
         // The host's terminal names the matches played again (#999); the
         // people playing them were told nothing, and a 1-0 restarted from
         // game 1 on their page or client with no word why (#1029).
+        //
+        // Worded as the host's line is since #999: the snapshot keeps only
+        // finished matches, so whether this one had begun is not known,
+        // and "played again" would be false of a round that never started.
+        // A match with a kicked or given-up seat in it is a forfeit, not a
+        // game to play, and says nothing (as every other notice leaves a
+        // kicked seat alone).
         for &(_, a, b) in &to_play {
+            if [a, b].iter().any(|&s| self.seats[s].kicked || self.seats[s].gave_up) {
+                continue;
+            }
             for (me, them) in [(a, b), (b, a)] {
                 if self.seats[me].is_human() && self.seats[me].notice.is_none() {
                     self.seats[me].notice = Some(format!(
-                        "The host restarted the table: your match against {} is played again from its first game.",
+                        "The host restarted the table: your match against {} starts from its first game; \
+                         a game of it played before the restart does not count.",
                         self.who(them)));
                 }
             }
