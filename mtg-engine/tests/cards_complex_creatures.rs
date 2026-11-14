@@ -884,9 +884,10 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put creature cards in graveyard.
-    for _ in 0..3 {
+    for name in ["Ashmouth Hound", "Ashmouth Hound", "Darkthicket Wolf"] {
         let c = ready_creature(&mut state, P0, 2, 2);
         state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
+        state.get_object_mut(c).unwrap().name = name.into();
         state.move_object(c, Zone::Graveyard, &reg);
     }
 
@@ -909,6 +910,15 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
         .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.power.is_some())
         .count();
     assert_eq!(hand_creatures, 3, "Should return all creature cards from graveyard to hand");
+    // #1028: the cards left a public zone, and the line names them.
+    let names: Vec<String> = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.power.is_some())
+        .map(|o| o.name.clone()).collect();
+    let line = state.game_log.iter().map(|e| e.message.as_str())
+        .find(|m| m.starts_with("Creeping Renaissance: chose"))
+        .expect("the spell's line");
+    assert_eq!(names.len(), 3);
+    assert!(line.ends_with("returned 3 cards to hand: Ashmouth Hound x2, Darkthicket Wolf"), "{line}");
 }
 
 #[test]

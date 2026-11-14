@@ -74,11 +74,21 @@ impl CardBehavior for CreepingRenaissance {
             .map(|o| o.id)
             .filter(|id| state.is_card(*id) && state.has_card_type(*id, card_type, registry))
             .collect();
-        let count = to_return.len();
+        // The cards leave a public zone (CR 400.2), so the line names them,
+        // as a mill and a graveyard exile do (#1001): a count alone told the
+        // opponent, and you a turn later, how many came back but not which
+        // (#1028).
+        let names: Vec<String> = to_return.iter()
+            .map(|&id| state.get_object(id).map(|o| o.name.clone()).unwrap_or_default())
+            .collect();
         for id in to_return {
             state.move_object(id, Zone::Hand, registry);
         }
+        let returned = match names.len() {
+            0 => "returned no cards to hand".to_string(),
+            n => format!("returned {n} card{} to hand: {}", if n == 1 { "" } else { "s" }, crate::engine::card_list(&names)),
+        };
         state.log(crate::state::LogLevel::Event,
-            format!("Creeping Renaissance: chose {chosen_type}, returned {count} card(s) to hand"));
+            format!("Creeping Renaissance: chose {chosen_type}, {returned}"));
     }
 }
