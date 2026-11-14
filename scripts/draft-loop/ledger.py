@@ -292,9 +292,9 @@ def log_health(path):
         # the error, or, at its last attempt, the table builds the deck. Not
         # a `REASK` line, so the record had neither (#1024's review).
         if (m := re.search(r"\[Seat (\d+)\] DECK_RESPONSE attempt (\d+)/(\d+) \(invalid: (.*)\)\t(.*)", line)):
-            if m.group(2) == m.group(3):
-                h["harness_chose"] += 1
-            else:
+            # The last attempt's deck is the fallback, which the seat's
+            # `fallback_deck` already counts as a deck substituted.
+            if m.group(2) != m.group(3):
                 h["reasks"] += 1
             pending = ("DECK", m.group(4), m.group(1), [m.group(5)])
             continue
@@ -304,7 +304,8 @@ def log_health(path):
         # A between-games answer that could not be played: the deck is kept
         # in the seat's place, and why is the record's to keep.
         if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD before game \d+: kept the deck \(the answer's could not be played: (.*)\)", line)):
-            h["harness_chose"] += 1
+            # Its reason, not a count: "the harness chose" counts game
+            # answers, and this is the deck kept between games.
             note("sideboard", f"{m.group(2)}: {sideboard.get(m.group(1), '')}".rstrip(": "))
             continue
         if (m := re.search(r"\t(PROMPT|THOUGHT)( \[[^\]]*\])?(\t|$)(.*)", line)):

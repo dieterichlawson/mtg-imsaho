@@ -689,7 +689,9 @@ fn a_game_reask_keeps_what_the_seat_thought() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(h["reasks"], 4, "{h}");
-    assert_eq!(h["harness_chose"], 1, "{h}");
+    // Neither a refused deck nor an unplayable sideboard answer is a game
+    // answer the harness chose (#1024's second review).
+    assert_eq!(h["harness_chose"], 0, "{h}");
     let long = format!("{}\u{2026}", "x".repeat(239));
     assert_eq!(h["reask_reasons"], serde_json::json!([
         {"who": "deck", "reason": "Deck has 39 cards", "count": 1, "answer": "{\"lands\":{\"Forest\":16}}", "thought": "two colours"},
