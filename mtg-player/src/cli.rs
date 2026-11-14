@@ -1556,28 +1556,42 @@ impl CliPlayer {
         out
     }
 
+    /// Wrap `text` to rows of at most `width` display COLUMNS, at spaces
+    /// where it can. It counted characters, so a quoted run of wide
+    /// characters — 20 x 一 typed at the mulligan — made a row of 96
+    /// columns in a 57-column pane, printed over the border into the CARDS
+    /// pane; every caller (the prompt block, notices, rule titles) took it
+    /// on trust (#1027, the root of #1020's escape).
     fn word_wrap(text: &str, width: usize) -> Vec<String> {
         if width == 0 { return vec![text.to_string()]; }
+        // The byte end of the longest prefix of `s` at most `cols` wide,
+        // and never empty: one character wider than the row is cut alone
+        // rather than looped on.
+        let prefix_end = |s: &str, cols: usize| -> usize {
+            let mut used = 0;
+            for (i, ch) in s.char_indices() {
+                used += col_width(ch);
+                if used > cols {
+                    return if i == 0 { ch.len_utf8() } else { i };
+                }
+            }
+            s.len()
+        };
         let mut lines = Vec::new();
         let mut remaining = text;
         while !remaining.is_empty() {
-            let char_count = remaining.chars().count();
-            if char_count <= width {
+            if str_cols(remaining) <= width {
                 lines.push(remaining.to_string());
                 break;
             }
-            // Find the byte index at `width` chars.
-            let hard_end = remaining.char_indices()
-                .nth(width)
-                .map_or(remaining.len(), |(i, _)| i);
+            let hard_end = prefix_end(remaining, width);
             // Look for the last space within the width — including a space
             // just past it, which ends a row of exactly `width`. Without it
             // "… on Olivia Voldaren (#101)" at 39 columns broke before
             // "Voldaren", which fitted (#705).
-            let probe_end = remaining.char_indices()
-                .nth(width + 1)
-                .map_or(remaining.len(), |(i, _)| i);
+            let probe_end = prefix_end(remaining, width + 1);
             let break_at = remaining[..probe_end].rfind(' ')
+                .filter(|&at| str_cols(&remaining[..at]) <= width)
                 .unwrap_or(hard_end); // no space — hard break
             if break_at == 0 {
                 // Edge case: space at position 0 or single huge word.
@@ -4913,7 +4927,7 @@ impl CliPlayer {
     /// middle so the instruction after it is kept whole (#1020).
     fn notice_rows(msg: &str, width: usize, rows: usize) -> Vec<String> {
         // Every row keeps the message's indent, and is measured in columns:
-        // word_wrap counts characters, and a typed wide character in a
+        // word_wrap counted characters (#1027 made it columns), and a typed wide character in a
         // quoted input would run a row past the border (#1020's review).
         let wrapped = Self::wrap_indented(msg, width);
         if wrapped.len() <= rows.max(1) && wrapped.iter().all(|l| str_cols(l) <= width && !l.trim().is_empty()) {
@@ -11937,6 +11951,23 @@ Wolves or Werewolves is prevented".into()];
             "You have no blockers.");
         assert_eq!(CliPlayer::parse_block_pair("0:0", 1, 0).unwrap_err(),
             "There are no attackers.");
+    }
+
+    /// #1027: rows are measured in display columns, so a quoted run of wide
+    /// characters wraps inside its pane instead of printing over the
+    /// border; ASCII wraps exactly as before, at spaces.
+    #[test]
+    fn word_wrap_measures_rows_in_columns() {
+        let wide = format!("Invalid input '{}' \u{2014} enter a number 0-1", "\u{4e00}".repeat(20));
+        let rows = CliPlayer::word_wrap(&wide, 57);
+        assert!(rows.iter().all(|r| str_cols(r) <= 57), "{rows:?}");
+        assert_eq!(rows.concat().replace(' ', ""), wide.replace(' ', ""), "nothing lost: {rows:?}");
+        // A run of wide characters with no space is cut between characters,
+        // never mid-character, and a character wider than the row is cut alone.
+        let run = "\u{4e00}".repeat(10);
+        assert_eq!(CliPlayer::word_wrap(&run, 5), vec!["\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}"]);
+        assert_eq!(CliPlayer::word_wrap("\u{4e00}a", 1), vec!["\u{4e00}", "a"]);
+        assert_eq!(CliPlayer::word_wrap("the quick brown fox", 9), vec!["the quick", "brown fox"]);
     }
 
     /// #1019: while a reader holds the screen's notice — a typed `concede`
