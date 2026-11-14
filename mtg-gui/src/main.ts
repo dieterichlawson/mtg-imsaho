@@ -82,7 +82,7 @@ function connect(): void {
   where.protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(where.href);
   state.ws = ws;
-  ws.onopen = () => { state.connected = true; sendRaw({ type: "hello" }); draw(); };
+  ws.onopen = () => { state.connected = true; settingsKnown = false; echoesDue = 0; sendRaw({ type: "hello" }); draw(); };
   // A table the host has closed has nothing to reconnect to (#824).
   ws.onclose = () => { state.connected = false; draw(); if (!state.closed) setTimeout(connect, 1000); };
   ws.onerror = () => { ws.close(); };
@@ -190,8 +190,13 @@ function onMessage(msg: ServerMessage): void {
       // — …", "Stopping at every priority." — may say the opposite, and was
       // carried onto the next question as though it were still true
       // (#1012's review).
+      const fromHere = echoesDue > 0;
+      if (fromHere) echoesDue--;
+      const announce = settingsKnown && !fromHere;
+      settingsKnown = true;
       const autoWas = state.autoPass !== null, autoNow = msg.auto_pass_since_turn !== null;
-      if (autoWas !== autoNow) state.notice = autoNow ? "Auto-pass was turned on in another tab." : "Auto-pass was turned off in another tab.";
+      if (!announce) { /* the seat's standing state, or this page's own echo */ }
+      else if (autoWas !== autoNow) state.notice = autoNow ? "Auto-pass was turned on in another tab." : "Auto-pass was turned off in another tab.";
       else if (!!state.stopAtPass !== msg.stop_at_pass) state.notice = msg.stop_at_pass
         ? "Another tab: stopping at every priority." : "Another tab: passing automatically when there is nothing to do.";
       state.stopAtPass = msg.stop_at_pass;
@@ -326,7 +331,16 @@ function toggleAutoPass(): void {
  * The seat holds the setting and echoes it to every page, including this
  * one, which is also what a page joining later is handed on `hello`.
  */
+/** Whether this connection has been told the seat's settings yet: the
+ *  first `settings` after a hello is the seat's standing state, not a
+ *  change another tab made (#1012's review). */
+let settingsKnown = false;
+/** This page's own settings sent and not yet echoed back: the echo is not
+ *  another tab's change, however fast the key was pressed twice. */
+let echoesDue = 0;
+
 function pushSettings(): void {
+  echoesDue++;
   sendRaw({ type: "settings", stop_at_pass: !!state.stopAtPass,
     auto_pass_since_turn: state.autoPass ? state.autoPass.sinceTurn : null });
 }

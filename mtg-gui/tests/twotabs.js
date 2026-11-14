@@ -69,6 +69,14 @@ async function main() {
       if (!want.test(said || "")) fail(`settings: s turned ${what} in one tab, and the other said ${JSON.stringify(said)}`);
       else ok(`settings: the other tab says "${said}"`);
     }
+    // A tab that opens on a seat already stopping is told the seat's
+    // settings on hello; that is no change made in another tab.
+    const C = await openTab(browser, url);
+    await C.waitForTimeout(600);
+    const cSaid = await C.evaluate(() => window.mtg.notice);
+    if (cSaid && /another tab/i.test(cSaid)) fail(`settings: a tab just opened was told "${cSaid}"`);
+    else ok(`settings: a tab just opened says ${JSON.stringify(cSaid)}`);
+    await C.close();
 
     // Keep, then pass the main phase. Every priority after that is one the
     // engine offers only Pass/Concede at — the ones `s` exists to stop at.
