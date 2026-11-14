@@ -9783,6 +9783,12 @@ impl CliPlayer {
                         DisplayEntry::Direct(action_idx) => {
                             let action = &legal_actions[*action_idx];
                             if matches!(action, Action::Concede) {
+                                // The menu as its reader redraws it, without
+                                // the last refusal: the question is not about
+                                // that input (#1019's review — the row, as
+                                // the typed word already was).
+                                Self::render_paged(view, Some(&display_labels), legal.context.as_deref(),
+                                    &view.display_log, &self.card_filter, pass_label, menu_offset);
                                 let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
                                 if !Self::confirm_yn("  Are you sure you want to concede? (y/n)> ", Some(&|| {
                                     Self::render_paged(view, Some(&display_labels), legal.context.as_deref(),
