@@ -2351,6 +2351,18 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
         }
         self.run_auto_seats();
         self.events.clear();
+        // The host's terminal names the matches played again (#999); the
+        // people playing them were told nothing, and a 1-0 restarted from
+        // game 1 on their page or client with no word why (#1029).
+        for &(_, a, b) in &to_play {
+            for (me, them) in [(a, b), (b, a)] {
+                if self.seats[me].is_human() && self.seats[me].notice.is_none() {
+                    self.seats[me].notice = Some(format!(
+                        "The host restarted the table: your match against {} is played again from its first game.",
+                        self.who(them)));
+                }
+            }
+        }
         Ok(to_play)
     }
 

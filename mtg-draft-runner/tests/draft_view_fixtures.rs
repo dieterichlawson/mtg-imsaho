@@ -834,6 +834,7 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     assert_eq!(b.ai_notes(2).as_deref(), Some("taking blue"));
     assert_eq!(b.phase(), Phase::Drafting);
     assert!(b.take_events().is_empty(), "the replay says nothing on the terminal");
+    assert!((0..POD).all(|seat| jv(&b, seat)["notice"].is_null()), "mid-draft, no match is played again");
 
     // Both carry on alike: to the end of the draft, the decks, round 1 and
     // half of round 2.
@@ -880,6 +881,12 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     let to_play = c.restore(&through_json(a.snapshot())).unwrap();
     assert_eq!(c.phase(), Phase::Playing);
     assert_eq!(to_play, vec![(2, 1, 2)], "the match that was in progress");
+    // #1029: the person whose match is played again is told so on their
+    // page and client, not only the host; the one whose match is over is
+    // told nothing.
+    let told = jv(&c, 1)["notice"].as_str().unwrap_or_default().to_string();
+    assert!(told.contains("played again from its first game") && told.contains("seat 2"), "{told:?}");
+    assert!(jv(&c, 0)["notice"].is_null(), "seat 0's match is finished: {}", jv(&c, 0)["notice"]);
     assert_eq!(c.begin_tournament(), vec![(2, 1, 2)], "and what the tournament thread is handed");
     for seat in 0..POD {
         let (va, vc) = (jv(&a, seat), jv(&c, seat));
