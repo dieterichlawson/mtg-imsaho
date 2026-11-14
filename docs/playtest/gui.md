@@ -110,6 +110,18 @@ random game happened to reach.
   game, and for the longest run ask what the player is told happened in it.
   Then press `s` (stop at every priority) and confirm the page stops, says so,
   and that `f` and `s` compose sanely rather than fighting.
+  [2026-11-14] First run, 10 games. **`f` and `s` compose**: with `s` on,
+  every pass-only priority is drawn, and `f` passes them until its promised
+  stop. Each toggle says what it did. **The band's headline after a run is
+  the weak point** (#1026): `bandHeadline` takes an author-less line (`──
+  Turn N ──`, `X resolved`) as the opponent's news, so 34 of 94 long-run
+  frames hid the opponent's spell behind "+N". The method to copy: wrap
+  `window.mtgDebug.trace.push` in the page so each shown frame records
+  `display_log.slice(window.mtg.logSince)`. It is called after `logSince` is
+  set, so the slice is exactly the interval. Then replay `bandLogLines` from
+  `dist/render.js` in node (stub `Image` and `document`, as
+  `tests/auto_pass.mjs` does) to get the band's exact words. Runs of 18-33
+  priorities are routine, and one covered a whole own turn.
 
 - G13 [proposed 2026-09-17, observed during #517's repro; filed five nights
   late as #572 after a person hit it, which is the case the "observed is
