@@ -5,6 +5,7 @@ import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapC
 import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State, Ui } from "./state.js";
+import { noticeAtNewDecision } from "./state.js";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
@@ -139,6 +140,8 @@ function onMessage(msg: ServerMessage): void {
       // A new question starts at the top of its list (issue #529).
       state.rowScroll = 0;
       state.popover = null; state.overlay = null;
+      state.notice = noticeAtNewDecision(state.notice, state.noticeWaiting);
+      state.noticeWaiting = null;
       const actions = msg.legal.actions || [];
       // Only Pass and Concede on offer: nothing to decide, as in the CLI.
       const onlyPass = !msg.combat && !msg.legal.resolution_prompt && !msg.legal.set_prompt
@@ -172,7 +175,10 @@ function onMessage(msg: ServerMessage): void {
       if (state.decision && state.decision.seq === msg.seq) {
         const ours = !!(state.lastSent && state.lastSent.seq === msg.seq);
         state.decision = null; state.ui = null; state.popover = null;
-        if (!ours) state.notice = "Answered in another tab.";
+        if (!ours) {
+          state.notice = "Answered in another tab.";
+          state.noticeWaiting = { text: state.notice, after: "Your last question was answered in another tab." };
+        }
         hideField();
       }
       break;
@@ -260,6 +266,13 @@ function toggleAutoPass(): void {
   const v = state.view; const ui = state.ui;
   if (state.autoPass) { state.autoPass = null; state.notice = "Auto-pass off."; pushSettings(); return; }
   if (!v) return;
+  // With no question up there is nothing to pass yet; the refusal is
+  // about now, and goes when the next question comes (#1012).
+  if (!state.decision) {
+    state.notice = "No question is up: press f at your next priority to auto-pass.";
+    state.noticeWaiting = { text: state.notice, after: null };
+    return;
+  }
   if (!ui || ui.mode !== "menu" || !ui.canPass) { state.notice = "Auto-pass passes priority, and this is not a pass."; return; }
   const actions = (state.decision && state.decision.legal.actions) || [];
   // Engaging here would pass over the land drop it promises to stop for:

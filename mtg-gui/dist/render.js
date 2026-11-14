@@ -1483,8 +1483,21 @@ function promptArea(ctx, hits, state, x, y, w, h) {
             ty += 9;
         }
         const standing = standingModes(state);
-        if (standing)
+        if (standing) {
             text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
+            ty += 9;
+        }
+        // A notice said while waiting ("Answered in another tab.", a key
+        // pressed during the opponent's turn) was drawn nowhere until the next
+        // question, then under it (#1012). It is drawn here, in what room the
+        // panel has.
+        if (state.notice) {
+            const room = Math.max(1, Math.floor((y + h - 6 - ty) / 8));
+            for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", Math.min(4, room))) {
+                text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" });
+                ty += 8;
+            }
+        }
         return;
     }
     const standing = standingModes(state);

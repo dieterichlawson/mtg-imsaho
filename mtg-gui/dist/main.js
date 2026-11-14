@@ -2,6 +2,7 @@
 import { loadManifest, fontsReady, artNames } from "./assets.js";
 import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
+import { noticeAtNewDecision } from "./state.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const field = document.getElementById("field");
@@ -97,6 +98,8 @@ function onMessage(msg) {
             state.rowScroll = 0;
             state.popover = null;
             state.overlay = null;
+            state.notice = noticeAtNewDecision(state.notice, state.noticeWaiting);
+            state.noticeWaiting = null;
             const actions = msg.legal.actions || [];
             // Only Pass and Concede on offer: nothing to decide, as in the CLI.
             const onlyPass = !msg.combat && !msg.legal.resolution_prompt && !msg.legal.set_prompt
@@ -139,8 +142,10 @@ function onMessage(msg) {
                 state.decision = null;
                 state.ui = null;
                 state.popover = null;
-                if (!ours)
+                if (!ours) {
                     state.notice = "Answered in another tab.";
+                    state.noticeWaiting = { text: state.notice, after: "Your last question was answered in another tab." };
+                }
                 hideField();
             }
             break;
@@ -237,6 +242,13 @@ function toggleAutoPass() {
     }
     if (!v)
         return;
+    // With no question up there is nothing to pass yet; the refusal is
+    // about now, and goes when the next question comes (#1012).
+    if (!state.decision) {
+        state.notice = "No question is up: press f at your next priority to auto-pass.";
+        state.noticeWaiting = { text: state.notice, after: null };
+        return;
+    }
     if (!ui || ui.mode !== "menu" || !ui.canPass) {
         state.notice = "Auto-pass passes priority, and this is not a pass.";
         return;

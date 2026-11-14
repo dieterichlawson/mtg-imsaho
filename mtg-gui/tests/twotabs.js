@@ -98,6 +98,14 @@ async function main() {
     if (!b2.notice || !/another tab/i.test(b2.notice))
       fail(`stale-prompt: the other tab said ${JSON.stringify(b2.notice)}, not that it was answered elsewhere`);
     else ok(`stale-prompt: the other tab says "${b2.notice}"`);
+    // #1012: once the next question is up at the other tab, the notice is
+    // about the last one, and says so — not "Answered in another tab."
+    // under a question nobody has answered.
+    await B.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
+    const b3 = await snap(B);
+    if (b3.notice === "Answered in another tab.")
+      fail(`stale-prompt: decision ${b3.seq}, a new question, is drawn with "${b3.notice}"`);
+    else ok(`stale-prompt: the next question at the other tab says ${JSON.stringify(b3.notice)}`);
 
     // And the tab that DID answer is not told its own answer happened
     // somewhere else.

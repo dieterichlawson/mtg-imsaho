@@ -1328,7 +1328,15 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
     // not tell (#855).
     if (state.matchLine) { text(ctx, clip(ctx, state.matchLine, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#a0d0e0" }); ty += 9; }
     const standing = standingModes(state);
-    if (standing) text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
+    if (standing) { text(ctx, clip(ctx, standing, w - 8, "7px Silkscreen"), x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" }); ty += 9; }
+    // A notice said while waiting ("Answered in another tab.", a key
+    // pressed during the opponent's turn) was drawn nowhere until the next
+    // question, then under it (#1012). It is drawn here, in what room the
+    // panel has.
+    if (state.notice) {
+      const room = Math.max(1, Math.floor((y + h - 6 - ty) / 8));
+      for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", Math.min(4, room))) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
+    }
     return;
   }
   const standing = standingModes(state);
