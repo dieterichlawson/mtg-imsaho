@@ -69,7 +69,9 @@ for seed in seeds:
     path = f"{out}/seed-{seed}.exit"
     if os.path.exists(path):
         said = open(f"{out}/seed-{seed}.stdout", encoding="utf-8", errors="replace").read().splitlines()
-        why = [l for l in said if re.match(r"(Error: |Stopped: |INVARIANT VIOLATION |thread '|mtg-draft-runner: )", l)]
+        # A panic's message is the line after "thread '…' panicked at".
+        why = [l + (" " + said[i + 1] if l.startswith("thread '") and i + 1 < len(said) else "")
+               for i, l in enumerate(said) if re.match(r"(Error: |Stopped: |INVARIANT VIOLATION |thread '|mtg-draft-runner: )", l)]
         print(f"WARN seed {seed}: the runner exited {open(path).read().strip()}: {(why or said or [''])[-1][:300]}")
 EOF
 echo "records under $out"
