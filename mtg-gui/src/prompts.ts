@@ -1420,8 +1420,12 @@ export function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayloa
     if (typed === "") { choose(min); return; }
     const a = /^\+?[0-9]+$/.test(typed) ? Number(typed) : NaN;
     if (!Number.isInteger(a)) { refuse(`'${clipToken(typed)}' is not a number — enter an amount from ${min} to ${max}.`); return; }
-    if (a < min) { refuse(`${a} is less than lethal — at least ${min} must go to this blocker (CR 510.1c).`); return; }
-    if (a > max) { refuse(`${a} is more than is left — at most ${max}.`); return; }
+    // Named as typed when the number read is not what was typed: 21 or
+    // more digits read as "1e+21", a number the player never typed, and
+    // `+3` or `03` as 3 (#1017; the terminal quotes the token too).
+    const said = String(a) === typed ? `${a}` : `'${clipToken(typed)}'`;
+    if (a < min) { refuse(`${said} is less than lethal — at least ${min} must go to this blocker (CR 510.1c).`); return; }
+    if (a > max) { refuse(`${said} is more than is left — at most ${max}.`); return; }
     choose(a);
   };
   ui.buttons.push({ label: "Confirm", primary: true, run: ui.submit });

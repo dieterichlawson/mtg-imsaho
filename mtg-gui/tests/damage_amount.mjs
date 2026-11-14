@@ -30,5 +30,18 @@ if (!/the rest goes on to opp/.test(s)) fail(`says where the rest goes: ${s}`);
 if (ui.summary.length !== 5 || ui.summary[1] !== "2 to Grizzly Bears (lethal), 3 on to opp") fail(`every option, in our words: ${JSON.stringify(ui.summary)}`);
 if (/p1|#\d/.test(s + ui.title)) fail(`no engine words: ${s}`);
 
+// #1017: what the refusal names is what was typed. 21 or more digits went
+// through Number() and were refused as "1e+21 is more than is left".
+const BIG = "9".repeat(25);
+for (const [typed, says] of [[BIG, `'${BIG}' is more than is left`], ["9", "9 is more than is left"],
+                             ["+9", "'+9' is more than is left"], ["1", "1 is less than lethal"]]) {
+  const st = { ...state, notice: null };
+  const u = { mode: "menu", title: "", hint: "", buttons: [], marked: [] };
+  P.beginDamageAmount(st, u, rp, desc, () => {});
+  u.value = typed; u.submit();
+  if (!(st.notice || "").startsWith(says)) fail(`${typed}: the refusal names it as typed: ${st.notice}`);
+  if (/e\+/.test(st.notice || "")) fail(`${typed}: no number the player never typed: ${st.notice}`);
+}
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: the damage division says where the rest goes");
