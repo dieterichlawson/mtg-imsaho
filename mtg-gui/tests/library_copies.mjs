@@ -38,14 +38,25 @@ for (const [what, answer] of [["ChosenCard", id => ({ ChosenCard: id })], ["Chos
 }
 
 // A look at the top cards (Forbidden Alchemy) is not a search: a copy
-// further down the library was never looked at, and answers nothing.
+// further down the library was never looked at, and answers nothing. A
+// second Forest among the looked-at cards is the same answer as the one
+// the engine offers (one_of_each_card), and answers like it; the prompt's
+// `looked_at` says which cards those are.
 {
   const act = id => ({ ResolveChoice: { choice: { ChosenCard: id } } });
   const state = { view, index: P.indexView(view), overlay: null,
     decision: { legal: { actions: [act(50), act(52)], context: "look",
-      resolution_prompt: { ChooseFromLookedAt: { description: "Forbidden Alchemy: choose a card to put into your hand", options: [50, 52] } } } } };
-  const ui = P.beginDecision(state, () => {});
-  if (!ui.options.has("o50") || ui.options.has("o51") || ui.options.has("o53")) fail(`looked-at: ${JSON.stringify([...ui.options.keys()])}`);
+      resolution_prompt: { ChooseFromLookedAt: { description: "Forbidden Alchemy: choose a card to put into your hand", looked_at: [50, 51, 52] } } } } };
+  const sent = [];
+  const ui = P.beginDecision(state, a => sent.push(a));
+  const keys = JSON.stringify([...ui.options.keys()]);
+  if (!ui.options.has("o50") || !ui.options.has("o52")) fail(`looked-at: the offers answer: ${keys}`);
+  if (!ui.options.has("o51")) fail(`looked-at: the second looked-at Forest answers: ${keys}`);
+  if (ui.options.has("o53") || ui.options.has("o80")) fail(`looked-at: a Forest not looked at answers: ${keys}`);
+  const rows = (ui.rows || []).filter(r => r.key).map(r => r.key);
+  if (JSON.stringify(rows) !== JSON.stringify(["o50", "o52"])) fail(`looked-at: one row per answer: ${JSON.stringify(rows)}`);
+  ui.onPick("o51");
+  if (JSON.stringify(sent) !== JSON.stringify([act(50)])) fail(`looked-at: a copy sends the offered copy: ${JSON.stringify(sent)}`);
 }
 
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }

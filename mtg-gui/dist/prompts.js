@@ -742,9 +742,11 @@ function beginResolution(state, ui, legal, actions, send) {
         case "ChooseFromLibrary":
             return beginPickFromActions(state, ui, actions, desc, send, true);
         // The looked-at cards are a few of the library's: a copy further down
-        // was never looked at, and is lent nothing (#1004's review).
+        // was never looked at, and is lent nothing (#1004's review). The engine
+        // offers one of each card among them, and the prompt carries all of
+        // them: a second looked-at Forest is the same answer as the first.
         case "ChooseFromLookedAt":
-            return beginPickFromActions(state, ui, actions, desc, send, false);
+            return beginPickFromActions(state, ui, actions, desc, send, false, (rp.looked_at ?? []));
         case "ChooseCardName": {
             // Every nonland name in the pool, most of them cards in no zone: each
             // row names its card, which the view carries for this question, so
@@ -1057,8 +1059,9 @@ function copiesAmong(cards, id) {
     return cards.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
 }
 /** `lendLibrary`: the question's offers stand for every copy of their card
- *  in your library, as a search's do (`one_of_each_card`). */
-function beginPickFromActions(state, ui, actions, title, send, lendLibrary = false) {
+ *  in your library, as a search's do (`one_of_each_card`). `lookedAt`: they
+ *  stand for every copy among these library cards only (#1004). */
+function beginPickFromActions(state, ui, actions, title, send, lendLibrary = false, lookedAt = null) {
     const options = [];
     const byKey = new Map();
     let decline = null;
@@ -1099,7 +1102,10 @@ function beginPickFromActions(state, ui, actions, title, send, lendLibrary = fal
             // The engine offers one copy of each card in a hand (#739) and in a
             // library search (#1004): a click on any other copy of it is the same
             // answer, or four of five Scholars in the hand would not respond.
-            for (const id of lendLibrary ? copiesInZone(state, c.ChosenCard) : copiesInHand(state, c.ChosenCard)) {
+            const copies = lookedAt
+                ? copiesAmong((state.view.your_library_cards || []).filter(x => lookedAt.includes(x.object_id)), c.ChosenCard)
+                : lendLibrary ? copiesInZone(state, c.ChosenCard) : copiesInHand(state, c.ChosenCard);
+            for (const id of copies) {
                 if (!byKey.has(`o${id}`)) {
                     options.push(id);
                     byKey.set(`o${id}`, a);
