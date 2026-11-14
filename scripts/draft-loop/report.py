@@ -90,6 +90,8 @@ def main():
             out.append("\nThe re-asks, by reason:\n")
             for r in reasons:
                 seen = f" First answer: `{r['answer']}`" if r.get("answer") else ""
+                # What the seat thought when it gave it (#1024).
+                seen += f" It thought: \"{r['thought']}\"" if r.get("thought") else ""
                 out.append(f"- {r['count']} \u00d7 {r['who']}: {r['reason']}.{seen}")
     out += ["", "## Lessons", ""]
     for s in lessons["seats"]:

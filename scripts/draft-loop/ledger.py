@@ -234,23 +234,46 @@ def log_health(path):
     # pretty-printed) is logged as a header with no content and the text on
     # the lines under it, up to the next timestamped header (#992's review).
     pending = None
+    # A game seat's `thoughts` are taken out of its answer and logged as the
+    # `THOUGHT` line before the `REASK`, which quoted the answer without
+    # them: a re-ask over `{"ask_again": true}` could not say whether the
+    # seat slipped or read the question as inviting it (#1024). The seat's
+    # last THOUGHT since its last PROMPT goes with its re-ask.
+    thoughts = {}
 
-    def note(who, text):
+    def note(who, text, thought=None):
         why, answer = split_reask(text)
         key = (who, why)
         if key not in reasons:
             reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
+            if thought:
+                reasons[key]["thought"] = thought if len(thought) <= 240 else thought[:239] + "\u2026"
         reasons[key]["count"] += 1
+
+    def settle(p):
+        kind, who, bracket, lines = p
+        text = " ".join(l.strip() for l in lines).strip()
+        if kind == "THOUGHT":
+            thoughts[bracket] = text
+        else:
+            note(who, text, thoughts.get(bracket))
 
     header = re.compile(r"^\d{4}-\d\d-\d\d \d")
     usage = re.compile(r"\tUSAGE \[.*out (\d+) thinking (\d+|n/a) cache_read (\d+) cache_write (\d+)")
     for line in open(path, encoding="utf-8", errors="replace"):
         if pending is not None:
             if not header.match(line):
-                pending[1].append(line.rstrip("\n"))
+                pending[3].append(line.rstrip("\n"))
                 continue
-            note(pending[0], " ".join(l.strip() for l in pending[1]).strip())
+            settle(pending)
             pending = None
+        if (m := re.search(r"\t(PROMPT|THOUGHT)( \[[^\]]*\])?(\t|$)(.*)", line)):
+            if m.group(1) == "PROMPT":
+                thoughts.pop(m.group(2), None)
+            else:
+                # Thinking runs to several lines: up to the next header.
+                pending = ("THOUGHT", None, m.group(2), [m.group(4)])
+            continue
         # A resume under another guide, setting or set file: picks or
         # matches of one night made under two system prompts (#948, #949).
         if "its system prompt is not the live one" in line or "those picks were made under" in line:
@@ -262,9 +285,9 @@ def log_health(path):
             # and the log that had the reasons is not kept (#992).
             who = "game" if m.group(1) else "pick"
             if m.group(3).strip():
-                note(who, m.group(3).strip())
+                note(who, m.group(3).strip(), thoughts.get(m.group(1)))
             else:
-                pending = (who, [])
+                pending = ("REASK", who, m.group(1), [])
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
         # A worker's panic reaches the log as its `FATAL` line (the panic
@@ -280,7 +303,7 @@ def log_health(path):
             for k, v in zip(("out", "thinking", "cache_read", "cache_write"), m.groups()):
                 h[k] += int(v) if v != "n/a" else 0
     if pending is not None:
-        note(pending[0], " ".join(l.strip() for l in pending[1]).strip())
+        settle(pending)
     h["reask_reasons"] = sorted(reasons.values(), key=lambda r: (-r["count"], r["who"], r["reason"]))
     return h
 

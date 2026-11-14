@@ -89,7 +89,7 @@ fn the_night_report_says_one_call_in_the_singular() {
         "health": {"reasks": 1, "unreadable": 1, "panics": 0, "harness_chose": 1, "game_calls": 1,
                    "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0,
                    "reask_reasons": [{"who": "game", "reason": "`indices` has 0 entries; it needs at least 1",
-                                      "count": 1, "answer": "{\"indices\": []}"}]},
+                                      "count": 1, "answer": "{\"indices\": []}", "thought": "I would rather wait"}]},
     }).to_string()).unwrap();
     std::fs::write(dir.join("nights/2099-01-01-lessons.json"), serde_json::json!({
         "seats": [{"seat": 0, "colors": "G", "record": "1-0", "lessons": [], "usage": {"output_tokens": 5}}],
@@ -106,7 +106,7 @@ fn the_night_report_says_one_call_in_the_singular() {
     for said in ["debriefs: 1 call,", "curator: 1 call,", "1 re-ask,", "1 reply no answer", "1 game answer the harness",
                  "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |",
                  // #992: what the re-ask was for.
-                 "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}`"] {
+                 "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}` It thought: \"I would rather wait\""] {
         assert!(report.contains(said), "{said:?} in:\n{report}");
     }
     assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");
@@ -645,5 +645,45 @@ fn a_resumed_night_names_the_guide_its_picks_were_made_under() {
     assert_eq!(sent.len(), 2, "one debrief a seat");
     assert_eq!(sent.iter().filter(|m| m.contains("The guide the picks saw")).count(), 1, "{sent:#?}");
     assert!(sent.iter().all(|m| !m.contains("An edit after the stop")), "the guided seat is shown the guide it drafted with: {sent:#?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1024: a game seat's re-ask keeps what the seat thought when it gave the
+/// answer. Its `thoughts` are taken out of the answer and logged as the
+/// `THOUGHT` before the `REASK`, so a re-ask over `{"ask_again": true}`
+/// could not be told slip from invited once the log was gone. A thought
+/// from an earlier call (before the seat's last `PROMPT`) is not this
+/// answer's; a pick's re-ask quotes its own `thoughts` in the answer.
+#[test]
+fn a_game_reask_keeps_what_the_seat_thought() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-thought-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("draft.log");
+    let at = "2026-11-13 10:00:00.000\tINFO\tseat-0\tllm.rs:1\t";
+    std::fs::write(&log, [
+        format!("{at}PROMPT [Seat0]\tMAIN PHASE 1"),
+        "  0: Pass".to_string(),
+        format!("{at}THOUGHT [Seat0]\tI want to see the next card first,"),
+        "so I will be asked again.".to_string(),
+        format!("{at}THOUGHT [Seat1]\tthe other seat's thinking"),
+        format!("{at}RESPONSE [Seat0]\t{{\"ask_again\":true,\"then\":[]}}"),
+        format!("{at}REASK [Seat0]\t`action` is missing: {{\"ask_again\":true,\"then\":[]}}"),
+        format!("{at}PROMPT [Seat1]\tDECLARE BLOCKERS"),
+        format!("{at}REASK [Seat1]\tthat block is not offered: {{\"blocks\":[]}}"),
+    ].join("\n") + "\n").unwrap();
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop");
+    let out = Command::new("python3")
+        .args(["-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import ledger; print(json.dumps(ledger.log_health(sys.argv[2])))"])
+        .arg(script).arg(&log)
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(h["reasks"], 2, "{h}");
+    assert_eq!(h["reask_reasons"], serde_json::json!([
+        {"who": "game", "reason": "`action` is missing", "count": 1, "answer": "{\"ask_again\":true,\"then\":[]}",
+         "thought": "I want to see the next card first, so I will be asked again."},
+        {"who": "game", "reason": "that block is not offered", "count": 1, "answer": "{\"blocks\":[]}"},
+    ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
