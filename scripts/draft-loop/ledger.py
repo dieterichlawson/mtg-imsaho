@@ -259,7 +259,9 @@ def log_health(path):
             obj.pop("thoughts", None)
             answer = json.dumps(obj, separators=(",", ":"))
         why, answer = clip(why), clip(answer)
-        key = (who, why)
+        # Settled or not is part of the kind: a deck refused ten times for
+        # one reason is nine re-asks and one deck the table built.
+        key = (who, why, settled)
         if key not in reasons:
             reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
             if thought:
