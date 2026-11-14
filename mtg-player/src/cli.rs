@@ -709,6 +709,17 @@ fn describe_fundable_x(values: &[u32]) -> String {
     format!("{}, \u{2026} {last}", kept.join(", "))
 }
 
+/// A typed index, read as `str::parse::<usize>` reads it, except that a run
+/// of digits too long for a `usize` is `usize::MAX`: a number out of
+/// range, which the prompt answers with its range, not a syntax error
+/// (#1017). The mark, order and amount screens already said so; the attack
+/// and block screens called "99999999999999999999" invalid input. A word
+/// is still `None`.
+fn read_index(tok: &str) -> Option<usize> {
+    tok.parse::<usize>().ok()
+        .or_else(|| (!tok.is_empty() && tok.bytes().all(|b| b.is_ascii_digit())).then_some(usize::MAX))
+}
+
 /// How a refusal names the number it is refusing: what was typed, and what
 /// the parser made of it when the two differ.
 ///
@@ -724,6 +735,12 @@ fn describe_fundable_x(values: &[u32]) -> String {
 /// Ordinary input reads exactly as it did — `7` is `7` — so every message
 /// keeps its shape and only the odd forms grow the gloss.
 fn refused_number(typed: &str, parsed: usize) -> String {
+    // A number too long to read, which `read_index` reads as usize::MAX,
+    // is named as typed: "(read as 18446744073709551615)" is a number the
+    // player never typed (#1017).
+    if parsed == usize::MAX && typed != parsed.to_string() {
+        return format!("'{}'", quote_input(typed));
+    }
     if typed == parsed.to_string() {
         parsed.to_string()
     } else {
@@ -7013,7 +7030,7 @@ return",
         if parts.len() != 2 {
             return Err(SYNTAX.into());
         }
-        let (Ok(b), Ok(a)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) else {
+        let (Some(b), Some(a)) = (read_index(parts[0]), read_index(parts[1])) else {
             return Err(SYNTAX.into());
         };
         if b >= n_blockers {
@@ -7279,11 +7296,11 @@ return",
             let mut parsed = 0usize;
             for t in &tokens {
                 if let Some((a_tok, w_tok)) = t.split_once(">pw") {
-                    if let (Ok(a), Ok(w)) = (a_tok.parse::<usize>(), w_tok.parse::<usize>()) {
+                    if let (Some(a), Some(w)) = (read_index(a_tok), read_index(w_tok)) {
                         walker_attacks.push(((a, a_tok), (w, w_tok)));
                         parsed += 1;
                     }
-                } else if let Ok(i) = t.parse::<usize>() {
+                } else if let Some(i) = read_index(t) {
                     indices.push((i, t));
                     parsed += 1;
                 }
@@ -11888,6 +11905,25 @@ Wolves or Werewolves is prevented".into()];
             "You have no blockers.");
         assert_eq!(CliPlayer::parse_block_pair("0:0", 1, 0).unwrap_err(),
             "There are no attackers.");
+    }
+
+    /// #1017: a number too long to read is out of range on the attack and
+    /// block screens too, named as typed, as 9 is — not a syntax lecture,
+    /// and not "(read as 18446744073709551615)". A word is still invalid.
+    #[test]
+    fn a_number_too_long_to_read_is_out_of_range_on_the_combat_screens() {
+        const BIG: &str = "99999999999999999999";
+        assert_eq!(read_index(BIG), Some(usize::MAX));
+        assert_eq!((read_index("7"), read_index("x"), read_index(""), read_index("-1")), (Some(7), None, None, None));
+        assert_eq!(CliPlayer::parse_block_pair(&format!("0:{BIG}"), 2, 1).unwrap_err(),
+            format!("No attacker '{BIG}'. Attackers are 0-0."));
+        assert_eq!(CliPlayer::parse_block_pair(&format!("{BIG}:0"), 2, 1).unwrap_err(),
+            format!("No blocker '{BIG}'. Your blockers are 0-1."));
+        assert!(CliPlayer::parse_block_pair("0:x", 2, 1).unwrap_err().starts_with("Invalid. Use"));
+        assert_eq!(CliPlayer::attack_index_error(&[(read_index(BIG).unwrap(), BIG)], &[], 2, 1).as_deref(),
+            Some(format!("Invalid attacker(s): '{BIG}'. Valid range is 0-1.").as_str()));
+        let walker = CliPlayer::attack_index_error(&[], &[((0, "0"), (read_index(BIG).unwrap(), BIG))], 2, 1).unwrap();
+        assert!(walker.contains(&format!("pw'{BIG}'")) && !walker.contains("18446744073709551615"), "{walker}");
     }
 
     /// The CARDS panel prints its own keyword line and its own flashback
