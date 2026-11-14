@@ -7829,6 +7829,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -7956,6 +7957,7 @@ pub(crate) mod tests {
                 options: options.clone(), first_strike_only: false,
             }),
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let (mut player, prompts) = scripted_player(vec![serde_json::json!({"amount": 4})]);
@@ -8036,6 +8038,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -8093,6 +8096,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 2".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
         let (_, rows) = LlmPlayer::build_action_rows(&view, &legal);
         let text: Vec<String> = rows.iter().map(|r| match r {
@@ -8200,6 +8204,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -8297,6 +8302,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let view = empty_view();
@@ -8397,6 +8403,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let view = empty_view();
@@ -8469,6 +8476,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let view = empty_view();
@@ -8855,6 +8863,7 @@ pub(crate) mod tests {
                 is_ability: false,
             }),
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 

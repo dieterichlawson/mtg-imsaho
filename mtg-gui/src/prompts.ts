@@ -750,7 +750,13 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
     verbs.get(id)!.push({ label, run });
   };
   const hasPass = actions.includes("PassPriority");
-  for (const a of actions) {
+  // The engine offers one "Tap Forest" for five untapped Forests (the CLI's
+  // menu and the LLM's schema want one row per card) and lists the other
+  // four in `mana_ability_copies`, which it accepts like the offer. Each
+  // copy taps itself, so a Forest drawn apart from the offered one is not a
+  // verb-less stack, and a tapped Forest — never in the list — offers
+  // nothing (#1003).
+  for (const a of [...actions, ...(legal.mana_ability_copies || [])]) {
     if (!isObj(a)) continue;
     if ("PlayLand" in a) add(a.PlayLand.object_id, "Play land", () => send(a));
     else if ("ActivateManaAbility" in a) add(a.ActivateManaAbility.object_id, describeAction(state, a).split(": ")[1] || "Tap for mana", () => send(a));

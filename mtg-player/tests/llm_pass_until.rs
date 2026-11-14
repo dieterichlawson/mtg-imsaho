@@ -267,6 +267,7 @@ fn offer(context: &str) -> LegalActions {
         context: Some(context.to_string()),
         resolution_prompt: None,
         set_prompt: None,
+        mana_ability_copies: vec![],
     }
 }
 
@@ -695,6 +696,7 @@ fn a_prompt_of_another_kind_is_asked_and_stops_it_only_after_the_opponent_acted(
             kind: SetPromptKind::DiscardToHandSize, player: YOU,
             options: vec![ObjectId(10), ObjectId(12)], min: 1, max: 1,
         }),
+        mana_ability_copies: vec![],
     };
     let mut v = view(3, Step::Cleanup, YOU);
     v.your_hand.push(card(12, "Grizzly Bears", vec![CardType::Creature], ""));
@@ -1222,6 +1224,7 @@ fn the_seats_own_cast_time_prompt_keeps_its_plan_and_attack() {
             kind: SetPromptKind::DiscardToHandSize, player: YOU,
             options: vec![ObjectId(13)], min: 1, max: 1,
         }),
+        mana_ability_copies: vec![],
     };
     let (mut v, _) = main_phase(vec![], true, false);
     v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
@@ -1264,6 +1267,7 @@ fn the_seats_own_cast_time_prompt_keeps_its_plan_and_attack() {
             source_spell_id: ObjectId(12), cost: mtg_engine::types::ManaCost::free(),
         }),
         set_prompt: None,
+        mana_ability_copies: vec![],
     };
     fake.answer(1);
     seat.choose_action(&v, &pay);
@@ -1293,6 +1297,7 @@ fn a_stop_line_quotes_the_prompt_in_the_seats_words() {
             kind: SetPromptKind::DiscardToHandSize, player: YOU,
             options: vec![ObjectId(10), ObjectId(12)], min: 1, max: 1,
         }),
+        mana_ability_copies: vec![],
     };
     let mut v = view(3, Step::Cleanup, YOU);
     v.your_hand.push(card(12, "Grizzly Bears", vec![CardType::Creature], ""));

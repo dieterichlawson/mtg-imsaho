@@ -334,3 +334,39 @@ fn a_refused_answer_is_asked_again_and_said_out_loud() {
         .count();
     assert_eq!(refusals, 4, "every refusal is recorded where the seat can read it");
 }
+
+/// Five untapped Forests are one "Tap Forest" row — the CLI's menu and the
+/// LLM's schema want one row per card — but every one of them may tap. The
+/// page hangs verbs off each permanent and sends the one clicked, so the
+/// copies the row folded away are listed beside it and admitted like it;
+/// a tapped Forest or a summoning-sick Pilgrim is in neither (issue #1003).
+#[test]
+fn every_permanent_that_could_tap_for_a_folded_mana_row_is_admitted() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forests: Vec<ObjectId> = (0..3).map(|_| named_permanent(&mut state, &reg, "Forest", P0)).collect();
+    let tapped = named_permanent(&mut state, &reg, "Forest", P0);
+    state.get_object_mut(tapped).unwrap().tapped = true;
+    let pilgrims: Vec<ObjectId> = (0..2).map(|_| named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0)).collect();
+    let sick = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    state.get_object_mut(sick).unwrap().summoning_sick = true;
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+
+    let tap = |id: ObjectId| Action::ActivateManaAbility { object_id: id, ability_index: 0 };
+    let has = |list: &[Action], id: ObjectId| list.iter().any(|a| format!("{a:?}") == format!("{:?}", tap(id)));
+    let offered = |id: ObjectId| has(&legal.actions, id);
+    let copy = |id: ObjectId| has(&legal.mana_ability_copies, id);
+    for group in [&forests, &pilgrims] {
+        assert_eq!(group.iter().filter(|&&id| offered(id)).count(), 1,
+            "one row per card in the menu: {:?}", legal.actions);
+        for &id in group.iter() {
+            assert!(offered(id) ^ copy(id), "#{id:?} is the row or one of its copies, once");
+            assert!(legal.permits(&tap(id)), "#{id:?} could tap, and may");
+        }
+    }
+    for id in [tapped, sick] {
+        assert!(!offered(id) && !copy(id), "#{id:?} cannot tap and is listed nowhere");
+        assert!(!legal.permits(&tap(id)), "#{id:?} cannot tap and is refused");
+    }
+}

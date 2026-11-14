@@ -95,6 +95,7 @@ fn empty_legal() -> LegalActions {
         context: None,
         resolution_prompt: None,
         set_prompt: None,
+        mana_ability_copies: vec![],
     }
 }
 

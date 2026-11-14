@@ -347,6 +347,9 @@ export interface LegalActions {
   context: string | null;
   resolution_prompt: ResolutionPrompt | null;
   set_prompt: SetPrompt | null;
+  /** The mana abilities `actions` folded away: the same ability of the same
+   *  card on every other permanent that could activate it now (#1003). */
+  mana_ability_copies?: Action[];
 }
 
 // ------------------------------------------------------------ messages

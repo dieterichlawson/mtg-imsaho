@@ -80,6 +80,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 context: Some("DECLARE ATTACKERS".into()),
                 resolution_prompt: None,
                 set_prompt: None,
+                mana_ability_copies: vec![],
             }
         }
         AwaitingAction::DeclareBlockers { defending_player } => {
@@ -111,6 +112,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 context: Some("DECLARE BLOCKERS".into()),
                 resolution_prompt: None,
                 set_prompt: None,
+                mana_ability_copies: vec![],
             }
         }
         AwaitingAction::DiscardToHandSize {
@@ -132,6 +134,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 if *discard_count == 1 { "" } else { "S" }
             )),
             resolution_prompt: None,
+            mana_ability_copies: vec![],
         },
         AwaitingAction::MulliganDecision { player } => {
             let mull_count = state.get_player(*player).mulligan_count;
@@ -149,6 +152,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 )),
                 resolution_prompt: None,
                 set_prompt: None,
+                mana_ability_copies: vec![],
             }
         }
         AwaitingAction::BottomAfterMulligan { count, .. } => {
@@ -170,6 +174,7 @@ pub(crate) fn legal_actions_while_awaiting(
                     if *count == 1 { "" } else { "S" }
                 )),
                 resolution_prompt: None,
+                mana_ability_copies: vec![],
             }
         }
         AwaitingAction::ResolutionChoice {
@@ -494,6 +499,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 context: Some(context),
                 resolution_prompt: Some(choice.clone()),
                 set_prompt: None,
+                mana_ability_copies: vec![],
             }
         }
     })
