@@ -1544,7 +1544,7 @@ impl CliPlayer {
     /// one-word orphan — "damage" and "on" on rows of their own (#705).
     fn wrap_log_entry(entry: &str, width: usize) -> Vec<String> {
         const INDENT: &str = "  ";
-        if entry.chars().count() <= width {
+        if str_cols(entry) <= width { // columns, as word_wrap measures (#1027)
             return vec![entry.to_string()];
         }
         let mut rows = Self::word_wrap(entry, width);
@@ -5475,7 +5475,7 @@ impl CliPlayer {
         // with no Enter, while they were still typing (issue #249). The
         // answer is short, but "the keystroke that ends the game" cannot be
         // one the player has not finished choosing.
-        let mut echo_col = px + u16::try_from(first.chars().count()).unwrap_or(0);
+        let mut echo_col = px + u16::try_from(str_cols(&first)).unwrap_or(0);
         // The panel's border, like the other two readers — this was the
         // terminal's width, so everything typed past column 118 of a 150-column
         // terminal printed straight through the frame and over the CARDS pane,
@@ -5502,7 +5502,7 @@ impl CliPlayer {
                         Self::prompt_room(Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)), YN_ECHO_ROOM));
                     Self::clear_panel_row(&mut out, px, py);
                     let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
-                    echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
+                    echo_col = px + u16::try_from(str_cols(&shown)).unwrap_or(0);
                 } else {
                     // A screen with no redraw to give (the card browser):
                     // the question alone, at the top of a cleared screen,
@@ -5513,7 +5513,7 @@ impl CliPlayer {
                         Self::prompt_room((w as usize).saturating_sub(1), YN_ECHO_ROOM));
                     (px, py) = (0, 0);
                     let _ = execute!(out, cursor::MoveTo(0, 0), Print(&shown));
-                    echo_col = u16::try_from(shown.chars().count()).unwrap_or(0);
+                    echo_col = u16::try_from(str_cols(&shown)).unwrap_or(0);
                 }
                 echo_cap = Self::echo_cap_at(w as usize, echo_col);
                 repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
@@ -5560,7 +5560,7 @@ impl CliPlayer {
                             // hint, not after the shorter question it
                             // replaced: from there the echo's erase wiped
                             // "… (y/n)> " at the first key (#963's review).
-                            echo_col = px + u16::try_from(clipped.chars().count()).unwrap_or(0);
+                            echo_col = px + u16::try_from(str_cols(&clipped)).unwrap_or(0);
                             echo_cap = Self::echo_cap_at(Self::term_width(), echo_col);
                             buf.clear();
                         }
@@ -11968,6 +11968,11 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(CliPlayer::word_wrap(&run, 5), vec!["\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}"]);
         assert_eq!(CliPlayer::word_wrap("\u{4e00}a", 1), vec!["\u{4e00}", "a"]);
         assert_eq!(CliPlayer::word_wrap("the quick brown fox", 9), vec!["the quick", "brown fox"]);
+        // The LOG pane's early return measured characters too: 20 wide
+        // characters are 20 characters and 40 columns (#1027's review).
+        let entry = "\u{4e00}".repeat(20);
+        let rows = CliPlayer::wrap_log_entry(&entry, 30);
+        assert!(rows.len() > 1 && rows.iter().all(|r| str_cols(r) <= 30), "{rows:?}");
     }
 
     /// #1019: while a reader holds the screen's notice — a typed `concede`
