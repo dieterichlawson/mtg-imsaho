@@ -33,15 +33,16 @@ fi
 for seed in $seeds; do
   STUB_CALLS="$out/seed-$seed.calls" CLAUDE_CODE_BIN="$PWD/scripts/llm-prompt-stub.py" \
     "$MTG_DRAFT_RUNNER_BIN" --model cc --players 2 --best-of 1 --seed "$seed" --quiet \
-    --log "$out/seed-$seed.log" > "$out/seed-$seed.stdout" 2>&1 || true
+    --log "$out/seed-$seed.log" > "$out/seed-$seed.stdout" 2>&1 || echo "$?" > "$out/seed-$seed.exit"
 done
 python3 -I - "$out" $seeds <<'EOF'
-import json, sys, statistics
+import json, os, re, sys, statistics
 out, seeds = sys.argv[1], sys.argv[2:]
 print(f"{'seed':>5} {'picks':>6} {'decks':>6} {'system B':>9} {'pick B':>7} {'min':>5} {'max':>6} {'deck B':>7} {'schema B':>9} {'KB/draft':>9} {'schemas':>8}")
 totals = []
 for seed in seeds:
-    rows = [json.loads(l) for l in open(f"{out}/seed-{seed}.calls")]
+    calls = f"{out}/seed-{seed}.calls"
+    rows = [json.loads(l) for l in open(calls)] if os.path.exists(calls) else []
     props = lambda r: r.get("schema", {}).get("properties", {})
     picks = [r for r in rows if "pick" in props(r)]
     decks = [r for r in rows if "maindeck" in props(r)]
@@ -61,5 +62,14 @@ if totals:
     n = len(totals)
     m = lambda i: sum(t[i] for t in totals) / n
     print(f"{'mean':>5} {m(0):>6.0f} {m(1):>6.0f} {m(2):>9.0f} {m(3):>7.0f} {'':>5} {'':>6} {m(4):>7.0f} {m(5):>9.0f} {m(6):>9.0f} {m(7):>8.0f}")
+# A seed the runner stopped on reads as a short game in the table: said
+# here with the runner's reason, which is in its .stdout and was nowhere
+# in the summary (#1009's review).
+for seed in seeds:
+    path = f"{out}/seed-{seed}.exit"
+    if os.path.exists(path):
+        said = open(f"{out}/seed-{seed}.stdout", encoding="utf-8", errors="replace").read().splitlines()
+        why = [l for l in said if re.match(r"(Error: |Stopped: |INVARIANT VIOLATION |thread '|mtg-draft-runner: )", l)]
+        print(f"WARN seed {seed}: the runner exited {open(path).read().strip()}: {(why or said or [''])[-1][:300]}")
 EOF
 echo "records under $out"

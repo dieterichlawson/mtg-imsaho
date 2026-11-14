@@ -40,15 +40,16 @@ fi
 for seed in $seeds; do
   STUB_CALLS="$out/seed-$seed.calls" CLAUDE_CODE_BIN="$PWD/scripts/llm-prompt-stub.py" \
     "$MTG_RUNNER_BIN" --p1 cc --p2 random --seed "$seed" --quiet \
-    --log "$out/seed-$seed.log" > "$out/seed-$seed.stdout" 2>&1 || true
+    --log "$out/seed-$seed.log" > "$out/seed-$seed.stdout" 2>&1 || echo "$?" > "$out/seed-$seed.exit"
 done
 python3 -I - "$out" $seeds <<'EOF'
-import json, re, sys, statistics
+import json, os, re, sys, statistics
 out, seeds = sys.argv[1], sys.argv[2:]
 print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'schema B':>9} {'engaged':>8} {'unasked':>8} {'stops':>5} {'turns':>5} {'schemas':>8}")
 totals = []
 for seed in seeds:
-    rows = [json.loads(l) for l in open(f"{out}/seed-{seed}.calls")]
+    calls = f"{out}/seed-{seed}.calls"
+    rows = [json.loads(l) for l in open(calls)] if os.path.exists(calls) else []
     log = open(f"{out}/seed-{seed}.log", encoding="utf-8", errors="replace").read()
     engaged = len(re.findall(r"\tAUTO_PASS \[[^]]*\]\tengaged ", log))
     until = len(re.findall(r"\tAUTO_PASS \[[^]]*\]\tuntil: ", log))
@@ -69,5 +70,14 @@ if totals:
     print(f"{'mean':>5} {sum(t[0] for t in totals)/n:>6.0f} {'':>7} {'':>8} {sum(t[1] for t in totals)/n:>9.0f} "
           f"{'':>14} {'':>5} {'':>6} {sum(t[2] for t in totals)/n:>14.0f} {sum(t[3] for t in totals)/n:>9.0f} "
           f"{sum(t[4] for t in totals)/n:>8.0f} {sum(t[5] for t in totals)/n:>8.0f} {sum(t[6] for t in totals)/n:>5.0f} {sum(t[7] for t in totals)/n:>5.0f} {sum(t[8] for t in totals)/n:>8.0f}")
+# A seed the runner stopped on reads as a short game in the table: said
+# here with the runner's reason, which is in its .stdout and was nowhere
+# in the summary (#1009's review).
+for seed in seeds:
+    path = f"{out}/seed-{seed}.exit"
+    if os.path.exists(path):
+        said = open(f"{out}/seed-{seed}.stdout", encoding="utf-8", errors="replace").read().splitlines()
+        why = [l for l in said if re.match(r"(Error: |Stopped: |INVARIANT VIOLATION |thread '|mtg-draft-runner: )", l)]
+        print(f"WARN seed {seed}: the runner exited {open(path).read().strip()}: {(why or said or [''])[-1][:300]}")
 EOF
 echo "records under $out"
