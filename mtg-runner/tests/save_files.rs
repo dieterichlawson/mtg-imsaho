@@ -489,3 +489,35 @@ fn a_position_resumed_under_other_prompt_settings_says_so() {
     assert_eq!(unlike.len(), 1, "{stderr}");
     assert!(unlike[0].contains("MTG_LLM_PASS_UNTIL=on, and is resumed with the pass-until row off"), "{stderr}");
 }
+
+/// #1009's game twin: a position the runner cannot resume is a row that says
+/// why. `replay.py` kept only the exit status, and the runner's reason
+/// ("Error: ...") is followed on stderr by its token usage, so even the last
+/// line would not have been it.
+#[test]
+fn replay_py_keeps_the_runners_reason_for_a_position_it_could_not_resume() {
+    if !std::process::Command::new("python3").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        eprintln!("skipping: no python3 to run replay.py with");
+        return;
+    }
+    let scratch = Scratch::new("replay-reason");
+    let positions = scratch.dir.join("positions");
+    std::fs::create_dir_all(&positions).unwrap();
+    std::fs::write(positions.join("0001.save"), "not a save").unwrap();
+    let out = std::process::Command::new("python3")
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .env("CLAUDE_CODE_BIN", repo_root().join("scripts/llm-prompt-stub.py"))
+        .env("STUB_CALLS", "/dev/null")
+        .arg("scripts/decision-eval/replay.py")
+        .args(["--positions", &scratch.path("positions"), "--out", &scratch.path("out"),
+               "--name", "x", "--p1", "cc", "--jobs", "1", "--bin", env!("CARGO_BIN_EXE_mtg-runner")])
+        .output()
+        .expect("replay.py runs");
+    let rows = std::fs::read_to_string(scratch.dir.join("out/x.jsonl"))
+        .unwrap_or_else(|e| panic!("no rows ({e}): {}", String::from_utf8_lossy(&out.stderr)));
+    let row: serde_json::Value = serde_json::from_str(rows.lines().next().expect("one row")).unwrap();
+    assert_ne!(row["exit"], serde_json::json!(0), "{row}");
+    let error = row["error"].as_str().unwrap_or_else(|| panic!("the row says why: {row}"));
+    assert!(error.starts_with("Error: ") && error.contains("0001.save"), "{row}");
+}

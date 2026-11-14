@@ -108,8 +108,15 @@ def run_one(args, position, sample, logdir):
         # A position resumed under another system prompt than the live one
         # (#920's game twin): said with exit 0, and kept in the row.
         unlike = [l.split(UNLIKE, 1)[1] for l in out.stderr.splitlines() if UNLIKE in l]
+        # Why a position has no answer, which is otherwise nowhere: the
+        # runner says it on stderr ("Error: ..." from `die`, "Stopped: ..."
+        # on a signal) and then prints its token usage, so the last line is
+        # not the reason. The row kept only the exit status (#1009, the
+        # game twin of draft-replay.py's fix).
+        said = [l for l in out.stderr.splitlines() if l.startswith(("Error: ", "Stopped: "))]
+        err = (said or out.stderr.strip().splitlines() or [""])[-1][:300] if rc else ""
     except subprocess.TimeoutExpired:
-        stdout, rc, unlike = "", "timeout", []
+        stdout, rc, unlike, err = "", "timeout", [], ""
     m = re.search(r"^DECISION 1 p(\d) (.*)$", stdout, re.M)
     text = open(log, encoding="utf-8", errors="replace").read() if os.path.exists(log) else ""
     prompts = prompt_bodies(text)
@@ -118,6 +125,7 @@ def run_one(args, position, sample, logdir):
         "seat": int(m.group(1)) if m else None,
         "action": json.loads(m.group(2)) if m else None,
         "exit": rc,
+        **({"error": err} if err else {}),
         "usage": usage(text),
         "system_bytes": system_bytes(text),
         "prompt_bytes": len(prompts[0].encode()) if prompts else None,
