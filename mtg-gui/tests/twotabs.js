@@ -59,6 +59,16 @@ async function main() {
     const bStops = await B.evaluate(() => !!window.mtg.stopAtPass);
     if (!bStops) fail("stop-at-pass: a tab joining a seat that is stopping at every priority did not learn it");
     else ok("stop-at-pass: the second tab joined a seat that is stopping, and knows it");
+    // #1012's review: a setting changed in one tab is said in the other,
+    // whose own last line may say the opposite. Flipped twice, so the
+    // seat is stopping again for what follows.
+    for (const [want, what] of [[/^Another tab: passing automatically/, "off"], [/^Another tab: stopping at every priority/, "on"]]) {
+      await A.keyboard.press("s");
+      await B.waitForTimeout(400);
+      const said = await B.evaluate(() => window.mtg.notice);
+      if (!want.test(said || "")) fail(`settings: s turned ${what} in one tab, and the other said ${JSON.stringify(said)}`);
+      else ok(`settings: the other tab says "${said}"`);
+    }
 
     // Keep, then pass the main phase. Every priority after that is one the
     // engine offers only Pass/Concede at — the ones `s` exists to stop at.

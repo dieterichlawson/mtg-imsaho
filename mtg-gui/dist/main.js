@@ -152,6 +152,17 @@ function onMessage(msg) {
         case "settings":
             // The seat's settings, not this page's. Applied without echoing them
             // back, or two tabs would bounce the message between them.
+            // A change made in another tab (this page's own echo changes
+            // nothing) is said: the notice this page last showed — "Auto-pass on
+            // — …", "Stopping at every priority." — may say the opposite, and was
+            // carried onto the next question as though it were still true
+            // (#1012's review).
+            const autoWas = state.autoPass !== null, autoNow = msg.auto_pass_since_turn !== null;
+            if (autoWas !== autoNow)
+                state.notice = autoNow ? "Auto-pass was turned on in another tab." : "Auto-pass was turned off in another tab.";
+            else if (!!state.stopAtPass !== msg.stop_at_pass)
+                state.notice = msg.stop_at_pass
+                    ? "Another tab: stopping at every priority." : "Another tab: passing automatically when there is nothing to do.";
             state.stopAtPass = msg.stop_at_pass;
             // The echo of this page's own `f` carries no count of what engaging
             // declined; keep the one this page made, or the stop could never say
@@ -167,6 +178,11 @@ function onMessage(msg) {
             if (!state.decision && state.lastSent && state.lastSent.seq === msg.seq && state.lastDecision && state.view) {
                 state.decision = state.lastDecision;
                 beginDecision(state, send);
+            }
+            else if (!state.decision) {
+                // About no question this page holds: drawn while waiting, and not
+                // carried onto the next one (#1012's review).
+                state.noticeWaiting = { text: msg.text, after: null };
             }
             break;
         case "game_over":
@@ -370,7 +386,9 @@ canvas.addEventListener("click", (ev) => {
     // instant in hand) that was never on screen to be read (#806). A second
     // click on a decision that arrived after the first is dropped, once.
     const seq = state.decision ? state.decision.seq : null;
-    const straddles = ev.detail >= 2 && seq !== state.clickSeq;
+    // Only a question that arrived: one that went away (another tab answered
+    // it) is no new question, and the line said one had (#1012's review).
+    const straddles = ev.detail >= 2 && seq !== state.clickSeq && seq !== null;
     state.clickSeq = seq;
     state.doubleDropped = straddles;
     if (straddles && h && h.onClick) {
