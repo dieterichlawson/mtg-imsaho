@@ -385,12 +385,18 @@ sideboard between games, and ready starts the next".to_string()
     match *first {
         "help" | "?" => Command::Print(USAGE.to_string()),
         "quit" | "q" | "exit" => Command::Quit,
+        // The server ignores an empty name, so nothing at all was said (#1043).
+        "name" if words.len() == 1 => Command::Print("name takes the name to go by: name <name>".into()),
         "name" => Command::Send(vec![serde_json::json!({"type": "name", "name": words[1..].join(" ")})]),
         "show" => view.map_or(Command::Nothing, |v| Command::Print({ let (t, m) = render(v, build); format!("{t}{m}") })),
         "pool" => view.map_or(Command::Print("no view yet".into()), |v| Command::Print(pool_listing(v))),
         "ready" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             if let Some((_, b)) = between(v) {
+                // The server takes a second ready and says nothing (#1043).
+                if b["ready"] == true {
+                    return Command::Print(format!("you are ready for game {}: it starts once your opponent is", b["game"]));
+                }
                 let mut msgs = Vec::new();
                 if b["sideboarding"] == true {
                     match send_edit(v, build) {
@@ -826,6 +832,20 @@ mod tests {
 sideboard between games, and ready starts the next", "#1044");
     }
 
+    /// #1043: `name` alone was sent, and the server drops an empty name, so
+    /// nothing was said; `text` alone named only the number it takes.
+    #[test]
+    fn a_command_missing_its_word_says_what_it_takes() {
+        let v = serde_json::json!({"type": "view", "phase": "building", "seat": 0, "set": "isd",
+            "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}], "pack": null});
+        for view in [None, Some(&v)] {
+            let Command::Print(t) = command("name", view, &mut Build::default(), None) else { panic!("name alone was sent") };
+            assert_eq!(t, "name takes the name to go by: name <name>");
+        }
+        let Command::Print(t) = command("text", Some(&v), &mut Build::default(), None) else { panic!() };
+        assert_eq!(t, "text takes a pool number or a card's name");
+    }
+
     /// #1017: a number too long to read is out of range, as 9 in a pack of
     /// two is: past the end of the pack, over the server's bound on a
     /// basic, no card of that number — not "'999…'? type help", "not a
@@ -1174,6 +1194,9 @@ sideboard between games, and ready starts the next", "#1044");
         ready["matches"][0]["between"]["ready"] = true.into();
         ready["matches"][0]["between"]["play_first"] = true.into();
         assert!(printed(command("draw", Some(&ready), &mut build, None)).contains("settled when you said ready"));
+        // A second ready is answered, not sent for the server to drop (#1043).
+        assert_eq!(printed(command("ready", Some(&ready), &mut build, None)),
+            "you are ready for game 2: it starts once your opponent is");
         let (_, text) = render(&ready, &build);
         assert!(text.contains("you lost game 1: you play first\n") && !text.contains("type play or draw") && !text.contains("to change it"), "{text}");
         v["matches"][0]["between"]["you_choose"] = false.into();
@@ -1411,7 +1434,8 @@ fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
         v["pool"].as_array().into_iter().flatten().collect()
     };
     let what = if drafting { "a card number from the pack" } else { "a pool number" };
-    let Some(typed) = arg else { return format!("text takes {what}") };
+    // A name is taken too (#1043).
+    let Some(typed) = arg else { return format!("text takes {what} or a card's name") };
     let Ok(n) = typed.parse::<usize>() else {
         return format!("no card '{typed}': text takes {what}");
     };
