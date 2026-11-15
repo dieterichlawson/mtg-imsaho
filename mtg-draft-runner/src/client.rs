@@ -123,6 +123,8 @@ pub fn run(
     let mut built_for_phase = String::new();
     // The pack on screen (id and pick) and when it was printed.
     let mut pack_shown: Option<(Value, Instant)> = None;
+    // The pack whose queued count has been said under it (#1040).
+    let mut queue_said: Option<Value> = None;
     loop {
         while let Ok((typed_at, line)) = rx.try_recv() {
             if line == "\u{0}eof" {
@@ -170,8 +172,16 @@ pub fn run(
                             shown = mine;
                             shown_key = key;
                         } else if table != shown_table && key != shown_key {
+                            // The seat's own new name is the table's line, as
+                            // before; only the queue count is said short.
+                            let me = |k: &str| k.split_once(" me ").map(|(_, n)| n.to_string());
+                            let renamed = me(&key) != me(&shown_key);
                             shown_key = key;
-                            out(&table_line(&msg));
+                            if renamed {
+                                out(&table_line(&msg));
+                            } else if let Some(line) = change_line(&msg, &mut queue_said) {
+                                out(&line);
+                            }
                         }
                         shown_table = table;
                         let pack = serde_json::json!([msg["pack"]["id"], msg["pack"]["pick"]]);
@@ -517,6 +527,25 @@ pub fn table_line(v: &Value) -> String {
         n => format!(" {n} more packs waiting for you"),
     };
     format!("[{}]{queued}", parts.join("; "))
+}
+
+/// The line printed when only the table moved. While a pack is in front of
+/// the seat that is its queue, said once per pack in a line of its own and
+/// not as the whole table's line: at four seats that line was wider than
+/// 80 columns, the terminal wrapped it, and three of them scrolled the
+/// pack's heading off an 80x24 screen at pick 1 (#1040). Later counts are
+/// in the next pack's block. Otherwise the table's line.
+fn change_line(v: &Value, said_for: &mut Option<Value>) -> Option<String> {
+    if v["phase"] != "drafting" || !v["pack"].is_object() {
+        return Some(table_line(v));
+    }
+    let waiting = v["pack"]["waiting"].as_u64().unwrap_or(0);
+    let pack = v["pack"]["id"].clone();
+    if waiting == 0 || said_for.as_ref() == Some(&pack) {
+        return None;
+    }
+    *said_for = Some(pack);
+    Some(format!("({} waiting for you behind this one)", crate::count(waiting as usize, "more pack", "more packs")))
 }
 
 /// What decides whether the table's one line is printed again: the line
@@ -1278,6 +1307,16 @@ sideboard between games, and ready starts the next", "#1044");
         assert_eq!(table_line_key(&v), key);
         v["seats"][0]["name"] = "Host".into();
         assert_ne!(table_line_key(&v), key, "this seat's own new name is a line");
+        // #1040: the queue under a pack is one short line, once per pack,
+        // not the table's line (84 columns at four seats) per new count.
+        let mut said = None;
+        let first = change_line(&v, &mut said).expect("the first count under this pack is said");
+        assert_eq!(first, "(2 more packs waiting for you behind this one)");
+        assert!(first.chars().count() <= 80);
+        v["pack"]["waiting"] = 3.into();
+        assert_eq!(change_line(&v, &mut said), None, "said once under this pack");
+        v["pack"]["id"] = 8.into();
+        assert!(change_line(&v, &mut said).is_some(), "and once under the next");
         let key = table_line_key(&v);
         v["pack"]["waiting"] = 1.into();
         assert_ne!(table_line_key(&v), key);
