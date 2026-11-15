@@ -279,7 +279,10 @@ impl Shared {
         };
         let _ = views;
         for line in events {
-            self.say(&line);
+            // The lobby's own warnings (an unusable pick answer, no valid
+            // deck, a seat that stopped answering) print under --quiet as
+            // the server's do (#1041's review).
+            if is_warning(&line) { self.reply(&line) } else { self.say(&line) }
         }
         self.keep_snapshot();
         self.changed.notify_all();
@@ -618,6 +621,12 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     }
     shared.close_everything();
     Ok(())
+}
+
+/// A table line that says something went wrong, which `--quiet` does not
+/// silence: the event lines it does are what happened, not what failed.
+fn is_warning(line: &str) -> bool {
+    line.starts_with("WARN ")
 }
 
 /// A stop signal as a host knows it; the runners say it the same way.
@@ -1474,6 +1483,15 @@ mod tests {
     }
 
     use super::*;
+
+    /// #1041's review: the lobby's WARN events went through `say`, which
+    /// --quiet silences, while the server's own WARNs printed.
+    #[test]
+    fn a_lobby_warning_is_not_an_event_line() {
+        assert!(is_warning("WARN seat 1 stopped answering (no answer); the table picks and builds for it"));
+        assert!(!is_warning("seat 1 picked Brain Weevil (1.1)"));
+        assert!(!is_warning("seat 0 is away: no draft page or client is open for the seat"));
+    }
 
     /// #895: after `closed` no view goes out. A view sent while the sockets
     /// closed told the page still open that a seat whose page had closed was
