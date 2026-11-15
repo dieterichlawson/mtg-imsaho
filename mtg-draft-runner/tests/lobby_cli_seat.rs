@@ -91,4 +91,9 @@ fn kicking_the_hosts_own_seat_asks_first() {
     server.type_line("kick 0 yes");
     // #905: under --quiet the kick that took is answered too.
     server.wait_for_stderr("seat 0 kicked: the table picks and builds for it", Duration::from_secs(10));
+    // #1042: once kicked, a second kick is refused before any `yes` is
+    // asked for.
+    server.type_line("kick 0");
+    let again = server.wait_for_stderr("kick: seat 0 is already kicked", Duration::from_secs(10));
+    assert_eq!(again.matches("`kick 0 yes`").count(), 1, "{again}");
 }

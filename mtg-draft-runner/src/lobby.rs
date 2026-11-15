@@ -1672,13 +1672,14 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
 
     // ── absent seats ──
 
-    /// Turn a human seat into one the table picks and builds for, from now
-    /// on. Its games are forfeit.
+    /// Why a kick of `seat` would be refused, if it would: asked before the
+    /// host's own seat is asked to confirm, so the question is not put for a
+    /// kick that cannot take (#1042's review).
     ///
     /// # Errors
-    /// Not a human seat.
-    pub fn kick(&mut self, seat: usize) -> Result<(), String> {
-        let Some(s) = self.seats.get_mut(seat) else {
+    /// No such seat, not a person's, already kicked, or the tournament is over.
+    pub fn kick_refusal(&self, seat: usize) -> Result<(), String> {
+        let Some(s) = self.seats.get(seat) else {
             return Err(format!("there is no seat {seat}"));
         };
         if !s.is_human() {
@@ -1692,6 +1693,16 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         if self.phase == Phase::Done {
             return Err("the tournament is over: there is nothing left to forfeit".to_string());
         }
+        Ok(())
+    }
+
+    /// Turn a human seat into one the table picks and builds for, from now
+    /// on. Its games are forfeit.
+    ///
+    /// # Errors
+    /// Not a human seat.
+    pub fn kick(&mut self, seat: usize) -> Result<(), String> {
+        self.kick_refusal(seat)?;
         let s = &mut self.seats[seat];
         s.auto = true;
         s.kicked = true;

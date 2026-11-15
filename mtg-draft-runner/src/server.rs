@@ -658,6 +658,9 @@ fn host_loop(shared: &Arc<Shared>) {
                         // The host's own seat is at this keyboard, and a kick
                         // is for good: a mistyped seat number ended the
                         // host's tournament with no question asked (#909).
+                        // Refused first, so a kick that cannot take is not
+                        // put as a question (#1042's review).
+                        shared.lobby().kick_refusal(seat)?;
                         let own = shared.lobby().kind(seat) == Some(&SeatKind::Cli);
                         if own && words.get(2) != Some(&"yes") {
                             return Err(format!("seat {seat} is yours, at this terminal: `kick {seat} yes` \
