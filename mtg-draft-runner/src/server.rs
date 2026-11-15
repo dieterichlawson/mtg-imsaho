@@ -77,6 +77,10 @@ pub struct Shared {
     /// match's page sits on its game-over screen in its own tab, and is told
     /// the table is closed with the rest, or it retried for ever (#1033).
     finished_pages: Mutex<Vec<PageHandle>>,
+    /// The game links of matches that are over, by port and key, and the
+    /// seat each was: what an old link is answered with depends on whose
+    /// it was (#1037).
+    ended_links: Mutex<Vec<(u16, String, usize)>>,
     /// Where the next game page's port search starts: past the last one
     /// handed out, so a finished match's port, let go when its seat is
     /// dropped (#853), is not the next match's while the range has others.
@@ -109,6 +113,8 @@ struct InGame {
     /// port is passed to, and nothing else is; the page itself answers
     /// only under its key (#872).
     addr: std::net::SocketAddr,
+    /// The key in the page's link (`/game/<port>/<key>/`).
+    key: String,
 }
 
 struct Client {
@@ -141,6 +147,7 @@ impl Shared {
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
             finished_pages: Mutex::new(Vec::new()),
+            ended_links: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
             cli_lines: Mutex::new(None),
         })
@@ -195,6 +202,8 @@ impl Shared {
             in_game.push(page);
         }
         drop(in_game);
+        self.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(gone.iter().map(|p| (p.addr.port(), p.key.clone(), p.seat)));
         let mut finished = self.finished_pages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // A page no longer attached cannot come back: its seat's listener
         // closed with the match.
@@ -911,6 +920,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                         seat, opponent: if seat == a { b } else { a },
                         withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
                         page: gui.page_handle(), addr: gui.local_addr(),
+                        key: gui.url.trim_end_matches('/').rsplit('/').next().unwrap_or_default().to_string(),
                     }));
                     shared.lobby().set_game_pages(seat, Some(0));
                     seats.push(GameSeat::Gui(gui));
@@ -1223,8 +1233,16 @@ fn proxy_game_page(mut client: TcpStream, head: &RequestHead, shared: &Shared, p
     let addr = shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter().map(|g| g.addr).find(|a| a.port() == port);
     let Some(mut addr) = addr else {
-        http_response(&mut client, "404 Not Found", "text/plain",
-            b"no game is being played on this link now: the match is over, or has not started; the draft page has the link to your game");
+        // A kicked seat's draft page has no game link to send it to (#1037).
+        let key = rest.trim_start_matches('/').split('/').next().unwrap_or_default();
+        let seat = shared.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter().find(|(p, k, _)| *p == port && k == key).map(|&(_, _, seat)| seat);
+        let body: &[u8] = if seat.is_some_and(|s| shared.lobby().is_kicked(s)) {
+            b"no game is being played on this link now: the host has handed your seat to the table, which plays its games no more; the draft page says where the table stands"
+        } else {
+            b"no game is being played on this link now: the match is over, or has not started; the draft page has the link to your game"
+        };
+        http_response(&mut client, "404 Not Found", "text/plain", body);
         return;
     };
     if addr.ip().is_unspecified() {

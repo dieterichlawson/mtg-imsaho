@@ -1736,6 +1736,12 @@ for the seat from here, and its games are forfeit"), ""));
         self.run_auto_seats();
     }
 
+    /// Whether the host has kicked this seat.
+    #[must_use]
+    pub fn is_kicked(&self, seat: usize) -> bool {
+        self.seats.get(seat).is_some_and(|s| s.kicked)
+    }
+
     /// Whether the table plays for this seat (its games are forfeit).
     #[must_use]
     pub fn is_auto(&self, seat: usize) -> bool {

@@ -63,6 +63,13 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
     let v = c0.view_until("the view after the tournament", Duration::from_secs(30), |v| v["phase"] == "done");
     assert_eq!(v["matches"][0]["games"][0]["winner"], 1, "{}", v["matches"]);
     assert!(v["matches"][0]["url"].is_null(), "a kicked seat is not offered its game: {}", v["matches"]);
+    // #1037: its old game link does not send it to the draft page for a
+    // link that page will never show.
+    let link = terminal.split("seat 0: no browser at ").nth(1).and_then(|t| t.split_whitespace().next()).unwrap();
+    let path = &link[link.find("/game/").unwrap()..];
+    let (status, body) = server.http_get(path);
+    assert_eq!(status, 404, "{body}");
+    assert!(body.contains("handed your seat to the table") && !body.contains("has the link to your game"), "{body}");
 }
 
 /// The seat whose game page holds the decision, read off both pages.
