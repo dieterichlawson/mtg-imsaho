@@ -1150,8 +1150,18 @@ the order they happened, not in seat order", "");
     }
 
     /// A connection for `seat` closed.
-    pub fn disconnected(&mut self, seat: usize) {
+    ///
+    /// `closing` is the table's own stop, which takes every page with it:
+    /// nobody went away then.
+    pub fn disconnected(&mut self, seat: usize, closing: bool) {
         self.seats[seat].connected = self.seats[seat].connected.saturating_sub(1);
+        // The host was told a seat "is back" and never that it had gone
+        // (#1039): the last page or client closing is said too, as a game
+        // page closing is (#822). A kicked seat's comings and goings are
+        // not news; the table plays for it.
+        if self.seats[seat].connected == 0 && !closing && !self.seats[seat].kicked {
+            self.event(format!("{} is away: no draft page or client is open for the seat", self.who(seat)));
+        }
     }
 
     /// How many pages are attached to the seat's game: `Some(0)` from the

@@ -1375,7 +1375,8 @@ fn serve_websocket(stream: TcpStream, head: &RequestHead, shared: &Arc<Shared>, 
     shared.notify();
     pump(&mut ws, &rx, shared, id, seat);
     shared.drop_client(id);
-    shared.lobby().disconnected(seat);
+    let closing = shared.stop_reason().is_some();
+    shared.lobby().disconnected(seat, closing);
     shared.notify();
 }
 

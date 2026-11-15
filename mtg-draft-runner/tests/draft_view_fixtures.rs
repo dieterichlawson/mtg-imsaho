@@ -624,19 +624,26 @@ fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     lobby.start();
     let events = lobby.take_events().join("\n");
     assert!(events.contains("seat 0 is now called Cli"), "{events}");
-    lobby.disconnected(0);
+    lobby.disconnected(0, false);
+    // Said when it goes, not only when it is back (#1039).
+    assert_eq!(lobby.take_events().join("\n"), "Cli (seat 0) is away: no draft page or client is open for the seat");
     lobby.connected(0);
     lobby.set_name(0, "Cli").unwrap();
     let events = lobby.take_events().join("\n");
     assert_eq!(events, "Cli (seat 0) is back");
+    // The table's own stop takes every page: nobody went away.
+    lobby.disconnected(0, true);
+    assert!(lobby.take_events().is_empty());
+    lobby.connected(0);
+    lobby.take_events();
     // A second tab while the first is open is not a return.
     lobby.connected(0);
     assert!(lobby.take_events().is_empty());
     // Nor is a kicked seat's page connecting again: the table still plays
     // for it.
     lobby.kick(0).unwrap();
-    lobby.disconnected(0);
-    lobby.disconnected(0);
+    lobby.disconnected(0, false);
+    lobby.disconnected(0, false);
     lobby.take_events();
     lobby.connected(0);
     let events = lobby.take_events().join("\n");
@@ -722,7 +729,7 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     l.connected(0);
     l.connected(1);
     assert_eq!(presence(&l, 0), "here");
-    l.disconnected(0);
+    l.disconnected(0, false);
     assert_eq!(presence(&l, 0), "away");
 
     // In a match: the game page decides, whatever the draft page does.
@@ -735,7 +742,7 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert!(l.set_game_pages(0, Some(1)));
     assert_eq!(l.take_events(), vec!["seat 0's game page is open".to_string()]);
     assert_eq!(presence(&l, 0), "in game");
-    l.disconnected(0);
+    l.disconnected(0, false);
     assert_eq!(presence(&l, 0), "in game", "playing with the draft page closed is not away");
     l.take_events();
     assert!(l.set_game_pages(0, Some(0)));
