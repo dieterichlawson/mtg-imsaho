@@ -1239,13 +1239,17 @@ fn redirect(stream: &mut TcpStream, to: &str) {
 /// do.
 fn proxy_game_page(mut client: TcpStream, head: &RequestHead, shared: &Shared, port: u16, rest: &str) {
     let head = &head.bytes;
+    // A finished match's link is answered as one even when its port now
+    // serves a later match, which would refuse the old key with a bare "not
+    // found" (#1037's review).
+    let key = rest.trim_start_matches('/').split('/').next().unwrap_or_default();
+    let ended = shared.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter().find(|(p, k, _)| *p == port && k == key).map(|&(_, _, seat)| seat);
     let addr = shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter().map(|g| g.addr).find(|a| a.port() == port);
+        .iter().filter(|_| ended.is_none()).map(|g| g.addr).find(|a| a.port() == port);
     let Some(mut addr) = addr else {
         // A kicked seat's draft page has no game link to send it to (#1037).
-        let key = rest.trim_start_matches('/').split('/').next().unwrap_or_default();
-        let seat = shared.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter().find(|(p, k, _)| *p == port && k == key).map(|&(_, _, seat)| seat);
+        let seat = ended;
         let body: &[u8] = if seat.is_some_and(|s| shared.lobby().is_kicked(s)) {
             b"no game is being played on this link now: the host has handed your seat to the table, which plays its games no more; the draft page says where the table stands"
         } else {
