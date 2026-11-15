@@ -219,9 +219,11 @@ impl Shared {
         }
     }
 
-    /// The answer to something the host typed: printed under `--quiet` as
-    /// well, which quiets the table's own lines, not the host's commands
-    /// (`status` printed nothing at all under it).
+    /// The answer to something the host typed, or a warning: printed under
+    /// `--quiet` as well, which quiets the table's own lines, not the
+    /// host's commands (`status` printed nothing at all under it) nor what
+    /// went wrong (a WARN went through `say` in some places and not in
+    /// others, #1041's review).
     pub fn reply(&self, line: &str) {
         mtg_player::stderr_line!("{line}");
     }
@@ -781,7 +783,7 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
                 // as in the runner.
                 if let Err(e) = shared.lobby().ai_pick(seat, job.pack_id, 0, "", "", false) {
                     let who = shared.lobby().who(seat);
-                    shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
+                    shared.reply(&format!("WARN {who}: a pick could not be applied: {e}"));
                 }
                 shared.notify();
             }
@@ -812,7 +814,7 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
                 };
                 if let Err(e) = applied {
                     let who = shared.lobby().who(seat);
-                    shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
+                    shared.reply(&format!("WARN {who}: a pick could not be applied: {e}"));
                 }
                 shared.notify();
             }
@@ -864,6 +866,11 @@ fn tournament_thread(shared: &Arc<Shared>) {
 /// Play one match, or forfeit it for a seat the table plays for. Returns
 /// the next round's matches when this one ended the round.
 fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usize, usize, usize)> {
+    // The table is closing: no match is set up, and no game page served
+    // for it, whose seat then asked the host to open it (#1041's review).
+    if shared.quitting() {
+        return Vec::new();
+    }
     let (kind_a, kind_b, forfeit, deck_a, deck_b, best_of, seed) = {
         let lobby = shared.lobby();
         let forfeit = (lobby.is_auto(a) || lobby.is_auto(b)).then(|| lobby.forfeit_result(a, b));
@@ -882,7 +889,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
     }
     let (Some(deck_a), Some(deck_b)) = (deck_a, deck_b) else {
         let (wa, wb) = { let l = shared.lobby(); (l.who(a), l.who(b)) };
-        shared.say(&format!("WARN round {round}: {wa} vs {wb} has no decks to play with"));
+        shared.reply(&format!("WARN round {round}: {wa} vs {wb} has no decks to play with"));
         return Vec::new();
     };
 
@@ -910,7 +917,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                 }
                 Err(e) => {
                     let who = shared.lobby().who(seat);
-                    shared.say(&format!("WARN round {round}: no game page for {who}: {e}; \
+                    shared.reply(&format!("WARN round {round}: no game page for {who}: {e}; \
 {who} forfeits the match"));
                     let result = shared.lobby().forfeit_by(a, b, seat,
                         &format!("no game page for {who}: {e}"));

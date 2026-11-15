@@ -99,7 +99,7 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | `--log <path>` | `logs/draft-with-friends/draft.log` | the draft log; `decks/` and `games/` beside it |
 | `--save <path>` | `table.save.json` beside the log | the table's snapshot, rewritten after every change |
 | `--resume <path>` | none | carry on from a snapshot (below) |
-| `--quiet` | | no event lines on the terminal |
+| `--quiet` | | no event lines on the terminal (warnings, and answers to the host's commands, still print) |
 
 `--help` and `--version` answer and exit; an unknown flag, a bad seat
 word, an unknown provider, or a `cc` seat with no CLI is refused before
