@@ -152,7 +152,7 @@ export function tiebreakText(s) {
     const pct = (f) => (100 * (f ?? 0)).toFixed(1);
     return `${pct(s.omw)} /${NBSP}${pct(s.gw)} /${NBSP}${pct(s.ogw)}`;
 }
-function matchRow(view, m) {
+function matchRow(view, m, closed = false) {
     // A forfeit is not a game played and won, and an abandoned game is not a
     // draw (#743, #744).
     const who = (s) => s === view.seat ? "you" : seatName(view, s);
@@ -164,7 +164,10 @@ function matchRow(view, m) {
     // A match its games have decided is "playing" until its result is
     // recorded; it is not on a next game (#916).
     const playing = m.next_game === null ? "decided" : "playing now";
-    const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? playing : "waiting to start";
+    // The table is closed: a match not finished is not "playing now", and
+    // its game link leads to a server that is gone (#1038).
+    const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}`
+        : closed ? "not finished" : m.status === "playing" ? playing : "waiting to start";
     // The link is this seat's own page. It is null until the match's pages
     // are open (a beat after the pairing), and stays null for a match the
     // table settled without one (a forfeit). A decided match has no game
@@ -172,7 +175,7 @@ function matchRow(view, m) {
     // Through the lobby's port it is a path, on the host this page was
     // opened on (a tunnel's, a tailnet name), and is shown resolved (#969).
     let link = null;
-    if (m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
+    if (!closed && m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
         const url = m.url ? gameLink(m.url) : null;
         link = url
             ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: url, target: "_blank", rel: "noopener" }, ...urlPieces(url)))
@@ -463,7 +466,10 @@ function playing(view, done, state, actions) {
     const me = view.seats.find(s => s.seat === view.seat);
     const byes = ownByes(view);
     const sections = [h("h2", { text: done ? "Draft over" : "Playing" })];
-    if (!done) {
+    // Nothing is on once the table is closed: "Your match is on." and the
+    // sideboarding panel stayed under the closed banner (#1038).
+    const closed = state.closed !== null;
+    if (!done && !closed) {
         // The round in progress is the latest one paired; a bye in it is why
         // this seat has nothing to play.
         const latest = Math.max(0, ...(view.pairings || []).map(p => p.round));
@@ -478,7 +484,7 @@ function playing(view, done, state, actions) {
             sections.push(betweenPanel(view, m, m.between, state, actions));
     }
     const rows = [
-        ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m) })),
+        ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m, closed) })),
         ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" }, h("div", { class: "match-head", text: `Round ${round}: a bye${dashed("counted as a match won")}` })) })),
     ].sort((a, b) => a.round - b.round);
     sections.push(h("h3", { text: "Your matches" }), rows.length ? h("ul", { class: "matches" }, ...rows.map(r => r.el)) : h("p", { class: "muted", text: "No pairings yet." }));

@@ -867,6 +867,20 @@ async function main() {
         check((r.banner || "").includes("wrong key"), `${tag}: with the server's reason on the banner`);
       }
 
+      // #1038: once the table is closed, the last view is kept for reference
+      // but nothing in it is live: no "Your match is on.", no "playing now",
+      // no game link. Last, as nothing reopens a closed page.
+      {
+        const view = fixtures.views.find(v => v.name === "playing").view;
+        await stage(view);
+        await stage({ type: "closed", reason: "the host quit" });
+        await page.waitForTimeout(100);
+        const body = await text("body");
+        const links = await page.$$eval(".match-link a", a => a.length);
+        check(body.includes("The table is closed: the host quit.") && !body.includes("Your match is on.")
+          && !body.includes("playing now") && links === 0,
+          `${tag}: a closed table's page offers nothing live (${links} game links)`);
+      }
       if (errors.length) fail(`${tag}: page errors:\n  ${errors.join("\n  ")}`); else ok(`${tag}: no page errors`);
       await page.close();
     }
