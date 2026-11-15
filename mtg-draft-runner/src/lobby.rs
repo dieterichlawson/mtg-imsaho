@@ -832,6 +832,8 @@ struct SeatState {
     /// Whether this match's game page has been open at all: one not opened
     /// yet is not "closed", and its first open is not "open again" (#926).
     game_page_opened: bool,
+    /// The host has been told the seat went away, and is owed a "back".
+    said_away: bool,
     deck: Option<DraftDeck>,
     deck_problem: Option<String>,
     ready: bool,
@@ -981,6 +983,7 @@ impl Lobby {
             gave_up: false,
             game_pages: None,
             game_page_opened: false,
+            said_away: false,
             deck: None,
             deck_problem: None,
             ready: false,
@@ -1138,12 +1141,16 @@ the order they happened, not in seat order", "");
             self.seats[seat].auto = false;
             self.event(format!("{} is here; it picks for itself from now on", self.who(seat)));
             self.arm_deadlines();
-        } else if was_away && !self.seats[seat].kicked {
+        } else if was_away && self.seats[seat].said_away && !self.seats[seat].kicked {
             // The host's one sign a seat that went away is here again; a
             // client's reconnect used to show only as a rename to the
             // name it already had (#856).
             self.event(format!("{} is back", self.who(seat)));
         }
+        // "Back" only after an "away": a seat in a match, or the host's
+        // own, is not said to go, and its return was a lone "is back"
+        // (#1039's review).
+        self.seats[seat].said_away = false;
         if self.phase == Phase::Lobby && self.seats.iter().all(|s| s.joined) {
             self.start();
         }
@@ -1165,6 +1172,7 @@ the order they happened, not in seat order", "");
         let s = &self.seats[seat];
         if s.connected == 0 && !closing && !s.kicked && s.game_pages.is_none() && s.kind != SeatKind::Cli {
             self.event(format!("{} is away: no draft page or client is open for the seat", self.who(seat)));
+            self.seats[seat].said_away = true;
         }
     }
 

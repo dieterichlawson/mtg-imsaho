@@ -644,9 +644,10 @@ fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     let _ = lobby.set_game_pages(0, Some(1));
     lobby.disconnected(0, false);
     assert!(!lobby.take_events().join("\n").contains("is away"));
-    let _ = lobby.set_game_pages(0, None);
+    // Nor, then, back: a "back" with no "away" before it was the asymmetry.
     lobby.connected(0);
-    lobby.take_events();
+    assert!(!lobby.take_events().join("\n").contains("is back"));
+    let _ = lobby.set_game_pages(0, None);
     // A second tab while the first is open is not a return.
     lobby.connected(0);
     assert!(lobby.take_events().is_empty());
