@@ -588,7 +588,7 @@ fn odd_table_round_one() -> (Lobby, usize, usize, usize) {
 fn the_hosts_lines_name_a_seat_as_the_page_does() {
     let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
     lobby.connected(0);
-    lobby.set_name(0, "Lea");
+    lobby.set_name(0, "Lea").unwrap();
     lobby.start();
     draft_to_the_end(&mut lobby, None);
     let registry = CardRegistry::with_all_cards();
@@ -620,13 +620,13 @@ fn the_hosts_lines_name_a_seat_as_the_page_does() {
 fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
     lobby.connected(0);
-    lobby.set_name(0, "Cli");
+    lobby.set_name(0, "Cli").unwrap();
     lobby.start();
     let events = lobby.take_events().join("\n");
     assert!(events.contains("seat 0 is now called Cli"), "{events}");
     lobby.disconnected(0);
     lobby.connected(0);
-    lobby.set_name(0, "Cli");
+    lobby.set_name(0, "Cli").unwrap();
     let events = lobby.take_events().join("\n");
     assert_eq!(events, "Cli (seat 0) is back");
     // A second tab while the first is open is not a return.
@@ -765,7 +765,8 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert!(again.contains("already kicked"), "{again}");
     // A client sends its name on every connect: a kicked seat keeps the
     // name its kick gave, or one kick reads two ways again.
-    l.set_name(1, "Bo");
+    let renamed = l.set_name(1, "Bo").unwrap_err();
+    assert!(renamed.contains("keeps that name"), "a kicked seat's rename is answered: {renamed}");
     assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(0), "the seat is away");
@@ -838,7 +839,7 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     let (mut a, _) = lobby(seats());
     a.connected(0);
     a.connected(1);
-    a.set_name(0, "Ann");
+    a.set_name(0, "Ann").unwrap();
     draft_to_the_end(&mut a, Some(20));
     a.set_ai_notes(2, Some("taking blue".into()));
     let (mut b, _) = lobby(seats());

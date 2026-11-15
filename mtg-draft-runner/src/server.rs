@@ -1397,7 +1397,7 @@ fn pump(
                     Ok(Request::Deck { main, lands, sideboard }) =>
                         shared.lobby().submit_deck(seat, &main, &lands, &sideboard),
                     Ok(Request::Ready) => shared.lobby().ready(seat),
-                    Ok(Request::Name { name }) => { shared.lobby().set_name(seat, &name); Ok(()) }
+                    Ok(Request::Name { name }) => shared.lobby().set_name(seat, &name),
                     Ok(Request::Sideboard { main, lands }) => shared.lobby().sideboard(seat, &main, &lands),
                     Ok(Request::PlayDraw { play }) => shared.lobby().play_draw(seat, play),
                     Ok(Request::SideboardReady) => shared.lobby().sideboard_ready(seat),
@@ -1483,7 +1483,7 @@ mod tests {
         let kind = |m: String| serde_json::from_str::<serde_json::Value>(&m).unwrap()["type"].as_str().unwrap_or("").to_string();
         assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["view"], "a view goes out while the table is open");
         shared.quit_because("the server was stopped by Ctrl-C (SIGINT)");
-        shared.lobby().set_name(1, "Bo");
+        shared.lobby().set_name(1, "Bo").unwrap();
         shared.notify();
         assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["closed"], "nothing after closed");
         // Nor a reply to something asked in the moment of the close; and a

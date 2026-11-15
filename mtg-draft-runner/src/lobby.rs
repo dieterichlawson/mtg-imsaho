@@ -1700,7 +1700,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     /// on. Its games are forfeit.
     ///
     /// # Errors
-    /// Not a human seat.
+    /// As [`Lobby::kick_refusal`]: no such seat, not a person's, already
+    /// kicked, or the tournament is over.
     pub fn kick(&mut self, seat: usize) -> Result<(), String> {
         self.kick_refusal(seat)?;
         let s = &mut self.seats[seat];
@@ -2421,18 +2422,26 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
     // ── names ──
 
     /// A seat's cosmetic name.
-    pub fn set_name(&mut self, seat: usize, name: &str) {
+    ///
+    /// # Errors
+    /// A kicked seat asking for another name: it keeps the one it was
+    /// kicked under, and is told so rather than met with silence.
+    pub fn set_name(&mut self, seat: usize, name: &str) -> Result<(), String> {
         let clean = clean_name(name);
         // A client sends its name on every connect: the same name again is
         // no rename (#856).
+        if clean.is_empty() || clean == self.seats[seat].name {
+            return Ok(());
+        }
         // A kicked seat keeps the name it was kicked under: its later
         // forfeits name it, and a rename on reconnect split one kick into
         // two reasons again (#1036's review).
-        if clean.is_empty() || clean == self.seats[seat].name || self.seats[seat].kicked {
-            return;
+        if self.seats[seat].kicked {
+            return Err(format!("the seat was kicked as {}, and keeps that name", self.who(seat)));
         }
         self.event(format!("{} is now called {clean}", self.who(seat)));
         self.seats[seat].name = clean;
+        Ok(())
     }
 
     // ── the view ──
