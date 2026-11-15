@@ -1319,7 +1319,9 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   x += 2; w -= 4;
   // The table is over (#824): said in place of everything else.
   if (state.closed) {
-    for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, w - 8, "8px Silkscreen", 4)) { text(ctx, l, x + 4, ty, { color: "#ff9080" }); ty += 9; }
+    // The reason is the host's or the signal's words: what room the panel has (#1034's review).
+    const room = Math.max(4, Math.floor((y + h - 6 - ty) / 9));
+    for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, w - 8, "8px Silkscreen", room)) { text(ctx, l, x + 4, ty, { color: "#ff9080" }); ty += 9; }
     return;
   }
   if (state.gameOver) {
@@ -1714,13 +1716,21 @@ export function render(ctx: Ctx, state: State): Hit[] {
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, BOARD_W, H);
   if (!state.view) {
+    // Closed before the first game was drawn: said here, as there is no
+    // panel yet to say it in (#1034's review).
+    if (state.closed) {
+      let ty = 12;
+      for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", 6)) { text(ctx, l, 12, ty, { color: "#ff9080" }); ty += 10; }
+      return hits;
+    }
     text(ctx, state.connected ? "Waiting for the game…" : "Connecting to the runner…", 12, 12, { font: "8px PressStart", color: "#ffe080" });
     // Before a match's first game the table may need something of the
     // person first ("Before game 1: choose play or draw on your draft
     // page"), and there is no board yet to put it under (#879).
     if (state.matchLine) {
       let ty = 30;
-      for (const l of wrapCapped(ctx, state.matchLine, BOARD_W - 24, "8px Silkscreen", 3)) { text(ctx, l, 12, ty, { color: "#a0d0e0" }); ty += 10; }
+      // Five lines, as the panel gives it: three cut the longest the server sends (#1034's review).
+      for (const l of wrapCapped(ctx, state.matchLine, BOARD_W - 24, "8px Silkscreen", 5)) { text(ctx, l, 12, ty, { color: "#a0d0e0" }); ty += 10; }
     }
     return hits;
   }
