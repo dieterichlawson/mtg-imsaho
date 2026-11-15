@@ -328,6 +328,12 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     fixtures.insert("done", v);
     let events = lobby.take_events();
     assert!(events.iter().any(|e| e.contains("the tournament is over")), "{events:?}");
+    // Nothing is left to forfeit: a kick now is refused, and neither
+    // announced nor logged (#1042).
+    let late = lobby.kick(0).unwrap_err();
+    assert!(late.contains("the tournament is over"), "{late}");
+    assert!(lobby.take_events().is_empty());
+    assert!(!lobby.is_auto(0));
 
     // The fixture: one view per phase, plus a refusal, for the page's test.
     let mut doc = serde_json::Map::new();
@@ -754,6 +760,9 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert_eq!(presence(&l, 1), "kicked", "with its draft page still open");
     // Naming the seat, as the match the kick ended says it (#1036).
     let kicked = format!("the host kicked {}", l.who(1));
+    // Once is the kick: a second is refused, not announced again (#1042).
+    let again = l.kick(1).unwrap_err();
+    assert!(again.contains("already kicked"), "{again}");
     assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(0), "the seat is away");
     l.seat_gave_up(2, "no answer");

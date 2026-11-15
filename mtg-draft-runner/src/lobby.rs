@@ -1684,6 +1684,15 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         if !s.is_human() {
             return Err(format!("seat {seat} is an {} seat", s.kind.word()));
         }
+        // A second kick did nothing and was announced and logged as one
+        // anyway, as was a kick once the tournament was over (#1042).
+        if s.kicked {
+            return Err(format!("seat {seat} is already kicked: the table picks, builds and forfeits for it"));
+        }
+        if self.phase == Phase::Done {
+            return Err("the tournament is over: there is nothing left to forfeit".to_string());
+        }
+        let s = &mut self.seats[seat];
         s.auto = true;
         s.kicked = true;
         s.joined = true;
