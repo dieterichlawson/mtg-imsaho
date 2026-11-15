@@ -1,6 +1,6 @@
 # Draft loop: what the nights add up to
 
-25 night(s), 200 decks, 740 games. Written by `scripts/draft-loop/ledger.py stats`; the data is `nights/*.json`.
+26 night(s), 208 decks, 766 games. Written by `scripts/draft-loop/ledger.py stats`; the data is `nights/*.json`.
 
 ## Guided against unguided seats
 
@@ -8,19 +8,19 @@
 
 | seats | n | matches W-L-D | match win | games W-L | game win |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| guided | 80 | 116-124-0 | 48% | 285-303 | 48% |
-| conventional | 12 | 20-16-0 | 56% | 46-38 | 55% |
-| unguided | 108 | 164-160-0 | 51% | 409-399 | 51% |
+| guided | 82 | 119-127-0 | 48% | 292-309 | 49% |
+| conventional | 14 | 23-19-0 | 55% | 52-45 | 54% |
+| unguided | 112 | 170-166-0 | 51% | 422-412 | 51% |
 
-### The nights with all three (6)
+### The nights with all three (7)
 
 The same seats on the same nights, which is the fair test of the two guides.
 
 | seats | n | matches W-L-D | match win | games W-L | game win |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| guided | 12 | 15-21-0 | 42% | 35-49 | 42% |
-| conventional | 12 | 20-16-0 | 56% | 46-38 | 55% |
-| unguided | 24 | 37-35-0 | 51% | 93-87 | 52% |
+| guided | 14 | 18-24-0 | 43% | 42-55 | 43% |
+| conventional | 14 | 23-19-0 | 55% | 52-45 | 54% |
+| unguided | 28 | 43-41-0 | 51% | 106-100 | 51% |
 
 ## Colour pairs
 
@@ -28,98 +28,98 @@ A deck's colours are those with four or more of its spells (or three on five bas
 
 | colours | decks | matches W-L-D | game win |
 | --- | ---: | ---: | ---: |
-| BG | 26 | 41-37-0 | 52% (190) |
+| BG | 27 | 44-37-0 | 54% (196) |
 | WU | 26 | 39-39-0 | 51% (192) |
-| UB | 24 | 29-43-0 | 46% (183) |
-| BR | 22 | 38-28-0 | 53% (160) |
+| UB | 25 | 30-45-0 | 46% (189) |
+| BR | 24 | 40-32-0 | 52% (174) |
+| WR | 23 | 38-31-0 | 55% (166) |
 | WG | 22 | 35-31-0 | 51% (156) |
-| WR | 22 | 36-30-0 | 54% (159) |
 | UR | 20 | 27-33-0 | 46% (149) |
-| WB | 17 | 25-26-0 | 47% (131) |
+| WB | 19 | 27-30-0 | 45% (143) |
 | RG | 10 | 16-14-0 | 53% (76) |
-| UG | 4 | 3-9-0 | 42% (31) |
+| UG | 5 | 5-10-0 | 45% (38) |
 | U | 3 | 4-5-0 | 48% (21) |
 | R | 2 | 3-3-0 | 50% (16) |
 | G | 1 | 2-1-0 | 50% (8) |
 | W | 1 | 2-1-0 | 50% (8) |
 
-## Cards in winning decks (at least 50 games in a deck)
+## Cards in winning decks (at least 52 games in a deck)
 
 `games` are the games the card was in the deck for, sideboarding included, and `deck game win` is how many of them its deck won; `avg pick` is its pick within a pack (1-14) when taken.
 
 | card | colours | rarity | decks | games | deck game win | avg pick | taken / seen |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Moorland Haunt | C | rare | 7 | 51 | 63% | 10.7 | 11/118 |
-| Desperate Ravings | R | uncommon | 7 | 50 | 60% | 10.3 | 30/308 |
-| Furor of the Bitten | R | common | 17 | 122 | 60% | 10.1 | 58/584 |
+| Moldgraf Monstrosity | G | rare | 8 | 57 | 61% | 3.9 | 10/39 |
+| Furor of the Bitten | R | common | 18 | 129 | 60% | 10.0 | 60/601 |
 | Slayer of the Wicked | W | uncommon | 25 | 178 | 60% | 1.7 | 29/48 |
+| Mentor of the Meek | W | rare | 11 | 81 | 59% | 3.9 | 12/47 |
 | Midnight Haunting | W | uncommon | 22 | 160 | 59% | 3.9 | 27/106 |
-| Mentor of the Meek | W | rare | 10 | 74 | 58% | 4.2 | 11/46 |
-| Disciple of Griselbrand | B | uncommon | 17 | 126 | 58% | 9.2 | 37/341 |
-| Manor Gargoyle | C | rare | 12 | 89 | 57% | 2.2 | 12/26 |
-| Into the Maw of Hell | R | uncommon | 26 | 198 | 57% | 3.5 | 31/108 |
-| Ashmouth Hound | R | common | 34 | 248 | 57% | 4.0 | 53/212 |
-| Moldgraf Monstrosity | G | rare | 7 | 51 | 57% | 3.9 | 9/35 |
+| Disciple of Griselbrand | B | uncommon | 17 | 126 | 58% | 9.1 | 38/347 |
+| Into the Maw of Hell | R | uncommon | 27 | 205 | 58% | 3.5 | 33/114 |
+| Ashmouth Hound | R | common | 35 | 255 | 57% | 3.9 | 55/214 |
 | Stromkirk Noble | R | rare | 10 | 74 | 57% | 5.0 | 11/55 |
-| Bonds of Faith | W | common | 38 | 279 | 56% | 3.9 | 51/200 |
-| Morkrut Banshee | B | uncommon | 23 | 177 | 56% | 1.7 | 27/45 |
+| Lumberknot | G | uncommon | 23 | 169 | 56% | 3.9 | 29/114 |
+| Gatstaf Shepherd | G | uncommon | 25 | 184 | 56% | 4.6 | 34/156 |
+| Bonds of Faith | W | common | 40 | 292 | 56% | 3.8 | 54/204 |
+| Manor Gargoyle | C | rare | 13 | 95 | 56% | 2.2 | 13/28 |
+| Villagers of Estwald | G | common | 29 | 212 | 56% | 4.2 | 61/257 |
 | Kruin Outlaw | R | rare | 11 | 81 | 56% | 2.6 | 12/31 |
 | Elite Inquisitor | W | rare | 11 | 83 | 55% | 2.8 | 13/37 |
-| Rally the Peasants | W | uncommon | 20 | 143 | 55% | 6.8 | 38/259 |
-| Typhoid Rats | B | common | 38 | 277 | 55% | 3.3 | 54/179 |
-| Sulfur Falls | C | rare | 8 | 60 | 55% | 11.0 | 14/154 |
-| Avacynian Priest | W | common | 39 | 285 | 55% | 5.5 | 53/292 |
-| Lumberknot | G | uncommon | 22 | 163 | 55% | 3.7 | 27/101 |
-| Gatstaf Shepherd | G | uncommon | 24 | 178 | 54% | 4.4 | 32/141 |
-| Tormented Pariah | R | common | 34 | 250 | 54% | 7.0 | 62/436 |
-| Spider Spawning | G | uncommon | 20 | 147 | 54% | 3.4 | 34/116 |
-| Villagers of Estwald | G | common | 27 | 199 | 54% | 4.1 | 58/236 |
-| Voiceless Spirit | W | common | 47 | 348 | 54% | 3.7 | 54/202 |
-| Bloodgift Demon | B | rare | 7 | 50 | 54% | 1.1 | 7/8 |
-| Grave Bramble | G | common | 24 | 177 | 54% | 8.9 | 52/461 |
-| Thraben Sentry | W | common | 31 | 229 | 54% | 7.5 | 52/389 |
-| Skirsdag Cultist | R | uncommon | 19 | 140 | 54% | 8.2 | 29/237 |
-| Woodland Sleuth | G | common | 29 | 208 | 53% | 5.8 | 53/310 |
-| Hanweir Watchkeep | R | uncommon | 17 | 131 | 53% | 6.4 | 29/186 |
-| Woodland Cemetery | C | rare | 8 | 58 | 53% | 9.8 | 16/156 |
-| Mindshrieker | U | rare | 8 | 58 | 53% | 6.8 | 10/68 |
-| Unruly Mob | W | common | 34 | 246 | 53% | 9.2 | 52/476 |
-| Avacyn's Pilgrim | G | common | 17 | 122 | 53% | 9.1 | 56/510 |
-| Cloistered Youth | W | uncommon | 17 | 122 | 53% | 5.6 | 31/174 |
-| Night Revelers | R | common | 32 | 235 | 53% | 7.1 | 44/313 |
+| Morkrut Banshee | B | uncommon | 25 | 190 | 55% | 1.7 | 29/48 |
+| Rally the Peasants | W | uncommon | 22 | 156 | 55% | 6.8 | 40/273 |
+| Sulfur Falls | C | rare | 8 | 60 | 55% | 11.1 | 15/167 |
+| Avacynian Priest | W | common | 41 | 298 | 55% | 5.5 | 55/304 |
+| Woodland Sleuth | G | common | 30 | 214 | 55% | 5.9 | 55/326 |
+| Spider Spawning | G | uncommon | 20 | 147 | 54% | 3.5 | 35/123 |
+| Typhoid Rats | B | common | 41 | 296 | 54% | 3.3 | 57/187 |
+| Voiceless Spirit | W | common | 49 | 361 | 54% | 3.7 | 56/208 |
+| Tormented Pariah | R | common | 37 | 271 | 54% | 7.0 | 65/452 |
+| Grave Bramble | G | common | 24 | 177 | 54% | 8.9 | 54/478 |
+| Thraben Sentry | W | common | 33 | 242 | 54% | 7.6 | 54/408 |
+| Unruly Mob | W | common | 36 | 259 | 53% | 9.1 | 54/489 |
+| Avacyn's Pilgrim | G | common | 17 | 122 | 53% | 9.2 | 59/542 |
+| Bump in the Night | B | common | 29 | 213 | 53% | 8.6 | 59/509 |
+| Rage Thrower | R | uncommon | 18 | 130 | 53% | 9.7 | 39/378 |
 | Silver-Inlaid Dagger | C | uncommon | 20 | 145 | 53% | 6.8 | 28/189 |
-| Pitchburn Devils | R | common | 40 | 298 | 53% | 5.1 | 51/259 |
+| Pitchburn Devils | R | common | 41 | 305 | 53% | 5.0 | 52/261 |
+| Galvanic Juggernaut | C | uncommon | 30 | 224 | 53% | 1.2 | 30/35 |
+| Hollowhenge Scavenger | G | uncommon | 18 | 132 | 53% | 4.1 | 25/102 |
+| Hamlet Captain | G | uncommon | 24 | 178 | 53% | 6.8 | 31/210 |
+| Festerhide Boar | G | common | 35 | 256 | 53% | 6.4 | 57/367 |
+| Battleground Geist | U | uncommon | 24 | 183 | 52% | 3.3 | 28/93 |
+| Rakish Heir | R | uncommon | 16 | 118 | 53% | 6.2 | 22/136 |
+| Victim of Night | B | common | 40 | 290 | 52% | 1.6 | 53/84 |
 
 ## Taken earliest (picked at least 3 times)
 
 | card | colours | rarity | avg pick | picked | decks |
 | --- | --- | --- | ---: | ---: | ---: |
 | Mikaeus, the Lunarch | W | mythic | 1.0 | 4 | 3 |
-| Bloodline Keeper | B | rare | 1.0 | 9 | 6 |
+| Bloodline Keeper | B | rare | 1.0 | 10 | 7 |
 | Garruk Relentless | G | mythic | 1.0 | 6 | 2 |
 | Bloodgift Demon | B | rare | 1.1 | 7 | 7 |
-| Galvanic Juggernaut | C | uncommon | 1.2 | 29 | 29 |
+| Galvanic Juggernaut | C | uncommon | 1.2 | 30 | 30 |
 | Angelic Overseer | W | mythic | 1.2 | 6 | 4 |
 | Geist-Honored Monk | W | rare | 1.3 | 6 | 5 |
 | Sever the Bloodline | B | rare | 1.5 | 6 | 6 |
-| Falkenrath Noble | B | uncommon | 1.6 | 31 | 23 |
-| Fiend Hunter | W | uncommon | 1.6 | 32 | 25 |
-| Victim of Night | B | common | 1.6 | 51 | 39 |
+| Fiend Hunter | W | uncommon | 1.6 | 34 | 26 |
+| Victim of Night | B | common | 1.6 | 53 | 40 |
 | Slayer of the Wicked | W | uncommon | 1.7 | 29 | 25 |
+| Falkenrath Noble | B | uncommon | 1.7 | 32 | 24 |
 | Grimgrin, Corpse-Born | UB | mythic | 1.7 | 6 | 4 |
-| Dead Weight | B | common | 1.7 | 57 | 39 |
-| Morkrut Banshee | B | uncommon | 1.7 | 27 | 23 |
+| Dead Weight | B | common | 1.7 | 60 | 41 |
+| Morkrut Banshee | B | uncommon | 1.7 | 29 | 25 |
 | Devil's Play | R | rare | 1.7 | 7 | 5 |
 | Angel of Flight Alabaster | W | rare | 1.8 | 11 | 8 |
-| Claustrophobia | U | common | 1.9 | 54 | 37 |
-| Brimstone Volley | R | common | 1.9 | 51 | 32 |
-| Chapel Geist | W | common | 2.0 | 45 | 32 |
-| Murder of Crows | U | uncommon | 2.0 | 30 | 26 |
+| Claustrophobia | U | common | 1.9 | 56 | 38 |
+| Murder of Crows | U | uncommon | 1.9 | 31 | 27 |
+| Brimstone Volley | R | common | 1.9 | 53 | 34 |
+| Dearly Departed | W | rare | 1.9 | 12 | 9 |
+| Chapel Geist | W | common | 2.0 | 46 | 33 |
 | Geist of Saint Traft | WU | mythic | 2.0 | 3 | 0 |
-| Dearly Departed | W | rare | 2.0 | 11 | 9 |
 | Instigator Gang | R | rare | 2.1 | 7 | 6 |
-| Rebuke | W | common | 2.2 | 59 | 41 |
-| Manor Gargoyle | C | rare | 2.2 | 12 | 12 |
+| Rebuke | W | common | 2.2 | 61 | 42 |
+| Manor Gargoyle | C | rare | 2.2 | 13 | 13 |
 | Tribute to Hunger | B | uncommon | 2.3 | 27 | 25 |
 | Liliana of the Veil | B | mythic | 2.3 | 3 | 3 |
 | Essence of the Wild | G | mythic | 2.4 | 5 | 3 |

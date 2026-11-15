@@ -1,0 +1,8806 @@
+{
+ "night": "2026-11-15",
+ "seed": 20261115,
+ "set": "isd",
+ "players": 8,
+ "best_of": 3,
+ "guide_hash": "3244560e4ab2c439",
+ "conventional_hash": "d13f3fee14b57af0",
+ "seats": [
+  {
+   "seat": 0,
+   "model": "cc:claude-haiku-5-5",
+   "guided": true,
+   "guide": "loop",
+   "colors": "WB",
+   "maindeck": [
+    "Abattoir Ghoul",
+    "Abbey Griffin",
+    "Abbey Griffin",
+    "Bonds of Faith",
+    "Butcher's Cleaver",
+    "Champion of the Parish",
+    "Corpse Lunge",
+    "Elder Cathar",
+    "Ghostly Possession",
+    "Ghostly Possession",
+    "Ghoulcaller's Chant",
+    "Ghoulraiser",
+    "Manor Gargoyle",
+    "Morkrut Banshee",
+    "Rally the Peasants",
+    "Silverchase Fox",
+    "Skeletal Grimace",
+    "Smite the Monstrous",
+    "Spectral Rider",
+    "Thraben Sentry",
+    "Unruly Mob",
+    "Urgent Exorcism",
+    "Vampire Interloper"
+   ],
+   "lands": {
+    "Plains": 10,
+    "Swamp": 7
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Morkrut Banshee"
+    ],
+    [
+     1,
+     2,
+     "Abattoir Ghoul"
+    ],
+    [
+     1,
+     3,
+     "Into the Maw of Hell"
+    ],
+    [
+     1,
+     4,
+     "Elder Cathar"
+    ],
+    [
+     1,
+     5,
+     "Smite the Monstrous"
+    ],
+    [
+     1,
+     6,
+     "Ghoulraiser"
+    ],
+    [
+     1,
+     7,
+     "Furor of the Bitten"
+    ],
+    [
+     1,
+     8,
+     "Rally the Peasants"
+    ],
+    [
+     1,
+     9,
+     "Avacyn's Pilgrim"
+    ],
+    [
+     1,
+     10,
+     "Champion of the Parish"
+    ],
+    [
+     1,
+     11,
+     "Gavony Township"
+    ],
+    [
+     1,
+     12,
+     "Spare from Evil"
+    ],
+    [
+     1,
+     13,
+     "Wooden Stake"
+    ],
+    [
+     1,
+     14,
+     "Intangible Virtue"
+    ],
+    [
+     2,
+     1,
+     "Corpse Lunge"
+    ],
+    [
+     2,
+     2,
+     "Bonds of Faith"
+    ],
+    [
+     2,
+     3,
+     "Butcher's Cleaver"
+    ],
+    [
+     2,
+     4,
+     "Ghostly Possession"
+    ],
+    [
+     2,
+     5,
+     "Orchard Spirit"
+    ],
+    [
+     2,
+     6,
+     "Vampire Interloper"
+    ],
+    [
+     2,
+     7,
+     "Ghoulcaller's Chant"
+    ],
+    [
+     2,
+     8,
+     "Urgent Exorcism"
+    ],
+    [
+     2,
+     9,
+     "Skirsdag Cultist"
+    ],
+    [
+     2,
+     10,
+     "Thraben Sentry // Thraben Militia"
+    ],
+    [
+     2,
+     11,
+     "Avacyn's Pilgrim"
+    ],
+    [
+     2,
+     12,
+     "Skeletal Grimace"
+    ],
+    [
+     2,
+     13,
+     "Burning Vengeance"
+    ],
+    [
+     2,
+     14,
+     "Gnaw to the Bone"
+    ],
+    [
+     3,
+     1,
+     "Abbey Griffin"
+    ],
+    [
+     3,
+     2,
+     "Manor Gargoyle"
+    ],
+    [
+     3,
+     3,
+     "Abbey Griffin"
+    ],
+    [
+     3,
+     4,
+     "Urgent Exorcism"
+    ],
+    [
+     3,
+     5,
+     "Spectral Rider"
+    ],
+    [
+     3,
+     6,
+     "Ghostly Possession"
+    ],
+    [
+     3,
+     7,
+     "Somberwald Spider"
+    ],
+    [
+     3,
+     8,
+     "Unruly Mob"
+    ],
+    [
+     3,
+     9,
+     "Silverchase Fox"
+    ],
+    [
+     3,
+     10,
+     "Hamlet Captain"
+    ],
+    [
+     3,
+     11,
+     "Ranger's Guile"
+    ],
+    [
+     3,
+     12,
+     "Spare from Evil"
+    ],
+    [
+     3,
+     13,
+     "Naturalize"
+    ],
+    [
+     3,
+     14,
+     "Runic Repetition"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "\u2026pairing: white supplies the cheap creatures and Smite/Rally/Ghostly Possession, while black adds Morkrut Banshee, Ghoulraiser, Vampire Interloper, Corpse Lunge and Abattoir Ghoul. Green is thinner (two Pilgrims, one Spider) so I left it out. Ten Plains and seven Swamps cover the WW and BB pips.",
+   "match_wins": 1,
+   "match_losses": 2,
+   "match_draws": 0,
+   "game_wins": 2,
+   "game_losses": 4,
+   "game_draws": 0,
+   "rank": 6
+  },
+  {
+   "seat": 1,
+   "model": "cc:claude-haiku-5-5",
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "maindeck": [
+    "Ambush Viper",
+    "Ambush Viper",
+    "Curse of Death's Hold",
+    "Daybreak Ranger",
+    "Dead Weight",
+    "Festerhide Boar",
+    "Gatstaf Shepherd",
+    "Grizzled Outcasts",
+    "Hollowhenge Scavenger",
+    "Kessig Cagebreakers",
+    "Kindercatch",
+    "Lumberknot",
+    "Lumberknot",
+    "Moldgraf Monstrosity",
+    "Prey Upon",
+    "Somberwald Spider",
+    "Spidery Grasp",
+    "Ulvenwald Mystics",
+    "Village Cannibals",
+    "Villagers of Estwald",
+    "Villagers of Estwald",
+    "Walking Corpse",
+    "Woodland Sleuth"
+   ],
+   "lands": {
+    "Swamp": 6,
+    "Forest": 11
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Curse of Death's Hold"
+    ],
+    [
+     1,
+     2,
+     "Kessig Cagebreakers"
+    ],
+    [
+     1,
+     3,
+     "Ambush Viper"
+    ],
+    [
+     1,
+     4,
+     "Walking Corpse"
+    ],
+    [
+     1,
+     5,
+     "Lumberknot"
+    ],
+    [
+     1,
+     6,
+     "Village Cannibals"
+    ],
+    [
+     1,
+     7,
+     "Villagers of Estwald // Howlpack of Estwald"
+    ],
+    [
+     1,
+     8,
+     "Woodland Sleuth"
+    ],
+    [
+     1,
+     9,
+     "Ulvenwald Mystics // Ulvenwald Primordials"
+    ],
+    [
+     1,
+     10,
+     "Mask of Avacyn"
+    ],
+    [
+     1,
+     11,
+     "Caravan Vigil"
+    ],
+    [
+     1,
+     12,
+     "Moonmist"
+    ],
+    [
+     1,
+     13,
+     "Ghoulcaller's Bell"
+    ],
+    [
+     1,
+     14,
+     "Mulch"
+    ],
+    [
+     2,
+     1,
+     "Stitched Drake"
+    ],
+    [
+     2,
+     2,
+     "Battleground Geist"
+    ],
+    [
+     2,
+     3,
+     "Daybreak Ranger // Nightfall Predator"
+    ],
+    [
+     2,
+     4,
+     "Somberwald Spider"
+    ],
+    [
+     2,
+     5,
+     "Moon Heron"
+    ],
+    [
+     2,
+     6,
+     "Ambush Viper"
+    ],
+    [
+     2,
+     7,
+     "Hollowhenge Scavenger"
+    ],
+    [
+     2,
+     8,
+     "Gatstaf Shepherd // Gatstaf Howler"
+    ],
+    [
+     2,
+     9,
+     "Demonmail Hauberk"
+    ],
+    [
+     2,
+     10,
+     "Kindercatch"
+    ],
+    [
+     2,
+     11,
+     "Moonmist"
+    ],
+    [
+     2,
+     12,
+     "Full Moon's Rise"
+    ],
+    [
+     2,
+     13,
+     "Hinterland Harbor"
+    ],
+    [
+     2,
+     14,
+     "Ghoulcaller's Bell"
+    ],
+    [
+     3,
+     1,
+     "Dead Weight"
+    ],
+    [
+     3,
+     2,
+     "Prey Upon"
+    ],
+    [
+     3,
+     3,
+     "Villagers of Estwald // Howlpack of Estwald"
+    ],
+    [
+     3,
+     4,
+     "Moldgraf Monstrosity"
+    ],
+    [
+     3,
+     5,
+     "Spidery Grasp"
+    ],
+    [
+     3,
+     6,
+     "Bramblecrush"
+    ],
+    [
+     3,
+     7,
+     "Grizzled Outcasts // Krallenhorde Wantons"
+    ],
+    [
+     3,
+     8,
+     "Lumberknot"
+    ],
+    [
+     3,
+     9,
+     "Bump in the Night"
+    ],
+    [
+     3,
+     10,
+     "Festerhide Boar"
+    ],
+    [
+     3,
+     11,
+     "Cobbled Wings"
+    ],
+    [
+     3,
+     12,
+     "Hysterical Blindness"
+    ],
+    [
+     3,
+     13,
+     "Gruesome Deformity"
+    ],
+    [
+     3,
+     14,
+     "Ghost Quarter"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "Green-based deck with a black second colour for Dead Weight, Curse of Death's Hold, Village Cannibals and Walking Corpse. Cut the green-black filler and the blue cards, keeping the 2-drops, morbid-free creatures, bombs like Kindercatch and Moldgraf, and removal.",
+   "match_wins": 3,
+   "match_losses": 0,
+   "match_draws": 0,
+   "game_wins": 6,
+   "game_losses": 0,
+   "game_draws": 0,
+   "rank": 1
+  },
+  {
+   "seat": 2,
+   "model": "cc:claude-haiku-5-5",
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WB",
+   "maindeck": [
+    "Abattoir Ghoul",
+    "Avacynian Priest",
+    "Blazing Torch",
+    "Bloodline Keeper",
+    "Chapel Geist",
+    "Cloistered Youth",
+    "Corpse Lunge",
+    "Doomed Traveler",
+    "Elder Cathar",
+    "Feeling of Dread",
+    "Feeling of Dread",
+    "Gallows Warden",
+    "Markov Patrician",
+    "Mausoleum Guard",
+    "Moan of the Unhallowed",
+    "Moment of Heroism",
+    "Night Terrors",
+    "Skirsdag High Priest",
+    "Smite the Monstrous",
+    "Typhoid Rats",
+    "Vampire Interloper",
+    "Village Bell-Ringer",
+    "Voiceless Spirit",
+    "Woodland Cemetery"
+   ],
+   "lands": {
+    "Swamp": 8,
+    "Plains": 8
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Ashmouth Hound"
+    ],
+    [
+     1,
+     2,
+     "Chapel Geist"
+    ],
+    [
+     1,
+     3,
+     "Elder Cathar"
+    ],
+    [
+     1,
+     4,
+     "Doomed Traveler"
+    ],
+    [
+     1,
+     5,
+     "Smite the Monstrous"
+    ],
+    [
+     1,
+     6,
+     "Cloistered Youth // Unholy Fiend"
+    ],
+    [
+     1,
+     7,
+     "Abattoir Ghoul"
+    ],
+    [
+     1,
+     8,
+     "Skirsdag High Priest"
+    ],
+    [
+     1,
+     9,
+     "Feeling of Dread"
+    ],
+    [
+     1,
+     10,
+     "Ghoulcaller's Chant"
+    ],
+    [
+     1,
+     11,
+     "Traveler's Amulet"
+    ],
+    [
+     1,
+     12,
+     "Think Twice"
+    ],
+    [
+     1,
+     13,
+     "Fortress Crab"
+    ],
+    [
+     1,
+     14,
+     "Nightbird's Clutches"
+    ],
+    [
+     2,
+     1,
+     "Bloodline Keeper // Lord of Lineage"
+    ],
+    [
+     2,
+     2,
+     "Voiceless Spirit"
+    ],
+    [
+     2,
+     3,
+     "Typhoid Rats"
+    ],
+    [
+     2,
+     4,
+     "Blazing Torch"
+    ],
+    [
+     2,
+     5,
+     "Village Bell-Ringer"
+    ],
+    [
+     2,
+     6,
+     "Vampire Interloper"
+    ],
+    [
+     2,
+     7,
+     "Feeling of Dread"
+    ],
+    [
+     2,
+     8,
+     "Mausoleum Guard"
+    ],
+    [
+     2,
+     9,
+     "Altar's Reap"
+    ],
+    [
+     2,
+     10,
+     "Markov Patrician"
+    ],
+    [
+     2,
+     11,
+     "Woodland Cemetery"
+    ],
+    [
+     2,
+     12,
+     "Dream Twist"
+    ],
+    [
+     2,
+     13,
+     "Wooden Stake"
+    ],
+    [
+     2,
+     14,
+     "Naturalize"
+    ],
+    [
+     3,
+     1,
+     "Moan of the Unhallowed"
+    ],
+    [
+     3,
+     2,
+     "Gallows Warden"
+    ],
+    [
+     3,
+     3,
+     "Corpse Lunge"
+    ],
+    [
+     3,
+     4,
+     "Stitched Drake"
+    ],
+    [
+     3,
+     5,
+     "Avacynian Priest"
+    ],
+    [
+     3,
+     6,
+     "One-Eyed Scarecrow"
+    ],
+    [
+     3,
+     7,
+     "Night Terrors"
+    ],
+    [
+     3,
+     8,
+     "Selfless Cathar"
+    ],
+    [
+     3,
+     9,
+     "Moment of Heroism"
+    ],
+    [
+     3,
+     10,
+     "Maw of the Mire"
+    ],
+    [
+     3,
+     11,
+     "Skeletal Grimace"
+    ],
+    [
+     3,
+     12,
+     "Curse of Oblivion"
+    ],
+    [
+     3,
+     13,
+     "Traveler's Amulet"
+    ],
+    [
+     3,
+     14,
+     "Nightbird's Clutches"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "\u2026with Bloodline Keeper as the bomb and cheap removal from Feeling of Dread, Smite, Blazing Torch and Victim-style black sorceries. I cut the blue, red and green cards, the weak Selfless Cathar, Scarecrow, Wooden Stake and the curses, and ran 17 lands including Woodland Cemetery as a black source.",
+   "match_wins": 1,
+   "match_losses": 2,
+   "match_draws": 0,
+   "game_wins": 2,
+   "game_losses": 4,
+   "game_draws": 0,
+   "rank": 7
+  },
+  {
+   "seat": 3,
+   "model": "cc:claude-haiku-5-5",
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "maindeck": [
+    "Armored Skaab",
+    "Armored Skaab",
+    "Brain Weevil",
+    "Civilized Scholar",
+    "Dead Weight",
+    "Delver of Secrets",
+    "Diregraf Ghoul",
+    "Dissipate",
+    "Evil Twin",
+    "Falkenrath Noble",
+    "Grasp of Phantoms",
+    "Invisible Stalker",
+    "Makeshift Mauler",
+    "Mindshrieker",
+    "Murder of Crows",
+    "Night Terrors",
+    "Selhoff Occultist",
+    "Sensory Deprivation",
+    "Snapcaster Mage",
+    "Spectral Flight",
+    "Stitcher's Apprentice",
+    "Typhoid Rats",
+    "Victim of Night"
+   ],
+   "lands": {
+    "Island": 10,
+    "Swamp": 7
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Victim of Night"
+    ],
+    [
+     1,
+     2,
+     "Invisible Stalker"
+    ],
+    [
+     1,
+     3,
+     "Grasp of Phantoms"
+    ],
+    [
+     1,
+     4,
+     "Frightful Delusion"
+    ],
+    [
+     1,
+     5,
+     "Butcher's Cleaver"
+    ],
+    [
+     1,
+     6,
+     "Night Terrors"
+    ],
+    [
+     1,
+     7,
+     "Makeshift Mauler"
+    ],
+    [
+     1,
+     8,
+     "Armored Skaab"
+    ],
+    [
+     1,
+     9,
+     "Diregraf Ghoul"
+    ],
+    [
+     1,
+     10,
+     "Back from the Brink"
+    ],
+    [
+     1,
+     11,
+     "Hysterical Blindness"
+    ],
+    [
+     1,
+     12,
+     "Fortress Crab"
+    ],
+    [
+     1,
+     13,
+     "Dream Twist"
+    ],
+    [
+     1,
+     14,
+     "Shimmering Grotto"
+    ],
+    [
+     2,
+     1,
+     "Murder of Crows"
+    ],
+    [
+     2,
+     2,
+     "Dead Weight"
+    ],
+    [
+     2,
+     3,
+     "Falkenrath Noble"
+    ],
+    [
+     2,
+     4,
+     "Spectral Flight"
+    ],
+    [
+     2,
+     5,
+     "Evil Twin"
+    ],
+    [
+     2,
+     6,
+     "Unburial Rites"
+    ],
+    [
+     2,
+     7,
+     "Stitcher's Apprentice"
+    ],
+    [
+     2,
+     8,
+     "Snapcaster Mage"
+    ],
+    [
+     2,
+     9,
+     "Dissipate"
+    ],
+    [
+     2,
+     10,
+     "Maw of the Mire"
+    ],
+    [
+     2,
+     11,
+     "Delver of Secrets // Insectile Aberration"
+    ],
+    [
+     2,
+     12,
+     "Brain Weevil"
+    ],
+    [
+     2,
+     13,
+     "Civilized Scholar // Homicidal Brute"
+    ],
+    [
+     2,
+     14,
+     "Curse of the Bloody Tome"
+    ],
+    [
+     3,
+     1,
+     "Typhoid Rats"
+    ],
+    [
+     3,
+     2,
+     "Sensory Deprivation"
+    ],
+    [
+     3,
+     3,
+     "Make a Wish"
+    ],
+    [
+     3,
+     4,
+     "Mindshrieker"
+    ],
+    [
+     3,
+     5,
+     "Selhoff Occultist"
+    ],
+    [
+     3,
+     6,
+     "Disciple of Griselbrand"
+    ],
+    [
+     3,
+     7,
+     "Dissipate"
+    ],
+    [
+     3,
+     8,
+     "Armored Skaab"
+    ],
+    [
+     3,
+     9,
+     "Cackling Counterpart"
+    ],
+    [
+     3,
+     10,
+     "Delver of Secrets // Insectile Aberration"
+    ],
+    [
+     3,
+     11,
+     "Stitcher's Apprentice"
+    ],
+    [
+     3,
+     12,
+     "Maw of the Mire"
+    ],
+    [
+     3,
+     13,
+     "Runic Repetition"
+    ],
+    [
+     3,
+     14,
+     "Full Moon's Rise"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "\u2026Crows, Noble), cheap blockers (Skaabs, Crab left out), and removal (Dead Weight, Victim of Night, Sensory Deprivation, Grasp of Phantoms, Night Terrors). Cut Fortress Crab, Disciple, Cackling Counterpart, Hysterical Blindness and the rest for the 23-spell build with 10 Islands and 7 Swamps.",
+   "match_wins": 1,
+   "match_losses": 2,
+   "match_draws": 0,
+   "game_wins": 2,
+   "game_losses": 4,
+   "game_draws": 0,
+   "rank": 5
+  },
+  {
+   "seat": 4,
+   "model": "cc:claude-haiku-5-5",
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "maindeck": [
+    "Avacynian Priest",
+    "Bonds of Faith",
+    "Bonds of Faith",
+    "Crossway Vampire",
+    "Doomed Traveler",
+    "Fiend Hunter",
+    "Furor of the Bitten",
+    "Harvest Pyre",
+    "Into the Maw of Hell",
+    "Mentor of the Meek",
+    "Rally the Peasants",
+    "Rebuke",
+    "Riot Devils",
+    "Selfless Cathar",
+    "Silverchase Fox",
+    "Spectral Rider",
+    "Thraben Purebloods",
+    "Thraben Sentry",
+    "Tormented Pariah",
+    "Unruly Mob",
+    "Village Bell-Ringer",
+    "Village Ironsmith",
+    "Voiceless Spirit"
+   ],
+   "lands": {
+    "Plains": 10,
+    "Mountain": 7
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Mentor of the Meek"
+    ],
+    [
+     1,
+     2,
+     "Claustrophobia"
+    ],
+    [
+     1,
+     3,
+     "Spectral Rider"
+    ],
+    [
+     1,
+     4,
+     "Voiceless Spirit"
+    ],
+    [
+     1,
+     5,
+     "Tormented Pariah // Rampaging Werewolf"
+    ],
+    [
+     1,
+     6,
+     "Village Bell-Ringer"
+    ],
+    [
+     1,
+     7,
+     "Avacynian Priest"
+    ],
+    [
+     1,
+     8,
+     "Riot Devils"
+    ],
+    [
+     1,
+     9,
+     "Thraben Sentry // Thraben Militia"
+    ],
+    [
+     1,
+     10,
+     "Furor of the Bitten"
+    ],
+    [
+     1,
+     11,
+     "Thraben Purebloods"
+    ],
+    [
+     1,
+     12,
+     "Avacyn's Pilgrim"
+    ],
+    [
+     1,
+     13,
+     "Ranger's Guile"
+    ],
+    [
+     1,
+     14,
+     "Infernal Plunge"
+    ],
+    [
+     2,
+     1,
+     "Bonds of Faith"
+    ],
+    [
+     2,
+     2,
+     "Fiend Hunter"
+    ],
+    [
+     2,
+     3,
+     "Crossway Vampire"
+    ],
+    [
+     2,
+     4,
+     "Doomed Traveler"
+    ],
+    [
+     2,
+     5,
+     "Silverchase Fox"
+    ],
+    [
+     2,
+     6,
+     "Rally the Peasants"
+    ],
+    [
+     2,
+     7,
+     "Thraben Purebloods"
+    ],
+    [
+     2,
+     8,
+     "Isolated Chapel"
+    ],
+    [
+     2,
+     9,
+     "Naturalize"
+    ],
+    [
+     2,
+     10,
+     "Lost in the Mist"
+    ],
+    [
+     2,
+     11,
+     "Delver of Secrets // Insectile Aberration"
+    ],
+    [
+     2,
+     12,
+     "Selhoff Occultist"
+    ],
+    [
+     2,
+     13,
+     "Bramblecrush"
+    ],
+    [
+     2,
+     14,
+     "Mulch"
+    ],
+    [
+     3,
+     1,
+     "Bonds of Faith"
+    ],
+    [
+     3,
+     2,
+     "Rebuke"
+    ],
+    [
+     3,
+     3,
+     "Into the Maw of Hell"
+    ],
+    [
+     3,
+     4,
+     "Village Ironsmith // Ironfang"
+    ],
+    [
+     3,
+     5,
+     "Unruly Mob"
+    ],
+    [
+     3,
+     6,
+     "Harvest Pyre"
+    ],
+    [
+     3,
+     7,
+     "Spider Spawning"
+    ],
+    [
+     3,
+     8,
+     "Desperate Ravings"
+    ],
+    [
+     3,
+     9,
+     "Selfless Cathar"
+    ],
+    [
+     3,
+     10,
+     "Rage Thrower"
+    ],
+    [
+     3,
+     11,
+     "Altar's Reap"
+    ],
+    [
+     3,
+     12,
+     "Vampiric Fury"
+    ],
+    [
+     3,
+     13,
+     "Ghoulcaller's Bell"
+    ],
+    [
+     3,
+     14,
+     "Purify the Grave"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "White-red aggro: cheap creatures, Rebuke, Fiend Hunter, Bonds of Faith, Rally the Peasants, and Harvest Pyre plus Into the Maw for red removal. Cut blue, green, black, and the skip-list cards; 10 Plains and 7 Mountains for the white-heavy curve.",
+   "match_wins": 2,
+   "match_losses": 1,
+   "match_draws": 0,
+   "game_wins": 5,
+   "game_losses": 2,
+   "game_draws": 0,
+   "rank": 3
+  },
+  {
+   "seat": 5,
+   "model": "cc:claude-haiku-5-5",
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "maindeck": [
+    "Bloodcrazed Neonate",
+    "Brain Weevil",
+    "Brimstone Volley",
+    "Corpse Lunge",
+    "Curse of the Pierced Heart",
+    "Feral Ridgewolf",
+    "Geistcatcher's Rig",
+    "Geistflame",
+    "Geistflame",
+    "Hanweir Watchkeep",
+    "Kessig Wolf",
+    "Manor Skeleton",
+    "Night Revelers",
+    "Reckless Waif",
+    "Riot Devils",
+    "Rotting Fensnake",
+    "Scourge of Geier Reach",
+    "Skirsdag Cultist",
+    "Stromkirk Patrol",
+    "Tormented Pariah",
+    "Traitorous Blood",
+    "Vampiric Fury",
+    "Walking Corpse"
+   ],
+   "lands": {
+    "Mountain": 10,
+    "Swamp": 7
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Dearly Departed"
+    ],
+    [
+     1,
+     2,
+     "Geistflame"
+    ],
+    [
+     1,
+     3,
+     "Trepanation Blade"
+    ],
+    [
+     1,
+     4,
+     "Hanweir Watchkeep // Bane of Hanweir"
+    ],
+    [
+     1,
+     5,
+     "Night Revelers"
+    ],
+    [
+     1,
+     6,
+     "Bloodcrazed Neonate"
+    ],
+    [
+     1,
+     7,
+     "Gatstaf Shepherd // Gatstaf Howler"
+    ],
+    [
+     1,
+     8,
+     "Tormented Pariah // Rampaging Werewolf"
+    ],
+    [
+     1,
+     9,
+     "Brain Weevil"
+    ],
+    [
+     1,
+     10,
+     "Kessig Wolf"
+    ],
+    [
+     1,
+     11,
+     "Thraben Purebloods"
+    ],
+    [
+     1,
+     12,
+     "Think Twice"
+    ],
+    [
+     1,
+     13,
+     "Shimmering Grotto"
+    ],
+    [
+     1,
+     14,
+     "Ghost Quarter"
+    ],
+    [
+     2,
+     1,
+     "Brimstone Volley"
+    ],
+    [
+     2,
+     2,
+     "Scourge of Geier Reach"
+    ],
+    [
+     2,
+     3,
+     "Geistcatcher's Rig"
+    ],
+    [
+     2,
+     4,
+     "Stromkirk Patrol"
+    ],
+    [
+     2,
+     5,
+     "Corpse Lunge"
+    ],
+    [
+     2,
+     6,
+     "Feral Ridgewolf"
+    ],
+    [
+     2,
+     7,
+     "Traitorous Blood"
+    ],
+    [
+     2,
+     8,
+     "Vampiric Fury"
+    ],
+    [
+     2,
+     9,
+     "Skirsdag Cultist"
+    ],
+    [
+     2,
+     10,
+     "Bitterheart Witch"
+    ],
+    [
+     2,
+     11,
+     "Sharpened Pitchfork"
+    ],
+    [
+     2,
+     12,
+     "Rotting Fensnake"
+    ],
+    [
+     2,
+     13,
+     "Curse of the Pierced Heart"
+    ],
+    [
+     2,
+     14,
+     "Infernal Plunge"
+    ],
+    [
+     3,
+     1,
+     "Heartless Summoning"
+    ],
+    [
+     3,
+     2,
+     "Geistflame"
+    ],
+    [
+     3,
+     3,
+     "Traitorous Blood"
+    ],
+    [
+     3,
+     4,
+     "Riot Devils"
+    ],
+    [
+     3,
+     5,
+     "Walking Corpse"
+    ],
+    [
+     3,
+     6,
+     "Reckless Waif // Merciless Predator"
+    ],
+    [
+     3,
+     7,
+     "Manor Skeleton"
+    ],
+    [
+     3,
+     8,
+     "Somberwald Spider"
+    ],
+    [
+     3,
+     9,
+     "Curse of the Pierced Heart"
+    ],
+    [
+     3,
+     10,
+     "Vampiric Fury"
+    ],
+    [
+     3,
+     11,
+     "Curse of the Nightly Hunt"
+    ],
+    [
+     3,
+     12,
+     "Skeletal Grimace"
+    ],
+    [
+     3,
+     13,
+     "Sulfur Falls"
+    ],
+    [
+     3,
+     14,
+     "Cellar Door"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "Red-black aggro: 23 cards weighted to red (12 red-heavy cards with cheap Geistflame, Brimstone Volley, Traitorous Blood) plus black creatures and removal (Corpse Lunge, Brain Weevil). Cut Sulfur Falls, Ghost Quarter, the Curses except one, Heartless Summoning, and the off-colour cards.",
+   "match_wins": 0,
+   "match_losses": 3,
+   "match_draws": 0,
+   "game_wins": 1,
+   "game_losses": 6,
+   "game_draws": 0,
+   "rank": 8
+  },
+  {
+   "seat": 6,
+   "model": "cc:claude-haiku-5-5",
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UG",
+   "maindeck": [
+    "Armored Skaab",
+    "Blazing Torch",
+    "Boneyard Wurm",
+    "Claustrophobia",
+    "Darkthicket Wolf",
+    "Deranged Assistant",
+    "Deranged Assistant",
+    "Forbidden Alchemy",
+    "Forbidden Alchemy",
+    "Forbidden Alchemy",
+    "Galvanic Juggernaut",
+    "Invisible Stalker",
+    "Lantern Spirit",
+    "Makeshift Mauler",
+    "Moon Heron",
+    "Orchard Spirit",
+    "Orchard Spirit",
+    "Prey Upon",
+    "Silent Departure",
+    "Skaab Goliath",
+    "Spidery Grasp",
+    "Sturmgeist",
+    "Villagers of Estwald"
+   ],
+   "lands": {
+    "Island": 10,
+    "Forest": 7
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Galvanic Juggernaut"
+    ],
+    [
+     1,
+     2,
+     "Lantern Spirit"
+    ],
+    [
+     1,
+     3,
+     "Blazing Torch"
+    ],
+    [
+     1,
+     4,
+     "Orchard Spirit"
+    ],
+    [
+     1,
+     5,
+     "Travel Preparations"
+    ],
+    [
+     1,
+     6,
+     "Moon Heron"
+    ],
+    [
+     1,
+     7,
+     "Grave Bramble"
+    ],
+    [
+     1,
+     8,
+     "Frightful Delusion"
+    ],
+    [
+     1,
+     9,
+     "Spidery Grasp"
+    ],
+    [
+     1,
+     10,
+     "Forbidden Alchemy"
+    ],
+    [
+     1,
+     11,
+     "Festerhide Boar"
+    ],
+    [
+     1,
+     12,
+     "Silent Departure"
+    ],
+    [
+     1,
+     13,
+     "Forbidden Alchemy"
+    ],
+    [
+     1,
+     14,
+     "Cellar Door"
+    ],
+    [
+     2,
+     1,
+     "Invisible Stalker"
+    ],
+    [
+     2,
+     2,
+     "Rebuke"
+    ],
+    [
+     2,
+     3,
+     "Prey Upon"
+    ],
+    [
+     2,
+     4,
+     "Sturmgeist"
+    ],
+    [
+     2,
+     5,
+     "Skaab Goliath"
+    ],
+    [
+     2,
+     6,
+     "One-Eyed Scarecrow"
+    ],
+    [
+     2,
+     7,
+     "Armored Skaab"
+    ],
+    [
+     2,
+     8,
+     "Deranged Assistant"
+    ],
+    [
+     2,
+     9,
+     "Travel Preparations"
+    ],
+    [
+     2,
+     10,
+     "Lost in the Mist"
+    ],
+    [
+     2,
+     11,
+     "Evil Twin"
+    ],
+    [
+     2,
+     12,
+     "Curse of the Bloody Tome"
+    ],
+    [
+     2,
+     13,
+     "Dream Twist"
+    ],
+    [
+     2,
+     14,
+     "Cobbled Wings"
+    ],
+    [
+     3,
+     1,
+     "Victim of Night"
+    ],
+    [
+     3,
+     2,
+     "Claustrophobia"
+    ],
+    [
+     3,
+     3,
+     "Dead Weight"
+    ],
+    [
+     3,
+     4,
+     "Darkthicket Wolf"
+    ],
+    [
+     3,
+     5,
+     "Makeshift Mauler"
+    ],
+    [
+     3,
+     6,
+     "Deranged Assistant"
+    ],
+    [
+     3,
+     7,
+     "Boneyard Wurm"
+    ],
+    [
+     3,
+     8,
+     "Woodland Sleuth"
+    ],
+    [
+     3,
+     9,
+     "Orchard Spirit"
+    ],
+    [
+     3,
+     10,
+     "Make a Wish"
+    ],
+    [
+     3,
+     11,
+     "Villagers of Estwald // Howlpack of Estwald"
+    ],
+    [
+     3,
+     12,
+     "Memory's Journey"
+    ],
+    [
+     3,
+     13,
+     "Forbidden Alchemy"
+    ],
+    [
+     3,
+     14,
+     "Gnaw to the Bone"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "\u2026Makeshift Mauler) plus Forbidden Alchemy for graveyard fuel, with Claustrophobia, Prey Upon, Blazing Torch and Silent Departure as answers. Cut Festerhide Boar, Woodland Sleuth, Grave Bramble and the weaker fillers to reach 23 spells and 17 lands, leaning Islands for the blue-heavy top end.",
+   "match_wins": 2,
+   "match_losses": 1,
+   "match_draws": 0,
+   "game_wins": 4,
+   "game_losses": 3,
+   "game_draws": 0,
+   "rank": 2
+  },
+  {
+   "seat": 7,
+   "model": "cc:claude-haiku-5-5",
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "maindeck": [
+    "Ashmouth Hound",
+    "Bloodcrazed Neonate",
+    "Brimstone Volley",
+    "Bump in the Night",
+    "Bump in the Night",
+    "Crossway Vampire",
+    "Diregraf Ghoul",
+    "Feral Ridgewolf",
+    "Geistcatcher's Rig",
+    "Geistflame",
+    "Harvest Pyre",
+    "Kessig Wolf",
+    "Manor Skeleton",
+    "Markov Patrician",
+    "Morkrut Banshee",
+    "Night Revelers",
+    "Pitchburn Devils",
+    "Rage Thrower",
+    "Riot Devils",
+    "Screeching Bat",
+    "Stromkirk Patrol",
+    "Tormented Pariah",
+    "Typhoid Rats"
+   ],
+   "lands": {
+    "Swamp": 8,
+    "Mountain": 9
+   },
+   "fallback_deck": false,
+   "picks": [
+    [
+     1,
+     1,
+     "Ashmouth Hound"
+    ],
+    [
+     1,
+     2,
+     "Morkrut Banshee"
+    ],
+    [
+     1,
+     3,
+     "Geistcatcher's Rig"
+    ],
+    [
+     1,
+     4,
+     "Harvest Pyre"
+    ],
+    [
+     1,
+     5,
+     "Crossway Vampire"
+    ],
+    [
+     1,
+     6,
+     "Feral Ridgewolf"
+    ],
+    [
+     1,
+     7,
+     "Stromkirk Patrol"
+    ],
+    [
+     1,
+     8,
+     "Night Revelers"
+    ],
+    [
+     1,
+     9,
+     "Diregraf Ghoul"
+    ],
+    [
+     1,
+     10,
+     "Grave Bramble"
+    ],
+    [
+     1,
+     11,
+     "Altar's Reap"
+    ],
+    [
+     1,
+     12,
+     "Rage Thrower"
+    ],
+    [
+     1,
+     13,
+     "Kindercatch"
+    ],
+    [
+     1,
+     14,
+     "Graveyard Shovel"
+    ],
+    [
+     2,
+     1,
+     "Fiend Hunter"
+    ],
+    [
+     2,
+     2,
+     "Pitchburn Devils"
+    ],
+    [
+     2,
+     3,
+     "Geistflame"
+    ],
+    [
+     2,
+     4,
+     "Sensory Deprivation"
+    ],
+    [
+     2,
+     5,
+     "Rolling Temblor"
+    ],
+    [
+     2,
+     6,
+     "Grizzled Outcasts // Krallenhorde Wantons"
+    ],
+    [
+     2,
+     7,
+     "Kessig Wolf"
+    ],
+    [
+     2,
+     8,
+     "Curse of Stalked Prey"
+    ],
+    [
+     2,
+     9,
+     "Bump in the Night"
+    ],
+    [
+     2,
+     10,
+     "Bloodcrazed Neonate"
+    ],
+    [
+     2,
+     11,
+     "Riot Devils"
+    ],
+    [
+     2,
+     12,
+     "Gruesome Deformity"
+    ],
+    [
+     2,
+     13,
+     "Ancient Grudge"
+    ],
+    [
+     2,
+     14,
+     "Wreath of Geists"
+    ],
+    [
+     3,
+     1,
+     "Brimstone Volley"
+    ],
+    [
+     3,
+     2,
+     "Screeching Bat // Stalking Vampire"
+    ],
+    [
+     3,
+     3,
+     "Tormented Pariah // Rampaging Werewolf"
+    ],
+    [
+     3,
+     4,
+     "Typhoid Rats"
+    ],
+    [
+     3,
+     5,
+     "Markov Patrician"
+    ],
+    [
+     3,
+     6,
+     "Bump in the Night"
+    ],
+    [
+     3,
+     7,
+     "Mask of Avacyn"
+    ],
+    [
+     3,
+     8,
+     "Sharpened Pitchfork"
+    ],
+    [
+     3,
+     9,
+     "Ancient Grudge"
+    ],
+    [
+     3,
+     10,
+     "Ancient Grudge"
+    ],
+    [
+     3,
+     11,
+     "Manor Skeleton"
+    ],
+    [
+     3,
+     12,
+     "Runechanter's Pike"
+    ],
+    [
+     3,
+     13,
+     "Curse of Oblivion"
+    ],
+    [
+     3,
+     14,
+     "Parallel Lives"
+    ]
+   ],
+   "substituted_picks": 0,
+   "substituted": [],
+   "notes": "Red-black aggro: 15 creatures plus Geistflame, Brimstone Volley, Harvest Pyre and two Bump in the Night, with Geistcatcher's Rig as a top-end answer to flyers. Cut Altar's Reap to fit 23 spells, and run 9 Mountain and 8 Swamp since red is the deeper colour.",
+   "match_wins": 2,
+   "match_losses": 1,
+   "match_draws": 0,
+   "game_wins": 4,
+   "game_losses": 3,
+   "game_draws": 0,
+   "rank": 4
+  }
+ ],
+ "matches": [
+  {
+   "round": 1,
+   "a": 4,
+   "b": 5,
+   "wins_a": 2,
+   "wins_b": 0,
+   "games": [
+    {
+     "winner": 4,
+     "turns": 20,
+     "decks": {
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ],
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ]
+     }
+    },
+    {
+     "winner": 4,
+     "turns": 14,
+     "decks": {
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ],
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 1,
+   "a": 2,
+   "b": 3,
+   "wins_a": 0,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 3,
+     "turns": 21,
+     "decks": {
+      "2": [
+       "Abattoir Ghoul",
+       "Avacynian Priest",
+       "Blazing Torch",
+       "Bloodline Keeper",
+       "Chapel Geist",
+       "Cloistered Youth",
+       "Corpse Lunge",
+       "Doomed Traveler",
+       "Elder Cathar",
+       "Feeling of Dread",
+       "Feeling of Dread",
+       "Gallows Warden",
+       "Markov Patrician",
+       "Mausoleum Guard",
+       "Moan of the Unhallowed",
+       "Moment of Heroism",
+       "Night Terrors",
+       "Skirsdag High Priest",
+       "Smite the Monstrous",
+       "Typhoid Rats",
+       "Vampire Interloper",
+       "Village Bell-Ringer",
+       "Voiceless Spirit",
+       "Woodland Cemetery"
+      ],
+      "3": [
+       "Armored Skaab",
+       "Armored Skaab",
+       "Brain Weevil",
+       "Civilized Scholar",
+       "Dead Weight",
+       "Delver of Secrets",
+       "Diregraf Ghoul",
+       "Dissipate",
+       "Evil Twin",
+       "Falkenrath Noble",
+       "Grasp of Phantoms",
+       "Invisible Stalker",
+       "Makeshift Mauler",
+       "Mindshrieker",
+       "Murder of Crows",
+       "Night Terrors",
+       "Selhoff Occultist",
+       "Sensory Deprivation",
+       "Snapcaster Mage",
+       "Spectral Flight",
+       "Stitcher's Apprentice",
+       "Typhoid Rats",
+       "Victim of Night"
+      ]
+     }
+    },
+    {
+     "winner": 3,
+     "turns": 16,
+     "decks": {
+      "2": [
+       "Abattoir Ghoul",
+       "Avacynian Priest",
+       "Blazing Torch",
+       "Bloodline Keeper",
+       "Chapel Geist",
+       "Cloistered Youth",
+       "Corpse Lunge",
+       "Doomed Traveler",
+       "Elder Cathar",
+       "Feeling of Dread",
+       "Feeling of Dread",
+       "Gallows Warden",
+       "Markov Patrician",
+       "Mausoleum Guard",
+       "Moan of the Unhallowed",
+       "Moment of Heroism",
+       "Night Terrors",
+       "Skirsdag High Priest",
+       "Smite the Monstrous",
+       "Typhoid Rats",
+       "Vampire Interloper",
+       "Village Bell-Ringer",
+       "Voiceless Spirit",
+       "Woodland Cemetery"
+      ],
+      "3": [
+       "Armored Skaab",
+       "Armored Skaab",
+       "Brain Weevil",
+       "Civilized Scholar",
+       "Dead Weight",
+       "Delver of Secrets",
+       "Diregraf Ghoul",
+       "Dissipate",
+       "Evil Twin",
+       "Falkenrath Noble",
+       "Grasp of Phantoms",
+       "Invisible Stalker",
+       "Makeshift Mauler",
+       "Mindshrieker",
+       "Murder of Crows",
+       "Night Terrors",
+       "Selhoff Occultist",
+       "Sensory Deprivation",
+       "Snapcaster Mage",
+       "Spectral Flight",
+       "Stitcher's Apprentice",
+       "Typhoid Rats",
+       "Victim of Night"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 1,
+   "a": 6,
+   "b": 7,
+   "wins_a": 2,
+   "wins_b": 0,
+   "games": [
+    {
+     "winner": 6,
+     "turns": 25,
+     "decks": {
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    },
+    {
+     "winner": 6,
+     "turns": 22,
+     "decks": {
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 1,
+   "a": 0,
+   "b": 1,
+   "wins_a": 0,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 1,
+     "turns": 32,
+     "decks": {
+      "0": [
+       "Abattoir Ghoul",
+       "Abbey Griffin",
+       "Abbey Griffin",
+       "Bonds of Faith",
+       "Butcher's Cleaver",
+       "Champion of the Parish",
+       "Corpse Lunge",
+       "Elder Cathar",
+       "Ghostly Possession",
+       "Ghostly Possession",
+       "Ghoulcaller's Chant",
+       "Ghoulraiser",
+       "Manor Gargoyle",
+       "Morkrut Banshee",
+       "Rally the Peasants",
+       "Silverchase Fox",
+       "Skeletal Grimace",
+       "Smite the Monstrous",
+       "Spectral Rider",
+       "Thraben Sentry",
+       "Unruly Mob",
+       "Urgent Exorcism",
+       "Vampire Interloper"
+      ],
+      "1": [
+       "Ambush Viper",
+       "Ambush Viper",
+       "Curse of Death's Hold",
+       "Daybreak Ranger",
+       "Dead Weight",
+       "Festerhide Boar",
+       "Gatstaf Shepherd",
+       "Grizzled Outcasts",
+       "Hollowhenge Scavenger",
+       "Kessig Cagebreakers",
+       "Kindercatch",
+       "Lumberknot",
+       "Lumberknot",
+       "Moldgraf Monstrosity",
+       "Prey Upon",
+       "Somberwald Spider",
+       "Spidery Grasp",
+       "Ulvenwald Mystics",
+       "Village Cannibals",
+       "Villagers of Estwald",
+       "Villagers of Estwald",
+       "Walking Corpse",
+       "Woodland Sleuth"
+      ]
+     }
+    },
+    {
+     "winner": 1,
+     "turns": 30,
+     "decks": {
+      "0": [
+       "Abattoir Ghoul",
+       "Abbey Griffin",
+       "Abbey Griffin",
+       "Bonds of Faith",
+       "Butcher's Cleaver",
+       "Champion of the Parish",
+       "Corpse Lunge",
+       "Elder Cathar",
+       "Ghostly Possession",
+       "Ghostly Possession",
+       "Ghoulcaller's Chant",
+       "Ghoulraiser",
+       "Manor Gargoyle",
+       "Morkrut Banshee",
+       "Rally the Peasants",
+       "Silverchase Fox",
+       "Skeletal Grimace",
+       "Smite the Monstrous",
+       "Spectral Rider",
+       "Thraben Sentry",
+       "Unruly Mob",
+       "Urgent Exorcism",
+       "Vampire Interloper"
+      ],
+      "1": [
+       "Ambush Viper",
+       "Ambush Viper",
+       "Curse of Death's Hold",
+       "Daybreak Ranger",
+       "Dead Weight",
+       "Festerhide Boar",
+       "Gatstaf Shepherd",
+       "Grizzled Outcasts",
+       "Hollowhenge Scavenger",
+       "Kessig Cagebreakers",
+       "Kindercatch",
+       "Lumberknot",
+       "Lumberknot",
+       "Moldgraf Monstrosity",
+       "Prey Upon",
+       "Somberwald Spider",
+       "Spidery Grasp",
+       "Ulvenwald Mystics",
+       "Village Cannibals",
+       "Villagers of Estwald",
+       "Villagers of Estwald",
+       "Walking Corpse",
+       "Woodland Sleuth"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "a": 1,
+   "b": 3,
+   "wins_a": 2,
+   "wins_b": 0,
+   "games": [
+    {
+     "winner": 1,
+     "turns": 14,
+     "decks": {
+      "1": [
+       "Ambush Viper",
+       "Ambush Viper",
+       "Curse of Death's Hold",
+       "Daybreak Ranger",
+       "Dead Weight",
+       "Festerhide Boar",
+       "Gatstaf Shepherd",
+       "Grizzled Outcasts",
+       "Hollowhenge Scavenger",
+       "Kessig Cagebreakers",
+       "Kindercatch",
+       "Lumberknot",
+       "Lumberknot",
+       "Moldgraf Monstrosity",
+       "Prey Upon",
+       "Somberwald Spider",
+       "Spidery Grasp",
+       "Ulvenwald Mystics",
+       "Village Cannibals",
+       "Villagers of Estwald",
+       "Villagers of Estwald",
+       "Walking Corpse",
+       "Woodland Sleuth"
+      ],
+      "3": [
+       "Armored Skaab",
+       "Armored Skaab",
+       "Brain Weevil",
+       "Civilized Scholar",
+       "Dead Weight",
+       "Delver of Secrets",
+       "Diregraf Ghoul",
+       "Dissipate",
+       "Evil Twin",
+       "Falkenrath Noble",
+       "Grasp of Phantoms",
+       "Invisible Stalker",
+       "Makeshift Mauler",
+       "Mindshrieker",
+       "Murder of Crows",
+       "Night Terrors",
+       "Selhoff Occultist",
+       "Sensory Deprivation",
+       "Snapcaster Mage",
+       "Spectral Flight",
+       "Stitcher's Apprentice",
+       "Typhoid Rats",
+       "Victim of Night"
+      ]
+     }
+    },
+    {
+     "winner": 1,
+     "turns": 18,
+     "decks": {
+      "1": [
+       "Ambush Viper",
+       "Ambush Viper",
+       "Curse of Death's Hold",
+       "Daybreak Ranger",
+       "Dead Weight",
+       "Festerhide Boar",
+       "Gatstaf Shepherd",
+       "Grizzled Outcasts",
+       "Hollowhenge Scavenger",
+       "Kessig Cagebreakers",
+       "Kindercatch",
+       "Lumberknot",
+       "Lumberknot",
+       "Moldgraf Monstrosity",
+       "Prey Upon",
+       "Somberwald Spider",
+       "Spidery Grasp",
+       "Ulvenwald Mystics",
+       "Village Cannibals",
+       "Villagers of Estwald",
+       "Villagers of Estwald",
+       "Walking Corpse",
+       "Woodland Sleuth"
+      ],
+      "3": [
+       "Armored Skaab",
+       "Armored Skaab",
+       "Brain Weevil",
+       "Civilized Scholar",
+       "Dead Weight",
+       "Delver of Secrets",
+       "Diregraf Ghoul",
+       "Dissipate",
+       "Evil Twin",
+       "Falkenrath Noble",
+       "Grasp of Phantoms",
+       "Invisible Stalker",
+       "Makeshift Mauler",
+       "Mindshrieker",
+       "Murder of Crows",
+       "Night Terrors",
+       "Selhoff Occultist",
+       "Sensory Deprivation",
+       "Snapcaster Mage",
+       "Spectral Flight",
+       "Stitcher's Apprentice",
+       "Typhoid Rats",
+       "Victim of Night"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "a": 0,
+   "b": 2,
+   "wins_a": 0,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 2,
+     "turns": 17,
+     "decks": {
+      "0": [
+       "Abattoir Ghoul",
+       "Abbey Griffin",
+       "Abbey Griffin",
+       "Bonds of Faith",
+       "Butcher's Cleaver",
+       "Champion of the Parish",
+       "Corpse Lunge",
+       "Elder Cathar",
+       "Ghostly Possession",
+       "Ghostly Possession",
+       "Ghoulcaller's Chant",
+       "Ghoulraiser",
+       "Manor Gargoyle",
+       "Morkrut Banshee",
+       "Rally the Peasants",
+       "Silverchase Fox",
+       "Skeletal Grimace",
+       "Smite the Monstrous",
+       "Spectral Rider",
+       "Thraben Sentry",
+       "Unruly Mob",
+       "Urgent Exorcism",
+       "Vampire Interloper"
+      ],
+      "2": [
+       "Abattoir Ghoul",
+       "Avacynian Priest",
+       "Blazing Torch",
+       "Bloodline Keeper",
+       "Chapel Geist",
+       "Cloistered Youth",
+       "Corpse Lunge",
+       "Doomed Traveler",
+       "Elder Cathar",
+       "Feeling of Dread",
+       "Feeling of Dread",
+       "Gallows Warden",
+       "Markov Patrician",
+       "Mausoleum Guard",
+       "Moan of the Unhallowed",
+       "Moment of Heroism",
+       "Night Terrors",
+       "Skirsdag High Priest",
+       "Smite the Monstrous",
+       "Typhoid Rats",
+       "Vampire Interloper",
+       "Village Bell-Ringer",
+       "Voiceless Spirit",
+       "Woodland Cemetery"
+      ]
+     }
+    },
+    {
+     "winner": 2,
+     "turns": 40,
+     "decks": {
+      "0": [
+       "Abattoir Ghoul",
+       "Abbey Griffin",
+       "Abbey Griffin",
+       "Bonds of Faith",
+       "Butcher's Cleaver",
+       "Champion of the Parish",
+       "Corpse Lunge",
+       "Elder Cathar",
+       "Ghostly Possession",
+       "Ghostly Possession",
+       "Ghoulcaller's Chant",
+       "Ghoulraiser",
+       "Manor Gargoyle",
+       "Morkrut Banshee",
+       "Rally the Peasants",
+       "Silverchase Fox",
+       "Skeletal Grimace",
+       "Smite the Monstrous",
+       "Spectral Rider",
+       "Thraben Sentry",
+       "Unruly Mob",
+       "Urgent Exorcism",
+       "Vampire Interloper"
+      ],
+      "2": [
+       "Abattoir Ghoul",
+       "Avacynian Priest",
+       "Blazing Torch",
+       "Bloodline Keeper",
+       "Chapel Geist",
+       "Cloistered Youth",
+       "Corpse Lunge",
+       "Doomed Traveler",
+       "Elder Cathar",
+       "Feeling of Dread",
+       "Feeling of Dread",
+       "Gallows Warden",
+       "Markov Patrician",
+       "Mausoleum Guard",
+       "Moan of the Unhallowed",
+       "Moment of Heroism",
+       "Night Terrors",
+       "Skirsdag High Priest",
+       "Smite the Monstrous",
+       "Typhoid Rats",
+       "Vampire Interloper",
+       "Village Bell-Ringer",
+       "Voiceless Spirit",
+       "Woodland Cemetery"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "a": 5,
+   "b": 7,
+   "wins_a": 1,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 7,
+     "turns": 17,
+     "decks": {
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    },
+    {
+     "winner": 5,
+     "turns": 31,
+     "decks": {
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    },
+    {
+     "winner": 7,
+     "turns": 17,
+     "decks": {
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 2,
+   "a": 4,
+   "b": 6,
+   "wins_a": 1,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 4,
+     "turns": 20,
+     "decks": {
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ],
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ]
+     }
+    },
+    {
+     "winner": 6,
+     "turns": 27,
+     "decks": {
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ],
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ]
+     }
+    },
+    {
+     "winner": 6,
+     "turns": 22,
+     "decks": {
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ],
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "a": 2,
+   "b": 4,
+   "wins_a": 0,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 4,
+     "turns": 15,
+     "decks": {
+      "2": [
+       "Abattoir Ghoul",
+       "Avacynian Priest",
+       "Blazing Torch",
+       "Bloodline Keeper",
+       "Chapel Geist",
+       "Cloistered Youth",
+       "Corpse Lunge",
+       "Doomed Traveler",
+       "Elder Cathar",
+       "Feeling of Dread",
+       "Feeling of Dread",
+       "Gallows Warden",
+       "Markov Patrician",
+       "Mausoleum Guard",
+       "Moan of the Unhallowed",
+       "Moment of Heroism",
+       "Night Terrors",
+       "Skirsdag High Priest",
+       "Smite the Monstrous",
+       "Typhoid Rats",
+       "Vampire Interloper",
+       "Village Bell-Ringer",
+       "Voiceless Spirit",
+       "Woodland Cemetery"
+      ],
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ]
+     }
+    },
+    {
+     "winner": 4,
+     "turns": 14,
+     "decks": {
+      "2": [
+       "Abattoir Ghoul",
+       "Avacynian Priest",
+       "Blazing Torch",
+       "Bloodline Keeper",
+       "Chapel Geist",
+       "Cloistered Youth",
+       "Corpse Lunge",
+       "Doomed Traveler",
+       "Elder Cathar",
+       "Feeling of Dread",
+       "Feeling of Dread",
+       "Gallows Warden",
+       "Markov Patrician",
+       "Mausoleum Guard",
+       "Moan of the Unhallowed",
+       "Moment of Heroism",
+       "Night Terrors",
+       "Skirsdag High Priest",
+       "Smite the Monstrous",
+       "Typhoid Rats",
+       "Vampire Interloper",
+       "Village Bell-Ringer",
+       "Voiceless Spirit",
+       "Woodland Cemetery"
+      ],
+      "4": [
+       "Avacynian Priest",
+       "Bonds of Faith",
+       "Bonds of Faith",
+       "Crossway Vampire",
+       "Doomed Traveler",
+       "Fiend Hunter",
+       "Furor of the Bitten",
+       "Harvest Pyre",
+       "Into the Maw of Hell",
+       "Mentor of the Meek",
+       "Rally the Peasants",
+       "Rebuke",
+       "Riot Devils",
+       "Selfless Cathar",
+       "Silverchase Fox",
+       "Spectral Rider",
+       "Thraben Purebloods",
+       "Thraben Sentry",
+       "Tormented Pariah",
+       "Unruly Mob",
+       "Village Bell-Ringer",
+       "Village Ironsmith",
+       "Voiceless Spirit"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "a": 3,
+   "b": 7,
+   "wins_a": 0,
+   "wins_b": 2,
+   "games": [
+    {
+     "winner": 7,
+     "turns": 15,
+     "decks": {
+      "3": [
+       "Armored Skaab",
+       "Armored Skaab",
+       "Brain Weevil",
+       "Civilized Scholar",
+       "Dead Weight",
+       "Delver of Secrets",
+       "Diregraf Ghoul",
+       "Dissipate",
+       "Evil Twin",
+       "Falkenrath Noble",
+       "Grasp of Phantoms",
+       "Invisible Stalker",
+       "Makeshift Mauler",
+       "Mindshrieker",
+       "Murder of Crows",
+       "Night Terrors",
+       "Selhoff Occultist",
+       "Sensory Deprivation",
+       "Snapcaster Mage",
+       "Spectral Flight",
+       "Stitcher's Apprentice",
+       "Typhoid Rats",
+       "Victim of Night"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    },
+    {
+     "winner": 7,
+     "turns": 20,
+     "decks": {
+      "3": [
+       "Armored Skaab",
+       "Armored Skaab",
+       "Brain Weevil",
+       "Civilized Scholar",
+       "Dead Weight",
+       "Delver of Secrets",
+       "Diregraf Ghoul",
+       "Dissipate",
+       "Evil Twin",
+       "Falkenrath Noble",
+       "Grasp of Phantoms",
+       "Invisible Stalker",
+       "Makeshift Mauler",
+       "Mindshrieker",
+       "Murder of Crows",
+       "Night Terrors",
+       "Selhoff Occultist",
+       "Sensory Deprivation",
+       "Snapcaster Mage",
+       "Spectral Flight",
+       "Stitcher's Apprentice",
+       "Typhoid Rats",
+       "Victim of Night"
+      ],
+      "7": [
+       "Ashmouth Hound",
+       "Bloodcrazed Neonate",
+       "Brimstone Volley",
+       "Bump in the Night",
+       "Bump in the Night",
+       "Crossway Vampire",
+       "Diregraf Ghoul",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Harvest Pyre",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Markov Patrician",
+       "Morkrut Banshee",
+       "Night Revelers",
+       "Pitchburn Devils",
+       "Rage Thrower",
+       "Riot Devils",
+       "Screeching Bat",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Typhoid Rats"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "a": 0,
+   "b": 5,
+   "wins_a": 2,
+   "wins_b": 0,
+   "games": [
+    {
+     "winner": 0,
+     "turns": 13,
+     "decks": {
+      "0": [
+       "Abattoir Ghoul",
+       "Abbey Griffin",
+       "Abbey Griffin",
+       "Bonds of Faith",
+       "Butcher's Cleaver",
+       "Champion of the Parish",
+       "Corpse Lunge",
+       "Elder Cathar",
+       "Ghostly Possession",
+       "Ghostly Possession",
+       "Ghoulcaller's Chant",
+       "Ghoulraiser",
+       "Manor Gargoyle",
+       "Morkrut Banshee",
+       "Rally the Peasants",
+       "Silverchase Fox",
+       "Skeletal Grimace",
+       "Smite the Monstrous",
+       "Spectral Rider",
+       "Thraben Sentry",
+       "Unruly Mob",
+       "Urgent Exorcism",
+       "Vampire Interloper"
+      ],
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ]
+     }
+    },
+    {
+     "winner": 0,
+     "turns": 16,
+     "decks": {
+      "0": [
+       "Abattoir Ghoul",
+       "Abbey Griffin",
+       "Abbey Griffin",
+       "Bonds of Faith",
+       "Butcher's Cleaver",
+       "Champion of the Parish",
+       "Corpse Lunge",
+       "Elder Cathar",
+       "Ghostly Possession",
+       "Ghostly Possession",
+       "Ghoulcaller's Chant",
+       "Ghoulraiser",
+       "Manor Gargoyle",
+       "Morkrut Banshee",
+       "Rally the Peasants",
+       "Silverchase Fox",
+       "Skeletal Grimace",
+       "Smite the Monstrous",
+       "Spectral Rider",
+       "Thraben Sentry",
+       "Unruly Mob",
+       "Urgent Exorcism",
+       "Vampire Interloper"
+      ],
+      "5": [
+       "Bloodcrazed Neonate",
+       "Brain Weevil",
+       "Brimstone Volley",
+       "Corpse Lunge",
+       "Curse of the Pierced Heart",
+       "Feral Ridgewolf",
+       "Geistcatcher's Rig",
+       "Geistflame",
+       "Geistflame",
+       "Hanweir Watchkeep",
+       "Kessig Wolf",
+       "Manor Skeleton",
+       "Night Revelers",
+       "Reckless Waif",
+       "Riot Devils",
+       "Rotting Fensnake",
+       "Scourge of Geier Reach",
+       "Skirsdag Cultist",
+       "Stromkirk Patrol",
+       "Tormented Pariah",
+       "Traitorous Blood",
+       "Vampiric Fury",
+       "Walking Corpse"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "round": 3,
+   "a": 1,
+   "b": 6,
+   "wins_a": 2,
+   "wins_b": 0,
+   "games": [
+    {
+     "winner": 1,
+     "turns": 20,
+     "decks": {
+      "1": [
+       "Ambush Viper",
+       "Ambush Viper",
+       "Curse of Death's Hold",
+       "Daybreak Ranger",
+       "Dead Weight",
+       "Festerhide Boar",
+       "Gatstaf Shepherd",
+       "Grizzled Outcasts",
+       "Hollowhenge Scavenger",
+       "Kessig Cagebreakers",
+       "Kindercatch",
+       "Lumberknot",
+       "Lumberknot",
+       "Moldgraf Monstrosity",
+       "Prey Upon",
+       "Somberwald Spider",
+       "Spidery Grasp",
+       "Ulvenwald Mystics",
+       "Village Cannibals",
+       "Villagers of Estwald",
+       "Villagers of Estwald",
+       "Walking Corpse",
+       "Woodland Sleuth"
+      ],
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ]
+     }
+    },
+    {
+     "winner": 1,
+     "turns": 26,
+     "decks": {
+      "1": [
+       "Ambush Viper",
+       "Ambush Viper",
+       "Curse of Death's Hold",
+       "Daybreak Ranger",
+       "Dead Weight",
+       "Festerhide Boar",
+       "Gatstaf Shepherd",
+       "Grizzled Outcasts",
+       "Hollowhenge Scavenger",
+       "Kessig Cagebreakers",
+       "Kindercatch",
+       "Lumberknot",
+       "Lumberknot",
+       "Moldgraf Monstrosity",
+       "Prey Upon",
+       "Somberwald Spider",
+       "Spidery Grasp",
+       "Ulvenwald Mystics",
+       "Village Cannibals",
+       "Villagers of Estwald",
+       "Villagers of Estwald",
+       "Walking Corpse",
+       "Woodland Sleuth"
+      ],
+      "6": [
+       "Armored Skaab",
+       "Blazing Torch",
+       "Boneyard Wurm",
+       "Claustrophobia",
+       "Darkthicket Wolf",
+       "Deranged Assistant",
+       "Deranged Assistant",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Forbidden Alchemy",
+       "Galvanic Juggernaut",
+       "Invisible Stalker",
+       "Lantern Spirit",
+       "Makeshift Mauler",
+       "Moon Heron",
+       "Orchard Spirit",
+       "Orchard Spirit",
+       "Prey Upon",
+       "Silent Departure",
+       "Skaab Goliath",
+       "Spidery Grasp",
+       "Sturmgeist",
+       "Villagers of Estwald"
+      ]
+     }
+    }
+   ]
+  }
+ ],
+ "offered": [
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Elder Cathar",
+    "Grave Bramble",
+    "Bloodcrazed Neonate",
+    "Frightful Delusion",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn",
+    "Morkrut Banshee",
+    "Kessig Cagebreakers",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Morkrut Banshee"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Hysterical Blindness",
+    "Voiceless Spirit",
+    "Ghoulcaller's Chant",
+    "Moon Heron",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Night Revelers",
+    "Chapel Geist",
+    "Grasp of Phantoms",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Curse of Death's Hold",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Curse of Death's Hold"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Ashmouth Hound",
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Feral Ridgewolf",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Travel Preparations",
+    "Think Twice",
+    "Spectral Rider",
+    "Invisible Stalker",
+    "Graveyard Shovel",
+    "Back from the Brink",
+    "Hanweir Watchkeep // Bane of Hanweir"
+   ],
+   "chosen": "Ashmouth Hound"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Victim of Night",
+    "Claustrophobia",
+    "Kindercatch",
+    "Crossway Vampire",
+    "Thraben Purebloods",
+    "Orchard Spirit",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Ghoulraiser",
+    "Trepanation Blade",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Victim of Night"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Geistflame",
+    "Harvest Pyre",
+    "Mulch",
+    "Smite the Monstrous",
+    "Armored Skaab",
+    "Blazing Torch",
+    "Village Cannibals",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Mentor of the Meek",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Mentor of the Meek"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Elder Cathar",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Lumberknot",
+    "Lantern Spirit",
+    "Geistcatcher's Rig",
+    "Dearly Departed",
+    "Cloistered Youth // Unholy Fiend",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Dearly Departed"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Night Terrors",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Walking Corpse",
+    "Smite the Monstrous",
+    "Spidery Grasp",
+    "Into the Maw of Hell",
+    "Morkrut Banshee",
+    "Galvanic Juggernaut",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Galvanic Juggernaut"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 1,
+   "available": [
+    "Frightful Delusion",
+    "Ashmouth Hound",
+    "Doomed Traveler",
+    "Ambush Viper",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Village Bell-Ringer",
+    "Caravan Vigil",
+    "Butcher's Cleaver",
+    "Diregraf Ghoul",
+    "Abattoir Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Ashmouth Hound"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Frightful Delusion",
+    "Doomed Traveler",
+    "Ambush Viper",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Village Bell-Ringer",
+    "Caravan Vigil",
+    "Butcher's Cleaver",
+    "Diregraf Ghoul",
+    "Abattoir Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Abattoir Ghoul"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Elder Cathar",
+    "Grave Bramble",
+    "Bloodcrazed Neonate",
+    "Frightful Delusion",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn",
+    "Kessig Cagebreakers",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Kessig Cagebreakers"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Hysterical Blindness",
+    "Voiceless Spirit",
+    "Ghoulcaller's Chant",
+    "Moon Heron",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Night Revelers",
+    "Chapel Geist",
+    "Grasp of Phantoms",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Chapel Geist"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Feral Ridgewolf",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Travel Preparations",
+    "Think Twice",
+    "Spectral Rider",
+    "Invisible Stalker",
+    "Graveyard Shovel",
+    "Back from the Brink",
+    "Hanweir Watchkeep // Bane of Hanweir"
+   ],
+   "chosen": "Invisible Stalker"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Claustrophobia",
+    "Kindercatch",
+    "Crossway Vampire",
+    "Thraben Purebloods",
+    "Orchard Spirit",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Ghoulraiser",
+    "Trepanation Blade",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Claustrophobia"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Geistflame",
+    "Harvest Pyre",
+    "Mulch",
+    "Smite the Monstrous",
+    "Armored Skaab",
+    "Blazing Torch",
+    "Village Cannibals",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Geistflame"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Elder Cathar",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Lumberknot",
+    "Lantern Spirit",
+    "Geistcatcher's Rig",
+    "Cloistered Youth // Unholy Fiend",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Lantern Spirit"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 2,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Night Terrors",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Walking Corpse",
+    "Smite the Monstrous",
+    "Spidery Grasp",
+    "Into the Maw of Hell",
+    "Morkrut Banshee",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Morkrut Banshee"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Night Terrors",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Walking Corpse",
+    "Smite the Monstrous",
+    "Spidery Grasp",
+    "Into the Maw of Hell",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Into the Maw of Hell"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Frightful Delusion",
+    "Doomed Traveler",
+    "Ambush Viper",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Village Bell-Ringer",
+    "Caravan Vigil",
+    "Butcher's Cleaver",
+    "Diregraf Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Ambush Viper"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Elder Cathar",
+    "Grave Bramble",
+    "Bloodcrazed Neonate",
+    "Frightful Delusion",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Elder Cathar"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Hysterical Blindness",
+    "Voiceless Spirit",
+    "Ghoulcaller's Chant",
+    "Moon Heron",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Night Revelers",
+    "Grasp of Phantoms",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Grasp of Phantoms"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Feral Ridgewolf",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Travel Preparations",
+    "Think Twice",
+    "Spectral Rider",
+    "Graveyard Shovel",
+    "Back from the Brink",
+    "Hanweir Watchkeep // Bane of Hanweir"
+   ],
+   "chosen": "Spectral Rider"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Kindercatch",
+    "Crossway Vampire",
+    "Thraben Purebloods",
+    "Orchard Spirit",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Ghoulraiser",
+    "Trepanation Blade",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Trepanation Blade"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Harvest Pyre",
+    "Mulch",
+    "Smite the Monstrous",
+    "Armored Skaab",
+    "Blazing Torch",
+    "Village Cannibals",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Blazing Torch"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 3,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Elder Cathar",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Lumberknot",
+    "Geistcatcher's Rig",
+    "Cloistered Youth // Unholy Fiend",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Geistcatcher's Rig"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Elder Cathar",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Lumberknot",
+    "Cloistered Youth // Unholy Fiend",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Elder Cathar"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Night Terrors",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Walking Corpse",
+    "Smite the Monstrous",
+    "Spidery Grasp",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Walking Corpse"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Frightful Delusion",
+    "Doomed Traveler",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Village Bell-Ringer",
+    "Caravan Vigil",
+    "Butcher's Cleaver",
+    "Diregraf Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Doomed Traveler"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Grave Bramble",
+    "Bloodcrazed Neonate",
+    "Frightful Delusion",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Frightful Delusion"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Hysterical Blindness",
+    "Voiceless Spirit",
+    "Ghoulcaller's Chant",
+    "Moon Heron",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Night Revelers",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Voiceless Spirit"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Feral Ridgewolf",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Travel Preparations",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink",
+    "Hanweir Watchkeep // Bane of Hanweir"
+   ],
+   "chosen": "Hanweir Watchkeep // Bane of Hanweir"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Kindercatch",
+    "Crossway Vampire",
+    "Thraben Purebloods",
+    "Orchard Spirit",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Ghoulraiser",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Orchard Spirit"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 4,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Harvest Pyre",
+    "Mulch",
+    "Smite the Monstrous",
+    "Armored Skaab",
+    "Village Cannibals",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Harvest Pyre"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Smite the Monstrous",
+    "Armored Skaab",
+    "Village Cannibals",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Smite the Monstrous"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Lumberknot",
+    "Cloistered Youth // Unholy Fiend",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Lumberknot"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Night Terrors",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Smite the Monstrous",
+    "Spidery Grasp",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Smite the Monstrous"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Frightful Delusion",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Village Bell-Ringer",
+    "Caravan Vigil",
+    "Butcher's Cleaver",
+    "Diregraf Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Butcher's Cleaver"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Grave Bramble",
+    "Bloodcrazed Neonate",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Tormented Pariah // Rampaging Werewolf"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Hysterical Blindness",
+    "Ghoulcaller's Chant",
+    "Moon Heron",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Night Revelers",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Night Revelers"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Feral Ridgewolf",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Travel Preparations",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink"
+   ],
+   "chosen": "Travel Preparations"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 5,
+   "available": [
+    "Kindercatch",
+    "Crossway Vampire",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Ghoulraiser",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Crossway Vampire"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Kindercatch",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Ghoulraiser",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Ghoulraiser"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Armored Skaab",
+    "Village Cannibals",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Village Cannibals"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Cloistered Youth // Unholy Fiend",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Cloistered Youth // Unholy Fiend"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Night Terrors",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Spidery Grasp",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Night Terrors"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Frightful Delusion",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Village Bell-Ringer",
+    "Caravan Vigil",
+    "Diregraf Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Village Bell-Ringer"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Grave Bramble",
+    "Bloodcrazed Neonate",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn"
+   ],
+   "chosen": "Bloodcrazed Neonate"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Hysterical Blindness",
+    "Ghoulcaller's Chant",
+    "Moon Heron",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Moon Heron"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 6,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Feral Ridgewolf",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink"
+   ],
+   "chosen": "Feral Ridgewolf"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Feeling of Dread",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink"
+   ],
+   "chosen": "Furor of the Bitten"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Kindercatch",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Villagers of Estwald // Howlpack of Estwald"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Armored Skaab",
+    "Rage Thrower",
+    "Abattoir Ghoul",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Abattoir Ghoul"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Ghoulcaller's Bell",
+    "Makeshift Mauler",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Makeshift Mauler"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Grave Bramble",
+    "Avacynian Priest",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Spidery Grasp",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Avacynian Priest"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Frightful Delusion",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Caravan Vigil",
+    "Diregraf Ghoul",
+    "Champion of the Parish",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Gatstaf Shepherd // Gatstaf Howler"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Grave Bramble",
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn"
+   ],
+   "chosen": "Grave Bramble"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 7,
+   "available": [
+    "Hysterical Blindness",
+    "Ghoulcaller's Chant",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Stromkirk Patrol",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Stromkirk Patrol"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Hysterical Blindness",
+    "Ghoulcaller's Chant",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Rally the Peasants",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Rally the Peasants"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Woodland Sleuth",
+    "Forbidden Alchemy",
+    "Thraben Purebloods",
+    "Feeling of Dread",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink"
+   ],
+   "chosen": "Woodland Sleuth"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Kindercatch",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Diregraf Ghoul",
+    "Intangible Virtue",
+    "Skirsdag High Priest"
+   ],
+   "chosen": "Skirsdag High Priest"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Armored Skaab",
+    "Rage Thrower",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Armored Skaab"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Ghoulcaller's Bell",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Riot Devils"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Grave Bramble",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Spidery Grasp",
+    "Gavony Township",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Tormented Pariah // Rampaging Werewolf"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Frightful Delusion",
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Caravan Vigil",
+    "Diregraf Ghoul",
+    "Champion of the Parish"
+   ],
+   "chosen": "Frightful Delusion"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 8,
+   "available": [
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Night Revelers",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn"
+   ],
+   "chosen": "Night Revelers"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Avacyn's Pilgrim",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn"
+   ],
+   "chosen": "Avacyn's Pilgrim"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Hysterical Blindness",
+    "Ghoulcaller's Chant",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Cellar Door",
+    "Ulvenwald Mystics // Ulvenwald Primordials"
+   ],
+   "chosen": "Ulvenwald Mystics // Ulvenwald Primordials"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Forbidden Alchemy",
+    "Thraben Purebloods",
+    "Feeling of Dread",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink"
+   ],
+   "chosen": "Feeling of Dread"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Kindercatch",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Diregraf Ghoul",
+    "Intangible Virtue"
+   ],
+   "chosen": "Diregraf Ghoul"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Rage Thrower",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Thraben Sentry // Thraben Militia"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Ghoulcaller's Bell",
+    "Spare from Evil",
+    "Brain Weevil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Brain Weevil"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Grave Bramble",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Spidery Grasp",
+    "Gavony Township"
+   ],
+   "chosen": "Spidery Grasp"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 9,
+   "available": [
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Caravan Vigil",
+    "Diregraf Ghoul",
+    "Champion of the Parish"
+   ],
+   "chosen": "Diregraf Ghoul"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Caravan Vigil",
+    "Champion of the Parish"
+   ],
+   "chosen": "Champion of the Parish"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Ghost Quarter",
+    "Mask of Avacyn"
+   ],
+   "chosen": "Mask of Avacyn"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Hysterical Blindness",
+    "Ghoulcaller's Chant",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Cellar Door"
+   ],
+   "chosen": "Ghoulcaller's Chant"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Forbidden Alchemy",
+    "Thraben Purebloods",
+    "Think Twice",
+    "Graveyard Shovel",
+    "Back from the Brink"
+   ],
+   "chosen": "Back from the Brink"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Kindercatch",
+    "Thraben Purebloods",
+    "Furor of the Bitten",
+    "Silent Departure",
+    "Intangible Virtue"
+   ],
+   "chosen": "Furor of the Bitten"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Kessig Wolf",
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Rage Thrower"
+   ],
+   "chosen": "Kessig Wolf"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Ghoulcaller's Bell",
+    "Spare from Evil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Forbidden Alchemy"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 10,
+   "available": [
+    "Grave Bramble",
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Gavony Township"
+   ],
+   "chosen": "Grave Bramble"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist",
+    "Gavony Township"
+   ],
+   "chosen": "Gavony Township"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice",
+    "Caravan Vigil"
+   ],
+   "chosen": "Caravan Vigil"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Fortress Crab",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Ghost Quarter"
+   ],
+   "chosen": "Traveler's Amulet"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Hysterical Blindness",
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Cellar Door"
+   ],
+   "chosen": "Hysterical Blindness"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Forbidden Alchemy",
+    "Thraben Purebloods",
+    "Think Twice",
+    "Graveyard Shovel"
+   ],
+   "chosen": "Thraben Purebloods"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Kindercatch",
+    "Thraben Purebloods",
+    "Silent Departure",
+    "Intangible Virtue"
+   ],
+   "chosen": "Thraben Purebloods"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Wooden Stake",
+    "Festerhide Boar",
+    "Mulch",
+    "Rage Thrower"
+   ],
+   "chosen": "Festerhide Boar"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 11,
+   "available": [
+    "Altar's Reap",
+    "Ghoulcaller's Bell",
+    "Spare from Evil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Altar's Reap"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Ghoulcaller's Bell",
+    "Spare from Evil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Spare from Evil"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Fortress Crab",
+    "Shimmering Grotto",
+    "Moonmist"
+   ],
+   "chosen": "Moonmist"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Dream Twist",
+    "Infernal Plunge",
+    "Think Twice"
+   ],
+   "chosen": "Think Twice"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Fortress Crab",
+    "Ranger's Guile",
+    "Ghost Quarter"
+   ],
+   "chosen": "Fortress Crab"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Avacyn's Pilgrim",
+    "Shimmering Grotto",
+    "Cellar Door"
+   ],
+   "chosen": "Avacyn's Pilgrim"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Forbidden Alchemy",
+    "Think Twice",
+    "Graveyard Shovel"
+   ],
+   "chosen": "Think Twice"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Kindercatch",
+    "Silent Departure",
+    "Intangible Virtue"
+   ],
+   "chosen": "Silent Departure"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 12,
+   "available": [
+    "Wooden Stake",
+    "Mulch",
+    "Rage Thrower"
+   ],
+   "chosen": "Rage Thrower"
+  },
+  {
+   "seat": 0,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Wooden Stake",
+    "Mulch"
+   ],
+   "chosen": "Wooden Stake"
+  },
+  {
+   "seat": 1,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Ghoulcaller's Bell",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Ghoulcaller's Bell"
+  },
+  {
+   "seat": 2,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Fortress Crab",
+    "Shimmering Grotto"
+   ],
+   "chosen": "Fortress Crab"
+  },
+  {
+   "seat": 3,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Dream Twist",
+    "Infernal Plunge"
+   ],
+   "chosen": "Dream Twist"
+  },
+  {
+   "seat": 4,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Ranger's Guile",
+    "Ghost Quarter"
+   ],
+   "chosen": "Ranger's Guile"
+  },
+  {
+   "seat": 5,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Shimmering Grotto",
+    "Cellar Door"
+   ],
+   "chosen": "Shimmering Grotto"
+  },
+  {
+   "seat": 6,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Forbidden Alchemy",
+    "Graveyard Shovel"
+   ],
+   "chosen": "Forbidden Alchemy"
+  },
+  {
+   "seat": 7,
+   "pack": 1,
+   "pick": 13,
+   "available": [
+    "Kindercatch",
+    "Intangible Virtue"
+   ],
+   "chosen": "Kindercatch"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Silverchase Fox",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Corpse Lunge",
+    "Stromkirk Patrol",
+    "Pitchburn Devils",
+    "Prey Upon",
+    "Rotting Fensnake",
+    "Unburial Rites",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Corpse Lunge"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Corpse Lunge",
+    "Geistflame",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Stitched Drake",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Rally the Peasants",
+    "Sturmgeist",
+    "Thraben Sentry // Thraben Militia",
+    "Bonds of Faith"
+   ],
+   "chosen": "Stitched Drake"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Kindercatch",
+    "Feral Ridgewolf",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Sensory Deprivation",
+    "Infernal Plunge",
+    "Skaab Goliath",
+    "Butcher's Cleaver",
+    "Battleground Geist",
+    "Snapcaster Mage",
+    "Bloodline Keeper // Lord of Lineage"
+   ],
+   "chosen": "Bloodline Keeper // Lord of Lineage"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Voiceless Spirit",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "One-Eyed Scarecrow",
+    "Markov Patrician",
+    "Ghostly Possession",
+    "Rolling Temblor",
+    "Dissipate",
+    "Murder of Crows",
+    "Isolated Chapel",
+    "Daybreak Ranger // Nightfall Predator"
+   ],
+   "chosen": "Murder of Crows"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Dead Weight",
+    "Somberwald Spider",
+    "Maw of the Mire",
+    "Orchard Spirit",
+    "Armored Skaab",
+    "Bonds of Faith",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery",
+    "Grizzled Outcasts // Krallenhorde Wantons"
+   ],
+   "chosen": "Bonds of Faith"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Moon Heron",
+    "Blazing Torch",
+    "Deranged Assistant",
+    "Brimstone Volley",
+    "Gnaw to the Bone",
+    "Vampire Interloper",
+    "Falkenrath Noble",
+    "Fiend Hunter",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Brimstone Volley"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Crossway Vampire",
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ambush Viper",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Village Bell-Ringer",
+    "Spectral Flight",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Invisible Stalker",
+    "Scourge of Geier Reach",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Invisible Stalker"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 1,
+   "available": [
+    "Doomed Traveler",
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Rebuke",
+    "Urgent Exorcism",
+    "Vampire Interloper",
+    "Selhoff Occultist",
+    "Fiend Hunter",
+    "Hollowhenge Scavenger",
+    "Geistcatcher's Rig",
+    "Evil Twin",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Fiend Hunter"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Corpse Lunge",
+    "Geistflame",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Rally the Peasants",
+    "Sturmgeist",
+    "Thraben Sentry // Thraben Militia",
+    "Bonds of Faith"
+   ],
+   "chosen": "Bonds of Faith"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Kindercatch",
+    "Feral Ridgewolf",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Sensory Deprivation",
+    "Infernal Plunge",
+    "Skaab Goliath",
+    "Butcher's Cleaver",
+    "Battleground Geist",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Battleground Geist"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Voiceless Spirit",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "One-Eyed Scarecrow",
+    "Markov Patrician",
+    "Ghostly Possession",
+    "Rolling Temblor",
+    "Dissipate",
+    "Isolated Chapel",
+    "Daybreak Ranger // Nightfall Predator"
+   ],
+   "chosen": "Voiceless Spirit"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Dead Weight",
+    "Somberwald Spider",
+    "Maw of the Mire",
+    "Orchard Spirit",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery",
+    "Grizzled Outcasts // Krallenhorde Wantons"
+   ],
+   "chosen": "Dead Weight"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Moon Heron",
+    "Blazing Torch",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Vampire Interloper",
+    "Falkenrath Noble",
+    "Fiend Hunter",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Fiend Hunter"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Crossway Vampire",
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ambush Viper",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Village Bell-Ringer",
+    "Spectral Flight",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Scourge of Geier Reach",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Scourge of Geier Reach"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Doomed Traveler",
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Rebuke",
+    "Urgent Exorcism",
+    "Vampire Interloper",
+    "Selhoff Occultist",
+    "Hollowhenge Scavenger",
+    "Geistcatcher's Rig",
+    "Evil Twin",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Rebuke"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 2,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Silverchase Fox",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Stromkirk Patrol",
+    "Pitchburn Devils",
+    "Prey Upon",
+    "Rotting Fensnake",
+    "Unburial Rites",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Pitchburn Devils"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Kindercatch",
+    "Feral Ridgewolf",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Sensory Deprivation",
+    "Infernal Plunge",
+    "Skaab Goliath",
+    "Butcher's Cleaver",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Butcher's Cleaver"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "One-Eyed Scarecrow",
+    "Markov Patrician",
+    "Ghostly Possession",
+    "Rolling Temblor",
+    "Dissipate",
+    "Isolated Chapel",
+    "Daybreak Ranger // Nightfall Predator"
+   ],
+   "chosen": "Daybreak Ranger // Nightfall Predator"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Somberwald Spider",
+    "Maw of the Mire",
+    "Orchard Spirit",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery",
+    "Grizzled Outcasts // Krallenhorde Wantons"
+   ],
+   "chosen": "Typhoid Rats"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Moon Heron",
+    "Blazing Torch",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Vampire Interloper",
+    "Falkenrath Noble",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Falkenrath Noble"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Crossway Vampire",
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ambush Viper",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Village Bell-Ringer",
+    "Spectral Flight",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Crossway Vampire"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Doomed Traveler",
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Urgent Exorcism",
+    "Vampire Interloper",
+    "Selhoff Occultist",
+    "Hollowhenge Scavenger",
+    "Geistcatcher's Rig",
+    "Evil Twin",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Geistcatcher's Rig"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Silverchase Fox",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Stromkirk Patrol",
+    "Prey Upon",
+    "Rotting Fensnake",
+    "Unburial Rites",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Prey Upon"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 3,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Corpse Lunge",
+    "Geistflame",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Rally the Peasants",
+    "Sturmgeist",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Geistflame"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "One-Eyed Scarecrow",
+    "Markov Patrician",
+    "Ghostly Possession",
+    "Rolling Temblor",
+    "Dissipate",
+    "Isolated Chapel"
+   ],
+   "chosen": "Ghostly Possession"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Somberwald Spider",
+    "Maw of the Mire",
+    "Orchard Spirit",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery",
+    "Grizzled Outcasts // Krallenhorde Wantons"
+   ],
+   "chosen": "Somberwald Spider"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Moon Heron",
+    "Blazing Torch",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Vampire Interloper",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Blazing Torch"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ambush Viper",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Village Bell-Ringer",
+    "Spectral Flight",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Spectral Flight"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Doomed Traveler",
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Urgent Exorcism",
+    "Vampire Interloper",
+    "Selhoff Occultist",
+    "Hollowhenge Scavenger",
+    "Evil Twin",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Doomed Traveler"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Silverchase Fox",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Stromkirk Patrol",
+    "Rotting Fensnake",
+    "Unburial Rites",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Stromkirk Patrol"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Corpse Lunge",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Rally the Peasants",
+    "Sturmgeist",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Sturmgeist"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 4,
+   "available": [
+    "Kindercatch",
+    "Feral Ridgewolf",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Sensory Deprivation",
+    "Infernal Plunge",
+    "Skaab Goliath",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Sensory Deprivation"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Maw of the Mire",
+    "Orchard Spirit",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery",
+    "Grizzled Outcasts // Krallenhorde Wantons"
+   ],
+   "chosen": "Orchard Spirit"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Moon Heron",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Vampire Interloper",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Moon Heron"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ambush Viper",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Village Bell-Ringer",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Village Bell-Ringer"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Urgent Exorcism",
+    "Vampire Interloper",
+    "Selhoff Occultist",
+    "Hollowhenge Scavenger",
+    "Evil Twin",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Evil Twin"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Silverchase Fox",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Rotting Fensnake",
+    "Unburial Rites",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Silverchase Fox"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Corpse Lunge",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Rally the Peasants",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Corpse Lunge"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Kindercatch",
+    "Feral Ridgewolf",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge",
+    "Skaab Goliath",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Skaab Goliath"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 5,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "One-Eyed Scarecrow",
+    "Markov Patrician",
+    "Rolling Temblor",
+    "Dissipate",
+    "Isolated Chapel"
+   ],
+   "chosen": "Rolling Temblor"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Vampire Interloper",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Vampire Interloper"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ambush Viper",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Ambush Viper"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Urgent Exorcism",
+    "Vampire Interloper",
+    "Selhoff Occultist",
+    "Hollowhenge Scavenger",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Vampire Interloper"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Rotting Fensnake",
+    "Unburial Rites",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Unburial Rites"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Rally the Peasants",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Rally the Peasants"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Kindercatch",
+    "Feral Ridgewolf",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Feral Ridgewolf"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "One-Eyed Scarecrow",
+    "Markov Patrician",
+    "Dissipate",
+    "Isolated Chapel"
+   ],
+   "chosen": "One-Eyed Scarecrow"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 6,
+   "available": [
+    "Maw of the Mire",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery",
+    "Grizzled Outcasts // Krallenhorde Wantons"
+   ],
+   "chosen": "Grizzled Outcasts // Krallenhorde Wantons"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Chant",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Ghoulcaller's Chant"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Urgent Exorcism",
+    "Selhoff Occultist",
+    "Hollowhenge Scavenger",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Hollowhenge Scavenger"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Curse of the Bloody Tome",
+    "Feeling of Dread",
+    "Rotting Fensnake",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Feeling of Dread"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Stitcher's Apprentice",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Stitcher's Apprentice"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Kindercatch",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Thraben Purebloods",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Thraben Purebloods"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Traitorous Blood",
+    "Moonmist",
+    "Markov Patrician",
+    "Dissipate",
+    "Isolated Chapel"
+   ],
+   "chosen": "Traitorous Blood"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Maw of the Mire",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery"
+   ],
+   "chosen": "Armored Skaab"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 7,
+   "available": [
+    "Lost in the Mist",
+    "Kessig Wolf",
+    "Dream Twist",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Kessig Wolf"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Urgent Exorcism",
+    "Selhoff Occultist",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Urgent Exorcism"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Curse of the Bloody Tome",
+    "Rotting Fensnake",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin",
+    "Gatstaf Shepherd // Gatstaf Howler"
+   ],
+   "chosen": "Gatstaf Shepherd // Gatstaf Howler"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Mausoleum Guard",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Mausoleum Guard"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Kindercatch",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge",
+    "Snapcaster Mage"
+   ],
+   "chosen": "Snapcaster Mage"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Moonmist",
+    "Markov Patrician",
+    "Dissipate",
+    "Isolated Chapel"
+   ],
+   "chosen": "Isolated Chapel"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Maw of the Mire",
+    "Vampiric Fury",
+    "Naturalize",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery"
+   ],
+   "chosen": "Vampiric Fury"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Lost in the Mist",
+    "Dream Twist",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Deranged Assistant"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 8,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Curse of Stalked Prey",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Curse of Stalked Prey"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Curse of the Bloody Tome",
+    "Rotting Fensnake",
+    "Bramblecrush",
+    "Skirsdag Cultist",
+    "Evil Twin"
+   ],
+   "chosen": "Skirsdag Cultist"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Demonmail Hauberk",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Demonmail Hauberk"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Kindercatch",
+    "Altar's Reap",
+    "Gruesome Deformity",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge"
+   ],
+   "chosen": "Altar's Reap"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Moonmist",
+    "Markov Patrician",
+    "Dissipate"
+   ],
+   "chosen": "Dissipate"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Maw of the Mire",
+    "Naturalize",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery"
+   ],
+   "chosen": "Naturalize"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Lost in the Mist",
+    "Dream Twist",
+    "Gnaw to the Bone",
+    "Skirsdag Cultist",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Skirsdag Cultist"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Bell",
+    "Travel Preparations",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Travel Preparations"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 9,
+   "available": [
+    "Lost in the Mist",
+    "Bump in the Night",
+    "Naturalize",
+    "Selhoff Occultist",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Bump in the Night"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Mulch",
+    "Curse of the Pierced Heart",
+    "Thraben Sentry // Thraben Militia"
+   ],
+   "chosen": "Thraben Sentry // Thraben Militia"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Kindercatch",
+    "Gruesome Deformity",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge"
+   ],
+   "chosen": "Kindercatch"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Moonmist",
+    "Markov Patrician"
+   ],
+   "chosen": "Markov Patrician"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Maw of the Mire",
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery"
+   ],
+   "chosen": "Maw of the Mire"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Lost in the Mist",
+    "Dream Twist",
+    "Gnaw to the Bone",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Lost in the Mist"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Bell",
+    "Brain Weevil",
+    "Bitterheart Witch",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Bitterheart Witch"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Lost in the Mist",
+    "Naturalize",
+    "Selhoff Occultist",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Lost in the Mist"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 10,
+   "available": [
+    "Bloodcrazed Neonate",
+    "Curse of the Bloody Tome",
+    "Rotting Fensnake",
+    "Bramblecrush",
+    "Evil Twin"
+   ],
+   "chosen": "Bloodcrazed Neonate"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Gruesome Deformity",
+    "Dream Twist",
+    "Avacyn's Pilgrim",
+    "Infernal Plunge"
+   ],
+   "chosen": "Avacyn's Pilgrim"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge",
+    "Moonmist"
+   ],
+   "chosen": "Moonmist"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise",
+    "Woodland Cemetery"
+   ],
+   "chosen": "Woodland Cemetery"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Dream Twist",
+    "Gnaw to the Bone",
+    "Hinterland Harbor",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Delver of Secrets // Insectile Aberration"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Bell",
+    "Brain Weevil",
+    "Delver of Secrets // Insectile Aberration"
+   ],
+   "chosen": "Delver of Secrets // Insectile Aberration"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Naturalize",
+    "Selhoff Occultist",
+    "Civilized Scholar // Homicidal Brute",
+    "Sharpened Pitchfork"
+   ],
+   "chosen": "Sharpened Pitchfork"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Curse of the Bloody Tome",
+    "Rotting Fensnake",
+    "Bramblecrush",
+    "Evil Twin"
+   ],
+   "chosen": "Evil Twin"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 11,
+   "available": [
+    "Riot Devils",
+    "Curse of the Bloody Tome",
+    "Mulch",
+    "Curse of the Pierced Heart"
+   ],
+   "chosen": "Riot Devils"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Cobbled Wings",
+    "Skeletal Grimace",
+    "Ancient Grudge"
+   ],
+   "chosen": "Skeletal Grimace"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Burning Vengeance",
+    "Wreath of Geists",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Full Moon's Rise"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Dream Twist",
+    "Gnaw to the Bone",
+    "Hinterland Harbor"
+   ],
+   "chosen": "Dream Twist"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Bell",
+    "Brain Weevil"
+   ],
+   "chosen": "Brain Weevil"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Naturalize",
+    "Selhoff Occultist",
+    "Civilized Scholar // Homicidal Brute"
+   ],
+   "chosen": "Selhoff Occultist"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Curse of the Bloody Tome",
+    "Rotting Fensnake",
+    "Bramblecrush"
+   ],
+   "chosen": "Rotting Fensnake"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Curse of the Bloody Tome",
+    "Mulch",
+    "Curse of the Pierced Heart"
+   ],
+   "chosen": "Curse of the Bloody Tome"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 12,
+   "available": [
+    "Gruesome Deformity",
+    "Dream Twist",
+    "Infernal Plunge"
+   ],
+   "chosen": "Gruesome Deformity"
+  },
+  {
+   "seat": 0,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Burning Vengeance",
+    "Wreath of Geists"
+   ],
+   "chosen": "Burning Vengeance"
+  },
+  {
+   "seat": 1,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Gnaw to the Bone",
+    "Hinterland Harbor"
+   ],
+   "chosen": "Hinterland Harbor"
+  },
+  {
+   "seat": 2,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Wooden Stake",
+    "Ghoulcaller's Bell"
+   ],
+   "chosen": "Wooden Stake"
+  },
+  {
+   "seat": 3,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Naturalize",
+    "Civilized Scholar // Homicidal Brute"
+   ],
+   "chosen": "Civilized Scholar // Homicidal Brute"
+  },
+  {
+   "seat": 4,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Curse of the Bloody Tome",
+    "Bramblecrush"
+   ],
+   "chosen": "Bramblecrush"
+  },
+  {
+   "seat": 5,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Mulch",
+    "Curse of the Pierced Heart"
+   ],
+   "chosen": "Curse of the Pierced Heart"
+  },
+  {
+   "seat": 6,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Dream Twist",
+    "Infernal Plunge"
+   ],
+   "chosen": "Dream Twist"
+  },
+  {
+   "seat": 7,
+   "pack": 2,
+   "pick": 13,
+   "available": [
+    "Cobbled Wings",
+    "Ancient Grudge"
+   ],
+   "chosen": "Ancient Grudge"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Silverchase Fox",
+    "Unruly Mob",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Corpse Lunge",
+    "Abbey Griffin",
+    "Prey Upon",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door",
+    "Mindshrieker",
+    "Reckless Waif // Merciless Predator"
+   ],
+   "chosen": "Abbey Griffin"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Dead Weight",
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Walking Corpse",
+    "Vampiric Fury",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Gallows Warden",
+    "Make a Wish",
+    "Sulfur Falls",
+    "Village Ironsmith // Ironfang"
+   ],
+   "chosen": "Dead Weight"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Somberwald Spider",
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Makeshift Mauler",
+    "Bump in the Night",
+    "Sensory Deprivation",
+    "Into the Maw of Hell",
+    "Lumberknot",
+    "Moan of the Unhallowed",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Moan of the Unhallowed"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Darkthicket Wolf",
+    "Ghostly Possession",
+    "Rebuke",
+    "Typhoid Rats",
+    "Traitorous Blood",
+    "Markov Patrician",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Typhoid Rats"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Selfless Cathar",
+    "Dead Weight",
+    "Geistflame",
+    "Night Terrors",
+    "Armored Skaab",
+    "Bonds of Faith",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Ghost Quarter",
+    "Spectral Rider",
+    "Bramblecrush",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Bonds of Faith"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Gruesome Deformity",
+    "Claustrophobia",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Urgent Exorcism",
+    "Manor Skeleton",
+    "Spidery Grasp",
+    "One-Eyed Scarecrow",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish",
+    "Heartless Summoning",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Heartless Summoning"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Victim of Night",
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Avacynian Priest",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Abbey Griffin",
+    "Disciple of Griselbrand",
+    "Spider Spawning",
+    "Full Moon's Rise",
+    "Moldgraf Monstrosity",
+    "Screeching Bat // Stalking Vampire"
+   ],
+   "chosen": "Victim of Night"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 1,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Selhoff Occultist",
+    "Brimstone Volley",
+    "Manor Skeleton",
+    "Stitched Drake",
+    "Harvest Pyre",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave",
+    "Manor Gargoyle",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Brimstone Volley"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Selhoff Occultist",
+    "Manor Skeleton",
+    "Stitched Drake",
+    "Harvest Pyre",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave",
+    "Manor Gargoyle",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Manor Gargoyle"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Silverchase Fox",
+    "Unruly Mob",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Corpse Lunge",
+    "Prey Upon",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door",
+    "Mindshrieker",
+    "Reckless Waif // Merciless Predator"
+   ],
+   "chosen": "Prey Upon"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Walking Corpse",
+    "Vampiric Fury",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Gallows Warden",
+    "Make a Wish",
+    "Sulfur Falls",
+    "Village Ironsmith // Ironfang"
+   ],
+   "chosen": "Gallows Warden"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Somberwald Spider",
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Makeshift Mauler",
+    "Bump in the Night",
+    "Sensory Deprivation",
+    "Into the Maw of Hell",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Sensory Deprivation"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Darkthicket Wolf",
+    "Ghostly Possession",
+    "Rebuke",
+    "Traitorous Blood",
+    "Markov Patrician",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Rebuke"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Selfless Cathar",
+    "Dead Weight",
+    "Geistflame",
+    "Night Terrors",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Ghost Quarter",
+    "Spectral Rider",
+    "Bramblecrush",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Geistflame"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Gruesome Deformity",
+    "Claustrophobia",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Urgent Exorcism",
+    "Manor Skeleton",
+    "Spidery Grasp",
+    "One-Eyed Scarecrow",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Claustrophobia"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 2,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Avacynian Priest",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Abbey Griffin",
+    "Disciple of Griselbrand",
+    "Spider Spawning",
+    "Full Moon's Rise",
+    "Moldgraf Monstrosity",
+    "Screeching Bat // Stalking Vampire"
+   ],
+   "chosen": "Screeching Bat // Stalking Vampire"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Avacynian Priest",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Abbey Griffin",
+    "Disciple of Griselbrand",
+    "Spider Spawning",
+    "Full Moon's Rise",
+    "Moldgraf Monstrosity"
+   ],
+   "chosen": "Abbey Griffin"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Selhoff Occultist",
+    "Manor Skeleton",
+    "Stitched Drake",
+    "Harvest Pyre",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Villagers of Estwald // Howlpack of Estwald"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Silverchase Fox",
+    "Unruly Mob",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Corpse Lunge",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door",
+    "Mindshrieker",
+    "Reckless Waif // Merciless Predator"
+   ],
+   "chosen": "Corpse Lunge"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Walking Corpse",
+    "Vampiric Fury",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Make a Wish",
+    "Sulfur Falls",
+    "Village Ironsmith // Ironfang"
+   ],
+   "chosen": "Make a Wish"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Somberwald Spider",
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Makeshift Mauler",
+    "Bump in the Night",
+    "Into the Maw of Hell",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Into the Maw of Hell"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Darkthicket Wolf",
+    "Ghostly Possession",
+    "Traitorous Blood",
+    "Markov Patrician",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Traitorous Blood"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Selfless Cathar",
+    "Dead Weight",
+    "Night Terrors",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Ghost Quarter",
+    "Spectral Rider",
+    "Bramblecrush",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Dead Weight"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 3,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Urgent Exorcism",
+    "Manor Skeleton",
+    "Spidery Grasp",
+    "One-Eyed Scarecrow",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish",
+    "Tormented Pariah // Rampaging Werewolf"
+   ],
+   "chosen": "Tormented Pariah // Rampaging Werewolf"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Urgent Exorcism",
+    "Manor Skeleton",
+    "Spidery Grasp",
+    "One-Eyed Scarecrow",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish"
+   ],
+   "chosen": "Urgent Exorcism"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Avacynian Priest",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Disciple of Griselbrand",
+    "Spider Spawning",
+    "Full Moon's Rise",
+    "Moldgraf Monstrosity"
+   ],
+   "chosen": "Moldgraf Monstrosity"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Selhoff Occultist",
+    "Manor Skeleton",
+    "Stitched Drake",
+    "Harvest Pyre",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Stitched Drake"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Silverchase Fox",
+    "Unruly Mob",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door",
+    "Mindshrieker",
+    "Reckless Waif // Merciless Predator"
+   ],
+   "chosen": "Mindshrieker"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Walking Corpse",
+    "Vampiric Fury",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Sulfur Falls",
+    "Village Ironsmith // Ironfang"
+   ],
+   "chosen": "Village Ironsmith // Ironfang"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Somberwald Spider",
+    "Riot Devils",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Makeshift Mauler",
+    "Bump in the Night",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Riot Devils"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Darkthicket Wolf",
+    "Ghostly Possession",
+    "Markov Patrician",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Darkthicket Wolf"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 4,
+   "available": [
+    "Selfless Cathar",
+    "Night Terrors",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Typhoid Rats",
+    "Ghost Quarter",
+    "Spectral Rider",
+    "Bramblecrush",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Typhoid Rats"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Selfless Cathar",
+    "Night Terrors",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Ghost Quarter",
+    "Spectral Rider",
+    "Bramblecrush",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Spectral Rider"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Manor Skeleton",
+    "Spidery Grasp",
+    "One-Eyed Scarecrow",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish"
+   ],
+   "chosen": "Spidery Grasp"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Avacynian Priest",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Disciple of Griselbrand",
+    "Spider Spawning",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Avacynian Priest"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Selhoff Occultist",
+    "Manor Skeleton",
+    "Harvest Pyre",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Selhoff Occultist"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Silverchase Fox",
+    "Unruly Mob",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door",
+    "Reckless Waif // Merciless Predator"
+   ],
+   "chosen": "Unruly Mob"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Walking Corpse",
+    "Vampiric Fury",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Sulfur Falls"
+   ],
+   "chosen": "Walking Corpse"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Somberwald Spider",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Makeshift Mauler",
+    "Bump in the Night",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Makeshift Mauler"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 5,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Ghostly Possession",
+    "Markov Patrician",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Markov Patrician"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Ghostly Possession",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Ghostly Possession"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Selfless Cathar",
+    "Night Terrors",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Ghost Quarter",
+    "Bramblecrush",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Bramblecrush"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Manor Skeleton",
+    "One-Eyed Scarecrow",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish"
+   ],
+   "chosen": "One-Eyed Scarecrow"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Disciple of Griselbrand",
+    "Spider Spawning",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Disciple of Griselbrand"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Manor Skeleton",
+    "Harvest Pyre",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Harvest Pyre"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Silverchase Fox",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door",
+    "Reckless Waif // Merciless Predator"
+   ],
+   "chosen": "Reckless Waif // Merciless Predator"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Vampiric Fury",
+    "Deranged Assistant",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Sulfur Falls"
+   ],
+   "chosen": "Deranged Assistant"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 6,
+   "available": [
+    "Somberwald Spider",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Bump in the Night",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Bump in the Night"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Somberwald Spider",
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Somberwald Spider"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Grizzled Outcasts // Krallenhorde Wantons",
+    "Memory's Journey"
+   ],
+   "chosen": "Grizzled Outcasts // Krallenhorde Wantons"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Selfless Cathar",
+    "Night Terrors",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Ghost Quarter",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Night Terrors"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Manor Skeleton",
+    "Desperate Ravings",
+    "Dissipate",
+    "Make a Wish"
+   ],
+   "chosen": "Dissipate"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Spider Spawning",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Spider Spawning"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Manor Skeleton",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Manor Skeleton"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Silverchase Fox",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Sharpened Pitchfork",
+    "Boneyard Wurm",
+    "Cellar Door"
+   ],
+   "chosen": "Boneyard Wurm"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 7,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Vampiric Fury",
+    "Gnaw to the Bone",
+    "Mask of Avacyn",
+    "Sulfur Falls"
+   ],
+   "chosen": "Mask of Avacyn"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Unruly Mob",
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Vampiric Fury",
+    "Gnaw to the Bone",
+    "Sulfur Falls"
+   ],
+   "chosen": "Unruly Mob"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Lumberknot",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Lumberknot"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Selfless Cathar",
+    "Curse of Oblivion",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Memory's Journey"
+   ],
+   "chosen": "Selfless Cathar"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Selfless Cathar",
+    "Armored Skaab",
+    "Vampiric Fury",
+    "Naturalize",
+    "Ghost Quarter",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Armored Skaab"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Manor Skeleton",
+    "Desperate Ravings",
+    "Make a Wish"
+   ],
+   "chosen": "Desperate Ravings"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Somberwald Spider",
+    "Hysterical Blindness",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Somberwald Spider"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Cobbled Wings",
+    "Woodland Sleuth",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Woodland Sleuth"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 8,
+   "available": [
+    "Silverchase Fox",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Sharpened Pitchfork",
+    "Cellar Door"
+   ],
+   "chosen": "Sharpened Pitchfork"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Silverchase Fox",
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Cellar Door"
+   ],
+   "chosen": "Silverchase Fox"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Bump in the Night",
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Vampiric Fury",
+    "Gnaw to the Bone",
+    "Sulfur Falls"
+   ],
+   "chosen": "Bump in the Night"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Moment of Heroism",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Moment of Heroism"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Curse of Oblivion",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Cackling Counterpart",
+    "Memory's Journey"
+   ],
+   "chosen": "Cackling Counterpart"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Selfless Cathar",
+    "Vampiric Fury",
+    "Naturalize",
+    "Ghost Quarter",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Selfless Cathar"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Curse of the Pierced Heart",
+    "Manor Skeleton",
+    "Make a Wish"
+   ],
+   "chosen": "Curse of the Pierced Heart"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Hysterical Blindness",
+    "Orchard Spirit",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Orchard Spirit"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 9,
+   "available": [
+    "Cobbled Wings",
+    "Curse of Oblivion",
+    "Ancient Grudge",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Ancient Grudge"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Cobbled Wings",
+    "Curse of Oblivion",
+    "Runic Repetition",
+    "Hamlet Captain",
+    "Purify the Grave"
+   ],
+   "chosen": "Hamlet Captain"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Skeletal Grimace",
+    "Festerhide Boar",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Cellar Door"
+   ],
+   "chosen": "Festerhide Boar"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Maw of the Mire",
+    "Stitcher's Apprentice",
+    "Vampiric Fury",
+    "Gnaw to the Bone",
+    "Sulfur Falls"
+   ],
+   "chosen": "Maw of the Mire"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Parallel Lives",
+    "Delver of Secrets // Insectile Aberration",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Delver of Secrets // Insectile Aberration"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Curse of Oblivion",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Rage Thrower",
+    "Memory's Journey"
+   ],
+   "chosen": "Rage Thrower"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Vampiric Fury",
+    "Naturalize",
+    "Ghost Quarter",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Vampiric Fury"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Manor Skeleton",
+    "Make a Wish"
+   ],
+   "chosen": "Make a Wish"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 10,
+   "available": [
+    "Hysterical Blindness",
+    "Ancient Grudge",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Ancient Grudge"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Hysterical Blindness",
+    "Traveler's Amulet",
+    "Ranger's Guile",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Ranger's Guile"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Cobbled Wings",
+    "Curse of Oblivion",
+    "Runic Repetition",
+    "Purify the Grave"
+   ],
+   "chosen": "Cobbled Wings"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Skeletal Grimace",
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Cellar Door"
+   ],
+   "chosen": "Skeletal Grimace"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Stitcher's Apprentice",
+    "Vampiric Fury",
+    "Gnaw to the Bone",
+    "Sulfur Falls"
+   ],
+   "chosen": "Stitcher's Apprentice"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Altar's Reap",
+    "Forbidden Alchemy",
+    "Parallel Lives",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Altar's Reap"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Curse of Oblivion",
+    "Curse of the Nightly Hunt",
+    "Runic Repetition",
+    "Memory's Journey"
+   ],
+   "chosen": "Curse of the Nightly Hunt"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Naturalize",
+    "Ghost Quarter",
+    "Runechanter's Pike",
+    "Villagers of Estwald // Howlpack of Estwald"
+   ],
+   "chosen": "Villagers of Estwald // Howlpack of Estwald"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 11,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches",
+    "Manor Skeleton"
+   ],
+   "chosen": "Manor Skeleton"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Gruesome Deformity",
+    "Spare from Evil",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Spare from Evil"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Hysterical Blindness",
+    "Traveler's Amulet",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Hysterical Blindness"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Curse of Oblivion",
+    "Runic Repetition",
+    "Purify the Grave"
+   ],
+   "chosen": "Curse of Oblivion"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Ghoulcaller's Bell",
+    "Maw of the Mire",
+    "Cellar Door"
+   ],
+   "chosen": "Maw of the Mire"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Vampiric Fury",
+    "Gnaw to the Bone",
+    "Sulfur Falls"
+   ],
+   "chosen": "Vampiric Fury"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Forbidden Alchemy",
+    "Parallel Lives",
+    "Skeletal Grimace"
+   ],
+   "chosen": "Skeletal Grimace"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Curse of Oblivion",
+    "Runic Repetition",
+    "Memory's Journey"
+   ],
+   "chosen": "Memory's Journey"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 12,
+   "available": [
+    "Naturalize",
+    "Ghost Quarter",
+    "Runechanter's Pike"
+   ],
+   "chosen": "Runechanter's Pike"
+  },
+  {
+   "seat": 0,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Naturalize",
+    "Ghost Quarter"
+   ],
+   "chosen": "Naturalize"
+  },
+  {
+   "seat": 1,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Gruesome Deformity",
+    "Nightbird's Clutches"
+   ],
+   "chosen": "Gruesome Deformity"
+  },
+  {
+   "seat": 2,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Traveler's Amulet",
+    "Full Moon's Rise"
+   ],
+   "chosen": "Traveler's Amulet"
+  },
+  {
+   "seat": 3,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Runic Repetition",
+    "Purify the Grave"
+   ],
+   "chosen": "Runic Repetition"
+  },
+  {
+   "seat": 4,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Ghoulcaller's Bell",
+    "Cellar Door"
+   ],
+   "chosen": "Ghoulcaller's Bell"
+  },
+  {
+   "seat": 5,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Gnaw to the Bone",
+    "Sulfur Falls"
+   ],
+   "chosen": "Sulfur Falls"
+  },
+  {
+   "seat": 6,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Forbidden Alchemy",
+    "Parallel Lives"
+   ],
+   "chosen": "Forbidden Alchemy"
+  },
+  {
+   "seat": 7,
+   "pack": 3,
+   "pick": 13,
+   "available": [
+    "Curse of Oblivion",
+    "Runic Repetition"
+   ],
+   "chosen": "Curse of Oblivion"
+  }
+ ],
+ "usage": [
+  "=== Token Usage ===",
+  "  Draft:  351 calls, 702 in / 151646 out / 6787838 cache_read / 1100491 cache_write, n/a (plan quota; $0.2813 at API rates)",
+  "  Games:  2000 calls, 4002 in / 882142 out / 14601051 cache_read / 3577798 cache_write, n/a (plan quota; $1.0347 at API rates)",
+  "",
+  "  claude-code:claude-haiku-5-5: 2351 calls, 4704in/1033788out/21388889cached/4678289written = n/a (plan quota; $1.3160 at API rates)",
+  "  ---",
+  "  Total: 2351 calls, n/a (plan quota)"
+ ],
+ "health": {
+  "reasks": 4,
+  "unreadable": 0,
+  "panics": 0,
+  "harness_chose": 0,
+  "game_calls": 2000,
+  "out": 882142,
+  "thinking": 684770,
+  "cache_read": 14601051,
+  "cache_write": 3577798,
+  "prompt_unlike": 0,
+  "reask_reasons": [
+   {
+    "who": "sideboard",
+    "reason": "Deck has 39 cards (need at least 40). Add more cards or basic lands.",
+    "count": 4,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "game",
+    "reason": "`action` is missing",
+    "count": 2,
+    "answer": "{\"ask_again\":false,\"attack\":[],\"then\":[]}",
+    "thought": "Blazing Torch on Armored Skaab deals 2 to the opponent, leaving them at 2. Moon Heron's 3 flying damage is then lethal, since none of their creatures fly or have reach."
+   },
+   {
+    "who": "sideboard",
+    "reason": "Deck has 33 cards (need at least 40). Add more cards or basic lands.",
+    "count": 2,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "Deck has 38 cards (need at least 40). Add more cards or basic lands.",
+    "count": 2,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 35 counts and your pool has 37 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 2,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 41 counts and your pool has 37 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 2,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 47 counts and your pool has 37 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 2,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "game",
+    "reason": "`attack[0]` is 9; it must be one of 21, 22",
+    "count": 1,
+    "answer": "{\"action\":6,\"ask_again\":false,\"attack\":[9,21,22],\"then\":[]}",
+    "thought": "Opponent's lands are all tapped, so Feeling of Dread can tap both their blockers now for a clean 5 damage with Elder Cathar, Vampire Interloper and Village Bell-Ringer. The race favours me."
+   },
+   {
+    "who": "game",
+    "reason": "`then[0]` is \"Abbey Griffin\"; it must be one of \"Ghoulcaller's Chant\", \"Urgent Exorcism\"",
+    "count": 1,
+    "answer": "{\"action\":5,\"ask_again\":true,\"attack\":[],\"then\":[\"Abbey Griffin\"]}",
+    "thought": "I'm at 3 facing four flying 2/2 Vampires, so I can't stop them all. Ghoulcaller's Chant can return Abbey Griffin, a flying blocker with vigilance, and I can recast it this turn for the full five mana, adding one flier to the defence. No at\u2026"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 155 counts and your pool has 37 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 36 counts and your pool has 37 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 41 counts and your pool has 39 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 42 counts and your pool has 38 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 46 counts and your pool has 40 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 47 counts and your pool has 39 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 48 counts and your pool has 40 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 50 counts and your pool has 38 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 54 counts and your pool has 40 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   },
+   {
+    "who": "sideboard",
+    "reason": "`maindeck` has 55 counts and your pool has 40 numbered rows. Give one count per row, in the order listed (0 to cut that card).",
+    "count": 1,
+    "answer": "",
+    "settled": "not asked again: the deck was kept"
+   }
+  ]
+ }
+}
