@@ -695,3 +695,4 @@ mtg-engine/src/engine.rs: replace < with <= in mana_demands
 mtg-engine/src/engine.rs: replace < with == in mana_demands
 mtg-engine/src/engine.rs: replace < with > in mana_demands
 mtg-engine/src/engine.rs: replace || with && in mana_demands
+mtg-engine/src/engine/cards_flow.rs: replace > with >= in card_list

@@ -1513,3 +1513,12 @@ Accepted:
   (bucket 3). The planner's contract (an offered plan pays, a `None` means
   none would) is held by the `compute_autotap` property tests, whatever this
   list contains.
+
+## 2026-11-14 run 43607055092, shard 4 (issue #1031)
+
+Accepted:
+
+- `card_list` `>` -> `>=`: every name in a milled / revealed / returned
+  list gains " x1" ("Forest x1, Island x2" for "Forest, Island x2"). The
+  same cards are named in the same order with the same counts; only the
+  phrasing of a log line changes. Display wording (bucket 5).
