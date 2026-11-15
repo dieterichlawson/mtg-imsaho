@@ -1598,7 +1598,10 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             self.seats[seat].notice = Some(format!("The table built your deck ({why}){}.",
                 unusable.replace("; the deck it sent", "; the deck you sent")));
         }
-        self.event(format!("{}: the table built its deck ({why}){unusable}", self.who(seat)));
+        // A deck sent and not playable is a failure, said as one: --quiet
+        // keeps it, as it keeps every WARN (#1041's review).
+        let warn = if unusable.is_empty() { "" } else { "WARN " };
+        self.event(format!("{warn}{}: the table built its deck ({why}){unusable}", self.who(seat)));
         self.finish_deck(seat, &deck, &[], 0, true);
     }
 

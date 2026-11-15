@@ -464,6 +464,9 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
             None => {
                 assert!(notice.contains("The table built your deck"), "{notice}");
                 assert_eq!(notice.contains("the deck you sent could not be played"), sent.is_some(), "{notice}");
+                // A deck sent and not playable is a WARN, kept under --quiet (#1041's review).
+                let events = lobby.take_events().join("\n");
+                assert_eq!(events.contains("WARN seat 0: the table built its deck"), sent.is_some(), "{events}");
             }
         }
     }
