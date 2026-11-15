@@ -52,6 +52,10 @@ fn the_host_drafts_and_builds_at_the_servers_own_terminal() {
     server.type_line("ready");
     let screen = server.wait_for_stdout("Round 1 vs seat 1: playing", Duration::from_secs(60));
     assert!(screen.contains(&format!("open http://127.0.0.1:{}/game/", server.port)), "{screen}");
+    // #1041: under --quiet the game seat says nothing about the page that
+    // is not open (it printed "seat 0: no browser at <link with key>").
+    std::thread::sleep(Duration::from_secs(8));
+    assert!(!server.stderr().contains("no browser at"), "{}", server.stderr());
     server.type_line("review");
     server.wait_for_stdout("your draft (text <name> reads any card here):\nPack 1\n  1.1 ", Duration::from_secs(10));
     server.type_line("quit");

@@ -316,6 +316,10 @@ pub struct GuiPlayer {
     /// the seat's name unless the caller says otherwise, as a hosted table
     /// does with "Lawson (seat 0)" (#850).
     pub notice_name: String,
+    /// Say nothing on the terminal about the page: a hosted table run
+    /// `--quiet` prints no event lines, and "no browser at" was one, with
+    /// the seat's game key in it (#1041).
+    pub quiet: bool,
     said_waiting: bool,
     withdrawn: Withdraw,
     /// Set when the game is being ended for the OTHER seat's reason (its
@@ -415,6 +419,7 @@ impl GuiPlayer {
                 None => format!("http://{bound}/"),
             },
             notice_name: name.to_string(),
+            quiet: false,
             said_waiting: false,
             withdrawn: Withdraw::default(),
             woken: Withdraw::default(),
@@ -483,7 +488,9 @@ impl GuiPlayer {
         *self.shared.latest.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(msg.clone());
         self.shared.broadcast(&msg);
         if let Some(line) = browser_notice(&self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting) {
-            crate::stderr_line!("{line}");
+            if !self.quiet {
+                crate::stderr_line!("{line}");
+            }
         }
         loop {
             // Timed, so the wait is not a black hole: a page can close while
@@ -510,7 +517,9 @@ impl GuiPlayer {
                     if let Some(line) = browser_notice(
                         &self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting)
                     {
-                        crate::stderr_line!("{line}");
+                        if !self.quiet {
+                            crate::stderr_line!("{line}");
+                        }
                     }
                     continue;
                 }
@@ -1238,6 +1247,7 @@ mod tests {
             seq: 1,
             url: String::new(),
             notice_name: "P1".into(),
+            quiet: false,
             said_waiting: false,
             withdrawn: Withdraw::default(),
             woken: Withdraw::default(),

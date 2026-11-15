@@ -1120,6 +1120,7 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
                     format!("http://{}:{}{}", shared.config.advertise, shared.config.port, lobby_game_path(port, &key))
                 };
                 gui.notice_name = label.to_string();
+                gui.quiet = shared.config.quiet;
                 *next = port.checked_add(1);
                 return Ok(gui);
             }
