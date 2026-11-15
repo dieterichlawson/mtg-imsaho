@@ -692,6 +692,15 @@ hands it to the table for good, and its games are forfeit"));
                         s.name, s.presence, s.status, s.picks, if s.picks == 1 { "" } else { "s" }));
                 }
             }
+            // `q` and `exit` are the terminal client's "leave this table",
+            // and the host's own seat is at this keyboard: while the table
+            // is still going they would close it for everybody on a reflex,
+            // so only `quit`, the word help and the manual name, does
+            // (#1045).
+            Some(word @ ("q" | "exit")) if shared.lobby().phase() != Phase::Done => {
+                shared.reply(&format!("'{word}' does not close the table here: `quit` closes it for everybody{}",
+                    if cli.is_some() { ", and your seat cannot leave a table it hosts" } else { "" }));
+            }
             Some("quit" | "q" | "exit") => {
                 shared.quit();
                 return;

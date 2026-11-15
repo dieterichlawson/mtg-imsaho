@@ -8,6 +8,8 @@
 //!   read a deliberate stop as a dropped network and retried for ever.
 //! - #825: a kick was never written to the log, and the forfeits it
 //!   caused said "the seat is away".
+//! - #1045: `q` or `exit` at the host's terminal, the terminal client's
+//!   "leave", closed the table for everybody with no question asked.
 //! - #1033: a game page whose match was over was not told the table had
 //!   closed, and retried its socket for ever.
 #![cfg(unix)]
@@ -119,6 +121,26 @@ fn a_finished_matchs_game_pages_are_closed_with_the_table() {
     let why = "the server was stopped by Ctrl-C (SIGINT)";
     message_until(&mut g1, "closed", Duration::from_secs(10), |m| m["reason"] == why);
     message_until(&mut g0, "closed", Duration::from_secs(10), |m| m["reason"] == why);
+    server.child.wait().expect("the server exits");
+}
+
+#[test]
+fn q_at_the_hosts_terminal_does_not_close_a_running_table() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut server = Server::start("stop-q", "human,ai", &["--pick-seconds", "30"]);
+    let mut c0 = server.client(0);
+    c0.view_until("the draft has begun", Duration::from_secs(30), |v| v["phase"] == "drafting");
+    server.type_line("q");
+    server.wait_for_stderr("'q' does not close the table here: `quit` closes it for everybody", Duration::from_secs(5));
+    server.type_line("exit");
+    server.wait_for_stderr("'exit' does not close the table here", Duration::from_secs(5));
+    assert!(server.child.try_wait().expect("the server's status").is_none(), "the table is still up");
+    server.type_line("quit");
+    let closed = message_until(&mut c0, "closed", Duration::from_secs(10), |_| true);
+    assert_eq!(closed["reason"], "the host quit");
     server.child.wait().expect("the server exits");
 }
 

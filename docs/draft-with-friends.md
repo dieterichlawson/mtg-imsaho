@@ -126,7 +126,9 @@ every pairing, every game and match result, the standings — and reads:
   closed", "kicked", "not answering" — and what they are doing, and each
   AI seat's model (and what a metered one bills). A person
   in a match is wherever their game page is.
-- `quit`, or Ctrl-C: stop the server. Every page and client is told the
+- `quit`, or Ctrl-C: stop the server. (`q` and `exit`, the terminal
+  client's "leave", are refused here while the table is still going:
+  only `quit` closes it.) Every page and client is told the
   table is closed and why, and stops reconnecting; the log ends with
   `NOTE the host quit` (or `NOTE the server was stopped by Ctrl-C
   (SIGINT)`) and the usage summary. It stays up after the tournament so
