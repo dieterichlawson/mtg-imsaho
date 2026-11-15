@@ -1923,6 +1923,29 @@ async function main() {
         if (reached.length === 3) ok(`keys-${want}: l, g and s reach the page again`);
       }
     }
+    // #1035: the table's line for an opponent's closed page, with a long
+    // name, is drawn whole: three lines cut "again" off a 7-letter name.
+    {
+      const fit = await page.evaluate(() => {
+        const f = window.mtgDebug.fit;
+        const line = "Bartholomew Fitzgerald (seat 7)'s game page is closed: the game waits for them to open it again";
+        return { lines: f.wrap(line, f.promptW, "8px Silkscreen").length, cap: f.waitingLines };
+      });
+      if (fit.lines > fit.cap) fail(`waiting line: ${fit.lines} lines, drawn ${fit.cap} (#1035)`);
+      else ok(`waiting line: ${fit.lines} lines of ${fit.cap}`);
+    }
+    // #1034: once the table is closed no question is drawn: the mulligan
+    // modal and its buttons stayed up beside "The table is closed".
+    if (await stage("closed-modal", legal({ actions: ["MulliganKeep", "MulliganMull"], context: "MULLIGAN DECISION (mulligans taken: 0)" }), null, "list")) {
+      const after = await page.evaluate(() => {
+        window.mtgDebug.message({ type: "closed", reason: "the host quit" });
+        window.mtgDebug.render();
+        const m = window.mtg;
+        return { decision: m.decision, ui: m.ui, rowHits: m.hits.filter(h => h.kind === "row" || h.kind === "button" || h.kind === "modal").length };
+      });
+      if (after.decision || after.ui || after.rowHits) fail(`closed table still draws its question: ${JSON.stringify(after)} (#1034)`);
+      else ok("closed table: no question drawn");
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

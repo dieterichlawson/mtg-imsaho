@@ -1,6 +1,6 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X, WAITING_LINES, PROMPT_TEXT_W } from "./render.js";
 import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
 import { noticeAtNewDecision } from "./state.js";
 const canvas = document.getElementById("game");
@@ -205,6 +205,12 @@ function onMessage(msg) {
             break;
         case "closed":
             state.closed = msg.reason;
+            // Nothing can be answered now: the question's modal and its buttons
+            // stayed drawn over the board beside "The table is closed" (#1034).
+            state.decision = null;
+            state.ui = null;
+            state.popover = null;
+            hideField();
             break;
         default:
             console.warn("unknown message", msg);
@@ -829,6 +835,8 @@ window.mtgDebug = {
         badges: (perm) => permBadges(perm, state),
         badgeStrip: (badges, maxW) => badgeStrip(ctx, badges, maxW),
         badgeRoom: BADGE_ROOM,
+        waitingLines: WAITING_LINES,
+        promptW: PROMPT_TEXT_W,
     },
     sent: [],
     trace: [],

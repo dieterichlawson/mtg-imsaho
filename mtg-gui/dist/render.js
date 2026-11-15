@@ -1441,6 +1441,11 @@ function inspector(ctx, state, x, y, w) {
     }
     return ty;
 }
+/** The most lines the waiting line ("Opponent is thinking", or why the
+ * opponent is not) wraps to in the prompt panel. */
+export const WAITING_LINES = 6;
+/** The width the prompt panel wraps its lines to. */
+export const PROMPT_TEXT_W = W - PANEL_X - 4 - 4 - 8;
 function promptArea(ctx, hits, state, x, y, w, h) {
     texturedPanel(ctx, x, y, w, h);
     const ui = state.ui;
@@ -1483,7 +1488,10 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         const dots = ".".repeat(1 + Math.floor(Date.now() / 400) % 3);
         // A closed page on the other side is not an opponent thinking (#822).
         const waiting = !state.connected ? "Connecting…" : state.opponentAway ?? `Opponent is thinking${dots}`;
-        for (const l of wrapCapped(ctx, waiting, w - 8, "8px Silkscreen", 3)) {
+        // Up to six lines: three were sized for "Opponent is thinking", and
+        // cut the table's "<name>'s game page is closed: the game waits for
+        // them to open it again" before its last word (#1035).
+        for (const l of wrapCapped(ctx, waiting, w - 8, "8px Silkscreen", WAITING_LINES)) {
             text(ctx, l, x + 4, ty, { color: state.opponentAway ? "#ff9080" : "#b0a8c0" });
             ty += 9;
         }
