@@ -68,7 +68,8 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 - `cli` — the host's own seat, at the server's terminal (at most one).
   The server runs the terminal client (below) for it against its own
   port: every line the host types that is not one of the host's commands
-  (`start`, `kick`, `status`, `quit`, `help`) is the seat's — a pick
+  (`start`, `kick`, `status`, `quit`, `help`, and `q` / `exit`,
+  which it refuses while the table runs) is the seat's — a pick
   number, `add`, `lands`, `ready`, `review`, `play`/`draw` between games.
   The seat is at the table before the keyboard is read, and its games are
   played on the game page whose link it prints, as a person's are. Its
