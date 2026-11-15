@@ -752,13 +752,15 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     // gives for everything it does for the seat.
     l.kick(1).unwrap();
     assert_eq!(presence(&l, 1), "kicked", "with its draft page still open");
-    assert_eq!(l.away_reason(1), "the host kicked the seat");
+    // Naming the seat, as the match the kick ended says it (#1036).
+    let kicked = format!("the host kicked {}", l.who(1));
+    assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(0), "the seat is away");
     l.seat_gave_up(2, "no answer");
     assert_eq!(presence(&l, 2), "not answering");
     assert_eq!(l.away_reason(2), "the seat stopped answering");
     let forfeit = l.forfeit_result(1, 0);
-    assert_eq!(forfeit.games[0].game_log, vec!["forfeit: the host kicked the seat".to_string()]);
+    assert_eq!(forfeit.games[0].game_log, vec![format!("forfeit: {kicked}")]);
 }
 
 /// #924: a snapshot is refused by a lobby dealt other packs, even where

@@ -180,7 +180,7 @@ fn a_kick_is_on_the_record_and_its_forfeits_say_so() {
     server.type_line("kick 0");
     let log = server.wait_for_log("FINAL STANDINGS", Duration::from_secs(240));
     assert!(log.contains("[Seat 0] KICKED by the host while the table was drafting"), "{log}");
-    assert!(log.contains("forfeit: the host kicked the seat") && !log.contains("the seat is away"),
+    assert!(log.contains("forfeit: the host kicked seat 0") && !log.contains("the seat is away"),
         "the forfeits give the kick as the reason:\n{log}");
     let v = c0.view_until("the table is done", Duration::from_secs(30), |v| v["phase"] == "done");
     assert_eq!(presence_of(&v, 0), "kicked", "{}", v["seats"]);

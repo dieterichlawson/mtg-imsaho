@@ -165,8 +165,8 @@ impl Shared {
         if !self.lobby().is_auto(seat) {
             return;
         }
-        let who = self.lobby().who(seat);
-        let why = format!("the host kicked {who}");
+        // In the words every later forfeit of the seat's is given (#1036).
+        let why = self.lobby().away_reason(seat);
         let in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut withdrawn = false;
         for page in in_game.iter().filter(|p| p.seat == seat) {

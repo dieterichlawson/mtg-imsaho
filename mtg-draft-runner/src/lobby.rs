@@ -1724,16 +1724,19 @@ for the seat from here, and its games are forfeit"), ""));
     /// Why the table plays for a seat, in the words its picks, its deck
     /// and its forfeits are recorded with. Every one of them said "the
     /// seat is away", which for a kicked seat contradicted the page beside
-    /// it showing the person still there (#825).
+    /// it showing the person still there (#825). A kick names the seat,
+    /// as the match it ended in says it: one kick read "the host kicked
+    /// Bo (seat 1)" there and "the host kicked the seat" in every later
+    /// match (#1036).
     #[must_use]
-    pub fn away_reason(&self, seat: usize) -> &'static str {
+    pub fn away_reason(&self, seat: usize) -> String {
         let s = &self.seats[seat];
         if s.kicked {
-            "the host kicked the seat"
+            format!("the host kicked {}", self.who(seat))
         } else if s.gave_up {
-            "the seat stopped answering"
+            "the seat stopped answering".to_string()
         } else {
-            "the seat is away"
+            "the seat is away".to_string()
         }
     }
 
@@ -1744,13 +1747,15 @@ for the seat from here, and its games are forfeit"), ""));
             self.picks_at_once(s) && self.phase == Phase::Drafting
                 && self.table.in_front(s).is_some()
         }) {
-            let _ = self.auto_pick(seat, self.away_reason(seat));
+            let why = self.away_reason(seat);
+            let _ = self.auto_pick(seat, &why);
         }
         for seat in 0..self.seats.len() {
             if self.builds_at_once(seat) && !self.seats[seat].ready
                 && self.table.seat_done(seat)
             {
-                self.auto_build(seat, self.away_reason(seat));
+                let why = self.away_reason(seat);
+                self.auto_build(seat, &why);
             }
         }
         self.arm_deadlines();
@@ -1761,17 +1766,17 @@ for the seat from here, and its games are forfeit"), ""));
     pub fn tick(&mut self, now: Instant) -> bool {
         let mut changed = false;
         for seat in 0..self.seats.len() {
-            let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the pick timer ran out" };
+            let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the pick timer ran out".to_string() };
             if self.seats[seat].pick_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].pick_deadline = None;
-                if self.auto_pick(seat, why).is_ok() {
+                if self.auto_pick(seat, &why).is_ok() {
                     changed = true;
                 }
             }
             if self.seats[seat].build_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].build_deadline = None;
-                let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the build timer ran out" };
-                self.auto_build(seat, why);
+                let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the build timer ran out".to_string() };
+                self.auto_build(seat, &why);
                 changed = true;
             }
         }
@@ -2118,8 +2123,8 @@ for the seat from here, and its games are forfeit"), ""));
     #[must_use]
     pub fn forfeit_result(&self, a: usize, b: usize) -> MatchResult {
         match (self.is_auto(a), self.is_auto(b)) {
-            (true, false) => self.forfeit_by(a, b, a, self.away_reason(a)),
-            (false, true) => self.forfeit_by(a, b, b, self.away_reason(b)),
+            (true, false) => self.forfeit_by(a, b, a, &self.away_reason(a)),
+            (false, true) => self.forfeit_by(a, b, b, &self.away_reason(b)),
             _ => MatchResult { player_a: a, player_b: b, wins_a: 0, wins_b: 0, games: Vec::new() },
         }
     }
