@@ -73,6 +73,10 @@ pub struct Shared {
     /// The game pages of the people in a match now, by seat: what a kick
     /// reaches into a running match with (#821).
     in_game: Mutex<Vec<InGame>>,
+    /// The game pages of matches that are over, still attached: a finished
+    /// match's page sits on its game-over screen in its own tab, and is told
+    /// the table is closed with the rest, or it retried for ever (#1033).
+    finished_pages: Mutex<Vec<PageHandle>>,
     /// Where the next game page's port search starts: past the last one
     /// handed out, so a finished match's port, let go when its seat is
     /// dropped (#853), is not the next match's while the range has others.
@@ -136,6 +140,7 @@ impl Shared {
             snapshot_write: Mutex::new(()),
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
+            finished_pages: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
             cli_lines: Mutex::new(None),
         })
@@ -184,10 +189,17 @@ impl Shared {
 
     fn set_in_game(&self, seat: usize, page: Option<InGame>) {
         let mut in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        in_game.retain(|p| p.seat != seat);
+        let (gone, kept): (Vec<InGame>, Vec<InGame>) = in_game.drain(..).partition(|p| p.seat == seat);
+        *in_game = kept;
         if let Some(page) = page {
             in_game.push(page);
         }
+        drop(in_game);
+        let mut finished = self.finished_pages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A page no longer attached cannot come back: its seat's listener
+        // closed with the match.
+        finished.retain(|p| p.connected() > 0);
+        finished.extend(gone.into_iter().map(|p| p.page).filter(|p| p.connected() > 0));
     }
 
     /// The lobby, poisoned or not: a panic in one worker must not take the
@@ -384,6 +396,9 @@ impl Shared {
         let reason = self.stop_reason().unwrap_or_else(|| "the table is over".to_string());
         for page in self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
             page.page.close(&reason);
+        }
+        for page in self.finished_pages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
+            page.close(&reason);
         }
         let until = Instant::now() + Duration::from_millis(1500);
         while Instant::now() < until && !self.clients().is_empty() {

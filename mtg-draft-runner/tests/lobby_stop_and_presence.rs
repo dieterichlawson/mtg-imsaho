@@ -8,6 +8,8 @@
 //!   read a deliberate stop as a dropped network and retried for ever.
 //! - #825: a kick was never written to the log, and the forfeits it
 //!   caused said "the seat is away".
+//! - #1033: a game page whose match was over was not told the table had
+//!   closed, and retried its socket for ever.
 #![cfg(unix)]
 
 mod lobby_support;
@@ -88,6 +90,36 @@ fn a_closed_game_page_is_said_on_both_sides_and_quit_closes_every_page() {
     assert!(status.success(), "{status}");
     let log = server.log_text();
     assert!(log.contains("NOTE the host quit; the table was playing and is not finished"), "{log}");
+}
+
+#[test]
+fn a_finished_matchs_game_pages_are_closed_with_the_table() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut server = Server::start("stop-finished", "human,human", &["--pick-seconds", "1", "--build-seconds", "2"]);
+    let mut c0 = server.client(0);
+    let mut c1 = server.client(1);
+    let url = |v: &Value| v["matches"].as_array()
+        .and_then(|m| m.iter().find(|m| m["status"] == "playing"))
+        .and_then(|m| m["url"].as_str()).map(str::to_string);
+    let v0 = c0.view_until("seat 0's match is on", Duration::from_secs(240), |v| url(v).is_some());
+    let v1 = c1.view_until("seat 1's match is on", Duration::from_secs(30), |v| url(v).is_some());
+    let mut g0 = game_page(&server.link(&url(&v0).unwrap()));
+    let mut g1 = game_page(&server.link(&url(&v1).unwrap()));
+    message_until(&mut g1, "table", Duration::from_secs(10), |m| m["match_line"].is_string());
+    // The kick forfeits the match; both pages stay open on its end.
+    server.type_line("kick 0");
+    server.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
+    c1.view_until("the table is done", Duration::from_secs(30), |v| v["phase"] == "done");
+    let pid = server.child.id().to_string();
+    let killed = std::process::Command::new("kill").args(["-INT", &pid]).status().expect("kill runs");
+    assert!(killed.success());
+    let why = "the server was stopped by Ctrl-C (SIGINT)";
+    message_until(&mut g1, "closed", Duration::from_secs(10), |m| m["reason"] == why);
+    message_until(&mut g0, "closed", Duration::from_secs(10), |m| m["reason"] == why);
+    server.child.wait().expect("the server exits");
 }
 
 #[test]
