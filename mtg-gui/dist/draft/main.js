@@ -625,6 +625,8 @@ function draw() {
         if (again && !again.disabled)
             again.focus({ preventScroll: true });
     }
+    // The name box is outside the view: a closed table takes no name either (#1038's review).
+    nameField.disabled = state.closed !== null;
     const v = state.view;
     seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");
     connEl.textContent = state.closed !== null ? "the table is closed"

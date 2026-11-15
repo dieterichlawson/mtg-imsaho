@@ -883,7 +883,8 @@ async function main() {
         await page.keyboard.press("Enter");
         await page.keyboard.press("1");
         await page.waitForTimeout(100);
-        check(!!box && st.n === 1 && st.inert && (await sent()).length === before, `${tag}: a closed table's pack takes no pick (${JSON.stringify(st)})`);
+        st.name = await page.evaluate(() => document.getElementById("name").disabled);
+        check(!!box && st.n === 1 && st.inert && st.name && (await sent()).length === before, `${tag}: a closed table's pack takes no pick (${JSON.stringify(st)})`);
       }
       // #1038: once the table is closed, the last view is kept for reference
       // but nothing in it is live: no "Your match is on.", no "playing now",
