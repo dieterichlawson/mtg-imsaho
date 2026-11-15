@@ -763,6 +763,10 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     // Once is the kick: a second is refused, not announced again (#1042).
     let again = l.kick(1).unwrap_err();
     assert!(again.contains("already kicked"), "{again}");
+    // A client sends its name on every connect: a kicked seat keeps the
+    // name its kick gave, or one kick reads two ways again.
+    l.set_name(1, "Bo");
+    assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(0), "the seat is away");
     l.seat_gave_up(2, "no answer");

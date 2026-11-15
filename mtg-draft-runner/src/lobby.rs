@@ -2425,7 +2425,10 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
         let clean = clean_name(name);
         // A client sends its name on every connect: the same name again is
         // no rename (#856).
-        if clean.is_empty() || clean == self.seats[seat].name {
+        // A kicked seat keeps the name it was kicked under: its later
+        // forfeits name it, and a rename on reconnect split one kick into
+        // two reasons again (#1036's review).
+        if clean.is_empty() || clean == self.seats[seat].name || self.seats[seat].kicked {
             return;
         }
         self.event(format!("{} is now called {clean}", self.who(seat)));
