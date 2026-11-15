@@ -182,7 +182,7 @@ to pick it; a number typed before a new pack has been up for 300 ms (a
 pick typed twice) is not taken from it, and the client says so. While building: `add <n>` and `drop <n>` by the pool numbers
 shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
 final; `text <n>` prints a card's rules text (the pack's card while
-drafting, the pool's while building); the server's refusal (`Deck has 39 cards (need at least 40)`) is
+drafting, the pool's while building), and `text <name>` any card's by name; the server's refusal (`Deck has 39 cards (need at least 40)`) is
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
 playing (game 1)`, with the game's link on a line of its own under it, `open
 http://192.168.1.20:8800/game/8803/<key>/`: through the table's own port and

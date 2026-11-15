@@ -362,7 +362,8 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         return Command::Print(if phase == "lobby" {
             "the draft has not started: the deck is built once your last pick is made".into()
         } else {
-            format!("you are still drafting: {first} builds the deck once your last pick is made")
+            // Not "{first} builds the deck": "drop builds the deck" (#1044's review).
+            "you are still drafting: the deck is built once your last pick is made".into()
         });
     }
     // Once the deck is final, outside a match's between-games window, the
@@ -395,7 +396,12 @@ sideboard between games, and ready starts the next".to_string()
             if let Some((_, b)) = between(v) {
                 // The server takes a second ready and says nothing (#1043).
                 if b["ready"] == true {
-                    return Command::Print(format!("you are ready for game {}: it starts once your opponent is", b["game"]));
+                    // As the between-games screen says it (#1043's review).
+                    return Command::Print(if b["opponent_ready"] == true {
+                        format!("you are ready: game {} is starting", b["game"])
+                    } else {
+                        format!("you are ready for game {}: it starts once your opponent is", b["game"])
+                    });
                 }
                 let mut msgs = Vec::new();
                 if b["sideboarding"] == true {
@@ -817,7 +823,7 @@ mod tests {
             "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}], "pack": null});
         for line in ["ready", "add 0", "drop 0", "lands plains=17"] {
             let Command::Print(t) = command(line, Some(&v), &mut Build::default(), None) else { panic!("{line} sent") };
-            assert!(t.starts_with("you are still drafting"), "{line}: {t}");
+            assert_eq!(t, "you are still drafting: the deck is built once your last pick is made", "{line}");
         }
         v["phase"] = "lobby".into();
         let Command::Print(t) = command("ready", Some(&v), &mut Build::default(), None) else { panic!() };
@@ -1197,6 +1203,8 @@ sideboard between games, and ready starts the next", "#1044");
         // A second ready is answered, not sent for the server to drop (#1043).
         assert_eq!(printed(command("ready", Some(&ready), &mut build, None)),
             "you are ready for game 2: it starts once your opponent is");
+        ready["matches"][0]["between"]["opponent_ready"] = true.into();
+        assert_eq!(printed(command("ready", Some(&ready), &mut build, None)), "you are ready: game 2 is starting");
         let (_, text) = render(&ready, &build);
         assert!(text.contains("you lost game 1: you play first\n") && !text.contains("type play or draw") && !text.contains("to change it"), "{text}");
         v["matches"][0]["between"]["you_choose"] = false.into();
