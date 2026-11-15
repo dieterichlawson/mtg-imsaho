@@ -636,6 +636,14 @@ fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     assert!(lobby.take_events().is_empty());
     lobby.connected(0);
     lobby.take_events();
+    // In a match the seat is where its game page is: its draft page
+    // closing is not "away" (#1039's review).
+    let _ = lobby.set_game_pages(0, Some(1));
+    lobby.disconnected(0, false);
+    assert!(!lobby.take_events().join("\n").contains("is away"));
+    let _ = lobby.set_game_pages(0, None);
+    lobby.connected(0);
+    lobby.take_events();
     // A second tab while the first is open is not a return.
     lobby.connected(0);
     assert!(lobby.take_events().is_empty());

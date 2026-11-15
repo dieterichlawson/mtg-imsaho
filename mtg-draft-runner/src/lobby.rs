@@ -1159,7 +1159,11 @@ the order they happened, not in seat order", "");
         // (#1039): the last page or client closing is said too, as a game
         // page closing is (#822). A kicked seat's comings and goings are
         // not news; the table plays for it.
-        if self.seats[seat].connected == 0 && !closing && !self.seats[seat].kicked {
+        // Nor while the seat is in a match: it is wherever its game page is,
+        // and `status` says "in game" (#1039's review). Nor the host's own
+        // seat, whose reconnect is said at the host's terminal already.
+        let s = &self.seats[seat];
+        if s.connected == 0 && !closing && !s.kicked && s.game_pages.is_none() && s.kind != SeatKind::Cli {
             self.event(format!("{} is away: no draft page or client is open for the seat", self.who(seat)));
         }
     }
