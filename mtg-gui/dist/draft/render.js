@@ -537,6 +537,14 @@ export function render(root, state, actions) {
                 break;
             default: parts.push(h("section", { class: "phase" }, h("p", { text: `Unknown phase ${String(view.phase)}; here is what the server sent.` }), h("pre", { text: JSON.stringify(view, null, 1) })));
         }
+        // The table is closed: the last view stays for reference, but nothing
+        // in it answers. Pick tiles, Ready and the land steppers stayed live,
+        // their sends going nowhere (#1038's review).
+        const section = parts[parts.length - 1];
+        if (state.closed !== null && section instanceof HTMLElement) {
+            section.inert = true;
+            section.classList.add("closed");
+        }
     }
     root.replaceChildren(...parts.filter((p) => !!p));
 }

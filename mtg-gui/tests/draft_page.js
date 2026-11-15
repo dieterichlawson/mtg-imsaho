@@ -867,6 +867,24 @@ async function main() {
         check((r.banner || "").includes("wrong key"), `${tag}: with the server's reason on the banner`);
       }
 
+      // #1038's review: a pack on screen when the table closes answers no
+      // click, and its countdown stops.
+      {
+        const view = fixtures.views.find(v => v.name === "drafting").view;
+        await stage(view);
+        await stage({ type: "closed", reason: "the host quit" });
+        await page.waitForTimeout(100);
+        const st = await page.evaluate(() => ({ inert: [...document.querySelectorAll(".phase")].every(p => p.inert), n: document.querySelectorAll(".phase").length }));
+        const before = (await sent()).length;
+        // As a person would: the mouse on the first tile, twice (select,
+        // then pick), and the keyboard's pick keys.
+        const box = await page.evaluate(() => { const t = document.querySelector(".tile"); if (!t) return null; t.scrollIntoView({ block: "center" }); const r = t.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+        if (box) { await page.mouse.click(box.x, box.y); await page.mouse.click(box.x, box.y); }
+        await page.keyboard.press("Enter");
+        await page.keyboard.press("1");
+        await page.waitForTimeout(100);
+        check(!!box && st.n === 1 && st.inert && (await sent()).length === before, `${tag}: a closed table's pack takes no pick (${JSON.stringify(st)})`);
+      }
       // #1038: once the table is closed, the last view is kept for reference
       // but nothing in it is live: no "Your match is on.", no "playing now",
       // no game link. Last, as nothing reopens a closed page.

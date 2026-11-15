@@ -108,8 +108,13 @@ function onMessage(msg) {
         onView(msg);
     else if (msg.type === "refused")
         onRefused(msg);
-    else if (msg.type === "closed")
+    else if (msg.type === "closed") {
         state.closed = msg.reason;
+        // Nothing more is timed or on its way: the countdown ticked on under
+        // the closed banner (#1038's review).
+        state.deadlineAt = null;
+        state.pendingPick = null;
+    }
     else if (msg.type === "review")
         state.review = msg.picks;
     else
@@ -410,6 +415,9 @@ window.addEventListener("keydown", (ev) => {
         return;
     }
     if (ev.ctrlKey || ev.metaKey || ev.altKey)
+        return;
+    // A closed table takes no pick or edit from the keyboard either (#1038's review).
+    if (state.closed !== null)
         return;
     // A held Enter repeats about every 30 ms, and on a focused row or tile
     // the browser clicked it once per repeat: a pool card went in and out of
