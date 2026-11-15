@@ -376,7 +376,10 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         } else {
             // True at every match length: a best-of-1 has no next game
             // to sideboard for (#907's review).
-            format!("your deck is final for this game: in a match of more than one game, {first} sideboards before the next")
+            // The command word was pasted in as the subject: "ready
+            // sideboards", "lands sideboards" (#1044).
+            "your deck is final for this game: in a match of more than one game, add, drop and lands \
+sideboard between games, and ready starts the next".to_string()
         });
     }
     match *first {
@@ -819,7 +822,8 @@ mod tests {
         v["phase"] = "playing".into();
         v["matches"] = serde_json::json!([]);
         let Command::Print(t) = command("add 0", Some(&v), &mut Build::default(), None) else { panic!("sent") };
-        assert!(t.contains("sideboards before the next"), "{t}");
+        assert_eq!(t, "your deck is final for this game: in a match of more than one game, add, drop and lands \
+sideboard between games, and ready starts the next", "#1044");
     }
 
     /// #1017: a number too long to read is out of range, as 9 in a pack of
