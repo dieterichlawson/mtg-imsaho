@@ -353,15 +353,14 @@ impl Tournament {
     /// each held to [`TIEBREAK_FLOOR`]. A bye is a round played and a match
     /// won, and the games it awards are games won; a seat that has played
     /// nothing stands at the floor.
-    fn win_percentages(&self) -> Vec<(f64, f64)> {
+    fn win_percentages(&self) -> Vec<(Ratio, Ratio)> {
         self.standings.iter().map(|s| {
             let rounds = s.match_wins + s.match_losses + s.match_draws;
             let games = s.game_wins + s.game_losses + s.game_draws;
-            #[allow(clippy::cast_precision_loss)]
             let pct = |points: usize, of: usize| if of == 0 {
-                TIEBREAK_FLOOR
+                Ratio::FLOOR
             } else {
-                (points as f64 / (3 * of) as f64).max(TIEBREAK_FLOOR)
+                Ratio::new(points as u128, 3 * of as u128).max(Ratio::FLOOR)
             };
             (pct(s.match_points(), rounds), pct(3 * s.game_wins + s.game_draws, games))
         }).collect()
@@ -390,34 +389,93 @@ impl Tournament {
     pub fn sorted_standings(&self) -> Vec<Standing> {
         let pct = self.win_percentages();
         let opponents = self.opponents();
-        #[allow(clippy::cast_precision_loss)]
         // No opponent yet (before round 1 counts, or byes only): no
         // tiebreaker, which every page and line leaves out, rather than a
         // floor that read "33.0 / 33.0 / 33.0" beside a 0-0 record.
-        let mean = |seats: &[usize], f: &dyn Fn(usize) -> f64| if seats.is_empty() {
-            0.0
+        //
+        // The tiebreakers are compared exactly (#1032): a float mean summed
+        // in the order a seat met its opponents put two seats with the same
+        // three opponents' percentages an ulp apart, and that ulp, not GW%,
+        // decided the placing.
+        let mean = |seats: &[usize], f: &dyn Fn(usize) -> Ratio| if seats.is_empty() {
+            Ratio::ZERO
         } else {
-            seats.iter().map(|&o| f(o)).sum::<f64>() / seats.len() as f64
+            seats.iter().map(|&o| f(o)).fold(Ratio::ZERO, Ratio::add).div(seats.len() as u128)
         };
-        let mut sorted = self.standings.clone();
-        for s in &mut sorted {
-            s.omw = mean(&opponents[s.seat], &|o| pct[o].0);
+        let keys: Vec<(Ratio, Ratio, Ratio)> = self.standings.iter().map(|s| {
+            let omw = mean(&opponents[s.seat], &|o| pct[o].0);
             // Nor a game-win percentage for a seat that has played no game:
             // it was left at the floor, 0.33 in every view before round 1
             // counted (#883).
-            s.gw = if s.game_wins + s.game_losses + s.game_draws == 0 { 0.0 } else { pct[s.seat].1 };
-            s.ogw = mean(&opponents[s.seat], &|o| pct[o].1);
+            let gw = if s.game_wins + s.game_losses + s.game_draws == 0 { Ratio::ZERO } else { pct[s.seat].1 };
+            let ogw = mean(&opponents[s.seat], &|o| pct[o].1);
+            (omw, gw, ogw)
+        }).collect();
+        let mut sorted = self.standings.clone();
+        for s in &mut sorted {
+            let (omw, gw, ogw) = keys[s.seat];
+            s.omw = omw.to_f64();
+            s.gw = gw.to_f64();
+            s.ogw = ogw.to_f64();
         }
         sorted.sort_by(|a, b| {
+            let (ka, kb) = (keys[a.seat], keys[b.seat]);
             b.match_points()
                 .cmp(&a.match_points())
-                .then(b.omw.total_cmp(&a.omw))
-                .then(b.gw.total_cmp(&a.gw))
-                .then(b.ogw.total_cmp(&a.ogw))
+                .then(kb.0.cmp(&ka.0))
+                .then(kb.1.cmp(&ka.1))
+                .then(kb.2.cmp(&ka.2))
                 .then(a.seat.cmp(&b.seat))
         });
         sorted
     }
+}
+
+/// A tiebreaker percentage held exactly: each is a ratio of small integers,
+/// and comparing them as floats let summation order decide a tie (#1032).
+#[derive(Debug, Clone, Copy)]
+struct Ratio {
+    num: u128,
+    den: u128,
+}
+
+impl Ratio {
+    const ZERO: Ratio = Ratio { num: 0, den: 1 };
+    /// [`TIEBREAK_FLOOR`] as a ratio.
+    const FLOOR: Ratio = Ratio { num: 33, den: 100 };
+
+    fn new(num: u128, den: u128) -> Ratio {
+        let g = gcd(num, den).max(1);
+        Ratio { num: num / g, den: den / g }
+    }
+
+    fn add(self, other: Ratio) -> Ratio {
+        Ratio::new(self.num * other.den + other.num * self.den, self.den * other.den)
+    }
+
+    fn div(self, n: u128) -> Ratio {
+        Ratio::new(self.num, self.den * n)
+    }
+
+    fn max(self, other: Ratio) -> Ratio {
+        if self.cmp(&other) == std::cmp::Ordering::Less { other } else { self }
+    }
+
+    fn cmp(&self, other: &Ratio) -> std::cmp::Ordering {
+        (self.num * other.den).cmp(&(other.num * self.den))
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn to_f64(self) -> f64 {
+        self.num as f64 / self.den as f64
+    }
+}
+
+fn gcd(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
 }
 
 fn normalize_pair(a: usize, b: usize) -> (usize, usize) {
@@ -444,6 +502,29 @@ mod tests {
                 .map(|_| GameOutcome { winner: None, turns: 1, game_log: vec![], stalled_seat: None, abandoned: false, decks: None })
                 .collect(),
         }
+    }
+
+    /// #1032: seats 2 and 5 met opponents with the same three match-win
+    /// percentages in a different order; the float sums came out an ulp
+    /// apart and that ulp ranked seat 2 (GW 55.6%) above seat 5 (GW 57.1%).
+    /// Equal OMW% goes to GW%.
+    #[test]
+    fn equal_omw_met_in_another_order_is_decided_by_gw() {
+        let mut t = Tournament::new(6, TournamentConfig { best_of: 3 });
+        for round in [
+            vec![mr(0, 1, 0, 2), mr(2, 3, 1, 2), mr(4, 5, 0, 2)],
+            vec![mr(1, 3, 2, 0), mr(5, 0, 0, 2), mr(2, 4, 2, 1)],
+            vec![mr(1, 2, 1, 2), mr(0, 4, 2, 1), mr(3, 5, 1, 2)],
+        ] {
+            let p = round.iter().map(|m| (m.player_a, m.player_b)).collect();
+            t.record_round(p, round);
+        }
+        let order: Vec<usize> = t.sorted_standings().iter().map(|s| s.seat).collect();
+        assert_eq!(order, vec![1, 0, 5, 2, 3, 4]);
+        let sorted = t.sorted_standings();
+        let seat = |n: usize| sorted.iter().find(|s| s.seat == n).unwrap();
+        assert_eq!(seat(2).omw, seat(5).omw, "the same opponents' percentages are the same OMW");
+        assert_eq!(Ratio::FLOOR.to_f64(), TIEBREAK_FLOOR);
     }
 
     /// Every unordered pair in a pairing list, byes dropped.
