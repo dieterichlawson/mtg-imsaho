@@ -238,6 +238,9 @@ function onMessage(msg: ServerMessage): void {
       // stayed drawn over the board beside "The table is closed" (#1034).
       state.decision = null; state.ui = null; state.popover = null;
       hideField();
+      // The tab's title said the last match line ("Before game 1: ...")
+      // under a closed table (#1034's review).
+      document.title = "The table is closed — mtg-imsaho";
       break;
     default:
       console.warn("unknown message", msg);

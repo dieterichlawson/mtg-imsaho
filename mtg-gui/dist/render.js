@@ -1941,7 +1941,8 @@ export function render(ctx, state) {
         // panel yet to say it in (#1034's review).
         if (state.closed) {
             let ty = 12;
-            for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", 6)) {
+            // The whole board is free: the reason, the host's words, is not cut.
+            for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", Math.floor((H - 24) / 10))) {
                 text(ctx, l, 12, ty, { color: "#ff9080" });
                 ty += 10;
             }

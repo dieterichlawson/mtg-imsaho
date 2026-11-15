@@ -1720,7 +1720,8 @@ export function render(ctx: Ctx, state: State): Hit[] {
     // panel yet to say it in (#1034's review).
     if (state.closed) {
       let ty = 12;
-      for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", 6)) { text(ctx, l, 12, ty, { color: "#ff9080" }); ty += 10; }
+      // The whole board is free: the reason, the host's words, is not cut.
+      for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", Math.floor((H - 24) / 10))) { text(ctx, l, 12, ty, { color: "#ff9080" }); ty += 10; }
       return hits;
     }
     text(ctx, state.connected ? "Waiting for the game…" : "Connecting to the runner…", 12, 12, { font: "8px PressStart", color: "#ffe080" });

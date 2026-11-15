@@ -211,6 +211,9 @@ function onMessage(msg) {
             state.ui = null;
             state.popover = null;
             hideField();
+            // The tab's title said the last match line ("Before game 1: ...")
+            // under a closed table (#1034's review).
+            document.title = "The table is closed — mtg-imsaho";
             break;
         default:
             console.warn("unknown message", msg);

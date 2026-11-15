@@ -145,9 +145,10 @@ async function main() {
       window.mtgDebug.message({ type: "closed", reason: "the server was stopped by Ctrl-C (SIGINT)" });
       window.mtgDebug.render();
       CanvasRenderingContext2D.prototype.fillText = fill;
-      return said.join(" ");
+      return said.join(" ") + " | title: " + document.title;
     });
-    check(squash(closedFirst).includes("The table is closed: the server was stopped by Ctrl-C (SIGINT).") && !closedFirst.includes("Waiting for the game"),
+    check(squash(closedFirst).includes("The table is closed: the server was stopped by Ctrl-C (SIGINT).") && !closedFirst.includes("Waiting for the game")
+      && closedFirst.includes("title: The table is closed"),
       `closed before the first game, the page says so (${JSON.stringify(closedFirst.slice(0, 200))})`);
     if (errors.length) fail(`page errors:\n  ${errors.join("\n  ")}`); else ok("no page errors");
     await page.close();
