@@ -1023,4 +1023,20 @@ fn a_snapshot_recording_fewer_seats_than_players_is_refused() {
     assert_clean_refusal(&out, "a 1-seat record for 2 players");
     let err = stderr(&out);
     assert!(err.contains("records 1 seat for 2 players"), "the refusal says why.\nstderr: {err}");
+
+    // The seats' notes are held to the same rule.
+    std::fs::write(&save,
+        r#"{"seed":11,"set":"isd","players":2,"picks":[],"notes":["green-white"]}"#).unwrap();
+    let stub = failing_stub("shortnotes");
+    let out = runner()
+        .current_dir(workspace_root)
+        .args(["--model", "cc", "--quiet", "--resume", &save.to_string_lossy()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .output()
+        .expect("failed to run");
+    let _ = std::fs::remove_file(&save);
+    let _ = std::fs::remove_file(&stub);
+    assert_clean_refusal(&out, "notes for 1 of 2 players");
+    let err = stderr(&out);
+    assert!(err.contains("notes for 1 of 2 players"), "the refusal says why.\nstderr: {err}");
 }
