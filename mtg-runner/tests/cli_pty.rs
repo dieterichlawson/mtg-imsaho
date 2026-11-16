@@ -446,6 +446,29 @@ fn a_bracketed_paste_never_submits_a_decision() {
     assert_clean_exit(&mut g);
 }
 
+/// Issue #1051: `rr` is the hot-reload chord, and its second key matched
+/// any modifiers. `r` then Ctrl-R (a readline reverse-search reflex) or
+/// Alt-r abandoned the game at once and ran `cargo build` wherever the game
+/// was started. Both are unbound chords, and are separators like any other.
+#[test]
+fn r_then_a_ctrl_or_alt_r_is_no_hot_reload() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    // One write each, so the second key lands inside the chord's window.
+    g.send("r\x12"); // r, Ctrl-R
+    g.expect_absent("Hot reload", Duration::from_secs(1));
+    g.send("\x15r\x1br"); // Ctrl-U; r, Alt-r
+    g.expect_absent("Hot reload", Duration::from_secs(1));
+
+    g.send("\x15"); // Ctrl-U
+    g.answer("0\r");
+    g.expect("keeps (0 mulligans)", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
 /// The concede confirmation declines safely: 'n' followed by Enter returns
 /// to the same priority window without the trailing Enter passing priority
 /// (#127), and junk keys re-prompt without ending the game (#42/#125).

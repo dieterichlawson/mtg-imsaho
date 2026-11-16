@@ -869,6 +869,15 @@ fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: 
 ///   keystrokes read `0 1`, which every numeric prompt refuses out loud, and
 ///   which a multi-select prompt reads as the two indices they are.
 ///
+/// Whether `ev` is the key `c` pressed alone: no Ctrl and no Alt (Shift is
+/// part of the character, so `R` is not `r`). The key chords this reader
+/// binds (`rr`) are made of plain keys; a Ctrl or Alt chord on the same
+/// letter is unbound, and goes to [`edit_line`] as a separator (#1051).
+fn is_plain_char(ev: &Event, c: char) -> bool {
+    matches!(ev, Event::Key(KeyEvent { code: KeyCode::Char(k), modifiers, .. })
+        if *k == c && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT))
+}
+
 /// Returns whether the buffer changed, so the caller knows to repaint.
 fn edit_line(buf: &mut String, code: KeyCode, modifiers: KeyModifiers) -> bool {
     match code {
@@ -5657,13 +5666,17 @@ impl CliPlayer {
                     KeyCode::Char('/') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         break None; // trigger card search
                     }
-                    KeyCode::Char('r') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                    KeyCode::Char('r') if buf.is_empty() && is_plain_char(&ev, 'r') => {
                         // Wait briefly for a second 'r' to trigger hot reload.
                         // Anything else that arrives in the window is put
                         // back for the next turn of the loop, not eaten.
                         if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
                             match read_event_guarded() {
-                                Some(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) => {
+                                // The second key is held to the first's
+                                // guard: `r` then Ctrl-R or Alt-r, an
+                                // unbound chord everywhere else, ended the
+                                // game as a hot reload (#1051).
+                                Some(second) if is_plain_char(&second, 'r') => {
                                     HOT_RELOAD_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
                                     tui_raw_off();
                                     break Some("__hot_reload__".into());
@@ -9970,6 +9983,21 @@ pub(crate) mod tests {
     use mtg_engine::engine::LegalActions;
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
+
+    /// The `rr` hot-reload chord is two plain `r`s. `r` then Ctrl-R (a
+    /// readline reverse-search reflex) or Alt-r completed it, abandoned the
+    /// game and ran `cargo build` in whatever directory the game was in
+    /// (#1051); Shift-R never did.
+    #[test]
+    fn only_a_plain_r_completes_the_hot_reload_chord() {
+        let key = |m: KeyModifiers| Event::Key(KeyEvent::new(KeyCode::Char('r'), m));
+        assert!(is_plain_char(&key(KeyModifiers::NONE), 'r'));
+        assert!(!is_plain_char(&key(KeyModifiers::CONTROL), 'r'));
+        assert!(!is_plain_char(&key(KeyModifiers::ALT), 'r'));
+        assert!(!is_plain_char(&key(KeyModifiers::CONTROL | KeyModifiers::SHIFT), 'r'));
+        assert!(!is_plain_char(&Event::Key(KeyEvent::new(KeyCode::Char('R'), KeyModifiers::SHIFT)), 'r'));
+        assert!(!is_plain_char(&Event::FocusGained, 'r'));
+    }
 
     /// The payable-X line has to fit the panel and name both ends of the
     /// set, whatever shape the board gives it (#595, #318).
