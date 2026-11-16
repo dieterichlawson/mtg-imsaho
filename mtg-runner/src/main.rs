@@ -350,6 +350,65 @@ fn sweep_stale_hot_reload_saves() {
     }
 }
 
+/// Move a hot-reload snapshot whose rebuild failed out of the sweep's reach,
+/// returning where it now is.
+///
+/// A failed rebuild hands the snapshot to the person as their way back into
+/// the game ("Resume manually with ..."), and then this process exits, so by
+/// the sweep's rule — a `mtg-hot-reload-<pid>.json` whose pid is gone — the
+/// next `mtg-runner` of any kind deleted it (#1053). Renamed, it is the
+/// person's file, kept until they remove it. If the rename fails the
+/// snapshot stays where it is, and that path is the one to name.
+fn keep_failed_reload_save(path: &str) -> String {
+    let kept = std::env::temp_dir()
+        .join(format!("mtg-failed-reload-{}.json", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
+    match fs::rename(path, &kept) {
+        Ok(()) => kept,
+        Err(_) => path.to_string(),
+    }
+}
+
+/// This run's arguments with `--resume <path>` in place of any `--resume`
+/// they had: what a hot reload re-executes with.
+fn resume_args(args: impl Iterator<Item = String>, path: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut args = args.peekable();
+    while let Some(a) = args.next() {
+        if a == "--resume" {
+            args.next();
+            continue;
+        }
+        out.push(a);
+    }
+    out.push("--resume".into());
+    out.push(path.into());
+    out
+}
+
+/// The command line that resumes `path` with this run's seats and flags, as
+/// one a shell can run from anywhere: this binary, not `cargo run`, which
+/// works only inside a checkout — and a failed rebuild is mostly a run
+/// outside one.
+fn resume_command(path: &str) -> String {
+    let exe = env::current_exe().map_or_else(|_| "mtg-runner".into(), |p| p.to_string_lossy().into_owned());
+    std::iter::once(exe)
+        .chain(resume_args(env::args().skip(1), path))
+        .map(|a| shell_quote(&a))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `a` as one shell word.
+fn shell_quote(a: &str) -> String {
+    if !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || "_./:=,+-@%".contains(c)) {
+        a.to_string()
+    } else {
+        format!("'{}'", a.replace('\'', "'\\''"))
+    }
+}
+
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
 /// lookup in `main` is by exact name, so an unrecognized or
 /// misspelled flag used to be silently dropped and its default silently used —
@@ -1250,29 +1309,23 @@ use --save if you need a resumable file.");
 
                 // Re-exec with --resume pointing to the hot-reload save.
                 let exe = env::current_exe().expect("Failed to get current exe path");
-                let mut new_args: Vec<String> = env::args().collect();
-                // Remove any existing --resume args.
-                while let Some(pos) = new_args.iter().position(|a| a == "--resume") {
-                    new_args.remove(pos); // --resume
-                    if pos < new_args.len() { new_args.remove(pos); } // its value
-                }
-                // Add --resume with hot-reload path.
-                new_args.push("--resume".into());
-                new_args.push(hot_reload_path.clone());
+                let new_args = resume_args(env::args().skip(1), &hot_reload_path);
                 // Exec replaces the current process.
                 let err = std::process::Command::new(&exe)
-                    .args(&new_args[1..]) // skip argv[0]
+                    .args(&new_args)
                     .exec();
                 mtg_player::stderr_line!("Failed to exec: {err}");
                 std::process::exit(1);
             }
             Ok(s) => {
-                mtg_player::stderr_line!("Build failed (exit code {:?}). Continuing with save at {}",
-                    s.code(), hot_reload_path);
-                mtg_player::stderr_line!("Resume manually with: cargo run --release -- --resume {hot_reload_path}");
+                let kept = keep_failed_reload_save(&hot_reload_path);
+                mtg_player::stderr_line!("Build failed (exit code {:?}). The game is saved at {kept}", s.code());
+                mtg_player::stderr_line!("Resume manually with: {}", resume_command(&kept));
             }
             Err(e) => {
-                mtg_player::stderr_line!("Failed to run cargo build: {e}. Save at {hot_reload_path}");
+                let kept = keep_failed_reload_save(&hot_reload_path);
+                mtg_player::stderr_line!("Failed to run cargo build: {e}. The game is saved at {kept}");
+                mtg_player::stderr_line!("Resume manually with: {}", resume_command(&kept));
             }
         }
         return;
