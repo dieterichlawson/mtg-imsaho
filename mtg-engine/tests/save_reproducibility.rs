@@ -73,3 +73,31 @@ fn the_same_game_always_produces_the_same_bytes() {
     assert_eq!(once, after_round_trip,
         "a save reloaded and rewritten is byte-identical to the original");
 }
+
+/// A save that records no `base_controller` for an object — written before
+/// the field existed, or with its key misspelled so serde dropped it — loads
+/// the object as put onto the battlefield by its owner (CR 110.2a). The
+/// fallback was p0 for every object, so p1's permanents loaded as p0's by
+/// default, and one p0 stole from p1 stayed p0's when the effect ended
+/// (#1047).
+#[test]
+fn a_save_without_base_controller_loads_each_object_as_its_owners() {
+    let (state, _reg) = a_populated_game();
+    let mut json = serde_json::to_value(&state).unwrap();
+    let objects = json["objects"].as_object_mut().unwrap();
+    let mut misspelled = false;
+    for o in objects.values_mut() {
+        let o = o.as_object_mut().unwrap();
+        let v = o.remove("base_controller").expect("an object records its base controller");
+        // Half the objects lose the key outright, half to a misspelling.
+        if misspelled {
+            o.insert("base_controlder".into(), v);
+        }
+        misspelled = !misspelled;
+    }
+    let loaded: mtg_engine::state::GameState = serde_json::from_value(json).unwrap();
+    assert!(loaded.objects.values().any(|o| o.owner == P1));
+    for o in loaded.objects.values() {
+        assert_eq!(o.base_controller, o.owner, "#{} ({}) owned by p{}", o.id.0, o.name, o.owner.0);
+    }
+}

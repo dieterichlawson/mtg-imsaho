@@ -122,6 +122,7 @@ pub struct GameState {
     /// matched (issue #199). Same reason `ManaPool` is a `BTreeMap`. Also
     /// makes every iteration over the objects deterministic rather than
     /// merely usually-consistent.
+    #[serde(deserialize_with = "objects_from_save")]
     pub objects: std::collections::BTreeMap<ObjectId, GameObject>,
     /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
@@ -4071,9 +4072,10 @@ pub struct GameObject {
     /// snapshot some effect took of whoever held it at the time.
     ///
     /// A save written before this field existed has no answer for it; those
-    /// load as p0, which is only wrong for a permanent p1 put onto the
-    /// battlefield while a control effect on it was live.
-    #[serde(default = "first_player")]
+    /// load as the object's owner (see [`objects_from_save`]), which is only
+    /// wrong for a permanent put onto the battlefield under someone else's
+    /// control.
+    #[serde(default = "unrecorded_controller")]
     pub base_controller: PlayerId,
     pub zone: Zone,
 
@@ -4301,9 +4303,29 @@ pub enum EnterAsCopyChoice {
 }
 
 /// Serde fallback for `GameObject::base_controller` in saves written before
-/// the field existed.
-fn first_player() -> PlayerId {
-    PlayerId(0)
+/// the field existed (or whose key was misspelled): a placeholder no player
+/// has, which [`objects_from_save`] replaces with the object's owner.
+fn unrecorded_controller() -> PlayerId {
+    PlayerId(u8::MAX)
+}
+
+/// Deserialize `GameState::objects`, giving an object whose save recorded no
+/// `base_controller` its owner (CR 110.2a: by default a permanent is
+/// controlled by whoever put it onto the battlefield, which is nearly always
+/// its owner). The fallback used to be p0 for every object, so p1's own
+/// permanents loaded as p0's by default, and a creature p0 stole from p1
+/// stayed p0's when the control effect ended (#1047).
+fn objects_from_save<'de, D>(d: D) -> Result<std::collections::BTreeMap<ObjectId, GameObject>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut objects = std::collections::BTreeMap::<ObjectId, GameObject>::deserialize(d)?;
+    for o in objects.values_mut() {
+        if o.base_controller == unrecorded_controller() {
+            o.base_controller = o.owner;
+        }
+    }
+    Ok(objects)
 }
 
 /// A player's state.
