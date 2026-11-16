@@ -9751,7 +9751,10 @@ impl CliPlayer {
                     }
                     continue;
                 }
-                "__hot_reload__" => {
+                // Only the chord's own answer: the line reader hands back
+                // what was typed, so a person who typed this word ended the
+                // game with no rebuild ever asked for (#1051's review).
+                "__hot_reload__" if HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) => {
                     // Hot reload triggered by rapid 'rr' in raw mode. This is
                     // the PROCESS stopping, not a seat quitting: it used to be
                     // spelled `Concede`, which the engine recorded, so asking

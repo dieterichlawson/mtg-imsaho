@@ -465,6 +465,12 @@ fn r_then_a_ctrl_or_alt_r_is_no_hot_reload() {
     g.answer("0\r");
     g.expect("keeps (0 mulligans)", T);
 
+    // The chord's answer typed out as a word is junk, not a way to abandon
+    // the game.
+    g.expect("Pass priority", T);
+    g.answer("__hot_reload__\r");
+    g.expect("Invalid input", T);
+
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
