@@ -45,6 +45,25 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             v.push(format!("control effect over #{} which is no creature", c.object.0));
         }
     }
+    // CR 110.2a/613.1b: a permanent's controller is whoever put it onto the
+    // battlefield, changed only by a control effect in force. A save whose
+    // `base_controller` was lost (an old save, or a misspelled key that serde
+    // dropped) used to load every permanent as p0's by default, and a
+    // creature stolen from p1 went back to p0 when the effect ended (#1047).
+    for o in state.objects_in_id_order() {
+        if o.zone != Zone::Battlefield {
+            continue;
+        }
+        if !player_ok(state, o.base_controller) {
+            v.push(format!("#{} ({}) was put onto the battlefield by p{}, who is no player", o.id.0, o.name, o.base_controller.0));
+        } else if state.derived_controller(o.id) != Some(o.controller) {
+            v.push(format!(
+                "#{} ({}) is controlled by p{} but its control effects and base controller p{} say p{}",
+                o.id.0, o.name, o.controller.0, o.base_controller.0,
+                state.derived_controller(o.id).map_or(u8::MAX, |p| p.0),
+            ));
+        }
+    }
     // CR 302.6: control taken this turn (the effect ends at cleanup, so it
     // began after this turn's untap step) leaves the permanent summoning
     // sick under its new controller.

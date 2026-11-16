@@ -1087,3 +1087,21 @@ fn a_stack_ability_needs_a_source_that_existed() {
     let (state, _) = ability(&|_, card, _| *card = CardId(u32::MAX));
     assert_flags(&state, &reg, "registry does not have");
 }
+
+/// A permanent's controller is its base controller unless a control effect
+/// in force says otherwise (CR 110.2a, 613.1b). A save whose
+/// `base_controller` was lost used to load p1's permanents as p0's and pass
+/// the resume check, and a creature stolen from p1 was never given back
+/// (#1047).
+#[test]
+fn a_permanent_is_controlled_by_its_base_controller_without_a_control_effect() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.turn_number = 3;
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    assert!(check_core(&state, &reg).is_empty(), "{:?}", check_core(&state, &reg));
+    state.get_object_mut(bear).unwrap().base_controller = P0;
+    assert_flags(&state, &reg, "its control effects and base controller p0 say p0");
+    state.get_object_mut(bear).unwrap().base_controller = mtg_engine::ids::PlayerId(7);
+    assert_flags(&state, &reg, "who is no player");
+}
