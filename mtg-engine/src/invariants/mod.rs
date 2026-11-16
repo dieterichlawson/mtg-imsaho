@@ -53,7 +53,7 @@ fn player_ok(state: &GameState, p: PlayerId) -> bool {
 /// Invariants that hold at every decision point, even mid-resolution.
 /// Returns one message per violation; empty means the state is coherent.
 #[must_use]
-pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
+pub fn check_core(state: &GameState, registry: &CardRegistry) -> Vec<String> {
     let mut v = Vec::new();
 
     // Object identity: the map key is the object's id, and the id allocator
@@ -134,6 +134,32 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                     v.push(format!("stack entry Spell({}) is in zone {:?}", id.0, o.zone));
                 }
                 Some(_) => {}
+            }
+        }
+    }
+    // An activated ability on the stack came from an object that existed
+    // (CR 602.2a: it is activated from an object), and resolves through a
+    // card the registry has. Its source may have left play since — a
+    // sacrifice cost, a token that ceased to exist — which is why the entry
+    // carries the behavior and the name it was activated under (CR 113.7a);
+    // but an id the allocator never handed out is no source at all, and a
+    // gone source with no recorded name is an ability nothing can name
+    // (#1046: a save holding one loaded and dealt damage from "?").
+    for entry in &state.stack {
+        if let StackEntry::Ability { source_id, behavior_card_id, source_name, .. } = entry {
+            if source_id.0 >= state.next_object_id {
+                v.push(format!(
+                    "stack ability's source {} is at or past next_object_id {}",
+                    source_id.0, state.next_object_id
+                ));
+            } else if state.get_object(*source_id).is_none() && source_name.is_none() {
+                v.push(format!("stack ability's source {} is gone and the ability records no name", source_id.0));
+            }
+            if registry.get(*behavior_card_id).is_none() {
+                v.push(format!(
+                    "stack ability from {} resolves through card {}, which the registry does not have",
+                    source_id.0, behavior_card_id.0
+                ));
             }
         }
     }
@@ -365,12 +391,12 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
         }
     }
 
-    objects::check_core(state, _registry, &mut v);
-    stack::check_core(state, _registry, &mut v);
-    prompts::check_core(state, _registry, &mut v);
-    turn::check_core(state, _registry, &mut v);
-    events::check_core(state, _registry, &mut v);
-    effects::check_core(state, _registry, &mut v);
+    objects::check_core(state, registry, &mut v);
+    stack::check_core(state, registry, &mut v);
+    prompts::check_core(state, registry, &mut v);
+    turn::check_core(state, registry, &mut v);
+    events::check_core(state, registry, &mut v);
+    effects::check_core(state, registry, &mut v);
 
     v
 }

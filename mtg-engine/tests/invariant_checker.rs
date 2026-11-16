@@ -1039,3 +1039,51 @@ fn a_dead_planeswalker_and_an_unattached_aura_are_flagged() {
     s.get_object_mut(walker).unwrap().counters.insert(CounterType::Loyalty, 0);
     assert_flags(&s, &reg, "alive at 0 loyalty");
 }
+
+/// A stack ability must come from an object that existed, resolve through a
+/// card the registry has, and be nameable once its source is gone (#1046:
+/// a resumed save holding an ability from object 99999 dealt damage from
+/// "?"). A source that has left play since is legal — it is why the entry
+/// carries its behavior and its name.
+#[test]
+fn a_stack_ability_needs_a_source_that_existed() {
+    let reg = registry();
+    // Stensia Bloodhall's ability on the stack, with `edit` applied to its
+    // source id, behavior and recorded name.
+    let ability = |edit: &dyn Fn(&mut ObjectId, &mut CardId, &mut Option<String>)| {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.turn_number = 3;
+        let hall = named_permanent(&mut state, &reg, "Stensia Bloodhall", P0);
+        let card = state.get_object(hall).unwrap().card_id;
+        mtg_engine::cards::push_ability(
+            &mut state, hall, 0, card, &[Target::Player(P1)],
+            Some(mtg_engine::cards::TargetRequirement::PlayerOrPlaneswalker), P0,
+        );
+        match state.stack.last_mut() {
+            Some(StackEntry::Ability { source_id, behavior_card_id, source_name, .. }) => {
+                edit(source_id, behavior_card_id, source_name);
+            }
+            other => panic!("expected an ability on top of the stack, got {other:?}"),
+        }
+        (state, hall)
+    };
+
+    // Healthy, and still healthy once the source is gone: it was named.
+    let (mut state, hall) = ability(&|_, _, _| {});
+    assert!(check_core(&state, &reg).is_empty(), "{:?}", check_core(&state, &reg));
+    state.objects.remove(&hall);
+    assert!(check_core(&state, &reg).is_empty(), "{:?}", check_core(&state, &reg));
+
+    // A source id the allocator never handed out.
+    let (state, _) = ability(&|id, _, _| *id = ObjectId(99_999));
+    assert_flags(&state, &reg, "at or past next_object_id");
+
+    // A gone source with no name recorded.
+    let (mut state, hall) = ability(&|_, _, name| *name = None);
+    state.objects.remove(&hall);
+    assert_flags(&state, &reg, "records no name");
+
+    // A behavior the registry does not have.
+    let (state, _) = ability(&|_, card, _| *card = CardId(u32::MAX));
+    assert_flags(&state, &reg, "registry does not have");
+}
