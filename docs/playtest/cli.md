@@ -271,6 +271,17 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   does not fit on the screen, and the heading goes with it.
 - V8 search/menu abuse: the CLI's `/` search, `d`, `l`, `g`, `e` panes
   spammed at every prompt
+
+  **Re-run 2026-11-16 → #1054-#1056, #1058, #1059.** The pane keys no
+  longer take actions or eat answers, and every pager reaches its end at
+  80x24. What the probe finds now is one key answered two ways. The X
+  prompt refuses the pane keys that every other mid-cast prompt takes
+  (#1054). `/` is a raw key at the menu and a line at the target chooser
+  (#1059). `n` past the end is refused out loud in one viewer and ignored
+  in the others (#1058). Grep each key's arms across every `read_line*`
+  caller and compare them, rather than pressing keys at random. Look at
+  counts too: `d` dropped the spell on the stack (#1055), and the CARDS
+  pane and the `/` results end with no "N more" (#1056).
 - V9 rapid concede/new-game churn: concede and immediately relaunch a
   fresh game back-to-back many times in the same session; verify no
   leaked state (stale board/log/hand) bleeds into the next game
@@ -297,6 +308,19 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   chords, Escape, arrows, function keys, Tab, Backspace-on-empty and
   literal ANSI sequences at every prompt type; nothing unbound may be
   inserted as text or dispatched as a menu shortcut
+
+  **Re-run 2026-11-16 → #1051-#1053.** The prompts themselves hold: about
+  45 chords type nothing, an unbound key splits a number and the result is
+  refused, and a typed CSI is swallowed. The holes are in two places:
+  - **Chords:** the second key of `rr` is matched with its modifiers
+    ignored (#1051). Check every multi-key chord's second read.
+  - **Raw-echo filters:** the `/` search and the library filter print a
+    bracketed paste unsanitized (#1052). Paste `\e[2J` into every text
+    field, not just the menus.
+
+  The hot reload's "Resume manually" file is swept by the next launch
+  (#1053). Any path the program prints for a person to use later is
+  worth checking against the program's own cleanup.
 - V13 paste-flood: paste multi-KB single lines and 50-line blocks at
   every prompt; watch whether queued lines are consumed as independent
   menu submissions and silently take real, irreversible game actions
@@ -305,6 +329,19 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   wrong-schema and structurally-invalid saves, and with mismatched
   decks/seed; failures must be clean errors, never panics, and never a
   silently-wrong game
+
+  **Re-run 2026-11-16 → #1046-#1050.** Of 104 corrupt files, none
+  panicked, and every value-range and index check held. The silent
+  failures are what serde does by default:
+  - **Keys:** an unknown key is ignored and a missing one takes its
+    `Default`. A misspelled `base_controller` flipped a game's winner,
+    and 5 of 8 random bit flips loaded this way (#1047). Rename one key
+    at a time and see whether the save is refused.
+  - **References:** check every id that points elsewhere (a stack
+    ability's source, its `ability_index`), not only zone membership
+    (#1046).
+  - **Flags:** a flag that `--resume` overrides should be named in the
+    resume note, which `--on-the-play` was not (#1049).
 - V15 mulligan-phase abuse: mulligan to the floor on both seats, find
   the real cap and check the counter is honest, send garbage and
   out-of-range input at every mulligan and bottoming prompt, and verify
