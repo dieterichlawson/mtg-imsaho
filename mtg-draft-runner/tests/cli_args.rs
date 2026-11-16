@@ -996,3 +996,31 @@ fn a_repeated_flag_takes_its_last_value() {
     assert!(!err.contains("metered seat"), "the last --model is the replay's: {err}");
     assert!(err.contains("cannot open /nonexistent/positions.jsonl"), "{err}");
 }
+
+/// Issue #1048: a snapshot's seat record is every seat's or none. A short
+/// one was accepted, and the seat it missed went out of the guide check in
+/// silence, while a 2-seat record warned and an empty one said "predates".
+/// It is refused, as a short or long `decks` list is.
+#[test]
+fn a_snapshot_recording_fewer_seats_than_players_is_refused() {
+    let tmp = std::env::temp_dir();
+    let pid = std::process::id();
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("package dir has a workspace parent");
+    let save = tmp.join(format!("mtg-draft-shortseats-{pid}.json"));
+    std::fs::write(&save,
+        r#"{"seed":11,"set":"isd","players":2,"picks":[],"seats":[{"model":"cc"}]}"#).unwrap();
+    let stub = failing_stub("shortseats");
+    let out = runner()
+        .current_dir(workspace_root)
+        .args(["--model", "cc", "--quiet", "--resume", &save.to_string_lossy()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .output()
+        .expect("failed to run");
+    let _ = std::fs::remove_file(&save);
+    let _ = std::fs::remove_file(&stub);
+    assert_clean_refusal(&out, "a 1-seat record for 2 players");
+    let err = stderr(&out);
+    assert!(err.contains("records 1 seat for 2 players"), "the refusal says why.\nstderr: {err}");
+}
