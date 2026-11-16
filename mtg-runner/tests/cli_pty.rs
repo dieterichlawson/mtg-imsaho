@@ -1494,6 +1494,8 @@ fn a_failed_hot_reload_keeps_the_save_it_names() {
     // ...and leaves the one a person was told to resume.
     assert!(std::path::Path::new(&kept).exists(), "the next run deleted the save it named: {kept}");
     assert!(line.contains("--resume") && line.contains("--p1 cli"), "the command keeps the seats: {line}");
+    assert!(!line.contains("--deck1") && !line.contains("--on-the-play"),
+        "and drops the flags the save wins over, each of which would print a note: {line}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

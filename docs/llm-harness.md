@@ -15,6 +15,7 @@ This is the distinction to get right before typing anything else.
 | Seat spec | Backend | Needs first | Billed to |
 | --- | --- | --- | --- |
 | `cli` | you, at the keyboard | an interactive terminal | nothing |
+| `gui[:port]` | you, in a browser page the runner serves | a browser | nothing |
 | `random` | uniform random legal action | nothing | nothing |
 | `claude[:model]` (aliases `ai`, `llm`) | Anthropic Messages API | `ANTHROPIC_API_KEY` | **a metered API bill, per token** |
 | `gemini[:model]` | Gemini Interactions API | `GEMINI_API_KEY` | **a metered API bill, per token** |
@@ -429,8 +430,8 @@ resume needs `--save`. (A hot-reload snapshot is always written to a
 per-process file in the temp directory for the CLI's own reload key; it is not
 a substitute for `--save`.)
 
-On `--resume`, the save's decks, RNG and seats win over the flags: `--deck1`
-and `--deck2` are ignored and the runner says so. `--seed` does not change the
+On `--resume`, the save's decks, RNG and seats win over the flags: `--deck1`,
+`--deck2` and `--on-the-play` are ignored and the runner says so. `--seed` does not change the
 saved game: a random seat continues from where the save says its draws had
 got to, so a resume plays on the game it was saved from (#844); `--seed`
 seeds only a random seat a save written before that holds no position for. The seats are stored in the save, so a

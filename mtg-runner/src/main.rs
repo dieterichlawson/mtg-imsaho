@@ -104,10 +104,12 @@ Options:
                          symlink, and is left in place at game over holding the
                          final position. It holds both hands and both library
                          orders, so it is written readable by its owner only
-  --resume <path>        Resume from a save file. The saved decks, seats and
-                         who is on the play win over the flags; an explicit --p1/--p2 overrides
-                         the saved seat and says so, and a metered API seat
-                         the file asks for needs that flag to confirm it.
+  --resume <path>        Resume from a save file. The saved decks and seats
+                         win over the flags, as does who is on the play
+                         (--on-the-play is ignored); an explicit --p1/--p2
+                         overrides the saved seat and says so, and a metered
+                         API seat the file asks for needs that flag to
+                         confirm it.
                          --seed does not change the saved game: a random
                          seat continues the draws the save recorded, and
                          --seed seeds only a seat a save from before that
@@ -366,17 +368,23 @@ fn keep_failed_reload_save(path: &str) -> String {
         .into_owned();
     match fs::rename(path, &kept) {
         Ok(()) => kept,
-        Err(_) => path.to_string(),
+        Err(e) => {
+            mtg_player::stderr_line!("note: could not keep the save out of the next run's cleanup ({e}): \
+resume it before starting another mtg-runner");
+            path.to_string()
+        }
     }
 }
 
 /// This run's arguments with `--resume <path>` in place of any `--resume`
-/// they had: what a hot reload re-executes with.
+/// they had: what a hot reload re-executes with. The flags that only shape
+/// a new game are dropped too, since the save wins over them and each would
+/// print a note saying it was ignored.
 fn resume_args(args: impl Iterator<Item = String>, path: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut args = args.peekable();
     while let Some(a) = args.next() {
-        if a == "--resume" {
+        if matches!(a.as_str(), "--resume" | "--deck1" | "--deck2" | "--on-the-play") {
             args.next();
             continue;
         }
@@ -1298,6 +1306,12 @@ use --save if you need a resumable file.");
 
     // Check for hot reload request.
     if mtg_player::cli::HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+        // Off the frame first, so the build's output and the resume command
+        // a person has to copy are not printed into the board (#1053's
+        // review; the game-over path below does the same, #47).
+        if has_human {
+            mtg_player::cli::reset_terminal_for_exit();
+        }
         mtg_player::stderr_line!("\nHot reload requested. Rebuilding and relaunching...");
         // Build the project.
         let build_status = std::process::Command::new("cargo")
