@@ -1,0 +1,373 @@
+{
+ "night": "2026-11-16",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide calls WR the best pair by games, and I went 2-1 with it, but my games ran 14 to 26 turns, not the 9 to 17 fast-start pattern, so plan for grinds.",
+    "The guide says skip Riot Devils unless red is deep, yet I took two in pack 2 and pack 3 and played one, which was a wasted pick I would change for a removal spell or flier.",
+    "The guide says 16 lands is worth trying for low-curve aggro, but my 17-land WR lost 1-2 to RG in 14, 21 and 26 turns, so test 16 lands."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12106,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3037,
+    "output_tokens_details": {
+     "thinking_tokens": 2832
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12106
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3037,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12106,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12106,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "Round 1's WR deck ran two Smite the Monstrous, which hits power 4+; my Skaab Goliath and Galvanic Juggernaut were liabilities against it, so value cheap threats in UB tempo.",
+    "Victim of Night cannot target Vampires, Werewolves or Zombies; since it was my main removal, check opposing creature types before counting it as an answer.",
+    "My games ran 18 to 26 turns even with a low curve, so the deck lacked early pressure; take two-drops and early evasive creatures over late filler like Think Twice."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3235,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3017,
+    "output_tokens_details": {
+     "thinking_tokens": 2822
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3235
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3017,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3235,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3235,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Where tonight contradicted the guide, fliers did not win: my UB Stitched Drake, Moon Heron and Battleground Geist lost to Somberwald Spider reach and Victim of Night, so count reach and removal.",
+    "Stop taking Bloodcrazed Neonate, Cellar Door, Dream Twist and Memory's Journey: all four were cut, so take a playable two-drop or Blazing Torch-level removal instead.",
+    "My games ran 11 to 26 turns, so take cheap threats over situational spells and draft for early pressure rather than waiting to stabilise against WU and UB."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4914,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3032,
+    "output_tokens_details": {
+     "thinking_tokens": 2820
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4914
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3032,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4914,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4914,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Take the bomb and stay in its colour: my first-pick Olivia Voldaren went unplayed in my WU deck, which then ground through 19\u201325 turn games and lost matches.",
+    "My WU deck's interaction, including Rebuke and Lost in the Mist, kept games going for 19\u201325 turns without closing them out, so draft evasive threats over extra removal."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3392,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2428,
+    "output_tokens_details": {
+     "thinking_tokens": 2297
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3392
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2428,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3392,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3392,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Take the third flier over Silverchase Fox or Unruly Mob: my WR took both, ran only Abbey Griffin and Midnight Haunting as fliers, and lost 1-2 to RG in a 27-turn game.",
+    "The guide says cheap starts win in 9 to 17 turns, but tonight's games ran 13 to 27 turns, so cheap creatures needed late fliers or Rally the Peasants to close.",
+    "The guide says to skip Kessig Wolf, yet my WR main-decked it, so cut it for a flier or removal spell."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 11987,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3118,
+    "output_tokens_details": {
+     "thinking_tokens": 2922
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 11987
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3118,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 11987,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 11987,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Garruk Relentless plus Dead Weight, Prey Upon, Tribute to Hunger and Morkrut Banshee carried BG to 2-0 wins over BR and UB, so take cheap removal over mid-curve creatures early.",
+    "BG lost round 1 1-2 to WR in 20 to 22 turn games, likely because its grindy top end was too slow against early pressure like Silverchase Fox, so prioritize early blockers and two-drops.",
+    "Three Darkthicket Wolves and Spider Spawning were dependable, but Brain Weevil and Hamlet Captain were cut for early board presence, so draft more cheap creatures rather than extra top end."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3207,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1853,
+    "output_tokens_details": {
+     "thinking_tokens": 1618
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3207
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1853,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3207,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3207,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "BR",
+   "record": "0-3-0",
+   "lessons": [
+    "The guide's 'BR vampires are aggressive' plan failed: my ground creatures stalled against green decks, with games running 17-30 turns, so prioritize fliers and reach over filler 2-drops like Walking Corpse.",
+    "Round 1 and 2 losses came against green bodies like Boneyard Wurm and Somberwald Spider, so draft cheap removal such as Dead Weight, Victim of Night, or Tribute to Hunger early.",
+    "Stay flexible: a 0-3 record with 1-6 games shows my creature-heavy BR curve lacked evasion; take fliers like Stitched Drake or Chapel Geist over a third Crossway Vampire."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4899,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3125,
+    "output_tokens_details": {
+     "thinking_tokens": 2888
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4899
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3125,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4899,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4899,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "RG",
+   "record": "3-0-0",
+   "lessons": [
+    "Green-red fight and burn removal carried this RG deck to 3-0 in matches: take Prey Upon, Brimstone Volley, Geistflame, and Into the Maw of Hell early, then fill the 2-3 drop slots with green creatures.",
+    "Two WR opponents ran Smite the Monstrous, which kills four-power creatures like Boneyard Wurm, so prefer cheaper creatures over a second Boneyard Wurm when facing WR.",
+    "Don't spend early picks on marginal spells like Make a Wish or Grimoire of the Dead; take playable creatures and real answers like Bramblecrush, which my deck needed more."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3293,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2121,
+    "output_tokens_details": {
+     "thinking_tokens": 1894
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3293
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2121,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3293,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3293,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
