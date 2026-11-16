@@ -104,8 +104,8 @@ Options:
                          symlink, and is left in place at game over holding the
                          final position. It holds both hands and both library
                          orders, so it is written readable by its owner only
-  --resume <path>        Resume from a save file. The saved decks and seats
-                         win over the flags; an explicit --p1/--p2 overrides
+  --resume <path>        Resume from a save file. The saved decks, seats and
+                         who is on the play win over the flags; an explicit --p1/--p2 overrides
                          the saved seat and says so, and a metered API seat
                          the file asks for needs that flag to confirm it.
                          --seed does not change the saved game: a random
@@ -524,7 +524,8 @@ fn main() {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
         // repro provenance (issues #52/#55) — so say so.
-        for flag in ["--deck1", "--deck2"] {
+        // Who took the first turn is in the save too (#1049).
+        for flag in ["--deck1", "--deck2", "--on-the-play"] {
             if args.iter().any(|a| a == flag) {
                 mtg_player::stderr_line!("note: {flag} is ignored with --resume; the save file's game wins");
             }
