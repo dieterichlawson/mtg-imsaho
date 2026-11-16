@@ -1568,7 +1568,7 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
         // different game than the one requested, printed a winner, and
         // exited 0 — indistinguishable from a legitimate run.
         other => die(&format!(
-            "{origin} names unknown player type '{other}' (expected cli, random, \
+            "{origin} names unknown player type '{other}' (expected cli, gui[:port], random, \
              claude[:model], gemini[:model], or claude-code[:model]; ai and llm are \
              accepted for claude, cc for claude-code)")),
     }

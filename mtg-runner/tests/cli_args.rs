@@ -53,6 +53,11 @@ fn an_unknown_player_type_is_refused_not_substituted() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("unknown player type 'wizard'"),
         "the message names the bad value.\nstderr: {stderr}");
+    // Every seat `--help` names is in the list it is refused against: `gui`
+    // was missing, so `--p1 gu` read as there being no page seat (#1050).
+    for seat in ["cli", "gui[:port]", "random", "claude[:model]", "gemini[:model]", "claude-code[:model]"] {
+        assert!(stderr.contains(seat), "the refusal lists {seat}.\nstderr: {stderr}");
+    }
 }
 
 // ── issue #69: unwritable --log / --save paths ──────────────────────
