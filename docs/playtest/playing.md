@@ -93,6 +93,10 @@ contradict the CR.
   Stalked Prey held] Next: Curse of Oblivion with exactly 1 or 2 cards (no
   prompt), and curses on a player whose opponent controls the curse's source.
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
+  [tried 2026-11-17 → #1063; one spell from each player flips nothing, a turn
+  with no spells flips a front face, Geistflame and its flashback (two from one
+  player) flip both back faces, APNAP order held] Next: a spell cast during the
+  cleanup step's priority, and a copy of a spell (not cast) counting as none
 - C9 aristocrats/sacrifice value vs go-wide tokens: trade into sac outlets
   for value, race a token swarm on the other side of the table
 - C10 mulligan-to-five resource grind: both seats mulligan to the
@@ -472,6 +476,13 @@ illegal or dubious resolutions do.
   costs (sacrifice/exile), Snapcaster-granted flashback
 - L6 copy/DFC: Evil Twin copies of transformed werewolves, token copies,
   legend-rule keep choices
+  [tried 2026-11-17 → #1060, #1061; Evil Twin and Cackling Counterpart copying
+  Howlpack Alpha and Lord of Lineage, the Twin's same-name kill, a copy
+  activating Bloodline Keeper's transform (does nothing, CR 701.28c), anthems
+  across the copies all held. A token copy of a DFC never transforms, which
+  CR 707.8a says it should (#1060)] Next: legend-rule keep choices (Olivia
+  Voldaren copied by an Evil Twin on the same side), and Back from the Brink
+  on a werewolf card once #1060 is settled
 - L7 zone identity: reanimate, bounce, and re-cast the same card;
   verify new-object rules (counters/attachments/damage gone)
   [tried 2026-11-12 → #1021; Back from the Brink's token copy and Unburial
@@ -1330,6 +1341,9 @@ illegal or dubious resolutions do.
   set is added, grep the new mana costs for these shapes, rerun the brute force
   over them, and file the miss the day such a card exists (Dark Ascension's
   Stromkirk Captain and Diregraf Captain are the first to watch)
+  [tried 2026-11-17: still no card. The only such cost in
+  `data/oracle_cache.json` is Omnath, Locus of Creation `{R}{G}{W}{U}`, which
+  the registry does not implement. Rerun when a set lands]
 - L58 [tried 2026-10-10 → #765, #766; #675 holds for every ending inside the
   rules (Maniac from a spell, an ability, a trigger and the draw step,
   first-strike, SBA drain, decking): clean `check_core`, the #316 refusal, nothing
@@ -1485,3 +1499,12 @@ illegal or dubious resolutions do.
   part still happens after the flip. Then hover the item on the page: the
   stack item's text is always the front face's (#989). To place a flipped
   face, set `is_transformed`, `name` and `transforms` on the object
+- L68 [proposed 2026-11-17, from #1061] a permanent that chooses what to enter
+  as (Evil Twin, CR 614.12b) waits *somewhere* while it is asked, and the
+  resolving spell waits in its owner's graveyard. Bring an Evil Twin in every
+  way the pool allows: cast it, return it with Unburial Rites or Grimoire of
+  the Dead, put it in with Back from the Brink's copy, and reanimate several
+  at once. At each copy prompt, read the zone counts, `g`, the save's `zone`
+  and `state.events`, and the P/T of Boneyard Wurm or Splinterfright on the
+  board. Verify that no zone shows the card and no event moves it anywhere
+  but the battlefield
