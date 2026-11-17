@@ -34,10 +34,14 @@ every pass. Two edits keep the position legal and the invariants checked:
   `trigger_event_index` set to 0 and `sba_check_starts` emptied. A
   planeswalker placed this way needs `is_legendary` and its loyalty counters
   set by hand. A double-faced card placed back face up needs
-  `is_transformed: true`, `transforms: 1`, and the back face's `name`,
-  `power` and `toughness` written on the object (2026-11-12, Terror of Kruin
-  Pass). `--stop-after 5` on two random seats usually lands on turn 1, main
-  phase 1; check `state.step`, since `--stop-after 1` is still the mulligan.
+  `is_transformed: true`, `transforms: 1`, and the back face's `name`
+  written on the object (2026-11-12, Terror of Kruin Pass). Leave `power`
+  and `toughness` at the front face's: `effective_power` reads the back face
+  from the card while it is transformed and `obj.power` once it flips back,
+  so a back face's P/T written there leaves the front wrong after it flips
+  (2026-11-17, a Mayor of Avabruck that flipped back at 3/3 base). `--stop-after 5` on two random seats usually lands
+  in a main phase in turn 1-3 with the stack empty; check `state.step` and
+  `state.active_player`, since `--stop-after 1` is still the mulligan.
   Permanents cannot be placed during the mulligan.
 
 A repro built this way lists the board it built, or ships the edit script,
