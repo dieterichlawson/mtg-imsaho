@@ -163,6 +163,16 @@ pub fn check_core(state: &GameState, registry: &CardRegistry) -> Vec<String> {
             }
         }
     }
+    // A queued damage event (CR 616.1's prompt holds the queue) is dealt,
+    // and logged, from its source once the choice is answered. Only the
+    // first is tied to the prompt's source, so each is held to the
+    // allocator itself, as a stack ability's is (#1062: "?" deals N).
+    for d in &state.pending_damage {
+        if d.source.0 >= state.next_object_id {
+            v.push(format!("queued damage from #{} which is at or past next_object_id {}",
+                d.source.0, state.next_object_id));
+        }
+    }
     for obj in state.objects_in_id_order() {
         if obj.zone != Zone::Stack {
             continue;

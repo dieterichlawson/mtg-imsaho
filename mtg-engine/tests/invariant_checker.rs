@@ -1088,6 +1088,68 @@ fn a_stack_ability_needs_a_source_that_existed() {
     assert_flags(&state, &reg, "registry does not have");
 }
 
+/// The trigger half of #1046 (#1062): a triggered ability's source, on the
+/// stack or in any of the queues, is an id the allocator handed out. A
+/// source that has left play since is legal — the trigger carries its card
+/// and its description for that.
+#[test]
+fn a_trigger_needs_a_source_that_existed() {
+    let reg = registry();
+    let make = |src: ObjectId, card_id: CardId| mtg_engine::triggers::PendingTrigger::new(
+        mtg_engine::triggers::TriggerSource::new(src, card_id, P0, "upkeep trigger"),
+        mtg_engine::triggers::TriggerEvent::Upkeep,
+    );
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.turn_number = 3;
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    let card = state.get_object(mayor).unwrap().card_id;
+
+    // Healthy on the stack, and still healthy once the source is gone.
+    let mut healthy = state.clone();
+    healthy.stack.push(StackEntry::Trigger(make(mayor, card)));
+    assert!(check_core(&healthy, &reg).is_empty(), "{:?}", check_core(&healthy, &reg));
+    healthy.objects.remove(&mayor);
+    assert!(check_core(&healthy, &reg).is_empty(), "{:?}", check_core(&healthy, &reg));
+
+    // A source id the allocator never handed out, on the stack and queued.
+    let mut s = state.clone();
+    s.stack.push(StackEntry::Trigger(make(ObjectId(99_999), card)));
+    assert_flags(&s, &reg, "source at or past next_object_id");
+    let mut s = state.clone();
+    s.pending_triggers.push(make(ObjectId(99_999), card));
+    assert_flags(&s, &reg, "source at or past next_object_id");
+
+    // The same id wherever the game finishes an effect from it: the ability
+    // resolving across a question (shown at the top of the stack, #833), a
+    // delayed exile waiting for end of combat, and the question's own source.
+    let core = |s: &mtg_engine::state::GameState, needle: &str| {
+        let v = check_core(s, &reg);
+        assert!(v.iter().any(|m| m.contains(needle)), "expected {needle:?} from check_core, got {v:?}");
+    };
+    let mut s = state.clone();
+    s.resolving_ability = Some(StackEntry::Trigger(make(ObjectId(99_999), card)));
+    core(&s, "resolving trigger of upkeep trigger has a source #99999");
+    let mut s = state.clone();
+    s.end_of_combat_exiles.push(mtg_engine::state::EndOfCombatExileEntry {
+        target_id: mayor, source_id: ObjectId(99_999), source_card_id: card,
+        controller: P0, description: "exile it".into(),
+    });
+    core(&s, "has a source #99999 at or past next_object_id");
+    let mut s = state.clone();
+    s.awaiting_action = Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player: P0, source: ObjectId(99_999),
+        choice: mtg_engine::state::ResolutionChoiceKind::YesNo {
+            description: "?".into(), source_card: ObjectId(99_999) },
+    });
+    core(&s, "prompt from #99999 which is at or past next_object_id");
+    let mut s = state.clone();
+    s.pending_damage.push(mtg_engine::damage::PendingDamage {
+        source: ObjectId(99_999), target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2, kind: mtg_engine::damage::DamageKind::NonCombat, applied: vec![], settled: false,
+    });
+    core(&s, "queued damage from #99999 which is at or past next_object_id");
+}
+
 /// A permanent's controller is its base controller unless a control effect
 /// in force says otherwise (CR 110.2a, 613.1b). A save whose
 /// `base_controller` was lost used to load p1's permanents as p0's and pass
