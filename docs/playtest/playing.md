@@ -479,10 +479,11 @@ illegal or dubious resolutions do.
   [tried 2026-11-17 → #1060, #1061; Evil Twin and Cackling Counterpart copying
   Howlpack Alpha and Lord of Lineage, the Twin's same-name kill, a copy
   activating Bloodline Keeper's transform (does nothing, CR 701.28c), anthems
-  across the copies all held. A token copy of a DFC never transforms, which
-  CR 707.8a says it should (#1060)] Next: legend-rule keep choices (Olivia
-  Voldaren copied by an Evil Twin on the same side), and Back from the Brink
-  on a werewolf card once #1060 is settled
+  across the copies all held. A token copy of a DFC never transformed, which
+  CR 707.8a says it should (#1060; fixed: it is a transforming token now)]
+  Next: legend-rule keep choices (Olivia Voldaren copied by an Evil Twin on
+  the same side), and Back from the Brink on a werewolf card (enters front
+  face up, then transforms like the card)
 - L7 zone identity: reanimate, bounce, and re-cast the same card;
   verify new-object rules (counters/attachments/damage gone)
   [tried 2026-11-12 → #1021; Back from the Brink's token copy and Unburial
