@@ -191,7 +191,9 @@ fn a_token_copy_takes_its_sources_colors_from_wherever_they_live() {
     let cc = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
     let state = cast_and_resolve(&state, &reg, cc, vec![Target::Object(bears)]);
     let token = find_token_named(&state, "Grizzly Bears").expect("token copy exists");
-    assert_eq!(state.get_object(token).unwrap().colors, vec![Color::Green],
+    // Through the accessor: a copy of a card reads its colours from the
+    // card's face, so the object-level list (the granted half) stays empty.
+    assert_eq!(state.colors_of(token, &reg), vec![Color::Green],
         "the copy of a green Bear is green — an empty colour list is the bug \
          this catches, and so is the wrong colour");
 
@@ -452,14 +454,12 @@ fn a_copy_of_a_token_still_takes_the_tokens_printed_characteristics() {
         "copying a token does not make Evil Twin a token");
 }
 
-/// CR 111.7: a token that is a copy of a double-faced card is not itself
-/// double-faced — it has only the copied face — so it cannot transform.
-///
-/// `apply_transform` enforces this for every DFC at once, but Bloodline
-/// Keeper's `{B}: Transform` set `is_transformed` and the name by hand and so
-/// went around it. Cackling Counterpart makes exactly such a token.
+/// CR 707.8a: a token copy of a transforming permanent is a transforming
+/// token with both faces, so Cackling Counterpart's copy of Bloodline Keeper
+/// is offered `{B}: Transform` and it works. Both halves used to refuse a
+/// token, on the pre-2021 rule that it has only the copied face (#1060).
 #[test]
-fn a_token_copy_of_bloodline_keeper_cannot_transform() {
+fn a_token_copy_of_bloodline_keeper_can_transform() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -481,13 +481,14 @@ fn a_token_copy_of_bloodline_keeper_cannot_transform() {
 
     let behavior = reg.get(state.get_object(token).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, token, &reg);
-    assert!(abilities.iter().all(|a| !a.description.contains("Transform")),
-        "a token copy is not offered a transform it could not perform");
+    assert!(abilities.iter().any(|a| a.description.contains("Transform")),
+        "a token copy is offered its transform: {:?}",
+        abilities.iter().map(|a| &a.description).collect::<Vec<_>>());
 
-    // And even driven directly, it does not flip.
     behavior.resolve_activated_ability(&mut state, token, 1, &[], &reg);
-    assert!(!state.get_object(token).unwrap().is_transformed,
-        "CR 111.7: a token copy of a DFC cannot transform");
+    assert!(state.get_object(token).unwrap().is_transformed,
+        "CR 707.8a: a token copy of a DFC transforms");
+    assert_eq!(state.name_of(token, &reg), "Lord of Lineage");
 }
 
 /// A copy of a real card takes the card's colors, which for a card with no

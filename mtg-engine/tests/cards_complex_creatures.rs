@@ -1535,7 +1535,7 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
 /// you'll pay the mana cost of the front face. The token will be a copy of the
 /// front face and it won't be able to transform."
 #[test]
-fn back_from_the_brink_copies_a_dfcs_front_face_only() {
+fn back_from_the_brinks_token_of_a_dfc_enters_front_up_and_transforms() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -1561,12 +1561,17 @@ fn back_from_the_brink_copies_a_dfcs_front_face_only() {
     assert_eq!(state.get_object(token).unwrap().name, "Villagers of Estwald",
         "a copy of the front face");
 
-    // "it won't be able to transform" — CR 111.7, a token copy of a DFC has
-    // only the copied face.
-    mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg);
-    assert!(!state.get_object(token).unwrap().is_transformed,
-        "the token has only the face it was copied from");
-    assert_eq!(state.get_object(token).unwrap().name, "Villagers of Estwald");
+    // CR 707.8a: a token copy of a transforming double-faced card not on the
+    // battlefield is a transforming token with both faces, front face up. The
+    // 2011 ruling "it won't be able to transform" predates the rule (#1060).
+    let result = mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg);
+    assert!(result.transformed(), "the token transforms: {result:?}");
+    assert!(state.get_object(token).unwrap().is_transformed);
+    assert_eq!(state.name_of(token, &reg), "Howlpack of Estwald",
+        "the copied card's back face");
+    assert_eq!(state.effective_power(token, &reg), Some(4),
+        "with the back face's characteristics");
+    assert!(state.get_object(token).unwrap().is_token, "and still a token");
 }
 
 /// Ruling 2011-09-22: "Any 'enters' abilities of the creature will trigger when

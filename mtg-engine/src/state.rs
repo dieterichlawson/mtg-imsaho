@@ -1145,11 +1145,35 @@ impl GameState {
         let copy_grantor = crate::cards::ability_granting_grantor(self, source_id, registry);
 
         let name = self.name_of(source_id, registry);
-        let (power, toughness) = self.printed_pt_of(source_id, registry);
-        let colors = self.printed_colors_of(source_id, registry);
-        let keywords = self.printed_keywords_of(source_id, registry);
-        let card_types = self.printed_card_types_of(source_id, registry);
-        let subtypes = self.printed_subtypes_of(source_id, registry);
+        // `obj.power` on anything with a card face is the FRONT face's, and
+        // `effective_power` reads the back face's while it is transformed —
+        // the same contract a card keeps. A copy of a transformed permanent
+        // used to stamp the back face's P/T here, which was the right number
+        // only while the token could never turn front face up (#1060).
+        let (power, toughness) = match registry.card_data(card_id) {
+            Some(front) if self.face_data(source_id, registry).is_some() => (front.power, front.toughness),
+            _ => self.printed_pt_of(source_id, registry),
+        };
+        // A copy of something with a card face reads its colors, types and
+        // keywords from that face (`face_data`: the token carries the same
+        // `card_id` and the same face up), so the object-level vectors — the
+        // *granted* half every `*_of` accessor unions in — start empty. They
+        // used to hold the copied face's printed values, which was harmless
+        // until a token copy could transform (CR 707.8a, #1060): flipped, it
+        // kept its front face's types and colors on top of the back's, so a
+        // transformed token of Villagers of Estwald was still a Human, and
+        // Moonmist flipped it straight back. A copy of a token of no card
+        // has no face to read and keeps the values here.
+        let (colors, keywords, card_types, subtypes) = if self.face_data(source_id, registry).is_some() {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+        } else {
+            (
+                self.printed_colors_of(source_id, registry),
+                self.printed_keywords_of(source_id, registry),
+                self.printed_card_types_of(source_id, registry),
+                self.printed_subtypes_of(source_id, registry),
+            )
+        };
 
         // The copied card travels WITH the creation, so every token (the
         // Parallel Lives extras included) is built carrying it: same

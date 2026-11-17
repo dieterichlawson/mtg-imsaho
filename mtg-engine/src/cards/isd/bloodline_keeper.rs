@@ -91,11 +91,12 @@ impl CardBehavior for BloodlineKeeper {
 
         // Front face only: {B}: Transform (requires 5+ Vampires).
         //
-        // CR 111.7: a token that is a copy of a double-faced card is not itself
-        // double-faced — it has only the copied face — so it cannot transform.
-        // Cackling Counterpart makes exactly such a token of this card, and it
-        // used to be offered a transform ability that could not mean anything.
-        if !is_transformed && !obj.is_token {
+        // Offered to a token copy too: Cackling Counterpart's copy of this
+        // card is a transforming token with both faces (CR 707.8a), so the
+        // ability means what it says (#1060). A single-faced Evil Twin
+        // copying it is offered the ability and does nothing (CR 701.28c),
+        // which `apply_transform` decides.
+        if !is_transformed {
             let vampire_count = Self::count_vampires(state, controller, registry);
             if vampire_count >= 5 {
                 abilities.push(ActivatedAbilityDef {
@@ -143,9 +144,9 @@ impl CardBehavior for BloodlineKeeper {
             1 => {
                 // Through the shared helper rather than setting the flag and
                 // the name by hand: `apply_transform` is where "what
-                // transforming means" lives, including the CR 111.7 refusal for
-                // a token copy of a double-faced card. Writing the two fields
-                // directly bypassed that.
+                // transforming means" lives, including the CR 701.28c refusal
+                // for a single-faced card wearing this face. Writing the two
+                // fields directly bypassed that.
                 crate::cards::helpers::apply_transform(state, object_id, registry);
             }
             _ => {}

@@ -1825,9 +1825,9 @@ fn delver_offers_no_reveal_when_the_library_is_empty() {
 // A transform that cannot happen says so (issue #500)
 // -------------------------------------------------------------------------
 //
-// `apply_transform` refuses a token copy (CR 111.7), a single-faced clone
-// (CR 701.28c) and a permanent that has left the battlefield (CR 400.7), and
-// it used to refuse all three by returning before its log line. The trigger
+// `apply_transform` refuses a single-faced clone (CR 701.28c) and a permanent
+// that has left the battlefield (CR 400.7), and it used to refuse them by
+// returning before its log line. The trigger
 // announced itself on the stack, took a full priority round, and resolved
 // writing nothing — so "nothing happened" and "never resolved" read
 // identically, on the one surface an LLM seat has.
@@ -1839,13 +1839,13 @@ fn refusal_lines(state: &GameState) -> Vec<String> {
         .collect()
 }
 
-/// CR 111.7, and the arm that costs the player ten mana: a token copy of
-/// Ludevic's Test Subject takes the counters (that instruction is not
-/// refused) and then does not transform. The counter removal logs; the
-/// refusal has to as well, or the two halves of one printed sentence are
-/// reported to different standards.
+/// CR 707.8a, and the arm that costs the player ten mana: a token copy of
+/// Ludevic's Test Subject is a transforming token, so the fifth activation
+/// takes the counters and transforms it into Ludevic's Abomination. It used
+/// to take the counters and refuse the transform on the pre-2021 rule that a
+/// token copy has only the copied face (#1060).
 #[test]
-fn a_token_copy_says_why_its_transform_did_not_happen() {
+fn a_token_copy_of_a_double_faced_card_transforms() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
@@ -1857,14 +1857,12 @@ fn a_token_copy_says_why_its_transform_did_not_happen() {
         mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     }
 
-    assert!(!state.get_object(token).unwrap().is_transformed,
-        "a token copy of a double-faced card cannot transform (CR 111.7)");
+    assert!(state.get_object(token).unwrap().is_transformed,
+        "a token copy of a double-faced card is a transforming token (CR 707.8a)");
+    assert_eq!(state.name_of(token, &reg), "Ludevic's Abomination");
     assert_eq!(counters_of(&state, token, CounterType::Hatchling), 0,
-        "the counters still came off — only the transform is refused");
-    let refusals = refusal_lines(&state);
-    assert_eq!(refusals.len(), 1, "one line for the one refusal: {refusals:?}");
-    assert!(refusals[0].contains("token copy") && refusals[0].contains("CR 111.7"),
-        "{refusals:?}");
+        "the counters came off");
+    assert!(refusal_lines(&state).is_empty(), "nothing refused: {:?}", refusal_lines(&state));
     assert_eq!(state.get_object(subject).unwrap().is_transformed, false,
         "and the real card, never activated, is untouched");
 }
@@ -1888,6 +1886,67 @@ fn a_single_faced_clone_says_why_its_transform_did_not_happen() {
     assert_eq!(refusals.len(), 1, "{refusals:?}");
     assert!(refusals[0].contains("only one face") && refusals[0].contains("CR 701.28c"),
         "{refusals:?}");
+}
+
+/// A transformed token copy has its back face's characteristics and none of
+/// its front's (CR 707.8a: each face is the copiable values of the same face
+/// of what it copied). The token used to store the front face's types and
+/// colors as if granted, and every accessor unions those in, so a flipped
+/// copy of Villagers of Estwald stayed a Human — Moonmist then flipped it
+/// straight back (#1060's propagation review).
+#[test]
+fn a_transformed_token_copy_has_only_its_back_faces_types() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let villagers = named_permanent(&mut state, &reg, "Villagers of Estwald", P0);
+    let token = state.create_token_copy(villagers, P0, &reg);
+    assert!(state.has_subtype(token, "Human", &reg), "the front face is a Human Werewolf");
+
+    assert!(helpers::apply_transform(&mut state, token, &reg).transformed());
+    let back = state.face_data(token, &reg).expect("the token reads its card's face");
+    assert_eq!(back.name, "Howlpack of Estwald");
+    let mut subs = state.subtypes_of(token, &reg);
+    subs.sort();
+    let mut printed = back.subtypes.clone();
+    printed.sort();
+    assert_eq!(subs, printed, "the back face's subtypes, and no Human");
+    assert!(!state.has_subtype(token, "Human", &reg));
+    assert_eq!(state.card_types_of(token, &reg), back.card_types);
+
+    // A grant still lands in the token's own vectors, beside the face's
+    // types, and the invariant checker reads both (Olivia Voldaren's
+    // "Vampire", which writes the subtype on the object).
+    state.get_object_mut(token).unwrap().subtypes.push("Vampire".into());
+    assert!(state.has_subtype(token, "Vampire", &reg));
+    let v: Vec<String> = mtg_engine::invariants::check_core(&state, &reg).into_iter()
+        .filter(|m| m.contains("Howlpack of Estwald")).collect();
+    assert!(v.is_empty(), "a granted subtype on a token copy is no violation: {v:?}");
+
+    // So Moonmist ("transform all Humans") leaves the flipped token alone.
+    let moonmist = named_card_in_graveyard(&mut state, &reg, "Moonmist", P0);
+    let card = state.get_object(moonmist).unwrap().card_id;
+    reg.get(card).unwrap().on_resolve(&mut state, moonmist, &[], &reg);
+    assert!(state.get_object(token).unwrap().is_transformed,
+        "a Werewolf is no Human for Moonmist to transform");
+}
+
+/// CR 707.8a covers a token copy of a *transforming* permanent. A token copy
+/// of an Evil Twin wearing a werewolf's face copies the Twin, whose card has
+/// one face, so it is no transforming token and refuses as the Twin does
+/// (CR 701.28c). The token half of #1060 must not reach past that.
+#[test]
+fn a_token_copy_of_a_single_faced_clone_does_not_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let waif = named_permanent(&mut state, &reg, "Reckless Waif", P0);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(waif));
+    let token = state.create_token_copy(twin, P0, &reg);
+    assert_eq!(state.name_of(token, &reg), "Reckless Waif", "test setup");
+
+    let result = helpers::apply_transform(&mut state, token, &reg);
+
+    assert_eq!(result, helpers::TransformResult::SingleFaced);
+    assert!(!state.get_object(token).unwrap().is_transformed);
 }
 
 /// CR 400.7: the ability still resolves when its source has gone (CR

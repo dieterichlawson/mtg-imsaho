@@ -221,7 +221,15 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                 v.push(format!("{tag} has subtype {sub} without type {ty:?} (CR 205.3)"));
             }
         }
-        if obj.is_token && !obj.subtypes.is_empty() && !obj.card_types.contains(&CardType::Creature) {
+        // A token copy of a card reads its types from that card's face and
+        // holds only grants in its own vectors (#1060), so Olivia Voldaren's
+        // "Vampire" on a Cackling Counterpart token sits next to an empty
+        // `card_types` and is still a creature's subtype. Its own types or
+        // its face's, then — not `has_card_type`, which counts anything with
+        // a P/T as a creature and so could never fail here.
+        let creature_typed = obj.card_types.contains(&CardType::Creature)
+            || state.face_data(id, registry).is_some_and(|d| d.card_types.contains(&CardType::Creature));
+        if obj.is_token && !obj.subtypes.is_empty() && !creature_typed {
             v.push(format!("{tag} is a token with subtypes {:?} but no creature type", obj.subtypes));
         }
 
