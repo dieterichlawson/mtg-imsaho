@@ -406,6 +406,30 @@ fn a_token_copy_of_a_twin_clone_is_not_asked() {
     assert!(state.pending_token_copies.is_empty());
 }
 
+/// Moldgraf Monstrosity returns two creature cards in one event, the same
+/// shape as Grimoire: an Evil Twin among them may not copy the card
+/// returning beside it (CR 603.6a, 614.12b), and that card waits with it.
+#[test]
+fn a_twin_returned_by_moldgraf_cannot_copy_the_other_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let corpse = in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+
+    reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap()
+        .on_dies(&mut state, monstrosity, &[], &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+
+    assert_eq!(pending_choice_options(&state), vec![Target::Object(bear)]);
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Graveyard);
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &reg), "Grizzly Bears");
+}
+
 /// The prompt is a decision point like any other: the fuzzer's every-step
 /// check holds at it. Skipping the trigger scan along with the state-based
 /// actions left a cast Twin's `SpellResolved` unscanned at its prompt

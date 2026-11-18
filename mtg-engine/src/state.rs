@@ -1381,13 +1381,15 @@ impl GameState {
         controller: Option<PlayerId>,
         additions: EntryAdditions,
         source_name: &str,
-        summary: &str,
+        each: &str,
+        summary: Option<&str>,
         registry: &crate::cards::CardRegistry,
     ) {
         let batch = EntryBatch {
             objects, controller, additions,
             source_name: source_name.to_string(),
-            summary: summary.to_string(),
+            each: each.to_string(),
+            summary: summary.map(str::to_string),
         };
         let choosers: Vec<ObjectId> = batch.objects.iter().copied()
             .filter(|&id| self.entry_waits_on_copy_choice(id, registry))
@@ -1421,7 +1423,7 @@ impl GameState {
     /// Every member of a batch onto the battlefield, each with the batch's
     /// additions, and the lines that say so.
     pub(crate) fn enter_batch(&mut self, batch: EntryBatch, registry: &crate::cards::CardRegistry) {
-        let EntryBatch { objects, controller, additions, source_name, summary } = batch;
+        let EntryBatch { objects, controller, additions, source_name, each, summary } = batch;
         let described: Vec<String> = additions.colors.iter()
             .map(|c| format!("{c:?}").to_lowercase())
             .chain(additions.subtypes.iter().cloned())
@@ -1451,9 +1453,11 @@ impl GameState {
                     }
                 }
             }
-            self.log(LogLevel::Event, format!("{source_name}: {name} returned{described}"));
+            self.log(LogLevel::Event, format!("{source_name}: {name} {each}{described}"));
         }
-        self.log(LogLevel::Event, format!("{source_name}: {entered} {summary}"));
+        if let Some(summary) = summary {
+            self.log(LogLevel::Event, format!("{source_name}: {entered} {summary}"));
+        }
     }
 
     fn move_object_inner(
@@ -4518,9 +4522,11 @@ pub struct EntryBatch {
     pub additions: EntryAdditions,
     /// The effect's source, for the log lines.
     pub source_name: String,
+    /// What each card's line says happened to it ("returned").
+    pub each: String,
     /// What the count line says arrived ("creatures returned from all
-    /// graveyards").
-    pub summary: String,
+    /// graveyards"), if the effect has one.
+    pub summary: Option<String>,
 }
 
 /// Serde fallback for `GameObject::base_controller` in saves written before

@@ -340,7 +340,8 @@ fn a_held_entry_batch_out_of_shape_is_flagged() {
         controller: None,
         additions: mtg_engine::state::EntryAdditions::default(),
         source_name: "Grimoire of the Dead".into(),
-        summary: "creatures returned from all graveyards".into(),
+        each: "returned".into(),
+        summary: None,
     });
     assert_flags(&state, &reg, "simultaneous entry is still held");
     assert_flags(&state, &reg, "no enters-as-copy choice outstanding");

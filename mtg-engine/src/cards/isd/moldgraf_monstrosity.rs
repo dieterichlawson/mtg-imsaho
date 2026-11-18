@@ -66,11 +66,18 @@ impl CardBehavior for MoldgrafMonstrosity {
 
         // "return two creature cards AT RANDOM".
         let to_return = state.choose_at_random(&creatures_in_gy, 2);
-        for cid in &to_return {
-            let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object_under_control(*cid, Zone::Battlefield, controller, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Moldgraf Monstrosity: {name} returned to the battlefield"));
-        }
+        // Both in one event: an Evil Twin among them chooses from what was
+        // already on the battlefield, not the card returning beside it, and
+        // neither is announced as returned while the Twin is still choosing
+        // (CR 603.6a, 614.12b; #1065, #1067 on Grimoire of the Dead).
+        state.put_onto_battlefield_together(
+            to_return,
+            Some(controller),
+            crate::state::EntryAdditions::default(),
+            "Moldgraf Monstrosity",
+            "returned to the battlefield",
+            None,
+            registry,
+        );
     }
 }

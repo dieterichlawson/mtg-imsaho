@@ -152,7 +152,8 @@ impl CardBehavior for GrimoireOfTheDead {
                         subtypes: vec!["Zombie".into()],
                     },
                     "Grimoire of the Dead",
-                    "creatures returned from all graveyards",
+                    "returned",
+                    Some("creatures returned from all graveyards"),
                     registry,
                 );
             }
