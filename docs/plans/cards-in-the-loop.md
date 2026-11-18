@@ -348,6 +348,7 @@ the same check as on the hand-made boards, now a function of the board:
 | werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 24,384, 2 s |
 | enter watchers | every "whenever ... enters" read, as each player casts a creature it may or may not name (`check_enter_watcher_on`) | 12,192, 2 s |
 | cast watchers | every "whenever you cast ..." read, as its controller casts an instant from their hand and by flashback and a creature, and as the other player casts an instant (`check_cast_watcher_on`) | 24,384, 3 s |
+| combat | in the first player's turn: the attackers offered and required, the blocks offered for each set of attackers, and each way of blocking fought to its end (`check_combat_on`) | 533 combats, under a second |
 
 Every one of those agrees with its card's text. They run in
 `scripts/prove.sh exhaustive`, and so on every push and pull request.
@@ -356,7 +357,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** No engine defect yet; eight gaps of the
+**What it has found so far.** No engine defect yet; ten gaps of the
 reference, each on a board nobody wrote and in each the engine right:
 
 - the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
@@ -382,7 +383,15 @@ reference, each on a board nobody wrote and in each the engine right:
   Morkrut Banshee returned together, the Banshee's -4/-4 killing the
   Hunter while its enters ability waits, so that its leaves ability
   returns nothing and the Banshee is then exiled for good (the Hunter's
-  ruling of 2018-12-07; two pieces).
+  ruling of 2018-12-07; two pieces);
+- a death in combat sets off what a death anywhere does: the reference's
+  combat resolved its own triggers and no dies trigger or watcher of
+  deaths, as no hand-made combat had one (Doomed Traveler blocked by a
+  Wolf, Falkenrath Noble blocking; combat, two pieces);
+- a creature that regenerates is removed from combat (CR 701.19c): a
+  first striker's blocker that regenerates in the first-strike step
+  deals no damage in the second (Abattoir Ghoul blocked by a shielded
+  Falkenrath Noble; combat, two worn pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -397,9 +406,14 @@ the board's then mills or draws is any card of it, which the reference
 does not play; such an ability (Garruk, the Veil-Cursed's sacrifice) is
 not played beside a permanent that triggers on a death.
 
-**Next.** The two-piece run to its end, each disagreement worked to its
-cause. Then the property still on hand-made boards alone, combat; and
-the cut above. Three pieces as they entered is 88 million boards
+**Two pieces.** Combat is cheap enough to play on every board of two
+pieces in every state of wear, and `prove.sh exhaustive` does: 2,052,641
+boards of the family, 1,441,016 combats, all agree (as they entered,
+325,888 boards and 94,552 combats). The watchers of casts on every board
+of two pieces as they entered: 3,910,656 casts, all agree.
+
+**Next.** The two-piece run of the rest to its end, each disagreement
+worked to its cause; and the cut above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 

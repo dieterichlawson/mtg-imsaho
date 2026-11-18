@@ -29,10 +29,12 @@
 #   token on either side in each state of wear, or any card of the pool
 #   in either graveyard: about 2,000 boards, 570,000 casts, 130,000
 #   activations, 60,000 flashback casts and 70,000 turns begun or ended,
-#   two minutes).
-#   CARD_SEMANTICS_SMALL=2 is every board of two pieces (about 330,000
-#   boards and 90 million casts, two hours on four cores), run by hand in
-#   shares (CARD_SEMANTICS_SHARD=K/N).
+#   two minutes), and a combat declared every way on every board of two
+#   pieces in every state of wear (2 million boards, 1.4 million combats,
+#   a few minutes).
+#   CARD_SEMANTICS_SMALL=2 is every board of two pieces for the rest too
+#   (about 330,000 boards as they entered and 90 million casts, hours on
+#   four cores), run by hand in shares (CARD_SEMANTICS_SHARD=K/N).
 #
 # A proof is a theorem over every input it quantifies over, not a sample:
 # GREEN means no input breaks the property. A Verus proof holds for every
@@ -109,6 +111,8 @@ check_exhaustively() {
         cargo test --release -p mtg-engine --test card_semantics every_two_attackers
     CARD_SEMANTICS_SMALL=1 \
         cargo test --release -p mtg-engine --test card_semantics every_small_board
+    CARD_SEMANTICS_SMALL=2 CARD_SEMANTICS_SMALL_WORN=1 \
+        cargo test --release -p mtg-engine --test card_semantics every_combat_ends_as_the_rules_say_on_every_small_board
 }
 
 case "$what" in
