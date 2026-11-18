@@ -1377,3 +1377,14 @@ SUCCESSFUL      21s  proofs::vec_map::clearing_a_vec_map_leaves_it_empty
 SUCCESSFUL      26s  proofs::vec_map::iterating_a_reference_is_iter
 SUCCESSFUL      20s  proofs::vec_map::inserting_into_a_vec_set_is_inserting_into_an_ordered_set
 SUCCESSFUL      20s  proofs::vec_map::removing_from_a_vec_set_is_removing_from_an_ordered_set
+SUCCESSFUL      65s  proofs::engine_under_card::doom_blade_destroys_a_creature_with_every_scalar_open
+SUCCESSFUL      51s  proofs::engine_under_card::giant_growth_gives_its_target_three_and_three
+SUCCESSFUL      25s  proofs::engine_under_card::think_twice_draws_from_your_empty_library
+SUCCESSFUL      31s  proofs::engine_under_card::think_twice_draws_from_their_empty_library
+SUCCESSFUL      53s  proofs::engine_under_card::think_twice_draws_your_only_card
+SUCCESSFUL      46s  proofs::engine_under_card::think_twice_draws_their_only_card
+SUCCESSFUL      58s  proofs::engine_under_card::think_twice_draws_the_top_of_your_two
+SUCCESSFUL      60s  proofs::engine_under_card::think_twice_draws_the_top_of_their_two
+SUCCESSFUL     107s  proofs::engine_under_card::midnight_haunting_makes_two_spirits
+SUCCESSFUL      71s  proofs::engine_under_card::geistflame_deals_one_damage_to_a_creature
+SUCCESSFUL      56s  proofs::engine_under_card::geistflame_deals_one_damage_to_a_player

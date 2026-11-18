@@ -15,6 +15,7 @@
 //! [Kani]: https://model-checking.github.io/kani/
 
 mod actions;
+mod engine_under_card;
 mod held;
 mod cards;
 mod kind_map;
