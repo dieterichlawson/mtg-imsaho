@@ -287,9 +287,7 @@ SUCCESSFUL     175s  proofs::actions::effects::as_long_as_its_a_human_holds_exac
 SUCCESSFUL     165s  proofs::actions::effects::unless_its_a_human_holds_exactly_when_it_is_not
 SUCCESSFUL     106s  proofs::actions::entering_as_copy::an_entry_choice_recorded_finishes_the_entry_under_its_owner
 SUCCESSFUL     118s  proofs::actions::entering_as_copy::an_entry_choice_recorded_finishes_the_entry_under_the_controller_held
-SUCCESSFUL     129s  proofs::actions::entering_as_copy::the_creatures_a_permanent_may_enter_as_a_copy_of_are_those_still_there
 SUCCESSFUL     166s  proofs::actions::entering_as_copy::a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there
-SUCCESSFUL     139s  proofs::actions::entering_as_copy::a_permanent_entering_with_others_is_asked_among_the_creatures_there_before_them
 SUCCESSFUL     262s  proofs::actions::fighting::fighting_deals_each_ones_power_to_the_other
 SUCCESSFUL      25s  proofs::actions::filters::not_human_matches_exactly_what_is_not_a_human
 SUCCESSFUL      19s  proofs::actions::filters::not_vampire_or_zombie_matches_exactly_what_is_neither
@@ -941,10 +939,6 @@ SUCCESSFUL     225s  proofs::actions::tokens::a_token_copy_of_a_token_has_its_fa
 SUCCESSFUL     221s  proofs::actions::tokens::a_token_copy_of_a_token_has_its_face_and_nothing_else::when_they_say_none
 SUCCESSFUL     312s  proofs::actions::tokens::a_token_copy_of_a_token_has_its_face_and_nothing_else::when_they_say_one
 SUCCESSFUL     394s  proofs::actions::tokens::a_token_copy_of_a_token_has_its_face_and_nothing_else::when_they_say_two
-SUCCESSFUL      98s  proofs::actions::tokens::a_token_copy_of_a_card_that_chooses_what_it_enters_as_waits_for_the_choice::when_they_replace_it
-SUCCESSFUL     102s  proofs::actions::tokens::a_token_copy_of_a_card_that_chooses_what_it_enters_as_waits_for_the_choice::when_they_say_none
-SUCCESSFUL     122s  proofs::actions::tokens::a_token_copy_of_a_card_that_chooses_what_it_enters_as_waits_for_the_choice::when_they_say_one
-SUCCESSFUL     157s  proofs::actions::tokens::a_token_copy_of_a_card_that_chooses_what_it_enters_as_waits_for_the_choice::when_they_say_two
 SUCCESSFUL     161s  proofs::actions::tokens::a_token_whose_ability_defines_its_size_knows_whose_it_is::when_they_replace_it
 SUCCESSFUL     169s  proofs::actions::tokens::a_token_whose_ability_defines_its_size_knows_whose_it_is::when_they_say_none
 SUCCESSFUL     281s  proofs::actions::tokens::a_token_whose_ability_defines_its_size_knows_whose_it_is::when_they_say_one
@@ -1091,7 +1085,6 @@ SUCCESSFUL     449s  proofs::cards::activated::olivia_voldaren_steals_a_vampire_
 SUCCESSFUL     908s  proofs::cards::activated::mikaeus_the_lunarch_puts_counters_on_itself_or_on_your_other_creatures
 SUCCESSFUL     573s  proofs::cards::activated::mirror_mad_phantasm_reveals_until_a_phantasm_card
 SUCCESSFUL     414s  proofs::cards::activated::grimoire_of_the_dead_puts_a_study_counter_on_itself
-SUCCESSFUL     166s  proofs::cards::activated::grimoire_of_the_dead_holds_a_card_that_chooses_what_it_enters_as
 SUCCESSFUL     314s  proofs::cards::activated::back_from_the_brink_exiles_the_card_and_copies_it
 SUCCESSFUL     768s  proofs::cards::activated::graveyard_shovel_exiles_a_card_and_gains_life_for_a_creature
 SUCCESSFUL      62s  proofs::cards::activated::evil_twin_targets_a_creature
@@ -1186,14 +1179,6 @@ SUCCESSFUL     170s  proofs::cards::activated::grimoire_of_the_dead_asks_which_o
 SUCCESSFUL     138s  proofs::cards::activated::grimoire_of_the_dead_discards_nothing_from_an_empty_hand_for_the_second_player
 SUCCESSFUL     242s  proofs::cards::activated::grimoire_of_the_dead_discards_its_controllers_only_card_for_the_second_player
 SUCCESSFUL     165s  proofs::cards::activated::grimoire_of_the_dead_asks_which_of_two_cards_to_discard_for_the_second_player
-SUCCESSFUL     605s  proofs::cards::activated::grimoire_of_the_dead_gone_returns_a_creature_card_in_a_graveyard_as_a_black_zombie
-SUCCESSFUL     329s  proofs::cards::activated::grimoire_of_the_dead_gone_leaves_a_noncreature_card_in_a_graveyard
-SUCCESSFUL     333s  proofs::cards::activated::grimoire_of_the_dead_gone_leaves_a_creature_on_the_battlefield
-SUCCESSFUL     311s  proofs::cards::activated::grimoire_of_the_dead_gone_leaves_a_noncreature_on_the_battlefield
-SUCCESSFUL     584s  proofs::cards::activated::grimoire_of_the_dead_still_there_returns_a_creature_card_in_a_graveyard_as_a_black_zombie
-SUCCESSFUL     327s  proofs::cards::activated::grimoire_of_the_dead_still_there_leaves_a_noncreature_card_in_a_graveyard
-SUCCESSFUL     290s  proofs::cards::activated::grimoire_of_the_dead_still_there_leaves_a_creature_on_the_battlefield
-SUCCESSFUL     428s  proofs::cards::activated::grimoire_of_the_dead_still_there_leaves_a_noncreature_on_the_battlefield
 SUCCESSFUL     144s  proofs::cards::activated::back_from_the_brink_has_an_ability_for_one_mikaeus
 SUCCESSFUL     148s  proofs::cards::activated::back_from_the_brink_has_an_ability_for_one_mikaeus_and_a_creature_card
 SUCCESSFUL     145s  proofs::cards::activated::back_from_the_brink_has_one_ability_for_two_mikaeus
@@ -1586,8 +1571,6 @@ SUCCESSFUL    2204s  proofs::cards::death_and_attack_triggers::bitterheart_witch
 SUCCESSFUL     735s  proofs::cards::death_and_attack_triggers::geist_of_saint_traft_brings_an_angel_for_the_combat
 SUCCESSFUL    1139s  proofs::cards::death_and_attack_triggers::kessig_cagebreakers_brings_a_wolf_for_each_creature_card_in_your_graveyard
 SUCCESSFUL     667s  proofs::cards::death_and_attack_triggers::grimgrin_destroys_a_defending_creature_and_grows
-SUCCESSFUL    1121s  proofs::cards::death_and_attack_triggers::moldgraf_monstrosity_in_its_graveyard_exiles_itself_and_returns_two_at_random
-SUCCESSFUL    1099s  proofs::cards::death_and_attack_triggers::moldgraf_monstrosity_gone_to_exile_returns_two_at_random
 SUCCESSFUL     516s  proofs::cards::death_and_attack_triggers::bitterheart_witch_searches_the_second_players_library_for_a_curse
 SUCCESSFUL     501s  proofs::cards::death_and_attack_triggers::bitterheart_witch_searches_the_first_players_library_of_no_card_for_a_curse
 SUCCESSFUL     513s  proofs::cards::death_and_attack_triggers::bitterheart_witch_searches_the_first_players_library_of_the_blank_card_for_a_curse

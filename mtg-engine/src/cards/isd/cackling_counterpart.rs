@@ -38,9 +38,12 @@ impl CardBehavior for CacklingCounterpart {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let controller = crate::cards::helpers::controller_of(state, object_id);
                 let token_id = state.create_token_copy(*target_id, controller, registry);
-                let name = state.get_object(token_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.log(crate::state::LogLevel::Event,
-                    format!("Cackling Counterpart creates a token copy of {name}"));
+                // A copy of a printed Evil Twin waits on its copy choice
+                // before it exists (#1068); its own line says so.
+                if let Some(name) = state.get_object(token_id).map(|o| o.name.clone()) {
+                    state.log(crate::state::LogLevel::Event,
+                        format!("Cackling Counterpart creates a token copy of {name}"));
+                }
             }
         }
     }

@@ -1007,32 +1007,24 @@ card_proof! {
     #[kani::stub(crate::state::GameState::cease_to_exist, cease_to_exist)]
     /// A token anywhere but the battlefield ceases to exist
     /// (`remove_tokens_elsewhere`, CR 704.5d, 111.7): each, in the board's
-    /// order, and nothing else; a token held in the command zone for its
-    /// enters-as-a-copy choice has not entered yet, and is kept (614.12b).
-    /// Whether any did. For three objects, each a token or not, on the
-    /// battlefield, in a graveyard, in exile, or held for that choice.
+    /// order, and nothing else. Whether any did. For three objects, each a
+    /// token or not, on the battlefield, in a graveyard or in exile.
     fn a_token_off_the_battlefield_ceases_to_exist() {
         let mut registry = CardRegistry::new();
         let blank = registry.register(Box::new(Blank));
         let mut state = crate::proofs::cards::new_game();
-        state.pending_entry_choices.reserve(3);
         let mut gone = [ObjectId(0); 3];
         let mut n = 0;
         for _ in 0..3 {
-            let zone = match kani::any::<u8>() % 4 {
+            let zone = match kani::any::<u8>() % 3 {
                 0 => Zone::Battlefield,
                 1 => Zone::Graveyard,
-                2 => Zone::Exile,
-                _ => Zone::Command,
+                _ => Zone::Exile,
             };
             let id = state.create_object(blank, PlayerId(0), zone, None, None);
             let token: bool = kani::any();
             state.get_object_mut(id).expect("just created").is_token = token;
-            let held = token && zone == Zone::Command;
-            if held {
-                state.pending_entry_choices.push(id);
-            }
-            if token && zone != Zone::Battlefield && !held {
+            if token && zone != Zone::Battlefield {
                 gone[n] = id;
                 n += 1;
             }
@@ -1044,7 +1036,7 @@ card_proof! {
         let (list, m) = unsafe { (&*std::ptr::addr_of!(CEASED.value), *std::ptr::addr_of!(CEASED_N.value)) };
         assert!(m == n && (0..n).all(|k| list[k] == gone[k]));
         assert!(did == (n > 0));
-        kani::cover!(n == 2 && state.pending_entry_choices.len() == 1, "two gone, one held");
+        kani::cover!(n == 2, "two gone, one kept");
         std::mem::forget((registry, state));
     }
 }

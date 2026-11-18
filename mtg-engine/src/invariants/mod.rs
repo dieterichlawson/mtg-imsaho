@@ -221,11 +221,9 @@ pub fn check_core(state: &GameState, registry: &CardRegistry) -> Vec<String> {
     }
 
     // Nothing in this pool uses the command zone; an object landing there is
-    // a move to the wrong zone, not a mechanic. The one exception is a
-    // token held there for its enters-as-a-copy choice (CR 614.12b), which
-    // has not entered yet.
+    // a move to the wrong zone, not a mechanic.
     for obj in state.objects_in_id_order() {
-        if obj.zone == Zone::Command && !(obj.is_token && state.pending_entry_choices.contains(&obj.id)) {
+        if obj.zone == Zone::Command {
             v.push(format!("{} ({}) in the unused command zone", obj.id.0, obj.name));
         }
     }
@@ -431,7 +429,7 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
     // (Nothing in this pool copies a spell, so no token is ever on the
     // stack either.)
     for obj in state.objects_in_id_order() {
-        if obj.is_token && obj.zone != Zone::Battlefield && !state.pending_entry_choices.contains(&obj.id) {
+        if obj.is_token && obj.zone != Zone::Battlefield {
             v.push(format!("token {} ({}) still exists in {:?}", obj.id.0, obj.name, obj.zone));
         }
     }

@@ -124,8 +124,7 @@ crate::proofs::cards::card_proof! {
 
 /// What `before_priority` did, in order: 1 asked what a permanent enters
 /// as, 2 and 3 checked state-based actions (none performed, some), 4 and 5
-/// put triggered abilities on the stack (none, some), 6 read again what a
-/// waiting choice may copy.
+/// put triggered abilities on the stack (none, some).
 static mut TRACE: Held<[u8; 16]> = Held::new([0; 16], (&raw const TRACE).cast());
 static mut TRACE_N: Held<usize> = Held::new(0, (&raw const TRACE_N).cast());
 static mut CHECKS: Held<[usize; 2]> = Held::new([0; 2], (&raw const CHECKS).cast());
@@ -167,27 +166,20 @@ fn collected(_: &mut GameState, _: &CardRegistry) -> bool {
     traced(if put { 5 } else { 4 });
     put
 }
-#[allow(dead_code)]
-fn entry_refreshed(_: &mut GameState, _: &CardRegistry) {
-    traced(6);
-}
-
 // The trace is walked to its sixteen places.
 crate::proofs::cards::card_proof! {
     unwind(17)
     #[kani::stub(crate::replacement::process_pending_entry_choices, entry_choices)]
     #[kani::stub(crate::sba::check_state_based_actions, checked)]
     #[kani::stub(crate::triggers::collect_triggers, collected)]
-    #[kani::stub(crate::replacement::refresh_pending_entry_choice, entry_refreshed)]
     /// Before a player receives priority (`engine::before_priority`, CR
     /// 117.5, 704.3, 603.3, 614.12b): a permanent waiting on what it enters
     /// as is asked about first; then, round after round, state-based
     /// actions are checked until a check performs none, and then the
     /// abilities that triggered are put on the stack; another round follows
     /// exactly when the round before did something, so the last round
-    /// performs no state-based action and puts nothing on the stack; and
-    /// what a waiting choice may copy is read again last. For every answer
-    /// each check and each collection may give.
+    /// performs no state-based action and puts nothing on the stack. For
+    /// every answer each check and each collection may give.
     fn before_priority_state_based_actions_and_triggers_are_done_until_neither_does_anything() {
         let mut registry = CardRegistry::new();
         let _ = registry.register(Box::new(crate::proofs::cards::Blank));
@@ -197,23 +189,23 @@ crate::proofs::cards::card_proof! {
 
         // SAFETY: as in `did`.
         let (t, n) = unsafe { (*std::ptr::addr_of!(TRACE.value), *std::ptr::addr_of!(TRACE_N.value)) };
-        assert!(n >= 4 && t[0] == 1 && t[n - 1] == 6);
+        assert!(n >= 3 && t[0] == 1);
         // The rounds between, read one at a time: checks until one finds
         // nothing, then a collection; a round that did something is
         // followed by another, and the one that did not is the last.
         let mut i = 1;
         let mut last_round_idle = false;
-        while i < n - 1 {
+        while i < n {
             let mut worked = false;
-            while i < n - 1 && t[i] == 3 {
+            while i < n && t[i] == 3 {
                 worked = true;
                 i += 1;
             }
-            assert!(i < n - 2 && t[i] == 2 && (t[i + 1] == 4 || t[i + 1] == 5));
+            assert!(i < n - 1 && t[i] == 2 && (t[i + 1] == 4 || t[i + 1] == 5));
             worked |= t[i + 1] == 5;
             i += 2;
             last_round_idle = !worked;
-            assert!(worked == (i < n - 1));
+            assert!(worked == (i < n));
         }
         assert!(last_round_idle);
         std::mem::forget((registry, state));

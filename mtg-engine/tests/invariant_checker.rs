@@ -328,6 +328,25 @@ fn a_permanent_on_the_battlefield_awaiting_its_copy_choice_is_flagged() {
     assert_flags(&state, &reg, "queued for its enters-as-copy choice");
 }
 
+/// CR 603.6a: a simultaneous entry held for a copy choice has not happened
+/// for any member, and one held with no choice outstanding never will.
+#[test]
+fn a_held_entry_batch_out_of_shape_is_flagged() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let entered = ready_creature(&mut state, P0, 2, 2);
+    state.pending_entry_batches.push(mtg_engine::state::EntryBatch {
+        objects: vec![entered],
+        controller: None,
+        additions: mtg_engine::state::EntryAdditions::default(),
+        source_name: "Grimoire of the Dead".into(),
+        each: "returned".into(),
+        summary: None,
+    });
+    assert_flags(&state, &reg, "simultaneous entry is still held");
+    assert_flags(&state, &reg, "no enters-as-copy choice outstanding");
+}
+
 #[test]
 fn combat_state_outside_combat_steps_is_flagged() {
     let reg = registry();

@@ -141,55 +141,25 @@ impl CardBehavior for GrimoireOfTheDead {
                     }
                 }
 
-                let count = creatures.len();
-                // All in one event (CR 614.12): what each enters as is
-                // decided by what was there before any of them, not by the
-                // ones returned beside it (an Essence of the Wild among
-                // them makes none of the others a copy of itself).
-                let names: Vec<String> = creatures.iter().map(|&cid| state.obj_name(cid)).collect();
-                let moved = state.move_onto_battlefield_together(&creatures, controller, registry);
-                for ((&cid, name), moved) in creatures.iter().zip(names).zip(moved) {
-                    // A card with a copy choice outstanding (Evil Twin) has
-                    // its entry deferred until its controller answers, so it
-                    // has NOT moved yet. Stamping it anyway left it in its
-                    // owner's graveyard wearing this Grimoire's controller
-                    // and a Zombie subtype — CR 108.4 and CR 400.7, reported
-                    // by the fuzzer from fifteen seeds (issues #335-#349).
-                    if !moved {
-                        // Its entry waits on what it enters as a copy of
-                        // (CR 614.12b), asked once the rest have entered: it
-                        // may copy only a creature there before any of them
-                        // (Evil Twin's ruling), and is a black Zombie as
-                        // whatever it enters as.
-                        let before: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                            .filter(|o| !creatures.contains(&o.id) && state.is_creature(o.id, registry))
-                            .map(|o| o.id)
-                            .collect();
-                        state.pending_entry_options.insert(cid, before);
-                        state.pending_entry_grants.insert(cid, (vec!["Zombie".into()], vec![Color::Black]));
-                        state.log(crate::state::LogLevel::Event, format!(
-                            "Grimoire of the Dead: {name} is choosing what to enter as"));
-                        continue;
-                    }
-                    // No `is_legendary` stamping here any more: the legend rule
-                    // reads the active face (`state.is_legendary`), so a
-                    // reanimated legend is caught by CR 704.5j without every
-                    // card that puts one onto the battlefield remembering to
-                    // say so.
-                    if let Some(obj) = state.get_object_mut(cid) {
-                        // They're black Zombies in addition to their other colors and types.
-                        if !obj.subtypes.iter().any(|s| s == "Zombie") {
-                            obj.subtypes.push("Zombie".into());
-                        }
-                        if !obj.colors.contains(&Color::Black) {
-                            obj.colors.push(Color::Black);
-                        }
-                    }
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: {name} returned as a black Zombie"));
-                }
-                state.log(crate::state::LogLevel::Event,
-                    format!("Grimoire of the Dead: {count} creatures returned from all graveyards"));
+                // One event: every card enters at the same moment, black
+                // Zombies as they arrive. An Evil Twin among them holds the
+                // whole batch until it has chosen, from the creatures that
+                // were already here (#1064, #1065), and gets the Zombie and
+                // black with the rest (#1067). No `is_legendary` stamping:
+                // the legend rule reads the active face, so a reanimated
+                // legend is caught by CR 704.5j.
+                state.put_onto_battlefield_together(
+                    creatures,
+                    Some(controller),
+                    crate::state::EntryAdditions {
+                        colors: vec![Color::Black],
+                        subtypes: vec!["Zombie".into()],
+                    },
+                    "Grimoire of the Dead",
+                    "returned",
+                    Some("creatures returned from all graveyards"),
+                    registry,
+                );
             }
             _ => {}
         }

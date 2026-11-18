@@ -255,40 +255,41 @@ impl crate::cards::CardBehavior for Twin {
     fn chooses_copy_as_it_enters(&self) -> bool { true }
 }
 
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+#[kani::stub(crate::replacement::apply, the_answer)]
 /// "Create a token that's a copy of that card", of a card that chooses
 /// what it enters as (Back from the Brink exiling an Evil Twin card; CR
-/// 614.12b, 707.2): as many copies as the replacement layer answers (none
-/// if it replaces the event), each made of the Twin card and held in the
-/// command zone, under the player who made it, unmoved and with its choice
-/// unasked, and queued for that choice, in order. None has entered, so
-/// nothing is announced and no entering replacement is planned (the
-/// answer moves it onto the battlefield, `record_entry_choice`). The first
-/// is what comes back. Nothing else changes.
-fn holding() {
+/// 614.12b, 707.2; #1068): no token is made yet, and none comes back; the
+/// creation is queued once, of that card and for the player making it,
+/// for them to be asked (`replacement::process_pending_entry_choices`),
+/// and the answer makes the token (`record_token_copy_choice`, played by
+/// `tests/enters_as_copy.rs`, not proved here). The replacement layer is
+/// not asked how many until then, and nothing else changes. For either
+/// player's card, made for either player.
+fn a_token_copy_of_a_card_that_chooses_what_it_enters_as_waits_for_the_choice() {
     let mut registry = CardRegistry::new();
     let twin = registry.register(Box::new(Twin));
     let mut state = crate::proofs::cards::new_game();
     let from = state.create_object(twin, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, Some(0), Some(0));
-    state.pending_entry_choices.reserve(2);
+    state.pending_token_copies.reserve(1);
     let owner = PlayerId(u8::from(kani::any::<bool>()));
     let before = Snapshot::of(&state);
 
-    let first = state.create_token_copy(from, owner, &registry);
+    let made = state.create_token_copy(from, owner, &registry);
 
+    assert!(made == ObjectId(0));
     // SAFETY: as in `the_answer`.
-    let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED.value) }) else { panic!("asked about one token") };
-    assert!(controller == owner);
-    let made = answer.unwrap_or(0) as usize;
-    let ids: [ObjectId; 2] = [ObjectId(from.0 + 1), ObjectId(from.0 + 2)];
-    assert!(first == if made == 0 { ObjectId(0) } else { ids[0] });
-    assert!(state.pending_entry_choices.len() == made && (0..made).all(|i| state.pending_entry_choices[i] == ids[i]));
-    for id in &ids[..made] {
-        let t = state.get_object(*id).expect("made");
-        assert!(t.is_token && t.card_id == twin && t.zone == Zone::Command && t.zone_change_count == 0);
-        assert!(t.controller == owner && t.owner == owner && t.entering_copy_choice == crate::state::EnterAsCopyChoice::Unasked);
-    }
-    assert!(Snapshot::of(&state) == before.with_new_objects(&ids[..made], owner, Zone::Command));
-    kani::cover!(made == 2, "doubled, each held");
+    assert!(unsafe { (*std::ptr::addr_of!(ASKED.value)).is_none() });
+    assert!(state.pending_token_copies.len() == 1);
+    assert!(state.pending_token_copies[0].of == from && state.pending_token_copies[0].owner == owner);
+    assert!(state.pending_entry_choices.is_empty());
+    assert!(Snapshot::of(&state) == before);
     std::mem::forget((registry, state));
 }
 
@@ -353,6 +354,5 @@ each_answer! {
     creating_two_named_flying_zombie_tokens_makes_as_many_as_the_replacements_say: creating_tokens(2, true, true, true);
     a_token_copy_of_a_card_has_the_copiable_values_and_nothing_else: copying(false);
     a_token_copy_of_a_token_has_its_face_and_nothing_else: copying(true);
-    a_token_copy_of_a_card_that_chooses_what_it_enters_as_waits_for_the_choice: holding();
     a_token_whose_ability_defines_its_size_knows_whose_it_is: defining_its_size();
 }

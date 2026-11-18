@@ -41,11 +41,11 @@ impl CardBehavior for DearlyDeparted {
     ) -> Option<crate::replacement::Replacement> {
         use crate::replacement::{ReplaceableEvent, Replacement};
         let ReplaceableEvent::EntersBattlefield(e) = event else { return None };
-        // Must be in our graveyard as the entry began (CR 614.12: one put
-        // onto the battlefield beside the Human still gives it the
-        // counter), and only our own Humans get it.
+        // Must be in our graveyard, and only our own Humans get the counter.
+        // (One returned beside a Human is still there as that Human's entry
+        // is worked out: CR 614.12, `GameState::enter_batch`.)
         let owner = match state.get_object(self_id) {
-            Some(o) if state.zone_as_entering_began(self_id) == Some(Zone::Graveyard) => o.owner,
+            Some(o) if o.zone == Zone::Graveyard => o.owner,
             _ => return None,
         };
         // A Human as it enters: one entering as a copy of a Human is one

@@ -1,7 +1,7 @@
 use crate::cards::CardRegistry;
 use crate::events::LossReason;
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, LogLevel};
 use crate::types::Zone;
 
 /// Whether the game is part-way through a resolution, waiting on a choice
@@ -24,19 +24,16 @@ use crate::types::Zone;
 /// Aura shielding it — neither of which exists any more (issue #499, found
 /// by the nightly fuzzer, bg vs wb coverage decks, seed 20710225118).
 ///
-/// The one `ResolutionChoice` that is *not* the middle of a resolution is
-/// the enters-as-a-copy choice (CR 614.12b): the permanent is not on the
-/// battlefield until it is answered, so state-based actions have nothing to
-/// say about it yet, and `replacement::refresh_pending_entry_choice` exists
-/// precisely to re-derive that prompt's options across this pass. It is the
-/// only prompt in the engine that rebuilds itself afterwards, which is what
-/// makes it safe to leave standing.
+/// The enters-as-a-copy choice (CR 614.12b) is one too. It used to be the
+/// exception — the permanent is not on the battlefield until it is answered,
+/// so the reasoning went that SBAs had nothing to say about it — but the
+/// entry is the last step of the effect that put it there, and the rest of
+/// the board is part of that resolution. Two Evil Twins returned by one
+/// Grimoire of the Dead had SBAs run between their answers: a 0/0 Boneyard
+/// Wurm died mid-resolution, and the second Twin's Festerhide Boar copy
+/// entered with morbid (#1064).
 fn mid_resolution(state: &GameState) -> bool {
-    match &state.awaiting_action {
-        Some(AwaitingAction::ResolutionChoice { choice, .. }) => !matches!(choice,
-            ResolutionChoiceKind::ChooseTarget { effect: PendingEffect::EnterAsCopy { .. }, .. }),
-        _ => false,
-    }
+    matches!(state.awaiting_action, Some(AwaitingAction::ResolutionChoice { .. }))
 }
 
 /// Perform state-based actions. Returns true if any were performed.
@@ -348,11 +345,10 @@ pub(crate) fn apply_legend_rule(state: &mut GameState, registry: &CardRegistry) 
 }
 
 /// Rule 704.5d: A token not on the battlefield ceases to exist. Whether
-/// any did. A token held for its enters-as-a-copy choice has not entered
-/// yet, and is not one (CR 614.12b; `GameState::create_token_internal`).
+/// any did.
 pub(crate) fn remove_tokens_elsewhere(state: &mut GameState) -> bool {
     let dead_tokens: Vec<_> = state.objects_in_id_order().into_iter()
-        .filter(|o| o.is_token && o.zone != Zone::Battlefield && !state.pending_entry_choices.contains(&o.id))
+        .filter(|o| o.is_token && o.zone != Zone::Battlefield)
         .map(|o| o.id)
         .collect();
     let took_action = !dead_tokens.is_empty();

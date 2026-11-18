@@ -1730,8 +1730,10 @@ fn run_game_loop_inner<F>(
 /// (CR 117.5, 704.3, 603.3): a permanent waiting on what it enters as is
 /// asked first (614.12b); then state-based actions are checked until none
 /// is performed, and the abilities that have triggered are put on the
-/// stack, and both again until neither does anything; and the permanents a
-/// waiting choice may copy are read again after.
+/// stack, and both again until neither does anything. While a choice of
+/// what to enter as is open, the effect that asked has not finished
+/// resolving, and the state-based check does nothing (704.3,
+/// `sba::mid_resolution`; #1064).
 pub(crate) fn before_priority(state: &mut GameState, registry: &CardRegistry) {
     // CR 117.5: Before a player gets priority, check SBAs and collect
     // triggered abilities onto the stack. Repeat until neither produces
@@ -1754,10 +1756,6 @@ pub(crate) fn before_priority(state: &mut GameState, registry: &CardRegistry) {
         }
         if !any_work { break; }
     }
-    // The enters-as-a-copy list was built before those state-based
-    // actions ran; anything they killed is no longer a creature on the
-    // battlefield to copy (CR 608.2d).
-    crate::replacement::refresh_pending_entry_choice(state, registry);
 }
 
 /// Who has priority once `action` has been played (CR 117.3-117.4): a

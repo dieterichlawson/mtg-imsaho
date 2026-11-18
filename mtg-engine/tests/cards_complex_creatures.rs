@@ -3863,76 +3863,6 @@ fn grimoire_of_the_dead_logs_its_study_counter_once() {
     assert!(lines[0].contains("(now 1)"), "{lines:?}");
 }
 
-/// Evil Twin's ruling: "If Evil Twin somehow enters the battlefield at the
-/// same time as another creature, Evil Twin can't become a copy of that
-/// creature. You may choose only a creature that's already on the
-/// battlefield." Grimoire of the Dead returns an Evil Twin card with the
-/// rest of the graveyards' creature cards, and the Twin's entry waits on
-/// its choice (CR 614.12b), asked once the others have entered: it was
-/// offered them as copies. And "They're black Zombies" was never given to
-/// it, the return having moved on past the entry that waited. Now its
-/// choice is among the creatures there before the return, and it enters,
-/// as whatever it copied, black and a Zombie besides.
-#[test]
-fn grimoires_evil_twin_copies_only_what_was_there_and_is_a_black_zombie() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let grimoire = named_permanent(&mut state, &reg, "Grimoire of the Dead", P0);
-    state.get_object_mut(grimoire).unwrap().counters.insert(CounterType::Study, 3);
-    let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
-    let returning = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P1);
-    let twin = named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
-
-    let mut state = activate(&state, &reg, grimoire, 1, vec![]);
-    if state.stack.last().is_some() {
-        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
-    }
-    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
-    let options = match &state.awaiting_action {
-        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
-            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
-        }) => options.clone(),
-        other => panic!("the Twin should be asked what to copy, got {other:?}"),
-    };
-    assert_eq!(state.get_object(returning).map(|o| o.zone), Some(Zone::Battlefield), "the Walking Corpse came back");
-    assert_eq!(options, vec![Target::Object(there)], "only the Moon Heron was there before the return");
-
-    state.awaiting_action = None;
-    mtg_engine::replacement::record_entry_choice(&mut state, twin, mtg_engine::state::EnterAsCopyChoice::Copy(there), &reg);
-    assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield));
-    assert_eq!(state.name_of(twin, &reg), "Moon Heron");
-    assert!(state.has_subtype(twin, "Zombie", &reg), "a Zombie in addition to its other types");
-    assert!(state.colors_of(twin, &reg).contains(&Color::Black), "and black in addition to its other colors");
-}
-
-/// Defect 28 for Moldgraf Monstrosity, which returns two creature cards
-/// at once: an Evil Twin card one of them may copy only a creature already
-/// on the battlefield (its ruling), not the one returning with it. With
-/// exactly two creature cards in the graveyard, both return.
-#[test]
-fn moldgrafs_evil_twin_copies_only_what_was_there() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
-    let there = named_permanent(&mut state, &reg, "Moon Heron", P1);
-    let returning = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
-    named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
-
-    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
-    let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, monstrosity, &[], &reg);
-    assert_eq!(state.get_object(returning).map(|o| o.zone), Some(Zone::Battlefield), "the Walking Corpse came back");
-
-    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
-    let options = match &state.awaiting_action {
-        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
-            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, ..
-        }) => options.clone(),
-        other => panic!("the Twin should be asked what to copy, got {other:?}"),
-    };
-    assert_eq!(options, vec![Target::Object(there)], "only the Moon Heron was there before the return");
-}
-
 /// Grimoire of the Dead's return, with three study counters on it,
 /// activated and resolved.
 fn grimoire_returns_everything(mut state: GameState, reg: &CardRegistry) -> GameState {
@@ -4023,11 +3953,12 @@ fn grimoire_returning_an_unbreathing_horde_counts_the_board_before_the_return() 
         "one: the Horde itself, a Zombie card in its controller's graveyard");
 }
 
-/// Defect 44 for a deferred entry: an Evil Twin returned beside an Essence
-/// of the Wild chooses after the Essence has entered, but its entry is
-/// worked out against the board before the return, where there was no
-/// Essence to make it a copy. It is what it chose, a copy of a creature
-/// there before or its printed self.
+/// Defect 44 for an entry held on a copy choice: an Evil Twin returned
+/// beside an Essence of the Wild holds the whole return until it has
+/// chosen (#1065), and then both enter in one event, each worked out
+/// against the board before it, where there was no Essence to make the
+/// Twin a copy. It is what it chose, a copy of a creature there before or
+/// its printed self.
 #[test]
 fn an_evil_twin_returned_beside_an_essence_of_the_wild_is_what_it_chose() {
     let reg = registry();
@@ -4037,14 +3968,15 @@ fn an_evil_twin_returned_beside_an_essence_of_the_wild_is_what_it_chose() {
         let essence = named_card_in_graveyard(&mut state, &reg, "Essence of the Wild", P0);
         let twin = named_card_in_graveyard(&mut state, &reg, "Evil Twin", P0);
         let mut state = grimoire_returns_everything(state, &reg);
-        assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Battlefield));
+        assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Graveyard), "held with the Twin until it has chosen");
         mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
         state.awaiting_action = None;
         let choice = if copy { mtg_engine::state::EnterAsCopyChoice::Copy(there) } else { mtg_engine::state::EnterAsCopyChoice::Declined };
         mtg_engine::replacement::record_entry_choice(&mut state, twin, choice, &reg);
+        assert_eq!(state.get_object(essence).map(|o| o.zone), Some(Zone::Battlefield));
         assert_eq!(state.get_object(twin).map(|o| o.zone), Some(Zone::Battlefield));
         assert_eq!(state.name_of(twin, &reg), expected);
-        assert!(state.entering_zones_before.is_empty() && state.pending_entry_zones.is_empty(), "nothing kept past the entry");
+        assert!(state.pending_entry_batches.is_empty(), "nothing held past the entry");
     }
 }
 

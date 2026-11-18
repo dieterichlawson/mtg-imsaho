@@ -15,6 +15,14 @@ earlier one.
 Every card harness proves. `docs/plans/formal-verification.md` says what
 each proof is over and what its bounds are.
 
+Since this ledger was written, master made a return of several cards one
+event of the engine's (`GameState::put_onto_battlefield_together`,
+#1064-#1068), and the harnesses of the two cards that make one, written
+against the old card code, are gone: Grimoire of the Dead's nine over its
+second ability (13 left) and Moldgraf Monstrosity's two. Those returns
+are played by `tests/enters_as_copy.rs`, `tests/cards_complex_creatures.rs`
+and the generated boards of `tests/card_semantics.rs`, not proved.
+
 990 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
 
 - SUCCESSFUL: 990

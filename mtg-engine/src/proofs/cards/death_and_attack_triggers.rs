@@ -11,6 +11,11 @@
 //! - Moldgraf Monstrosity, 8/8 Trample: "When this creature dies, exile it,
 //!   then return two creature cards at random from your graveyard to the
 //!   battlefield."
+//!   Its return is one event the engine makes
+//!   (`GameState::put_onto_battlefield_together`, #1065), and is played,
+//!   not proved: `tests/enters_as_copy.rs`,
+//!   `tests/cards_complex_creatures.rs` and the generated boards of
+//!   `tests/card_semantics.rs`.
 //! - Elder Cathar, 2/2 Human Soldier: "When this creature dies, put a +1/+1
 //!   counter on target creature you control. If that creature is a Human,
 //!   put two +1/+1 counters on it instead."
@@ -47,7 +52,7 @@
 //! `proofs::actions::triggering`.
 
 use super::{
-    act, acted, any_object, any_target, asked_for, board, card_proof, case_by_case, kept, listed, new_ids, prints_effects,
+    act, acted, any_object, any_target, asked_for, board, card_proof, case_by_case, kept, new_ids, prints_effects,
     triggers, Act, Form, Kinds, Snapshot,
 };
 use crate::actions::Target;
@@ -177,58 +182,6 @@ card_proof! {
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
-}
-
-/// [`creature_in`]'s board with the card exactly in `zone`, for a proof
-/// that is a harness for each zone it may be in.
-fn creature_exactly_in(card: Box<dyn CardBehavior>, zone: Zone) -> Board {
-    let (registry, mut state, blank, card) = board(card);
-    let you = PlayerId(u8::from(kani::any::<bool>()));
-    let me = state.create_object(card, PlayerId(0), zone, None, None);
-    if zone == Zone::Graveyard {
-        state.players[0].graveyard_order.push(me);
-    }
-    state.get_object_mut(me).expect("just created").last_controller = Some(you);
-    let others = [any_object(&mut state, blank, &ANY_CREATURE, Form::Card), any_object(&mut state, blank, &ANY_CREATURE, Form::Token)];
-    Board { registry, state, me, others, you }
-}
-
-/// Moldgraf Monstrosity: exiled if it is still in the graveyard it died
-/// into (CR 400.7: anywhere else it is a new object), then two of the
-/// other creature cards in its controller's graveyard (all, if fewer)
-/// chosen at random and returned to the battlefield under their control
-/// (CR 110.2); and nothing else. The Monstrosity in `zone`, its
-/// graveyard or exile, a constant in each harness: with the zone the
-/// solver's, whether its exile was recorded left every later action at a
-/// place it left open, and the proof ran out of memory in symbolic
-/// execution comparing the actions read back from there.
-fn moldgraf_monstrosity_exiles_itself_and_returns_two_at_random(zone: Zone) {
-    assert!(triggers(&isd::moldgraf_monstrosity::MoldgrafMonstrosity) == [(TriggerKind::SelfDies, None)]);
-    let b = creature_exactly_in(Box::new(isd::moldgraf_monstrosity::MoldgrafMonstrosity), zone);
-    let returnable = b.creature_cards_in_your_graveyard();
-    let (b, before) = b.dies(&[]);
-    // Each index below written out, not computed: an action read at an
-    // index Kani leaves open is a read of every recorded action at once.
-    let returned_from = |first: usize| {
-        Some(&Act::Random(listed(&returnable), 2)) == act(first)
-            && acted() == first + 1 + returnable.len().min(2)
-            && (1..=returnable.len().min(2)).all(|k| {
-                matches!(act(first + k), Some(Act::MoveUnder(id, Zone::Battlefield, controller)) if returnable.contains(id) && *controller == b.you)
-            })
-            && (returnable.len() < 2 || act(first + 1) != act(first + 2))
-    };
-    if zone == Zone::Graveyard {
-        assert!(Some(&Act::Move(b.me, Zone::Exile)) == act(0) && returned_from(1));
-    } else {
-        assert!(returned_from(0));
-    }
-    assert!(Snapshot::of(&b.state) == before);
-    std::mem::forget(b);
-}
-
-case_by_case! { moldgraf_monstrosity_exiles_itself_and_returns_two_at_random;
-    moldgraf_monstrosity_in_its_graveyard_exiles_itself_and_returns_two_at_random: Zone::Graveyard,
-    moldgraf_monstrosity_gone_to_exile_returns_two_at_random: Zone::Exile,
 }
 
 /// The card's "whenever another creature dies" trigger resolving, for the

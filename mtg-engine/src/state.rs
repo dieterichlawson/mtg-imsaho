@@ -450,42 +450,20 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_controllers: IdMap<PlayerId>,
 
-    /// What a deferred entry may enter as a copy of, when an effect put it
-    /// onto the battlefield with others: the creatures there before that
-    /// effect began, not those entering with it. Evil Twin's ruling: "If
-    /// Evil Twin somehow enters the battlefield at the same time as another
-    /// creature, Evil Twin can't become a copy of that creature." The entry
-    /// is asked after the others have entered (Grimoire of the Dead returning
-    /// every creature card at once), so the list is kept from when it was
-    /// deferred. With none kept, the creatures on the battlefield as it is
-    /// asked.
+    /// Cards one effect puts onto the battlefield at the same time, held
+    /// together while any of them waits on its enters-as-a-copy choice
+    /// (`put_onto_battlefield_together`). They enter as one event once the
+    /// last answer is in, so a copy cannot be of a card entering beside it
+    /// (CR 614.12b, 707: it copies what is on the battlefield as it enters),
+    /// and nothing that cares what is there sees half the batch (#1064,
+    /// #1065).
     #[serde(default)]
-    pub pending_entry_options: IdMap<Vec<ObjectId>>,
+    pub pending_entry_batches: Vec<EntryBatch>,
 
-    /// What the effect putting a deferred entry onto the battlefield makes
-    /// it there, given once the entry has happened, after any copy it
-    /// entered as (CR 613.1a, 613.1d-e): subtypes and colours it gains in
-    /// addition to its own (Grimoire of the Dead's "They're black Zombies in
-    /// addition to their other colors and types").
+    /// Token copies waiting on their copied card's enters-as-a-copy choice
+    /// before they are created (`create_token_copy`, #1068).
     #[serde(default)]
-    pub pending_entry_grants: IdMap<(Vec<String>, Vec<crate::types::Color>)>,
-
-    /// Where each of the others put onto the battlefield in the same event
-    /// as a deferred entry was as that event began. CR 614.12: an entry is
-    /// replaced by the effects that already exist as it happens, so one of
-    /// those it entered with is not yet a source of them (an Essence of the
-    /// Wild returned beside it does not make it a copy), and one that left
-    /// the zone it works from in that event still is (a Dearly Departed
-    /// returned beside a Human). The rest of its event entered before it
-    /// was asked, so this is kept from when it was deferred, and read while
-    /// its entry is planned ([`GameState::zone_as_entering_began`]).
-    #[serde(default)]
-    pub pending_entry_zones: IdMap<Vec<(ObjectId, Zone)>>,
-
-    /// The zones of [`GameState::pending_entry_zones`] for the entry being
-    /// planned now, and empty at every other moment.
-    #[serde(default)]
-    pub entering_zones_before: Vec<(ObjectId, Zone)>,
+    pub pending_token_copies: Vec<PendingTokenCopy>,
 
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
@@ -864,10 +842,8 @@ impl GameState {
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
             pending_entry_controllers: IdMap::new(),
-            pending_entry_options: IdMap::new(),
-            pending_entry_grants: IdMap::new(),
-            pending_entry_zones: IdMap::new(),
-            entering_zones_before: Vec::new(),
+            pending_entry_batches: Vec::new(),
+            pending_token_copies: Vec::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -1274,7 +1250,10 @@ impl GameState {
             x_value: None,
             abilities_activated_this_turn: IndexSet::new(),
             chosen_mode: None,
-            entering_copy_choice: EnterAsCopyChoice::Unasked,
+            // A token copy of a card that chooses what to enter as was asked
+            // before it was created (`create_token_copy`), and enters with the
+            // answer for that card's replacement to read (#1068).
+            entering_copy_choice: face.map_or(EnterAsCopyChoice::Unasked, |f| f.entering),
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
@@ -1292,23 +1271,6 @@ impl GameState {
                 subtypes: subtypes_printed,
             }),
         };
-        // CR 614.12b, 707.2: a token copy of a card that chooses what it
-        // enters as (Back from the Brink's copy of an Evil Twin card) makes
-        // that choice as it enters, as the card would: its copiable values
-        // are the card's text, that replacement included. Its entry waits on
-        // the answer the way a card's does (`move_object`), the token held
-        // in the command zone, which nothing in this pool otherwise uses, so
-        // that nothing sees it on the battlefield as its printed self with
-        // the choice outstanding. The answer moves it onto the battlefield
-        // (`replacement::record_entry_choice`), planned then as any entry is.
-        // Built on the battlefield, it was a 0/0 that never chose and died.
-        if face.is_some_and(|f| registry.get(f.card_id).is_some_and(crate::cards::CardBehavior::chooses_copy_as_it_enters)) {
-            let mut obj = obj;
-            obj.zone = Zone::Command;
-            self.objects.insert(id, obj);
-            self.pending_entry_choices.push(id);
-            return id;
-        }
         self.objects.insert(id, obj);
         // A token enters the battlefield like anything else, so the same
         // replacement effects apply (CR 614.1c/d).
@@ -1325,10 +1287,45 @@ impl GameState {
 
     /// Create a token that copies all characteristics of a source permanent.
     /// Used by Cackling Counterpart, Evil Twin, etc.
+    ///
+    /// Returns `ObjectId(0)` when no token exists yet: the source is gone,
+    /// or the token waits on an enters-as-a-copy choice. A copy of an Evil
+    /// Twin *card* (Back from the Brink exiling one, CR 707.2) has the
+    /// Twin's "you may have this enter as a copy" among its copiable values,
+    /// and that replacement applies as the token is created (CR 111.1,
+    /// 614.12b). It used to be skipped — the token entered as a printed 0/0
+    /// and died, with the cost paid for nothing (#1068). So the creation is
+    /// queued in `pending_token_copies`, the creator is asked before anyone
+    /// receives priority (`replacement::process_pending_entry_choices`), and
+    /// the answer creates the token (`replacement::record_token_copy_choice`).
+    /// A copy of a Twin that already copied something copies what it copied
+    /// (its `card_id` is that card's), so it is not asked.
     pub fn create_token_copy(
         &mut self,
         source_id: ObjectId,
         owner: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> ObjectId {
+        let Some(source) = self.get_object(source_id) else { return ObjectId(0) };
+        if registry.get(source.card_id)
+            .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
+        {
+            let name = self.name_of(source_id, registry);
+            self.log(LogLevel::Event, format!(
+                "p{}'s {name} token is choosing what to enter as", owner.0));
+            self.pending_token_copies.push(PendingTokenCopy { of: source_id, owner });
+            return ObjectId(0);
+        }
+        self.create_token_copy_entering(source_id, owner, EnterAsCopyChoice::Unasked, registry)
+    }
+
+    /// [`create_token_copy`], the token entering with `entering` as its
+    /// answer to an enters-as-a-copy choice.
+    pub(crate) fn create_token_copy_entering(
+        &mut self,
+        source_id: ObjectId,
+        owner: PlayerId,
+        entering: EnterAsCopyChoice,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let Some(source) = self.get_object(source_id) else { return ObjectId(0) };
@@ -1421,6 +1418,7 @@ impl GameState {
             subtypes.clone(),
             Some(TokenCopyFace {
                 card_id, is_legendary, is_transformed: source_transformed, copy_grantor,
+                entering,
             }),
             None,
             registry,
@@ -1496,87 +1494,6 @@ impl GameState {
         self.move_object_inner(id, to, Some(controller), None, registry)
     }
 
-    /// Put `ids` onto the battlefield under `controller` in one event, as
-    /// "return all creature cards" and "return two creature cards" do
-    /// (Grimoire of the Dead, Moldgraf Monstrosity), and say of each, in the
-    /// same order, whether it moved: `false` for an entry deferred on a copy
-    /// choice, exactly as [`GameState::move_object`] says.
-    ///
-    /// CR 614.12 and 616.1: the replacement effects that modify how a
-    /// permanent enters are those that exist before the event, applied to
-    /// the event before it happens. Moved one at a time, each saw the ones
-    /// moved before it: an Essence of the Wild returned first made the
-    /// creatures returned after it copies of itself, a Dearly Departed
-    /// returned first no longer gave the Humans after it their counter, and
-    /// an Unbreathing Horde counted Zombies that had been in another
-    /// player's graveyard. So every entry is planned on the board as it was,
-    /// before any of them moves, each under the player it enters under; then
-    /// they move, each as planned. An entry deferred on its copy choice is
-    /// planned when it is answered, after the rest have entered, and keeps
-    /// where they were (`pending_entry_zones`) to be planned by.
-    pub fn move_onto_battlefield_together(
-        &mut self,
-        ids: &[ObjectId],
-        controller: PlayerId,
-        registry: &crate::cards::CardRegistry,
-    ) -> Vec<bool> {
-        let before: Vec<(ObjectId, Zone)> = ids.iter()
-            .filter_map(|&id| self.objects.get(&id).map(|o| (id, o.zone)))
-            .collect();
-        let mut plans: Vec<Option<crate::replacement::EnteringPermanent>> = Vec::with_capacity(ids.len());
-        for &id in ids {
-            let from = self.objects.get(&id).map(|o| o.zone);
-            if from.is_none_or(|z| z == Zone::Battlefield) || self.defers_entry(id, Zone::Battlefield, registry) {
-                plans.push(None);
-                continue;
-            }
-            // Planned as entering under `controller`, which the move writes
-            // first; put back, since the card has not moved yet (CR 108.4).
-            let was = self.objects.get(&id).map(|o| o.controller);
-            if let Some(obj) = self.get_object_mut(id) {
-                obj.controller = controller;
-            }
-            plans.push(Some(self.plan_entering(id, from, registry)));
-            if let (Some(obj), Some(was)) = (self.get_object_mut(id), was) {
-                obj.controller = was;
-            }
-        }
-        let mut moved = Vec::with_capacity(ids.len());
-        for (&id, plan) in ids.iter().zip(plans) {
-            let did = self.move_object_inner(id, Zone::Battlefield, Some(controller), plan, registry);
-            if !did {
-                let others: Vec<(ObjectId, Zone)> = before.iter().filter(|(o, _)| *o != id).copied().collect();
-                self.pending_entry_zones.insert(id, others);
-            }
-            moved.push(did);
-        }
-        moved
-    }
-
-    /// Where `id` was as the entry being planned began: the zone kept for
-    /// it if it entered in the same event as a deferred entry being planned
-    /// now (`entering_zones_before`), and where it is otherwise. What a
-    /// replacement effect that modifies how a permanent enters reads of its
-    /// own source (CR 614.12).
-    pub fn zone_as_entering_began(&self, id: ObjectId) -> Option<Zone> {
-        match self.entering_zones_before.iter().find(|(o, _)| *o == id) {
-            Some((_, zone)) => Some(*zone),
-            None => self.objects.get(&id).map(|o| o.zone),
-        }
-    }
-
-    /// Whether moving `id` to `to` waits on its copy choice (CR 614.12b):
-    /// a card that chooses what it enters as, not yet asked, entering the
-    /// battlefield from elsewhere.
-    fn defers_entry(&self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) -> bool {
-        to == Zone::Battlefield
-            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
-            && self.objects.get(&id)
-                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
-            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
-                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
-    }
-
     /// Returns whether the object actually moved. It is `false` for exactly
     /// one reason: an entry deferred because the permanent has a copy choice
     /// outstanding (CR 614.12b). A caller that writes anything about the
@@ -1593,8 +1510,152 @@ impl GameState {
         self.move_object_inner(id, to, None, None, registry)
     }
 
+    /// Whether putting this object onto the battlefield has to wait for its
+    /// controller to choose what it enters as (CR 614.12b): it is not there
+    /// yet, it has not been asked, and its card makes the choice.
+    fn entry_waits_on_copy_choice(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield
+            && o.entering_copy_choice == EnterAsCopyChoice::Unasked
+            && registry.get(o.card_id)
+                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters))
+    }
+
+    /// Put several cards onto the battlefield as one event — "put all
+    /// creature cards from all graveyards onto the battlefield".
+    ///
+    /// They enter at the same moment (CR 603.6a), so a card among them that
+    /// chooses what to enter as a copy of chooses from what was on the
+    /// battlefield before any of them arrived: a creature entering beside it
+    /// is not there to copy (CR 614.12b, 707). This used to move each card
+    /// in turn and defer only the Evil Twins, so a Twin was offered the
+    /// creatures returning with it, and state-based actions ran between two
+    /// Twins' answers with half the batch in — killing a 0/0 Boneyard Wurm
+    /// mid-resolution and making the second Twin's Festerhide Boar copy enter
+    /// with morbid (#1064, #1065).
+    ///
+    /// If any member has a copy choice outstanding, none of them moves: each
+    /// chooser is queued under the controller it enters for, and the batch
+    /// enters once the last answer is recorded
+    /// (`replacement::record_entry_choice`). The additions go on with the
+    /// entry, so a deferred member gets them too (#1067).
+    pub fn put_onto_battlefield_together(
+        &mut self,
+        objects: Vec<ObjectId>,
+        controller: Option<PlayerId>,
+        additions: EntryAdditions,
+        source_name: &str,
+        each: &str,
+        summary: Option<&str>,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        let batch = EntryBatch {
+            objects, controller, additions,
+            source_name: source_name.to_string(),
+            each: each.to_string(),
+            summary: summary.map(str::to_string),
+        };
+        let choosers: Vec<ObjectId> = batch.objects.iter().copied()
+            .filter(|&id| self.entry_waits_on_copy_choice(id, registry))
+            .collect();
+        if choosers.is_empty() {
+            self.enter_batch(batch, registry);
+            return;
+        }
+        for id in choosers {
+            let name = self.obj_name(id);
+            self.log(LogLevel::Event, format!("{source_name}: {name} is choosing what to enter as"));
+            if !self.pending_entry_choices.contains(&id) {
+                self.pending_entry_choices.push(id);
+            }
+            if let Some(c) = controller {
+                self.pending_entry_controllers.insert(id, c);
+            }
+        }
+        self.pending_entry_batches.push(batch);
+    }
+
+    /// The batch whose entry `object` belongs to, if one is held, taken out
+    /// once no member is still waiting on its choice.
+    pub(crate) fn take_ready_entry_batch(&mut self, object: ObjectId) -> Option<Option<EntryBatch>> {
+        let i = self.pending_entry_batches.iter().position(|b| b.objects.contains(&object))?;
+        let waiting = self.pending_entry_batches[i].objects.iter()
+            .any(|id| self.pending_entry_choices.contains(id));
+        Some((!waiting).then(|| self.pending_entry_batches.remove(i)))
+    }
+
+    /// Every member of a batch onto the battlefield, each with the batch's
+    /// additions, and the lines that say so.
+    pub(crate) fn enter_batch(&mut self, batch: EntryBatch, registry: &crate::cards::CardRegistry) {
+        let EntryBatch { objects, controller, additions, source_name, each, summary } = batch;
+        let described: Vec<String> = additions.colors.iter()
+            .map(|c| format!("{c:?}").to_lowercase())
+            .chain(additions.subtypes.iter().cloned())
+            .collect();
+        let described = if described.is_empty() { String::new() }
+            else { format!(" as a {}", described.join(" ")) };
+        // CR 614.12, 616.1: the replacement effects that modify how a
+        // permanent enters are those that exist before the event, applied
+        // to the event before it happens. So every member's entry is
+        // planned on the board as it is now, before any of them moves, each
+        // under the player it enters under; then they move, each as planned.
+        // Planned as each moved, a member saw the ones moved before it: an
+        // Essence of the Wild returned first made the rest copies of
+        // itself, a Dearly Departed returned first had left the graveyard
+        // and gave the Humans after it no counter, and an Unbreathing Horde
+        // counted a creature just given "Zombie" and a Zombie card from
+        // another player's graveyard (defect 44 of
+        // docs/plans/formal-verification.md).
+        let mut plans: Vec<Option<crate::replacement::EnteringPermanent>> = Vec::with_capacity(objects.len());
+        for &id in &objects {
+            let from = self.objects.get(&id).map(|o| o.zone);
+            if from.is_none_or(|z| z == Zone::Battlefield) || self.entry_waits_on_copy_choice(id, registry) {
+                plans.push(None);
+                continue;
+            }
+            // Planned as entering under the batch's controller, which the
+            // move writes first; put back, the card not having moved yet
+            // (CR 108.4).
+            let was = self.objects.get(&id).map(|o| o.controller);
+            if let (Some(obj), Some(c)) = (self.get_object_mut(id), controller) {
+                obj.controller = c;
+            }
+            plans.push(Some(self.plan_entering(id, from, registry)));
+            if let (Some(obj), Some(was)) = (self.get_object_mut(id), was) {
+                obj.controller = was;
+            }
+        }
+        let mut entered = 0;
+        for (id, plan) in objects.into_iter().zip(plans) {
+            let name = self.obj_name(id);
+            // A member answered its choice, so nothing defers it any more;
+            // its held controller is the batch's.
+            self.pending_entry_controllers.remove(&id);
+            let moved = self.move_object_inner(id, Zone::Battlefield, controller, plan, registry);
+            if !moved || self.get_object(id).is_none_or(|o| o.zone != Zone::Battlefield) {
+                continue;
+            }
+            entered += 1;
+            if let Some(obj) = self.get_object_mut(id) {
+                for s in &additions.subtypes {
+                    if !obj.subtypes.contains(s) {
+                        obj.subtypes.push(s.clone());
+                    }
+                }
+                for c in &additions.colors {
+                    if !obj.colors.contains(c) {
+                        obj.colors.push(*c);
+                    }
+                }
+            }
+            self.log(LogLevel::Event, format!("{source_name}: {name} {each}{described}"));
+        }
+        if let Some(summary) = summary {
+            self.log(LogLevel::Event, format!("{source_name}: {entered} {summary}"));
+        }
+    }
+
     /// The move, with the entry already planned (`planned`) when it is one
-    /// of several made in one event ([`GameState::move_onto_battlefield_together`]).
+    /// of several made in one event ([`GameState::enter_batch`]).
     fn move_object_inner(
         &mut self,
         id: ObjectId,
@@ -1610,7 +1671,7 @@ impl GameState {
         // its controller before anyone receives priority, and the answer
         // re-runs this move. Nothing ever sees the permanent on the
         // battlefield as its printed self with the choice outstanding.
-        if self.defers_entry(id, to, registry) {
+        if to == Zone::Battlefield && self.entry_waits_on_copy_choice(id, registry) {
             if !self.pending_entry_choices.contains(&id) {
                 self.pending_entry_choices.push(id);
             }
@@ -4847,6 +4908,19 @@ pub(crate) struct TokenCopyFace {
     /// thing `copy_grantor` means on the object, and the field the ability
     /// lookup reads.
     pub copy_grantor: Option<CardId>,
+    /// The token's answer to its copied card's enters-as-a-copy choice, if
+    /// it was asked (#1068).
+    pub entering: EnterAsCopyChoice,
+}
+
+/// A token copy waiting to be created until its creator answers the copied
+/// card's enters-as-a-copy choice (`GameState::create_token_copy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingTokenCopy {
+    /// What the token is a copy of (the Evil Twin card).
+    pub of: ObjectId,
+    /// Who creates it, and so controls it and is asked.
+    pub owner: PlayerId,
 }
 
 /// Whether a permanent that chooses what to enter as has been asked yet, and
@@ -4862,6 +4936,33 @@ pub enum EnterAsCopyChoice {
     Declined,
     /// Asked, and answered with the permanent to enter as a copy of.
     Copy(ObjectId),
+}
+
+/// What an effect that puts cards onto the battlefield adds to each of them
+/// as they arrive (Grimoire of the Dead: "They're black Zombies in addition
+/// to their other colors and types").
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryAdditions {
+    pub colors: Vec<crate::types::Color>,
+    pub subtypes: Vec<String>,
+}
+
+/// One effect's simultaneous entry, held while a member chooses what to
+/// enter as (see `GameState::pending_entry_batches`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryBatch {
+    /// Every card the effect puts onto the battlefield, in the order logged.
+    pub objects: Vec<ObjectId>,
+    /// The controller they enter under, when not their owners.
+    pub controller: Option<PlayerId>,
+    pub additions: EntryAdditions,
+    /// The effect's source, for the log lines.
+    pub source_name: String,
+    /// What each card's line says happened to it ("returned").
+    pub each: String,
+    /// What the count line says arrived ("creatures returned from all
+    /// graveyards"), if the effect has one.
+    pub summary: Option<String>,
 }
 
 /// Serde fallback for `GameObject::base_controller` in saves written before
@@ -5639,6 +5740,10 @@ pub enum PendingEffect {
     /// wherever it is coming from), and recording the answer is what releases
     /// its deferred entry.
     EnterAsCopy { object: ObjectId },
+    /// The same question for a token copy of such a card, asked before the
+    /// token exists (`GameState::create_token_copy`, #1068). `of` is what
+    /// the token copies; the answer creates it.
+    EnterAsCopyToken { of: ObjectId },
 
 
 

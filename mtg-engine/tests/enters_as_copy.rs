@@ -190,3 +190,277 @@ fn a_copy_grants_the_copied_cards_anthem_to_other_permanents() {
     assert_eq!(state.effective_power(human, &reg), Some(3),
         "the copy has the Mayor's anthem and p0's other Human gets +1/+1 (CR 706.2)");
 }
+
+// ── One event, several cards: Grimoire of the Dead (#1064-#1067) ──────────
+
+/// A card of `name` owned by `owner` in their graveyard.
+fn in_graveyard(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry,
+                name: &str, owner: mtg_engine::ids::PlayerId) -> mtg_engine::ids::ObjectId {
+    let card = reg.get_id_by_name(name).unwrap();
+    let data = reg.card_data(card).unwrap();
+    let id = state.create_object(card, owner, Zone::Graveyard, data.power, data.toughness);
+    state.get_object_mut(id).unwrap().name = name.into();
+    id
+}
+
+/// p0's Grimoire of the Dead with its three study counters, activated and
+/// resolved, with the first enters-as-copy question raised.
+fn resolve_grimoire(mut state: mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry)
+    -> mtg_engine::state::GameState {
+    let grimoire = named_permanent(&mut state, reg, "Grimoire of the Dead", P0);
+    state.add_counters(grimoire, CounterType::Study, 3);
+    let mut state = activate(&state, reg, grimoire, 1, vec![]);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, reg);
+    state
+}
+
+fn answer(state: &mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry,
+          copy: mtg_engine::ids::ObjectId) -> mtg_engine::state::GameState {
+    let mut state = mtg_engine::engine::submit_action(
+        state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(copy))) },
+        reg,
+    );
+    // What the game loop does next: the queue's next question, and only
+    // once it is empty the state-based actions (`run_game_loop_inner`).
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, reg);
+    if state.pending_entry_choices.is_empty() {
+        while mtg_engine::sba::check_state_based_actions(&mut state, reg) {}
+    }
+    state
+}
+
+fn asked(state: &mtg_engine::state::GameState) -> Option<mtg_engine::ids::PlayerId> {
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, .. }) => Some(*player),
+        _ => None,
+    }
+}
+
+/// CR 614.12b, 707: the Twin copies what is on the battlefield as it enters,
+/// and the cards entering with it are not there yet. The engine moved every
+/// other card first and then asked, so the Twin was offered the Festerhide
+/// Boar returning beside it (#1065).
+#[test]
+fn a_twin_returned_with_other_creatures_cannot_copy_them() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let boar = in_graveyard(&mut state, &reg, "Festerhide Boar", P0);
+
+    let state = resolve_grimoire(state, &reg);
+
+    let offered = pending_choice_options(&state);
+    assert_eq!(offered, vec![Target::Object(bear)],
+        "only what was already on the battlefield is a copy to choose");
+    assert_eq!(state.get_object(boar).unwrap().zone, Zone::Graveyard,
+        "the batch enters together, after the choice");
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(boar).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &reg), "Grizzly Bears");
+}
+
+/// CR 109.5, 614.12b: the choice belongs to the player the permanent enters
+/// under. p0's Grimoire returning p1's Twin asked p1 (#1066).
+#[test]
+fn an_opponents_twin_returned_under_your_control_asks_you() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P1);
+
+    let state = resolve_grimoire(state, &reg);
+
+    assert_eq!(asked(&state), Some(P0), "got {:?}", state.awaiting_action);
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(twin).unwrap().controller, P0);
+}
+
+/// CR 613.1a, 613.1d-e: Grimoire's "black Zombies" applies on top of the
+/// copy. The deferred Twin skipped the stamp, and the count line counted the
+/// two Twins still choosing as returned (#1067).
+#[test]
+fn a_twin_returned_by_grimoire_is_a_black_zombie_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let boar = in_graveyard(&mut state, &reg, "Festerhide Boar", P1);
+
+    let mut state = resolve_grimoire(state, &reg);
+    let before: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(!before.iter().any(|l| l.contains("creatures returned")),
+        "nothing has returned while the Twin chooses: {before:?}");
+    state.game_log.clear();
+    let state = answer(&state, &reg, bear);
+
+    for id in [twin, boar] {
+        assert!(state.has_subtype(id, "Zombie", &reg), "#{} is a Zombie", id.0);
+        assert!(state.colors_of(id, &reg).contains(&Color::Black), "#{} is black", id.0);
+    }
+    assert!(state.has_subtype(twin, "Bear", &reg), "and still the Bear it copied");
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(lines.iter().any(|l| l == "Grimoire of the Dead: 2 creatures returned from all graveyards"),
+        "{lines:?}");
+    assert!(lines.iter().any(|l| l.starts_with("Grimoire of the Dead: Evil Twin (#") && l.ends_with(") returned as a black Zombie")),
+        "{lines:?}");
+}
+
+/// CR 704.3: no state-based action runs inside a resolution. With two Twins
+/// in the batch, SBAs ran between their answers: a Boneyard Wurm that the
+/// first Twin's leaving had made 0/0 died, and the second Twin's copy of a
+/// Festerhide Boar entered with morbid's counters (#1064).
+#[test]
+fn two_twins_in_one_batch_see_no_state_based_action_between_answers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
+    let traveler = named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    let boar = named_permanent(&mut state, &reg, "Festerhide Boar", P1);
+    let first = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let second = in_graveyard(&mut state, &reg, "Evil Twin", P1);
+
+    let state = resolve_grimoire(state, &reg);
+    let state = answer(&state, &reg, traveler);
+
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Battlefield,
+        "the resolution is not over, so nothing has died");
+    assert_eq!(state.get_object(first).unwrap().zone, Zone::Graveyard,
+        "and nothing has entered: the batch waits on the second answer");
+    assert!(pending_choice_options(&state).contains(&Target::Object(wurm)));
+
+    let state = answer(&state, &reg, boar);
+    assert_eq!(state.name_of(first, &reg), "Doomed Traveler",
+        "the first answer is kept while the batch waits");
+    assert_eq!(state.name_of(second, &reg), "Festerhide Boar");
+    assert!(state.get_object(second).unwrap().counters.is_empty(),
+        "no creature had died as it entered, so morbid adds nothing (CR 603.2)");
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Graveyard,
+        "once the batch is in, the 0/0 Wurm dies to SBA");
+}
+
+// ── A token copy of the card itself (#1068) ───────────────────────────────
+
+/// CR 707.2, 111.1, 614.12b: a token copy of an Evil Twin *card* (Back from
+/// the Brink exiling one) has the Twin's replacement among its copiable
+/// values, and it applies as the token is created. It was skipped: the
+/// token entered as a printed 0/0 and died (#1068).
+#[test]
+fn a_token_copy_of_an_evil_twin_card_is_asked_what_to_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let card = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(card, Zone::Exile, &reg);
+    let before = state.objects.len();
+
+    let token = state.create_token_copy(card, P0, &reg);
+
+    assert_eq!(token, mtg_engine::ids::ObjectId(0), "no token exists before the answer");
+    assert_eq!(state.objects.len(), before);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    assert_eq!(asked(&state), Some(P0), "the creator is asked: {:?}", state.awaiting_action);
+    assert_eq!(pending_choice_options(&state), vec![Target::Object(bear)]);
+
+    let state = answer(&state, &reg, bear);
+    let tokens: Vec<_> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .filter(|o| o.is_token).map(|o| o.id).collect();
+    assert_eq!(tokens.len(), 1, "the answer creates the token");
+    assert_eq!(state.name_of(tokens[0], &reg), "Grizzly Bears");
+    assert!(mtg_engine::cards::ability_granting_grantor(&state, tokens[0], &reg).is_some(),
+        "with the Twin's \"except it has\" ability (CR 706.9a)");
+    assert!(state.pending_token_copies.is_empty());
+}
+
+/// Declined, it is the printed 0/0 the rules give, and SBAs have it.
+#[test]
+fn a_declined_token_copy_of_an_evil_twin_card_is_a_0_0() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let card = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    state.create_token_copy(card, P0, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+
+    let mut state = mtg_engine::engine::submit_action(
+        &state, &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) }, &reg);
+
+    let token = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .find(|o| o.is_token).map(|o| o.id).expect("declining still creates the token");
+    assert_eq!(state.name_of(token, &reg), "Evil Twin");
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert!(state.get_object(token).is_none_or(|o| o.zone != Zone::Battlefield));
+}
+
+/// A copy of a Twin that already copied something copies what it copied
+/// (CR 707.2), so nothing is asked.
+#[test]
+fn a_token_copy_of_a_twin_clone_is_not_asked() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(bear));
+
+    let token = state.create_token_copy(twin, P0, &reg);
+
+    assert_eq!(state.name_of(token, &reg), "Grizzly Bears");
+    assert!(state.pending_token_copies.is_empty());
+}
+
+/// Moldgraf Monstrosity returns two creature cards in one event, the same
+/// shape as Grimoire: an Evil Twin among them may not copy the card
+/// returning beside it (CR 603.6a, 614.12b), and that card waits with it.
+#[test]
+fn a_twin_returned_by_moldgraf_cannot_copy_the_other_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let monstrosity = named_permanent(&mut state, &reg, "Moldgraf Monstrosity", P0);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let corpse = in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    mtg_engine::destruction::try_destroy(&mut state, monstrosity, &reg);
+
+    reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap()
+        .on_dies(&mut state, monstrosity, &[], &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+
+    assert_eq!(pending_choice_options(&state), vec![Target::Object(bear)]);
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Graveyard);
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(corpse).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &reg), "Grizzly Bears");
+}
+
+/// The prompt is a decision point like any other: the fuzzer's every-step
+/// check holds at it. Skipping the trigger scan along with the state-based
+/// actions left a cast Twin's `SpellResolved` unscanned at its prompt
+/// (CR 603.3, invariants/stack.rs).
+#[test]
+fn the_invariants_hold_at_a_cast_twins_copy_prompt() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // `game_at_step` builds turn 1 as if it were not the first; a later
+    // turn is what that shape is.
+    state.turn_number = 2;
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
+
+    let mut seen: Option<Vec<String>> = None;
+    mtg_engine::engine::run_game_loop(&mut state, &reg, |s, _, legal| {
+        if matches!(&s.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget {
+                effect: mtg_engine::state::PendingEffect::EnterAsCopy { .. }, .. }, .. }))
+        {
+            seen = Some(mtg_engine::invariants::check_core(s, &reg));
+            return Action::Concede;
+        }
+        legal.actions.iter()
+            .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == twin))
+            .cloned()
+            .unwrap_or(Action::PassPriority)
+    });
+
+    let v = seen.expect("the copy choice was asked");
+    assert!(v.is_empty(), "{v:?}");
+}

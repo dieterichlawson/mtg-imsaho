@@ -28,9 +28,7 @@ use crate::types::{CounterType, Zone};
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnteringPermanent {
     pub object: ObjectId,
-    /// Where it is coming from. `None` for a token, which comes from nowhere;
-    /// the command zone for a token copy held there for its enters-as-a-copy
-    /// choice (`GameState::create_token_internal`), which nothing reads.
+    /// Where it is coming from. `None` for a token, which comes from nowhere.
     pub from: Option<Zone>,
     pub controller: PlayerId,
     pub tapped: bool,
@@ -178,27 +176,27 @@ pub fn enters_with_subtype(state: &GameState, e: &EnteringPermanent, subtype: &s
 /// returns every creature card in every graveyard).
 pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegistry) {
     while state.awaiting_action.is_none() {
-        let Some(&object) = state.pending_entry_choices.first() else { return };
-        let Some(controller) = state.get_object(object).map(|o| o.controller) else {
+        let Some(&object) = state.pending_entry_choices.first() else {
+            process_pending_token_copies(state, registry);
+            return;
+        };
+        // The choice is the controller's — the player the permanent enters
+        // under (CR 109.5, 614.12b). For a card returned "under your control"
+        // that is not the owner who still controls it in the graveyard: p0's
+        // Grimoire of the Dead returning p1's Evil Twin asked p1 what p0's
+        // permanent would be, and p1 could decline it into a 0/0 (#1066).
+        let Some(controller) = state.get_object(object).map(|o|
+            state.pending_entry_controllers.get(&object).copied().unwrap_or(o.controller))
+        else {
             state.pending_entry_choices.remove(0);
+            state.pending_entry_controllers.remove(&object);
+            // A batch it belonged to is waiting on one fewer answer.
+            if let Some(Some(batch)) = state.take_ready_entry_batch(object) {
+                state.enter_batch(batch, registry);
+            }
             continue;
         };
-        // "A copy of any creature on the battlefield" is a choice, not a
-        // target (CR 115.1, 614.12b), so hexproof and protection do not
-        // narrow it. One put onto the battlefield with others chooses among
-        // those there before them (`pending_entry_options`), still there.
-        let options: Vec<crate::actions::Target> = match state.pending_entry_options.get(&object) {
-            Some(before) => before.iter()
-                .filter(|&&id| state.get_object(id).is_some_and(|o| o.zone == Zone::Battlefield) && state.is_creature(id, registry))
-                .map(|&id| crate::actions::Target::Object(id))
-                .collect(),
-            None => state
-                .all_objects_in_zone(Zone::Battlefield)
-                .iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .map(|o| crate::actions::Target::Object(o.id))
-                .collect(),
-        };
+        let options = copy_options(state, registry);
         if options.is_empty() {
             // Nothing to copy: the choice cannot be made, so the permanent
             // enters as its printed self.
@@ -218,42 +216,55 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
     }
 }
 
-/// Drop from a pending enters-as-a-copy prompt any creature that has since
-/// left the battlefield, and decline the choice outright if none is left.
-///
-/// The choice is offered before state-based actions run (CR 614.12b: the
-/// entry is waiting on it, so SBAs have nothing to say about the permanent
-/// yet), and the answer is given at the decision point after them. A
-/// creature that was on the battlefield when the list was built can be dead
-/// by the time the player reads it — a Grimoire of the Dead returning
-/// thirteen creatures at once kills some of them to the legend rule in the
-/// same breath — and a copy of a creature that is no longer there is not a
-/// choice the game can offer (CR 608.2d).
-pub fn refresh_pending_entry_choice(state: &mut GameState, registry: &CardRegistry) {
-    use crate::state::{AwaitingAction, ResolutionChoiceKind};
-    let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget {
-        options, effect: crate::state::PendingEffect::EnterAsCopy { object }, .. }, .. })
-        = &state.awaiting_action else { return };
-    let object = *object;
-    let live: Vec<crate::actions::Target> = options.iter().filter(|t| match t {
-        crate::actions::Target::Object(id) => state.get_object(*id)
-            .is_some_and(|o| o.zone == Zone::Battlefield) && state.is_creature(*id, registry),
-        _ => false,
-    }).cloned().collect();
-    if live.len() == options.len() {
-        return;
+/// The same questions for token copies not yet created (#1068): the creator
+/// is asked, from the creatures on the battlefield, and the answer creates
+/// the token.
+fn process_pending_token_copies(state: &mut GameState, registry: &CardRegistry) {
+    while state.awaiting_action.is_none() {
+        let Some(&crate::state::PendingTokenCopy { of, owner }) = state.pending_token_copies.first()
+        else { return };
+        let options = copy_options(state, registry);
+        if options.is_empty() {
+            record_token_copy_choice(state, of, crate::state::EnterAsCopyChoice::Declined, registry);
+            continue;
+        }
+        let name = state.name_of(of, registry);
+        crate::cards::helpers::present_optional_target_choice(
+            state,
+            of,
+            owner,
+            options,
+            crate::state::PendingEffect::EnterAsCopyToken { of },
+            &format!("{name} token: you may have it enter as a copy of a creature on the battlefield"),
+            registry,
+        );
     }
-    if live.is_empty() {
-        // Nothing left to copy, so the permanent enters as its printed self,
-        // exactly as it would have had the board been empty when asked.
-        state.awaiting_action = None;
-        record_entry_choice(state, object, crate::state::EnterAsCopyChoice::Declined, registry);
-        return;
-    }
-    if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget {
-        options, .. }, .. }) = &mut state.awaiting_action {
-        *options = live;
-    }
+}
+
+/// "A copy of any creature on the battlefield" is a choice, not a target
+/// (CR 115.1, 614.12b), so hexproof and protection do not narrow it.
+fn copy_options(state: &GameState, registry: &CardRegistry) -> Vec<crate::actions::Target> {
+    state
+        .all_objects_in_zone(Zone::Battlefield)
+        .iter()
+        .filter(|o| state.is_creature(o.id, registry))
+        .map(|o| crate::actions::Target::Object(o.id))
+        .collect()
+}
+
+/// Record the answer for the first token copy of `of` waiting on one, and
+/// create it with that answer.
+pub fn record_token_copy_choice(
+    state: &mut GameState,
+    of: ObjectId,
+    choice: crate::state::EnterAsCopyChoice,
+    registry: &CardRegistry,
+) {
+    let Some(i) = state.pending_token_copies.iter().position(|t| t.of == of) else { return };
+    let crate::state::PendingTokenCopy { owner, .. } = state.pending_token_copies.remove(i);
+    // `create_tokens_inner` logs the token that entered, at the size and
+    // name it entered as.
+    state.create_token_copy_entering(of, owner, choice, registry);
 }
 
 /// Record the answer to an enters-as-a-copy choice and finish that object's
@@ -272,11 +283,14 @@ pub fn record_entry_choice(
         obj.entering_copy_choice = choice;
     }
     state.pending_entry_choices.retain(|&id| id != object);
-    state.pending_entry_options.remove(&object);
-    let grant = state.pending_entry_grants.remove(&object);
-    // Planned against where the rest of its event was as it began (CR
-    // 614.12), for this entry only.
-    state.entering_zones_before = state.pending_entry_zones.remove(&object).unwrap_or_default();
+    // A member of a simultaneous entry waits for the rest of its batch, and
+    // the last answer puts every member in at once (#1064, #1065).
+    if let Some(ready) = state.take_ready_entry_batch(object) {
+        if let Some(batch) = ready {
+            state.enter_batch(batch, registry);
+        }
+        return;
+    }
     // The entry the deferral belonged to may have asked for a controller
     // other than the owner (Grimoire of the Dead, Moldgraf Monstrosity,
     // Fiend Hunter). It was held rather than written, so it is applied now,
@@ -286,18 +300,6 @@ pub fn record_entry_choice(
             state.move_object_under_control(object, Zone::Battlefield, controller, registry),
         None => state.move_object(object, Zone::Battlefield, registry),
     };
-    state.entering_zones_before.clear();
-    // What the effect that put it there makes it, now that it is there, as
-    // whatever it entered as.
-    if let Some((subtypes, colors)) = grant.filter(|_| state.get_object(object).is_some_and(|o| o.zone == Zone::Battlefield)) {
-        let types: Vec<String> = subtypes.into_iter().filter(|t| !state.has_subtype(object, t, registry)).collect();
-        let has = state.colors_of(object, registry);
-        let colors: Vec<crate::types::Color> = colors.into_iter().filter(|c| !has.contains(c)).collect();
-        if let Some(obj) = state.get_object_mut(object) {
-            obj.subtypes.extend(types);
-            obj.colors.extend(colors);
-        }
-    }
 }
 
 /// Which half of the entering-replacement order a pass keeps.
@@ -315,16 +317,13 @@ fn run_entering_pass(
     registry: &CardRegistry,
     pass: Pass,
 ) -> Option<EnteringPermanent> {
-    // Each source where it was as the entry began (CR 614.12): one put
-    // onto the battlefield in the same event as a deferred entry is judged
-    // from the zone it left (`GameState::zone_as_entering_began`).
     let mut candidates: Vec<(ObjectId, CardId)> = state
         .objects
         .values()
         .filter(|o| {
             registry
                 .get(o.card_id)
-                .is_some_and(|b| state.zone_as_entering_began(o.id).is_some_and(|z| b.replacement_zones().contains(&z)))
+                .is_some_and(|b| b.replacement_zones().contains(&o.zone))
         })
         .map(|o| (o.id, o.card_id))
         .collect();

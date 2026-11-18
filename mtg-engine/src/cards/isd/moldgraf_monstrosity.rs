@@ -70,24 +70,18 @@ impl CardBehavior for MoldgrafMonstrosity {
 
         // "return two creature cards AT RANDOM".
         let to_return = state.choose_at_random(&creatures_in_gy, 2);
-        // Both in one event (CR 614.12): what each enters as is decided by
-        // what was there before either.
-        let names: Vec<String> = to_return.iter().map(|&cid| state.get_object(cid).map(|o| o.name.clone()).unwrap_or_default()).collect();
-        let moved = state.move_onto_battlefield_together(&to_return, controller, registry);
-        for ((cid, name), moved) in to_return.iter().zip(names).zip(moved) {
-            if !moved {
-                // Its entry waits on what it enters as a copy of (CR
-                // 614.12b), asked once the other has entered: it may copy
-                // only a creature there before either (Evil Twin's ruling).
-                let before: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                    .filter(|o| !to_return.contains(&o.id) && state.is_creature(o.id, registry))
-                    .map(|o| o.id)
-                    .collect();
-                state.pending_entry_options.insert(*cid, before);
-                continue;
-            }
-            state.log(crate::state::LogLevel::Event,
-                format!("Moldgraf Monstrosity: {name} returned to the battlefield"));
-        }
+        // Both in one event: an Evil Twin among them chooses from what was
+        // already on the battlefield, not the card returning beside it, and
+        // neither is announced as returned while the Twin is still choosing
+        // (CR 603.6a, 614.12b; #1065, #1067 on Grimoire of the Dead).
+        state.put_onto_battlefield_together(
+            to_return,
+            Some(controller),
+            crate::state::EntryAdditions::default(),
+            "Moldgraf Monstrosity",
+            "returned to the battlefield",
+            None,
+            registry,
+        );
     }
 }
