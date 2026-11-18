@@ -1356,6 +1356,10 @@ struct Trigger {
     /// "you may pay {1}. If you do, ...": what taking the "may" costs, paid
     /// from its controller's pool (CR 118.3).
     pay: Option<ManaCost>,
+    /// "When this creature leaves the battlefield, ..." where the text
+    /// says so and not "dies": exiled or returned to a hand sets it off
+    /// too (CR 603.6c).
+    on_leaving: bool,
 }
 
 /// "Whenever <creatures> die, ...": a leaves-the-battlefield trigger of a
@@ -2659,9 +2663,12 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             continue;
         }
         // "When this creature leaves the battlefield, return the exiled
-        // card ...": the death check plays it as the creature dies, the one
-        // way of leaving it plays (CR 603.6c).
-        let line = if line == "When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control." {
+        // card ...": read as a dies trigger that any other way of leaving
+        // sets off too (CR 603.6c). The death check plays it as the
+        // creature dies; exiled or returned to a hand, it is set off
+        // wherever that happens.
+        let leaving = line == "When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.";
+        let line = if leaving {
             "When this creature dies, return the exiled card to the battlefield under its owner's control."
         } else {
             line
@@ -2673,7 +2680,7 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             };
             let mut chars = rest.chars();
             let text: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
-            let mut trigger = Trigger { optional, ..Trigger::default() };
+            let mut trigger = Trigger { optional, on_leaving: leaving, ..Trigger::default() };
             for sentence in text.split_inclusive(". ") {
                 trigger.spec.sentence(sentence).ok_or_else(unread)?;
             }
@@ -3601,6 +3608,11 @@ struct World {
     /// [`World::deaths`]: its dies trigger, and each watcher's that sees it,
     /// go on the stack once that is done.
     died: Vec<(ObjectId, Model, u32)>,
+    /// What left the battlefield without dying as what is resolving
+    /// resolved (exiled, returned to a hand, put into a library), each as
+    /// it last existed there: its "leaves the battlefield" trigger goes on
+    /// the stack once that is done (CR 603.6c, 603.10a).
+    left: Vec<(ObjectId, Model)>,
     /// The events creatures have died in so far: a resolution is one, and
     /// each pass of the state-based actions that follows is another (CR
     /// 704.3). A watcher that died sees the deaths of its own event and of
@@ -3915,6 +3927,8 @@ impl World {
             if let Some(last) = self.as_it_last_was(id) {
                 self.died.push((id, last, self.deaths));
             }
+        } else if let Some(last) = self.as_it_last_was(id) {
+            self.left.push((id, last));
         }
         let Some(mut m) = self.permanents.remove(&id) else { return };
         // Off the battlefield a double-faced card has only its front face
@@ -4362,6 +4376,7 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
         triggered: 0,
         entered: Vec::new(),
         died: Vec::new(),
+        left: Vec::new(),
         deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
@@ -6689,6 +6704,7 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     let active = w.active;
     let entered = std::mem::take(&mut w.entered);
     let died = std::mem::take(&mut w.died);
+    let left = std::mem::take(&mut w.left);
     let mut triggers: Vec<(Option<ObjectId>, PlayerId, Trigger)> = Vec::new();
     // What a permanent's own text is, its front face's unless it is turned
     // over (CR 712.8e), read from its card.
@@ -6719,6 +6735,13 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     // Each creature that died: its own dies trigger, and the "whenever ...
     // dies" of each permanent there to see it, on the battlefield now or
     // dying beside it, looking back (CR 603.6c, 603.10a).
+    // Each permanent that left without dying: its own "leaves the
+    // battlefield" trigger, looking back (CR 603.6c, 603.10a).
+    for (gone, last) in &left {
+        if let Some(t) = text(last).and_then(|s| s.dies).filter(|t| t.on_leaving) {
+            triggers.push((Some(*gone), last.controller, *t));
+        }
+    }
     for (dead, last, when) in &died {
         if let Some(t) = text(last).and_then(|s| s.dies) {
             triggers.push((Some(*dead), last.controller, *t));
@@ -6763,10 +6786,16 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     // Two triggers alike (the same ability, of sources alike) end the same
     // in either order, so each order of what differs is tried once: three
     // Doomed Travelers dying to one Blasphemous Act are one order, not six.
+    // Not two "leaves the battlefield" triggers that return what each
+    // source exiled: alike as the sources are, what each exiled is its own
+    // (CR 607.2a).
     let alike = |ts: &[&(Option<ObjectId>, PlayerId, Trigger)]| -> Vec<String> {
         ts.iter().map(|(src, c, t)| {
-            let source = src.and_then(|id| w.permanents.get(&id).or_else(|| died.iter().find(|(d, _, _)| *d == id).map(|(_, m, _)| m)));
-            format!("{c:?} {t:?} {source:?}")
+            let source = src.and_then(|id| w.permanents.get(&id)
+                .or_else(|| died.iter().find(|(d, _, _)| *d == id).map(|(_, m, _)| m))
+                .or_else(|| left.iter().find(|(d, _)| *d == id).map(|(_, m)| m)));
+            let own = if t.on_leaving { format!("{src:?}") } else { String::new() };
+            format!("{c:?} {t:?} {source:?} {own}")
         }).collect()
     };
     let (ap_orders, nap_orders) = (distinct_orders(&alike(&ap)), distinct_orders(&alike(&nap)));
@@ -11038,6 +11067,7 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         triggered: 0,
         entered: Vec::new(),
         died: Vec::new(),
+        left: Vec::new(),
         deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
