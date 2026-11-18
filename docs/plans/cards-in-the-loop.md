@@ -347,6 +347,7 @@ the same check as on the hand-made boards, now a function of the board:
 | loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 22,000, 5 s |
 | werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 24,384, 2 s |
 | enter watchers | every "whenever ... enters" read, as each player casts a creature it may or may not name (`check_enter_watcher_on`) | 12,192, 2 s |
+| cast watchers | every "whenever you cast ..." read, as its controller casts an instant from their hand and by flashback and a creature, and as the other player casts an instant (`check_cast_watcher_on`) | 24,384, 3 s |
 
 Every one of those agrees with its card's text. They run in
 `scripts/prove.sh exhaustive`, and so on every push and pull request.
@@ -355,7 +356,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** No engine defect yet; seven gaps of the
+**What it has found so far.** No engine defect yet; eight gaps of the
 reference, each on a board nobody wrote and in each the engine right:
 
 - the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
@@ -375,7 +376,13 @@ reference, each on a board nobody wrote and in each the engine right:
   for {1}, CR 302.6; two pieces);
 - "the exiled card" is each source's own (CR 607.2a): of two Fiend
   Hunters returned together that exile each other, one comes back (two
-  pieces).
+  pieces);
+- a trigger that a resolution sets off goes on the stack above what is
+  still there and resolves first (CR 603.3b, 405.5): Fiend Hunter and
+  Morkrut Banshee returned together, the Banshee's -4/-4 killing the
+  Hunter while its enters ability waits, so that its leaves ability
+  returns nothing and the Banshee is then exiled for good (the Hunter's
+  ruling of 2018-12-07; two pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -391,8 +398,8 @@ does not play; such an ability (Garruk, the Veil-Cursed's sacrifice) is
 not played beside a permanent that triggers on a death.
 
 **Next.** The two-piece run to its end, each disagreement worked to its
-cause. Then the properties still on hand-made boards alone: the
-watchers of casts, and combat; and the cut above. Three pieces as they entered is 88 million boards
+cause. Then the property still on hand-made boards alone, combat; and
+the cut above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 
