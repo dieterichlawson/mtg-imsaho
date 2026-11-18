@@ -3363,6 +3363,9 @@ struct Model {
     attacking: bool,
     attacks: Option<Target>,
     exile_at_end_of_combat: bool,
+    /// Regenerated in this combat, and so removed from it (CR 701.19c,
+    /// 506.4): it deals and is dealt no more combat damage.
+    out_of_combat: bool,
 }
 
 impl Model {
@@ -3410,6 +3413,7 @@ impl Model {
             attacking: false,
             attacks: None,
             exile_at_end_of_combat: false,
+            out_of_combat: false,
         }
     }
 
@@ -4132,7 +4136,8 @@ impl World {
 
     /// Destroy `id` (CR 701.8): nothing if it is indestructible (702.12b);
     /// if it has a regeneration shield, the shield is used instead, and it
-    /// is tapped and its damage removed (701.19c); otherwise it goes to its
+    /// is tapped, its damage removed and it is out of combat (701.19c);
+    /// otherwise it goes to its
     /// owner's graveyard, a death if it is a creature (700.4). Whether it
     /// was destroyed.
     fn destroy(&mut self, id: ObjectId) -> bool {
@@ -4145,6 +4150,8 @@ impl World {
             m.damage = 0;
             m.deathtouched = false;
             m.tapped = true;
+            m.out_of_combat = true;
+            m.attacking = false;
             return false;
         }
         let creature = m.is_creature();
@@ -5048,6 +5055,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
         attacking: false,
         attacks: None,
         exile_at_end_of_combat: false,
+        out_of_combat: false,
         ..m.clone()
     }
 }
@@ -5096,6 +5104,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         attacking: false,
         attacks: None,
         exile_at_end_of_combat: false,
+        out_of_combat: false,
     }
 }
 
@@ -10382,6 +10391,9 @@ struct Attack {
 /// own blockers every way it may.
 fn combat_of(world: &World, attacks: &[Attack]) -> Vec<World> {
     let mut w = world.clone();
+    for m in w.permanents.values_mut() {
+        m.out_of_combat = false;
+    }
     w.refresh();
     for attack in attacks {
         let a = attack.attacker;
@@ -10558,7 +10570,7 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
             for (attack, order) in attacks.iter().zip(&orders) {
                 let (a, defender) = (attack.attacker, &attack.defender);
                 let mut own: Vec<Vec<(Target, u32, Src)>> = vec![Vec::new()];
-                if let Some(am) = w.permanents.get(&a).filter(|m| deals(m) && power(m) > 0) {
+                if let Some(am) = w.permanents.get(&a).filter(|m| !m.out_of_combat && deals(m) && power(m) > 0) {
                     let n = power(am);
                     // What it attacks, a planeswalker no longer there taking
                     // nothing (CR 506.4).
@@ -10576,7 +10588,7 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
                         // source (702.2c), else its toughness less the
                         // damage it has.
                         let there: Vec<(ObjectId, u32)> = order.iter()
-                            .filter_map(|b| w.permanents.get(b).map(|bm| (*b, if has(am, Keyword::Deathtouch) {
+                            .filter_map(|b| w.permanents.get(b).filter(|bm| !bm.out_of_combat).map(|bm| (*b, if has(am, Keyword::Deathtouch) {
                                 1
                             } else {
                                 u32::try_from(w.pt_of(bm).1.unwrap_or(0).max(0)).expect("non-negative").saturating_sub(bm.damage)
@@ -10592,10 +10604,11 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
                             .collect();
                     }
                 }
-                // Its blockers' damage to it.
-                if w.permanents.contains_key(&a) {
+                // Its blockers' damage to it, if it is still in combat,
+                // from each that is (CR 510.1d).
+                if w.permanents.get(&a).is_some_and(|m| !m.out_of_combat) {
                     for b in order {
-                        if let Some(bm) = w.permanents.get(b).filter(|m| deals(m) && power(m) > 0) {
+                        if let Some(bm) = w.permanents.get(b).filter(|m| !m.out_of_combat && deals(m) && power(m) > 0) {
                             for branch in &mut own {
                                 branch.push((Target::Object(a), power(bm), Src::Permanent(*b)));
                             }
@@ -10793,6 +10806,7 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
         w.tokens.retain(|t| !t.exile_at_end_of_combat);
         for t in w.tokens.iter_mut().chain(w.permanents.values_mut()) {
             t.attacking = false;
+            t.out_of_combat = false;
         }
         w.state_based_actions();
     }
