@@ -3233,12 +3233,20 @@ fn opponent_casts_a_spell(state: &mut GameState, world: &mut World, registry: &C
 /// to do and would let Giant Growth resolve for a caster whose only ability
 /// is activated as a sorcery.
 fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut World, registry: &CardRegistry, cache: &BTreeMap<String, Printed>) {
+    assert!(the_opponent_holds_a_spell_if_they_can(state, world, registry, cache), "Kindercatch is on the board");
+}
+
+/// [`the_opponent_holds_a_spell_on_the_stack`] on any board: Giant Growth
+/// on Kindercatch if it is there, and otherwise on a creature of the
+/// opponent's own; with none, nothing is cast, and that is said.
+fn the_opponent_holds_a_spell_if_they_can(state: &mut GameState, world: &mut World, registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> bool {
+    let Some(kindercatch) = world.permanents.iter()
+        .find(|(_, m)| m.name.as_deref() == Some("Kindercatch"))
+        .or_else(|| world.permanents.iter().find(|(_, m)| m.controller == P1 && m.is_creature()))
+        .map(|(id, _)| *id)
+    else { return false };
     let growth = spell_in_hand(state, registry, "Giant Growth", P1);
     fund(state, P1, &mana_cost("{G}").expect("a cost"), 0);
-    let kindercatch = world.permanents.iter()
-        .find(|(_, m)| m.name.as_deref() == Some("Kindercatch"))
-        .map(|(id, _)| *id)
-        .expect("on the board");
     state.priority_player = Some(P1);
     *state = cast_onto_stack(state, registry, growth, vec![Target::Object(kindercatch)]);
     // The caster passes, and priority goes to the next player, which the
@@ -3248,6 +3256,7 @@ fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut Wo
     assert!(state.stack.len() == 1 && state.priority_player == Some(P0),
         "Giant Growth is on the stack and the caster has priority");
     world.stack.push((growth, Model::printed(&cache["Giant Growth"], P1), vec![Target::Object(kindercatch)]));
+    true
 }
 
 /// Each player's library, top first: distinct names, so a card put on top
@@ -8615,18 +8624,30 @@ fn small_size() -> usize {
     std::env::var("CARD_SEMANTICS_SMALL").ok().map_or(0, |v| v.parse().expect("a number of pieces"))
 }
 
-/// Every card the grammar reads, cast on every small board: every board
-/// of at most `CARD_SEMANTICS_SMALL` pieces ([`small_pieces`]), each
-/// permanent in each state of wear on boards of one piece and as it
-/// entered on larger ones (`CARD_SEMANTICS_SMALL_WORN=1` wears those
-/// too). `cargo test` alone runs every hundredth board of one piece.
-/// `CARD_SEMANTICS_SHARD=K/N` runs the Kth of N shares of the boards, and
-/// the boards of a run are shared out among the machine's cores. A
-/// failure names its board by its pieces, and
-/// `CARD_SEMANTICS_SMALL_BOARD=I,J` (with the same `CARD_SEMANTICS_SMALL`)
-/// plays that board alone.
-#[test]
-fn every_readable_card_does_what_its_text_says_on_every_small_board() {
+/// What a check on every small board is handed: the registry, the Oracle
+/// records, the cards the grammar reads, the boards' vocabulary and the
+/// pool's names.
+struct Small<'a> {
+    registry: &'a CardRegistry,
+    cache: &'a BTreeMap<String, Printed>,
+    cards: &'a [(Printed, Spec)],
+    vocabulary: &'a [(Printed, Spec)],
+    pool: &'a [&'a str],
+}
+
+/// `check` on every small board: every board of at most
+/// `CARD_SEMANTICS_SMALL` pieces ([`small_pieces`]), each permanent in each
+/// state of wear on boards of one piece and as it entered on larger ones
+/// (`CARD_SEMANTICS_SMALL_WORN=1` wears those too). `cargo test` alone
+/// runs every hundredth board of one piece. `CARD_SEMANTICS_SHARD=K/N`
+/// runs the Kth of N shares of the boards, and the boards of a run are
+/// shared out among the machine's cores. A failure names its board by its
+/// pieces, and `CARD_SEMANTICS_SMALL_BOARD=I,J` (with the same
+/// `CARD_SEMANTICS_SMALL`) plays that board alone.
+///
+/// `check` is given a board's pieces and what names the board in a
+/// failure, and pushes its disagreements and counts what it checked.
+fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut Vec<String>, &mut usize) + Sync)) {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
@@ -8651,40 +8672,410 @@ fn every_readable_card_does_what_its_text_says_on_every_small_board() {
         .map(|(_, b)| b)
         .collect();
     let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    let (registry, cache, cards, vocabulary, pool, pieces, mine) = (&registry, &cache, &cards, &vocabulary, &pool, &pieces, &mine);
+    let small = Small { registry: &registry, cache: &cache, cards: &cards, vocabulary: &vocabulary, pool: &pool };
+    let (small, pieces, mine) = (&small, &pieces, &mine);
     let results: Vec<(Vec<String>, usize, usize)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers).map(|worker| scope.spawn(move || {
             let mut failures = Vec::new();
-            let (mut casts, mut stood) = (0, 0);
+            let (mut checked, mut stood) = (0, 0);
             for board in mine.iter().skip(worker).step_by(workers) {
                 let on: Vec<Piece> = board.iter().map(|&i| pieces[i]).collect();
-                if small_board(&on, registry, cache, vocabulary, pool, false).is_some() {
-                    stood += 1;
-                }
+                let made = small_board(&on, small.registry, small.cache, small.vocabulary, small.pool, false);
+                stood += usize::from(made.is_some());
                 let before = failures.len();
-                for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
-                    let Some(made) = small_board_for(spec, &on, registry, cache, vocabulary, pool) else { continue };
-                    check_cast_on(card, spec, &format!(" on small board {board:?}"), made, registry, cache, &mut failures, &mut casts);
-                }
+                check(small, &on, &format!(" on small board {board:?}"), &mut failures, &mut checked);
                 if failures.len() > before {
-                    let world = small_board(&on, registry, cache, vocabulary, pool, false)
-                        .or_else(|| small_board(&on, registry, cache, vocabulary, pool, true))
+                    let world = made.or_else(|| small_board(&on, small.registry, small.cache, small.vocabulary, small.pool, true))
                         .map_or_else(|| "not a board of the family".to_string(), |(_, w)| described(&w));
                     failures.push(format!("small board {board:?} is {on:?}: {world}"));
                 }
             }
-            (failures, casts, stood)
+            (failures, checked, stood)
         })).collect();
         handles.into_iter().map(|h| h.join().expect("a worker")).collect()
     });
     let failures: Vec<String> = results.iter().flat_map(|(f, _, _)| f.iter().cloned()).collect();
-    let casts: usize = results.iter().map(|(_, c, _)| c).sum();
+    let checked: usize = results.iter().map(|(_, c, _)| c).sum();
     let stood: usize = results.iter().map(|(_, _, s)| s).sum();
-    println!("small boards: {} pieces, {} boards of at most {} of them, {} in this share, {stood} of those boards of the family, {casts} casts",
+    println!("small boards: {} pieces, {} boards of at most {} of them, {} in this share, {stood} of those boards of the family, {checked} {what}",
         pieces.len(), boards.len(), size.max(1), mine.len());
-    assert!(casts > 0);
-    assert!(failures.is_empty(), "{} of {casts} casts on small boards, across the {} cards read, disagree with their text:\n  {}",
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} {what} on small boards, across the {} cards read, disagree with their text:\n  {}",
         failures.len(), cards.len(), failures.join("\n  "));
+}
+
+/// Every card the grammar reads, cast on every small board
+/// ([`on_every_small_board`]) at every target set its text allows and
+/// every way its questions can be answered, and the games the engine ends
+/// in held to the games the text allows.
+#[test]
+fn every_readable_card_does_what_its_text_says_on_every_small_board() {
+    on_every_small_board("casts", &|small, on, which, failures, casts| {
+        for (card, spec) in small.cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
+            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+            check_cast_on(card, spec, which, made, small.registry, small.cache, failures, casts);
+        }
+    });
+}
+
+/// Every activated ability the grammar reads, its permanent placed on
+/// every small board ([`on_every_small_board`]) under the player whose
+/// turn it is: offered at exactly the targets and sacrifices its text
+/// allows there, and activated at each and resolved it does what its text
+/// says ([`check_activated_on`]). Either face of a double-faced card; not
+/// the abilities [`every_readable_activated_ability_does_what_its_text_says`]
+/// leaves to a test of their own.
+#[test]
+fn every_readable_activated_ability_does_what_its_text_says_on_every_small_board() {
+    let backs = {
+        let registry = registry();
+        let cache = oracle_cache();
+        back_faces(&readable(&registry, &cache).0)
+    };
+    on_every_small_board("abilities", &|small, on, which, failures, checked| {
+        for (card, spec) in small.cards.iter().chain(&backs) {
+            let abilities = spec.activated.iter()
+                .filter(|a| !a.pays_the_exiled_cards_cost && !a.spec.effects.contains(&Effect::ShuffleIntoLibraryRevealUntilNamed));
+            for ability in abilities {
+                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+                *checked += 1;
+                let name = format!("{}'s ability {}{which}", card.name, ability.index);
+                check_activated_on(card, spec, ability, None, None, false, &name, made, small.cards, small.registry, small.cache, failures);
+            }
+        }
+    });
+}
+
+/// One activated ability of `card`, placed on one board under P0: the
+/// engine offers it at exactly the targets and sacrifices its text allows
+/// there, and activated at each (its costs paid, CR 602.2) and resolved it
+/// does what its text says, every way its questions can be answered; then
+/// what [`every_readable_activated_ability_does_what_its_text_says`] says
+/// of it besides. `count` is how many of the subtype it asks its controller
+/// to control are to be there, `already` the counters of a kind on it, and
+/// `borrowed` makes it the other player's card. Disagreements are pushed
+/// onto `failures`, each named by `name`.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn check_activated_on(card: &Printed, spec: &Spec, ability: &Activated, count: Option<usize>, already: Option<&(String, u32)>, borrowed: bool, name: &str,
+    (mut state, mut world): (GameState, World), cards: &[(Printed, Spec)], registry: &CardRegistry, cache: &BTreeMap<String, Printed>, failures: &mut Vec<String>) {
+    let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+    if borrowed {
+        state.get_object_mut(id).expect("just placed").owner = P1;
+        world.permanents.get_mut(&id).expect("just placed").owner = P1;
+    }
+    // A 0/0 but for the counters it enters with (Mikaeus) is
+    // placed with two, as placing it gives it none.
+    if spec.enters_with_x_counters {
+        state.get_object_mut(id).expect("just placed").counters.insert(CounterType::PlusOnePlusOne, 2);
+        let m = world.permanents.get_mut(&id).expect("just placed");
+        change(m, 2, 2);
+        m.counters.0 = 2;
+    }
+    if let Some((kind, n)) = &already {
+        state.get_object_mut(id).expect("just placed").counters.insert(counter_named(kind), *n);
+        world.permanents.get_mut(&id).expect("just placed").named_counters.insert(kind.clone(), *n);
+    }
+    let of = |world: &World, subtype: &str| world.permanents.values().filter(|m| m.controller == P0 && m.subtypes.iter().any(|t| t == subtype)).count();
+    if let (Some(c), Some((_, subtype))) = (count, &ability.if_you_control) {
+        let more = c.saturating_sub(of(&world, subtype));
+        add_creatures_of(&mut state, &mut world, &registry, &cards, subtype, more, P0);
+        assert_eq!(of(&world, subtype), c, "{name}: the board had more than that already");
+    }
+    // The creatures a "tap N untapped creatures" cost chooses among.
+    let others: Vec<Target> = world.permanents.iter()
+        .filter(|(c, m)| m.controller == P0 && m.is_creature() && !m.tapped && **c != id)
+        .map(|(c, _)| Target::Object(*c))
+        .collect();
+    let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n)
+        && (!ability.morbid || world.a_creature_died)
+        && (!ability.remove_counter || world.permanents[&id].counters.0 > 0)
+        && ability.remove_named.as_ref().is_none_or(|(k, n)| world.permanents[&id].named_counters.get(k).copied().unwrap_or(0) >= *n)
+        && (!ability.discard || !world.hand[0].is_empty())
+        && others.len() >= ability.tap_others;
+    world.refresh();
+    world.source = Some(id);
+    fund(&mut state, P0, &ability.mana, 0);
+
+    // The source is not a target: the engine's list leaves it out.
+    let chosen = |set: &[Target]| -> Vec<Target> {
+        set.iter().zip(&ability.spec.slots)
+            .filter(|(_, s)| !matches!(s, Slot::This))
+            .map(|(t, _)| t.clone())
+            .collect()
+    };
+    let expected = target_sets(&ability.spec, &world, P0);
+    // What the cost may sacrifice: any creature its controller
+    // controls, or any but the source (CR 602.2b, 601.2h); one
+    // action is offered for each target and sacrifice.
+    let sacrifices: Vec<Option<ObjectId>> = match ability.sacrifice {
+        None => vec![None],
+        Some(which) => world.permanents.iter()
+            .filter(|(c, m)| m.controller == P0 && m.is_creature() && !(which == Sacrifice::AnotherCreature && **c == id))
+            .map(|(c, _)| Some(*c))
+            .collect(),
+    };
+    let exilable = world.yard.values().any(|m| m.owner == P0 && m.is_creature());
+    let key = |(t, s): &(Vec<Target>, Option<ObjectId>)| (t.iter().map(target_key).collect::<Vec<_>>(), s.map(|i| i.0));
+    let mut expected_chosen: Vec<(Vec<Target>, Option<ObjectId>)> = expected.iter()
+        .filter(|_| (!ability.exile_creature_card || exilable) && allowed)
+        .flat_map(|set| sacrifices.iter().map(|sac| (chosen(set), *sac)))
+        .collect();
+    expected_chosen.sort_by_key(key);
+    let offers: Vec<Action> = engine::legal_actions(&state, &registry).actions.into_iter()
+        .filter(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+            if *object_id == id && *ability_index == ability.index))
+        .collect();
+    let mut offered: Vec<(Vec<Target>, Option<ObjectId>)> = offers.iter()
+        .map(|a| match a { Action::ActivateAbility { targets, sacrifice, .. } => (targets.clone(), *sacrifice), _ => unreachable!() })
+        .collect();
+    offered.sort_by_key(key);
+    if offered != expected_chosen {
+        failures.push(format!("{name}: offered at {offered:?}, the text allows {expected_chosen:?}"));
+        return;
+    }
+    // With the opponent's spell on the stack, an ability activated
+    // only as a sorcery is not offered, and any other still is
+    // (CR 602.5d, 702.6a, 117.1b).
+    let (mut busy, mut busy_world) = (state.clone(), world.clone());
+    if the_opponent_holds_a_spell_if_they_can(&mut busy, &mut busy_world, &registry, &cache) {
+        let offered_busy = engine::legal_actions(&busy, &registry).actions.iter()
+            .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id && *ability_index == ability.index));
+        if offered_busy != (!ability.sorcery && !offers.is_empty()) {
+            failures.push(format!("{name}: offered with a spell on the stack {offered_busy}, and it is {}activated only as a sorcery",
+                if ability.sorcery { "" } else { "not " }));
+        }
+    }
+    for (targets, sac) in &expected_chosen {
+        let full = expected.iter().find(|set| chosen(set) == *targets).expect("a set it was chosen from");
+        let act = offers.iter()
+            .find(|a| matches!(a, Action::ActivateAbility { targets: t, sacrifice: s, .. } if t == targets && s == sac))
+            .expect("offered, as just compared")
+            .clone();
+        // The costs, paid as it is activated (CR 602.2b): the tap,
+        // the sacrifice, which is a death (700.4), the card exiled,
+        // whichever its controller chooses, and X.
+        let mut paid = world.clone();
+        if ability.tap {
+            paid.permanents.get_mut(&id).expect("the source").tapped = true;
+        }
+        if ability.remove_counter {
+            let m = paid.permanents.get_mut(&id).expect("the source");
+            m.counters.0 -= 1;
+            change(m, -1, -1);
+        }
+        if let Some((kind, n)) = &ability.remove_named {
+            let m = paid.permanents.get_mut(&id).expect("the source");
+            *m.named_counters.get_mut(kind).expect("enough, as allowed") -= n;
+        }
+        if ability.sacrifice_self {
+            paid.leave(id, Dest::Graveyard);
+        }
+        if let Some(victim) = sac {
+            paid.refresh();
+            paid.cost_sacrificed = paid.as_it_last_was(*victim);
+            paid.leave(*victim, Dest::Graveyard);
+            paid.a_creature_died = true;
+        }
+        let mut ways = vec![paid];
+        if ability.tap_others > 0 {
+            ways = ways.iter()
+                .flat_map(|w| subsets(&others, ability.tap_others).into_iter().filter(|set| set.len() == ability.tap_others).map(|set| {
+                    let mut w = w.clone();
+                    for t in set {
+                        let Target::Object(c) = t else { unreachable!() };
+                        w.permanents.get_mut(&c).expect("on the battlefield").tapped = true;
+                    }
+                    w
+                }).collect::<Vec<_>>())
+                .collect();
+        }
+        if ability.exile_creature_card {
+            ways = ways.iter()
+                .flat_map(|w| w.yard.iter().filter(|(_, m)| m.owner == P0 && m.is_creature()).map(|(c, _)| {
+                    let mut w = w.clone();
+                    let card = w.leave_yard(*c).expect("in the graveyard");
+                    w.exile[0].push(card.name.expect("a card"));
+                    w
+                }).collect::<Vec<_>>())
+                .collect();
+        }
+        // A discard of any card in hand, by name (CR 701.9a).
+        if ability.discard {
+            ways = ways.iter()
+                .flat_map(|w| {
+                    let mut names = w.hand[0].clone();
+                    names.sort();
+                    names.dedup();
+                    names.into_iter().map(|n| {
+                        let mut w = w.clone();
+                        let at = w.hand[0].iter().position(|h| *h == n).expect("in hand");
+                        w.hand[0].remove(at);
+                        w.graveyard[0].push(n);
+                        w
+                    }).collect::<Vec<_>>()
+                })
+                .collect();
+        }
+        if ability.mana.symbols.contains(&ManaSymbol::X) {
+            ways = ways.iter().flat_map(|w| (0..=X_FLOAT).map(|x| World { x, pool: x_left(w, x), ..w.clone() })).collect();
+        }
+        // What paying the costs set off (a sacrifice's death, seen by
+        // what watches deaths) goes on the stack above the ability and
+        // resolves first (CR 602.2b, 601.2i, 603.3), after the
+        // state-based actions the activation is followed by (704.3).
+        let mut cost_set_off_a_trigger = false;
+        ways = ways.into_iter()
+            .flat_map(|mut w| {
+                w.state_based_actions();
+                let quiet = World { died: Vec::new(), entered: Vec::new(), ..w.clone() }.observed();
+                let settled = settle_triggers(w);
+                cost_set_off_a_trigger |= settled.len() != 1 || settled[0].observed() != quiet;
+                settled
+            })
+            .collect();
+        // The board with its costs paid, before any answer of the
+        // resolution is chosen.
+        let paid_ways = ways.clone();
+        ways = ways.iter().flat_map(|w| resolution_ways(&ability.spec, w, full, P0)).collect();
+        let resolve = |w: World| {
+            // A target gone by the time it resolves: it does
+            // nothing (CR 608.2b).
+            let gone = !targets.is_empty() && full.iter().zip(&ability.spec.slots)
+                .filter(|(_, slot)| !matches!(slot, Slot::This))
+                .all(|(t, slot)| match (t, slot) {
+                    (Target::Object(o), Slot::GraveyardCard { .. }) => !w.yard.contains_key(o),
+                    (Target::Object(o), _) => !w.permanents.contains_key(o),
+                    _ => false,
+                });
+            let mut after = if gone { w } else { apply(&ability.spec, &w, full, P0) };
+            after.state_based_actions();
+            after
+        };
+        // And then what its resolution set off, every way that can go.
+        let settled = |w: World| settle_triggers(resolve(w));
+        let want: Vec<World> = ways.iter().cloned().flat_map(settled).collect();
+        let at = format!("{name} at {targets:?}{}", sac.map_or(String::new(), |v| format!(", sacrificing {v:?}")));
+        let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
+        if let Some(why) = disagreement(&want, &endings, &registry) {
+            failures.push(format!("{at}: {why}"));
+            continue;
+        }
+        if let Some(why) = wrong_chooser(&ability.spec, full, &world, P0, id, &asked) {
+            failures.push(format!("{at}: {why}"));
+        }
+        // A double-faced source transformed in response, as by
+        // Moonmist: the ability on the stack is the face's it was
+        // activated from, and resolves as that face's text says on
+        // the permanent as it now is (CR 113.7a, 112.7a); a
+        // transform of its own does nothing (701.28f).
+        if world.permanents[&id].other_face.is_some() && !ability.sacrifice_self {
+            let answered: Vec<World> = ways.iter().cloned()
+                .flat_map(|mut w| {
+                    let m = w.permanents.get_mut(&id).expect("the source, still there");
+                    w.faces_put = BTreeMap::from([(id, m.transformed)]);
+                    m.transform();
+                    w.refresh();
+                    settled(w).into_iter().map(|mut after| {
+                        after.faces_put.clear();
+                        after
+                    }).collect::<Vec<_>>()
+                })
+                .collect();
+            // Where the ability is alone on the stack with its controller
+            // to act: not where paying for it set off a trigger, which is
+            // above it or waiting on its target, and resolves first.
+            let mut held = engine::submit_action(&state, &act, &registry);
+            if held.stack.len() == 1 && held.priority_player == Some(P0) && !cost_set_off_a_trigger {
+                mtg_engine::cards::helpers::apply_transform(&mut held, id, &registry);
+                if let Some(why) = disagreement(&answered, &every_ending(&held, &registry, None), &registry) {
+                    failures.push(format!("{at}, its source transformed in response: {why}"));
+                }
+            }
+        }
+        // Its source exiled in response: the ability resolves all
+        // the same (CR 113.7a), reading the source as it last
+        // existed (608.2h), and what it does to the source itself
+        // does nothing. Not when the source paid for it by leaving.
+        if !ability.sacrifice_self && *sac != Some(id) {
+            // Gone before the resolution's own answers are chosen
+            // among what is left.
+            let answered: Vec<World> = paid_ways.iter().cloned()
+                .flat_map(|mut w| {
+                    w.leave(id, Dest::Exile);
+                    w.refresh();
+                    resolution_ways(&ability.spec, &w, full, P0)
+                })
+                .flat_map(settled)
+                .collect();
+            // One that asks its X first is on the stack only once
+            // it is answered, and is left out; so is one whose payment set
+            // off a trigger, above it or waiting on its target.
+            let mut held = engine::submit_action(&state, &act, &registry);
+            if held.stack.len() == 1 && held.priority_player == Some(P0) && !cost_set_off_a_trigger {
+                held.move_object(id, Zone::Exile, &registry);
+                let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
+                if let Some(why) = disagreement(&answered, &endings, &registry)
+                    .or_else(|| wrong_chooser(&ability.spec, full, &world, P0, id, &asked))
+                {
+                    failures.push(format!("{at}, its source exiled in response: {why}"));
+                }
+            }
+        }
+        // Played on into the opponent's turn, where what lasted
+        // this one is gone.
+        if lasts_the_turn(&ability.spec) {
+            if let (Ok([after]), [w]) = (endings.as_deref(), &want[..]) {
+                // With one spell cast this turn, so that neither face
+                // of a werewolf on the board transforms.
+                let mut after = after.clone();
+                after.num_spells_cast_this_turn = BTreeMap::from([(P0, 1)]);
+                let next = next_turn_outcomes(&Spec::default(), w, id, P1);
+                if let Some(why) = disagreement(&next, &every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain)), &registry) {
+                    failures.push(format!("{at}, in the next turn: {why}"));
+                }
+            }
+        }
+        // A shield is for the next destruction this turn: each
+        // creature with one is dealt lethal damage, and must
+        // regenerate (CR 701.19c, 704.5g).
+        // Where the ability went one way (what watches a death on the
+        // board may make it several).
+        if let (true, Ok([after]), [w]) = (ability.spec.effects.iter().any(|e| matches!(e, Effect::Regenerate { .. } | Effect::RegenerateAll { .. })), endings.as_deref(), &want[..]) {
+            let (mut engine_side, mut text) = (after.clone(), w.clone());
+            for (shielded, m) in w.permanents.iter().filter(|(_, m)| m.shields > 0) {
+                let lethal = u32::try_from(w.pt_of(m).1.unwrap_or(1).max(1)).expect("positive");
+                engine_side.get_object_mut(*shielded).expect("on the battlefield").damage_marked = lethal;
+                text.permanents.get_mut(shielded).expect("on the battlefield").damage = lethal;
+            }
+            text.state_based_actions();
+            if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
+                failures.push(format!("{at}, then dealt lethal damage: {why}"));
+            }
+            // And by an effect that destroys it (CR 701.8a), through
+            // the engine's destruction.
+            let (mut engine_side, mut text) = (after.clone(), w.clone());
+            for shielded in w.permanents.iter().filter(|(_, m)| m.shields > 0).map(|(i, _)| *i) {
+                mtg_engine::destruction::try_destroy(&mut engine_side, shielded, &registry);
+                text.destroy(shielded);
+            }
+            text.state_based_actions();
+            if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
+                failures.push(format!("{at}, then destroyed: {why}"));
+            }
+        }
+        if ability.once_each_turn {
+            for after in endings.as_deref().unwrap_or_default() {
+                let mut again = after.clone();
+                fund(&mut again, P0, &ability.mana, 0);
+                let offered_again = engine::legal_actions(&again, &registry).actions.iter()
+                    .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+                        if *object_id == id && *ability_index == ability.index));
+                if offered_again {
+                    failures.push(format!("{name}: offered a second time in the turn"));
+                }
+            }
+        }
+    }
 }
 
 /// Every activated ability the grammar reads, of a permanent its controller
@@ -8770,304 +9161,12 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 already.as_ref().map_or(String::new(), |(kind, n)| format!(" with {n} {kind} counters on it")),
                 match board_of { Some(true) => " after a death", None => " beside planeswalkers", Some(false) => "" },
                 if borrowed { ", its owner the other player" } else { "" });
-            let (mut state, mut world) = match board_of {
+            let made = match board_of {
                 Some(true) => board_after_a_death(&registry, &cache),
                 None => board_with_planeswalkers(&registry, &cache),
                 Some(false) => board(&registry, &cache),
             };
-            let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
-            if borrowed {
-                state.get_object_mut(id).expect("just placed").owner = P1;
-                world.permanents.get_mut(&id).expect("just placed").owner = P1;
-            }
-            // A 0/0 but for the counters it enters with (Mikaeus) is
-            // placed with two, as placing it gives it none.
-            if spec.enters_with_x_counters {
-                state.get_object_mut(id).expect("just placed").counters.insert(CounterType::PlusOnePlusOne, 2);
-                let m = world.permanents.get_mut(&id).expect("just placed");
-                change(m, 2, 2);
-                m.counters.0 = 2;
-            }
-            if let Some((kind, n)) = &already {
-                state.get_object_mut(id).expect("just placed").counters.insert(counter_named(kind), *n);
-                world.permanents.get_mut(&id).expect("just placed").named_counters.insert(kind.clone(), *n);
-            }
-            let of = |world: &World, subtype: &str| world.permanents.values().filter(|m| m.controller == P0 && m.subtypes.iter().any(|t| t == subtype)).count();
-            if let (Some(c), Some((_, subtype))) = (count, &ability.if_you_control) {
-                let more = c.saturating_sub(of(&world, subtype));
-                add_creatures_of(&mut state, &mut world, &registry, &cards, subtype, more, P0);
-                assert_eq!(of(&world, subtype), c, "{name}: the board had more than that already");
-            }
-            // The creatures a "tap N untapped creatures" cost chooses among.
-            let others: Vec<Target> = world.permanents.iter()
-                .filter(|(c, m)| m.controller == P0 && m.is_creature() && !m.tapped && **c != id)
-                .map(|(c, _)| Target::Object(*c))
-                .collect();
-            let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n)
-                && (!ability.morbid || world.a_creature_died)
-                && (!ability.remove_counter || world.permanents[&id].counters.0 > 0)
-                && ability.remove_named.as_ref().is_none_or(|(k, n)| world.permanents[&id].named_counters.get(k).copied().unwrap_or(0) >= *n)
-                && (!ability.discard || !world.hand[0].is_empty())
-                && others.len() >= ability.tap_others;
-            world.refresh();
-            world.source = Some(id);
-            fund(&mut state, P0, &ability.mana, 0);
-
-            // The source is not a target: the engine's list leaves it out.
-            let chosen = |set: &[Target]| -> Vec<Target> {
-                set.iter().zip(&ability.spec.slots)
-                    .filter(|(_, s)| !matches!(s, Slot::This))
-                    .map(|(t, _)| t.clone())
-                    .collect()
-            };
-            let expected = target_sets(&ability.spec, &world, P0);
-            // What the cost may sacrifice: any creature its controller
-            // controls, or any but the source (CR 602.2b, 601.2h); one
-            // action is offered for each target and sacrifice.
-            let sacrifices: Vec<Option<ObjectId>> = match ability.sacrifice {
-                None => vec![None],
-                Some(which) => world.permanents.iter()
-                    .filter(|(c, m)| m.controller == P0 && m.is_creature() && !(which == Sacrifice::AnotherCreature && **c == id))
-                    .map(|(c, _)| Some(*c))
-                    .collect(),
-            };
-            let exilable = world.yard.values().any(|m| m.owner == P0 && m.is_creature());
-            let key = |(t, s): &(Vec<Target>, Option<ObjectId>)| (t.iter().map(target_key).collect::<Vec<_>>(), s.map(|i| i.0));
-            let mut expected_chosen: Vec<(Vec<Target>, Option<ObjectId>)> = expected.iter()
-                .filter(|_| (!ability.exile_creature_card || exilable) && allowed)
-                .flat_map(|set| sacrifices.iter().map(|sac| (chosen(set), *sac)))
-                .collect();
-            expected_chosen.sort_by_key(key);
-            let offers: Vec<Action> = engine::legal_actions(&state, &registry).actions.into_iter()
-                .filter(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
-                    if *object_id == id && *ability_index == ability.index))
-                .collect();
-            let mut offered: Vec<(Vec<Target>, Option<ObjectId>)> = offers.iter()
-                .map(|a| match a { Action::ActivateAbility { targets, sacrifice, .. } => (targets.clone(), *sacrifice), _ => unreachable!() })
-                .collect();
-            offered.sort_by_key(key);
-            if offered != expected_chosen {
-                failures.push(format!("{name}: offered at {offered:?}, the text allows {expected_chosen:?}"));
-                continue;
-            }
-            // With the opponent's spell on the stack, an ability activated
-            // only as a sorcery is not offered, and any other still is
-            // (CR 602.5d, 702.6a, 117.1b).
-            let (mut busy, mut busy_world) = (state.clone(), world.clone());
-            the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
-            let offered_busy = engine::legal_actions(&busy, &registry).actions.iter()
-                .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id && *ability_index == ability.index));
-            if offered_busy != (!ability.sorcery && !offers.is_empty()) {
-                failures.push(format!("{name}: offered with a spell on the stack {offered_busy}, and it is {}activated only as a sorcery",
-                    if ability.sorcery { "" } else { "not " }));
-            }
-            for (targets, sac) in &expected_chosen {
-                let full = expected.iter().find(|set| chosen(set) == *targets).expect("a set it was chosen from");
-                let act = offers.iter()
-                    .find(|a| matches!(a, Action::ActivateAbility { targets: t, sacrifice: s, .. } if t == targets && s == sac))
-                    .expect("offered, as just compared")
-                    .clone();
-                // The costs, paid as it is activated (CR 602.2b): the tap,
-                // the sacrifice, which is a death (700.4), the card exiled,
-                // whichever its controller chooses, and X.
-                let mut paid = world.clone();
-                if ability.tap {
-                    paid.permanents.get_mut(&id).expect("the source").tapped = true;
-                }
-                if ability.remove_counter {
-                    let m = paid.permanents.get_mut(&id).expect("the source");
-                    m.counters.0 -= 1;
-                    change(m, -1, -1);
-                }
-                if let Some((kind, n)) = &ability.remove_named {
-                    let m = paid.permanents.get_mut(&id).expect("the source");
-                    *m.named_counters.get_mut(kind).expect("enough, as allowed") -= n;
-                }
-                if ability.sacrifice_self {
-                    paid.leave(id, Dest::Graveyard);
-                }
-                if let Some(victim) = sac {
-                    paid.refresh();
-                    paid.cost_sacrificed = paid.as_it_last_was(*victim);
-                    paid.leave(*victim, Dest::Graveyard);
-                    paid.a_creature_died = true;
-                }
-                let mut ways = vec![paid];
-                if ability.tap_others > 0 {
-                    ways = ways.iter()
-                        .flat_map(|w| subsets(&others, ability.tap_others).into_iter().filter(|set| set.len() == ability.tap_others).map(|set| {
-                            let mut w = w.clone();
-                            for t in set {
-                                let Target::Object(c) = t else { unreachable!() };
-                                w.permanents.get_mut(&c).expect("on the battlefield").tapped = true;
-                            }
-                            w
-                        }).collect::<Vec<_>>())
-                        .collect();
-                }
-                if ability.exile_creature_card {
-                    ways = ways.iter()
-                        .flat_map(|w| w.yard.iter().filter(|(_, m)| m.owner == P0 && m.is_creature()).map(|(c, _)| {
-                            let mut w = w.clone();
-                            let card = w.leave_yard(*c).expect("in the graveyard");
-                            w.exile[0].push(card.name.expect("a card"));
-                            w
-                        }).collect::<Vec<_>>())
-                        .collect();
-                }
-                // A discard of any card in hand, by name (CR 701.9a).
-                if ability.discard {
-                    ways = ways.iter()
-                        .flat_map(|w| {
-                            let mut names = w.hand[0].clone();
-                            names.sort();
-                            names.dedup();
-                            names.into_iter().map(|n| {
-                                let mut w = w.clone();
-                                let at = w.hand[0].iter().position(|h| *h == n).expect("in hand");
-                                w.hand[0].remove(at);
-                                w.graveyard[0].push(n);
-                                w
-                            }).collect::<Vec<_>>()
-                        })
-                        .collect();
-                }
-                if ability.mana.symbols.contains(&ManaSymbol::X) {
-                    ways = ways.iter().flat_map(|w| (0..=X_FLOAT).map(|x| World { x, pool: x_left(w, x), ..w.clone() })).collect();
-                }
-                // The board with its costs paid, before any answer of the
-                // resolution is chosen.
-                let paid_ways = ways.clone();
-                ways = ways.iter().flat_map(|w| resolution_ways(&ability.spec, w, full, P0)).collect();
-                let resolve = |w: World| {
-                    // A target gone by the time it resolves: it does
-                    // nothing (CR 608.2b).
-                    let gone = !targets.is_empty() && full.iter().zip(&ability.spec.slots)
-                        .filter(|(_, slot)| !matches!(slot, Slot::This))
-                        .all(|(t, slot)| match (t, slot) {
-                            (Target::Object(o), Slot::GraveyardCard { .. }) => !w.yard.contains_key(o),
-                            (Target::Object(o), _) => !w.permanents.contains_key(o),
-                            _ => false,
-                        });
-                    let mut after = if gone { w } else { apply(&ability.spec, &w, full, P0) };
-                    after.state_based_actions();
-                    after
-                };
-                let want: Vec<World> = ways.iter().cloned().map(resolve).collect();
-                let at = format!("{name} at {targets:?}{}", sac.map_or(String::new(), |v| format!(", sacrificing {v:?}")));
-                let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
-                if let Some(why) = disagreement(&want, &endings, &registry) {
-                    failures.push(format!("{at}: {why}"));
-                    continue;
-                }
-                if let Some(why) = wrong_chooser(&ability.spec, full, &world, P0, id, &asked) {
-                    failures.push(format!("{at}: {why}"));
-                }
-                // A double-faced source transformed in response, as by
-                // Moonmist: the ability on the stack is the face's it was
-                // activated from, and resolves as that face's text says on
-                // the permanent as it now is (CR 113.7a, 112.7a); a
-                // transform of its own does nothing (701.28f).
-                if world.permanents[&id].other_face.is_some() && !ability.sacrifice_self {
-                    let answered: Vec<World> = ways.iter().cloned()
-                        .map(|mut w| {
-                            let m = w.permanents.get_mut(&id).expect("the source, still there");
-                            w.faces_put = BTreeMap::from([(id, m.transformed)]);
-                            m.transform();
-                            w.refresh();
-                            let mut after = resolve(w);
-                            after.faces_put.clear();
-                            after
-                        })
-                        .collect();
-                    let mut held = engine::submit_action(&state, &act, &registry);
-                    assert!(held.stack.len() == 1 && held.priority_player == Some(P0), "{at}: the ability is on the stack and its controller has priority");
-                    mtg_engine::cards::helpers::apply_transform(&mut held, id, &registry);
-                    if let Some(why) = disagreement(&answered, &every_ending(&held, &registry, None), &registry) {
-                        failures.push(format!("{at}, its source transformed in response: {why}"));
-                    }
-                }
-                // Its source exiled in response: the ability resolves all
-                // the same (CR 113.7a), reading the source as it last
-                // existed (608.2h), and what it does to the source itself
-                // does nothing. Not when the source paid for it by leaving.
-                if !ability.sacrifice_self && *sac != Some(id) {
-                    // Gone before the resolution's own answers are chosen
-                    // among what is left.
-                    let answered: Vec<World> = paid_ways.iter().cloned()
-                        .flat_map(|mut w| {
-                            w.leave(id, Dest::Exile);
-                            w.refresh();
-                            resolution_ways(&ability.spec, &w, full, P0)
-                        })
-                        .map(resolve)
-                        .collect();
-                    // One that asks its X first is on the stack only once
-                    // it is answered, and is left out.
-                    let mut held = engine::submit_action(&state, &act, &registry);
-                    if held.stack.len() == 1 && held.priority_player == Some(P0) {
-                        held.move_object(id, Zone::Exile, &registry);
-                        let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
-                        if let Some(why) = disagreement(&answered, &endings, &registry)
-                            .or_else(|| wrong_chooser(&ability.spec, full, &world, P0, id, &asked))
-                        {
-                            failures.push(format!("{at}, its source exiled in response: {why}"));
-                        }
-                    }
-                }
-                // Played on into the opponent's turn, where what lasted
-                // this one is gone.
-                if lasts_the_turn(&ability.spec) {
-                    if let (Ok([after]), [w]) = (endings.as_deref(), &want[..]) {
-                        // With one spell cast this turn, so that neither face
-                        // of a werewolf on the board transforms.
-                        let mut after = after.clone();
-                        after.num_spells_cast_this_turn = BTreeMap::from([(P0, 1)]);
-                        let next = next_turn_outcomes(&Spec::default(), w, id, P1);
-                        if let Some(why) = disagreement(&next, &every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain)), &registry) {
-                            failures.push(format!("{at}, in the next turn: {why}"));
-                        }
-                    }
-                }
-                // A shield is for the next destruction this turn: each
-                // creature with one is dealt lethal damage, and must
-                // regenerate (CR 701.19c, 704.5g).
-                if ability.spec.effects.iter().any(|e| matches!(e, Effect::Regenerate { .. } | Effect::RegenerateAll { .. })) {
-                    let (Ok([after]), [w]) = (endings.as_deref(), &want[..]) else { unreachable!("one way, as just compared") };
-                    let (mut engine_side, mut text) = (after.clone(), w.clone());
-                    for (shielded, m) in w.permanents.iter().filter(|(_, m)| m.shields > 0) {
-                        let lethal = u32::try_from(w.pt_of(m).1.unwrap_or(1).max(1)).expect("positive");
-                        engine_side.get_object_mut(*shielded).expect("on the battlefield").damage_marked = lethal;
-                        text.permanents.get_mut(shielded).expect("on the battlefield").damage = lethal;
-                    }
-                    text.state_based_actions();
-                    if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
-                        failures.push(format!("{at}, then dealt lethal damage: {why}"));
-                    }
-                    // And by an effect that destroys it (CR 701.8a), through
-                    // the engine's destruction.
-                    let (mut engine_side, mut text) = (after.clone(), w.clone());
-                    for shielded in w.permanents.iter().filter(|(_, m)| m.shields > 0).map(|(i, _)| *i) {
-                        mtg_engine::destruction::try_destroy(&mut engine_side, shielded, &registry);
-                        text.destroy(shielded);
-                    }
-                    text.state_based_actions();
-                    if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
-                        failures.push(format!("{at}, then destroyed: {why}"));
-                    }
-                }
-                if ability.once_each_turn {
-                    let Ok([after]) = endings.as_deref() else { unreachable!("one ending, as just compared") };
-                    let mut again = after.clone();
-                    fund(&mut again, P0, &ability.mana, 0);
-                    let offered_again = engine::legal_actions(&again, &registry).actions.iter()
-                        .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
-                            if *object_id == id && *ability_index == ability.index));
-                    if offered_again {
-                        failures.push(format!("{name}: offered a second time in the turn"));
-                    }
-                }
-            }
+            check_activated_on(card, spec, ability, count, already.as_ref(), borrowed, &name, made, &cards, &registry, &cache, &mut failures);
         }
     }
     assert!(checked > 0);
