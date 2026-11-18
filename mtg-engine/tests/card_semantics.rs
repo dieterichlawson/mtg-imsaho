@@ -8913,6 +8913,79 @@ fn every_turn_begins_as_its_text_says_on_every_small_board() {
     });
 }
 
+/// One permanent with an end step trigger placed on one board under P0,
+/// and the turn of `active` ended from its second main phase: the end
+/// step and its trigger where its text names this one, each way it can
+/// resolve, the cleanup, and the next turn begun (CR 513, 514), against
+/// [`end_step_outcomes`] and [`next_turn_outcomes`]. `other` is its other
+/// face's text, for the upkeep after a trigger that turned it over;
+/// `attacked` has it attacked this turn, `borrowed` makes it the other
+/// player's card, and `which` names the board in what is reported. A
+/// creature the board leaves with no toughness is not played.
+#[allow(clippy::too_many_arguments)]
+fn check_turn_ends_on(card: &Printed, spec: &Spec, other: Option<&Spec>, active: PlayerId, borrowed: bool, attacked: bool, which: &str,
+    (mut state, mut world): (GameState, World), registry: &CardRegistry, failures: &mut Vec<String>, ends: &mut usize) {
+    let id = place_face(&mut state, &mut world, registry, card, spec, P0);
+    if borrowed {
+        state.get_object_mut(id).expect("just placed").owner = P1;
+        world.permanents.get_mut(&id).expect("just placed").owner = P1;
+    }
+    let which = format!("{which}{}{}", if attacked { ", having attacked" } else { "" },
+        if borrowed { ", its owner the other player" } else { "" });
+    if attacked {
+        state.get_object_mut(id).expect("just placed").attacked_on_turn = Some(state.turn_number);
+    }
+    world.refresh();
+    if world.permanents.get(&id).is_some_and(|m| m.is_creature() && world.pt_of(m).1.is_some_and(|t| t <= 0)) {
+        return;
+    }
+    *ends += 1;
+    state.step = Step::PostcombatMain;
+    state.active_player = active;
+    state.priority_player = Some(active);
+    state.num_spells_cast_this_turn = BTreeMap::from([(active, 1)]);
+    let next = if active == P0 { P1 } else { P0 };
+    let placed = world.permanents[&id].transformed;
+    let want: Vec<World> = end_step_outcomes(spec, &world, id, active, attacked).into_iter()
+        .flat_map(|w| {
+            let turned = w.permanents.get(&id).is_some_and(|m| m.transformed != placed);
+            let now = if turned { other.expect("the face it turned to reads") } else { spec };
+            next_turn_outcomes(now, &w, id, next)
+        })
+        .collect();
+    let (got, asked) = questions_asked(|| every_scene_ending(&state, registry, Scene::NextTurn(Step::PrecombatMain)));
+    if let Some(why) = disagreement(&want, &got, registry).or_else(|| stack_disagreement(&want, &world, &state, &got))
+        .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, id, &asked))
+    {
+        failures.push(format!("{} in player {}'s turn{which}: {why}", card.name, active.0));
+    }
+}
+
+/// Every permanent the grammar reads with an end step trigger, either
+/// face, placed on every small board ([`on_every_small_board`]) under P0,
+/// and each player's turn ended ([`check_turn_ends_on`]).
+#[test]
+fn every_turn_ends_as_its_text_says_on_every_small_board() {
+    let backs = {
+        let registry = registry();
+        let cache = oracle_cache();
+        back_faces(&readable(&registry, &cache).0)
+    };
+    on_every_small_board("end steps", &|small, on, which, failures, ends| {
+        for (card, spec) in small.cards.iter().chain(&backs).filter(|(_, s)| s.end_step.is_some()) {
+            let front = cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name));
+            let other: Option<Spec> = match front {
+                Some(f) => read_creature(f).ok(),
+                None => card.back.as_deref().and_then(back_face_reads),
+            };
+            for active in [P0, P1] {
+                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+                check_turn_ends_on(card, spec, other.as_ref(), active, false, false, which, made, small.registry, failures, ends);
+            }
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -9747,38 +9820,7 @@ fn every_turn_ends_as_its_text_says() {
             // Its controller's and its owner's, and its controller's but
             // the other player's card (CR 109.5, 108.3).
             for (active, borrowed) in [P0, P1].into_iter().flat_map(|a| [false, true].map(move |b| (a, b))) {
-                ends += 1;
-                let (mut state, mut world) = build(&registry, &cache);
-                let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
-                if borrowed {
-                    state.get_object_mut(id).expect("just placed").owner = P1;
-                    world.permanents.get_mut(&id).expect("just placed").owner = P1;
-                }
-                let which = format!("{which}{}{}", if attacked { ", having attacked" } else { "" },
-                    if borrowed { ", its owner the other player" } else { "" });
-                if attacked {
-                    state.get_object_mut(id).expect("just placed").attacked_on_turn = Some(state.turn_number);
-                }
-                world.refresh();
-                state.step = Step::PostcombatMain;
-                state.active_player = active;
-                state.priority_player = Some(active);
-                state.num_spells_cast_this_turn = BTreeMap::from([(active, 1)]);
-                let next = if active == P0 { P1 } else { P0 };
-                let placed = world.permanents[&id].transformed;
-                let want: Vec<World> = end_step_outcomes(spec, &world, id, active, attacked).into_iter()
-                    .flat_map(|w| {
-                        let turned = w.permanents.get(&id).is_some_and(|m| m.transformed != placed);
-                        let now = if turned { other.as_ref().expect("the face it turned to reads") } else { spec };
-                        next_turn_outcomes(now, &w, id, next)
-                    })
-                    .collect();
-                let (got, asked) = questions_asked(|| every_scene_ending(&state, &registry, Scene::NextTurn(Step::PrecombatMain)));
-                if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got))
-                    .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, id, &asked))
-                {
-                    failures.push(format!("{} in player {}'s turn{which}: {why}", card.name, active.0));
-                }
+                check_turn_ends_on(card, spec, other.as_ref(), active, borrowed, attacked, which, build(&registry, &cache), &registry, &mut failures, &mut ends);
             }
         }
     }
