@@ -210,13 +210,20 @@ to Altar's Reap) was played from one seed, not 32, and a resolution that
 settled one way was compared as it stood before its copy choices were
 made.
 
-After them every card agrees with its text on boards 0 to 1,024: about
+After them every card agreed with its text on 1,024 boards, about
 580,000 casts of the 268 readable cards, in two runs of the same build.
-Two earlier runs of that build, made under an 8 GB address-space cap,
-each reported one disagreement that no rerun reproduces, alone or with
-the boards before it (Moldgraf Monstrosity on board 693, 20 runs of it
-alone agreeing; and a reference panic). That is not yet explained, so a
-result of the exhaustive tier is taken from two runs, not one.
+Two earlier runs of that build each reported one disagreement that no
+rerun reproduced (Moldgraf Monstrosity on "board 693", 20 runs of it
+alone agreeing; and a reference panic). That was explained on
+2026-11-18, and was the harness's: the cards the grammar reads were
+listed in the registry's order, a hash map's, which is each process's
+own, and a board is drawn from places in that list. So a seed drew
+another board in each run: the two runs were of two sets of 1,024
+boards, both agreeing, and the two disagreements were on boards no
+rerun made, which is why they are lost. The list is now in the order of
+its names (`the_cards_read_come_in_one_order` holds it there), a seed
+draws one board everywhere, and the 1,024 are to be run again as the
+boards they now are.
 
 Known and not yet fixed, each with a test or a note where it shows:
 

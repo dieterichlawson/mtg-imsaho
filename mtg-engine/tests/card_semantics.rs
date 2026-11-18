@@ -4625,7 +4625,8 @@ fn generated_board_watching(seed: u64, registry: &CardRegistry, cache: &BTreeMap
             put_wear(&mut state, &mut world, id, w);
         }
     }
-    let pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    let mut pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    pool.sort_unstable();
     for side in [P0, P1] {
         for _ in 0..rng.below(5) {
             let name = pool[rng.below(pool.len())];
@@ -7837,7 +7838,16 @@ fn every_ending_choosing(state: &GameState, registry: &CardRegistry, spell: Opti
 fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<(Printed, Spec)>, Vec<(String, String)>) {
     let mut read_ok = Vec::new();
     let mut unread = Vec::new();
-    for name in registry.all_names() {
+    // In the order of their names, not the registry's: its names are a
+    // hash map's keys, in an order of each process's own, and the boards
+    // drawn from a seed, the pieces a small board is counted out by and
+    // the shares a run of them is split into are all places in this list.
+    // Read in the registry's order, a seed drew another board each run (a
+    // disagreement on "board 693" was on a board no rerun made), and the
+    // shares of a run, each a process, were not a partition of its boards.
+    let mut names = registry.all_names();
+    names.sort_unstable();
+    for name in names {
         let Some(card) = cache.get(name) else { continue };
         let reading = if card.has_type("Instant") || card.has_type("Sorcery") {
             read(card)
@@ -8477,6 +8487,20 @@ fn every_readable_card_does_what_its_text_says_on_generated_boards() {
         failures.len(), generated_seeds(), cards.len(), failures.join("\n  "));
 }
 
+/// The cards the grammar reads come in the order of their names, the same
+/// in every process: a generated board is drawn from places in that list,
+/// and a small board is counted out by them ([`readable`] says what
+/// happened when they did not).
+#[test]
+fn the_cards_read_come_in_one_order() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    assert!(cards.windows(2).all(|pair| pair[0].0.name < pair[1].0.name), "the cards read, in the order of their names");
+    let vocabulary = board_vocabulary(&cards);
+    assert!(vocabulary.windows(2).all(|pair| pair[0].0.name < pair[1].0.name), "the boards' vocabulary, in the order of its names");
+}
+
 // ── Every small board ──────────────────────────────────────────────────
 //
 // The generated boards are a sample. These are a family counted out whole:
@@ -8717,7 +8741,8 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
     let vocabulary = board_vocabulary(&cards);
-    let pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    let mut pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    pool.sort_unstable();
     let size = small_size();
     let worn = size <= 1 || std::env::var("CARD_SEMANTICS_SMALL_WORN").is_ok();
     let pieces = small_pieces(&vocabulary, &pool, worn);
