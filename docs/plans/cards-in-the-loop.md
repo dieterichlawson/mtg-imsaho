@@ -343,7 +343,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** No engine defect yet; six gaps of the
+**What it has found so far.** No engine defect yet; seven gaps of the
 reference, each on a board nobody wrote and in each the engine right:
 
 - the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
@@ -360,7 +360,10 @@ reference, each on a board nobody wrote and in each the engine right:
   before (Woodland Sleuth's trigger after Armored Skaab's; two pieces);
 - a creature that arrived this turn does not tap for mana (a Deranged
   Assistant returned beside the Mentor of the Meek whose trigger asks
-  for {1}, CR 302.6; two pieces).
+  for {1}, CR 302.6; two pieces);
+- "the exiled card" is each source's own (CR 607.2a): of two Fiend
+  Hunters returned together that exile each other, one comes back (two
+  pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
