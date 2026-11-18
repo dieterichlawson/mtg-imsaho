@@ -140,10 +140,14 @@ fn modal_set(
     let per_mode: Vec<Vec<crate::actions::Target>> = modes.iter()
         .map(|m| valid_targets_for_req(state, caster, spell_id, m, behavior, registry))
         .collect();
+    // Mode by mode, not through `flatten`, which Kani follows through
+    // every round its loop is unwound to for each target it is asked for.
     let mut options: Vec<crate::actions::Target> = Vec::new();
-    for t in per_mode.iter().flatten() {
-        if !options.contains(t) {
-            options.push(t.clone());
+    for mode in &per_mode {
+        for t in mode {
+            if !options.contains(t) {
+                options.push(t.clone());
+            }
         }
     }
     // A mode with too few candidates to fill it is a mode not on offer, and
@@ -246,6 +250,38 @@ fn empty_cast(spell_id: ObjectId) -> Action {
     }
 }
 
+/// The game as `spell`'s targets are chosen in: with the spell on the
+/// stack, where CR 601.2a has moved it before anything of its casting is
+/// announced (601.2c). Judged with it still in its owner's hand, a
+/// Sturmgeist counted it among the cards there, and a Smite the Monstrous
+/// was offered a Sturmgeist one too small for it (defect 47).
+///
+/// Only a power can tell the two apart ([`TargetRequirement::reads_power`]),
+/// so for any other requirement, and a spell already on the stack, this is
+/// the game as it is. Otherwise it is a copy with the spell's zone written
+/// as the stack and the spell out of the pile it was in: no zone change is
+/// done, and nothing sees one.
+///
+/// [`TargetRequirement::reads_power`]: crate::cards::TargetRequirement::reads_power
+pub(crate) fn as_targets_are_chosen<'a>(
+    state: &'a GameState,
+    spell: ObjectId,
+    target_req: &crate::cards::TargetRequirement,
+) -> std::borrow::Cow<'a, GameState> {
+    let Some(at) = state.get_object(spell).map(|o| (o.zone, o.owner)) else { return std::borrow::Cow::Borrowed(state) };
+    if at.0 == Zone::Stack || !target_req.reads_power() {
+        return std::borrow::Cow::Borrowed(state);
+    }
+    let mut view = state.clone();
+    if let Some(o) = view.get_object_mut(spell) {
+        o.zone = Zone::Stack;
+    }
+    // A spell is cast from a hand or a graveyard (flashback), never a
+    // library, and only a graveyard keeps a pile of its own.
+    view.get_player_mut(at.1).graveyard_order.retain(|&id| id != spell);
+    std::borrow::Cow::Owned(view)
+}
+
 pub(crate) fn set_slot(
     state: &GameState,
     caster: PlayerId,
@@ -319,21 +355,26 @@ pub(crate) fn target_combinations(targets: &[crate::actions::Target], k: usize) 
     result
 }
 /// Whether two target requirements ask for the same thing, so a pair drawn
-/// from them is a set rather than an ordered pair.
+/// from them is a set rather than an ordered pair: both slots draw from one
+/// candidate pool under one restriction.
 ///
-/// Compared by shape rather than by `PartialEq`, which `TargetRequirement`
-/// does not derive: what matters is that both slots draw from one candidate
-/// pool under one restriction.
+/// This compared the two `Debug` strings, from before `TargetRequirement`
+/// derived `PartialEq`; it is the same comparison, without making a game
+/// rule depend on how a value prints.
 fn same_requirement(a: &crate::cards::TargetRequirement, b: &crate::cards::TargetRequirement) -> bool {
-    format!("{a:?}") == format!("{b:?}")
+    a == b
 }
 
 /// Drop cast actions whose target *sets* have already been produced.
+///
+/// A set is its targets sorted, by `Target`'s own order; this used to sort
+/// their `Debug` strings, which says the same about two sets being equal
+/// but makes it depend on how a target prints.
 fn dedup_by_target_set(actions: &mut Vec<Action>) {
-    let mut seen: Vec<Vec<String>> = Vec::new();
+    let mut seen: Vec<Vec<crate::actions::Target>> = Vec::new();
     actions.retain(|a| {
         let Action::CastSpell { targets, .. } = a else { return true };
-        let mut key: Vec<String> = targets.iter().map(|t| format!("{t:?}")).collect();
+        let mut key = targets.clone();
         key.sort();
         if seen.contains(&key) {
             false
@@ -609,9 +650,40 @@ pub(crate) fn targets_are_legal(
     behavior: &dyn crate::cards::CardBehavior,
     registry: &CardRegistry,
 ) -> bool {
+    match target_req {
+        // Legal under any one mode, which is what choosing a mode means
+        // (CR 700.2a, 601.2c).
+        crate::cards::TargetRequirement::ModalChoice(modes) => modes.iter()
+            .any(|mode| legal_under_mode(state, mode, targets, caster, source_id, behavior, registry)),
+        _ => legal_under_mode(state, target_req, targets, caster, source_id, behavior, registry),
+    }
+}
+
+/// [`targets_are_legal`] for a requirement that is not a choice of modes,
+/// or is one mode of such a choice. Its own function so that a choice of
+/// modes is proved as the choice it is, each mode's answer any
+/// (`proofs::actions::target_check`): followed through each mode, the
+/// proof ran out of memory in symbolic execution.
+fn legal_under_mode(
+    state: &GameState,
+    target_req: &crate::cards::TargetRequirement,
+    targets: &[crate::actions::Target],
+    caster: PlayerId,
+    source_id: ObjectId,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> bool {
     use crate::cards::TargetRequirement as R;
+    // And whether the spell or ability may target it at all, as the offered
+    // lists ask (`valid_targets_for_req`): `is_target_legal` asks hexproof
+    // and not protection (CR 702.16b), so a submitted cast or activation
+    // naming a creature with protection from its source went through.
     let one = |t: &crate::actions::Target| {
         crate::stack::is_target_legal(state, t, target_req, caster, Some(source_id), registry)
+            && match *t {
+                crate::actions::Target::Object(id) => can_be_targeted_by(state, id, caster, Some(source_id), registry),
+                _ => true,
+            }
             && behavior.is_valid_target(state, caster, t, registry)
     };
     match target_req {
@@ -641,20 +713,59 @@ pub(crate) fn targets_are_legal(
             }
             true
         }
+        // Each against the inner requirement, and, as `one` asks, whether
+        // the source may target it at all: this arm asked only the first
+        // and the card's restriction, so a creature with protection from
+        // an "up to N" spell could be named in a submitted cast.
         R::UpToTargets(max, inner) => {
             targets.len() <= *max
                 && targets.iter().all(|t| {
                     crate::stack::is_target_legal(state, t, inner, caster, Some(source_id), registry)
+                        && match *t {
+                            crate::actions::Target::Object(id) => can_be_targeted_by(state, id, caster, Some(source_id), registry),
+                            _ => true,
+                        }
                         && behavior.is_valid_target(state, caster, t, registry)
                 })
         }
-        // Legal under any one mode, which is what choosing a mode means.
-        R::ModalChoice(modes) => modes.iter().any(|mode| {
-            targets_are_legal(state, mode, targets, caster, source_id, behavior, registry)
-        }),
+        // A choice of modes within a mode is a choice of modes again.
+        R::ModalChoice(_) => targets_are_legal(state, target_req, targets, caster, source_id, behavior, registry),
         // Every other requirement names exactly one target, and a spell that
         // names one cannot be cast without it (CR 601.2c).
         _ => targets.len() == 1 && one(&targets[0]),
+    }
+}
+
+/// Each object on the battlefield, in id order, that passes `pass`, as a
+/// target, onto `out`.
+///
+/// A loop with the tests in its body, not a chain of `filter`s collected:
+/// a filter hands out its items by an inner `find`, so in a proof where the
+/// walk stands after the first item is one of as many places as passed,
+/// and every later object, and every question asked of it, was read at a
+/// place of every value. Each question is asked in the order the chain
+/// asked it, and stops where the chain stopped.
+fn push_battlefield_targets(out: &mut Vec<crate::actions::Target>, state: &GameState, pass: impl Fn(&crate::state::GameObject) -> bool) {
+    for o in state.each_object() {
+        if o.zone == Zone::Battlefield && pass(o) {
+            out.push(crate::actions::Target::Object(o.id));
+        }
+    }
+}
+
+/// `push_battlefield_targets`, onto a new list.
+fn battlefield_targets(state: &GameState, pass: impl Fn(&crate::state::GameObject) -> bool) -> Vec<crate::actions::Target> {
+    let mut out = Vec::new();
+    push_battlefield_targets(&mut out, state, pass);
+    out
+}
+
+/// Each player, in turn order, that passes `pass`, as a target, onto `out`.
+fn push_player_targets(out: &mut Vec<crate::actions::Target>, state: &GameState, pass: impl Fn(PlayerId) -> bool) {
+    for p in &state.players {
+        if pass(p.id) {
+            out.push(crate::actions::Target::Player(p.id));
+        }
     }
 }
 
@@ -670,24 +781,23 @@ pub(crate) fn valid_targets_for_req(
     use crate::actions::Target;
     use crate::cards::TargetRequirement;
 
+    // Each zone walked, in id order, not listed first as
+    // `all_objects_in_zone` and `objects_in_id_order` list it: a proof
+    // reads a built list's entries as pointers that could be any object's,
+    // and the questions asked through them ran out of memory. The
+    // battlefield is walked in a loop (`push_battlefield_targets` says why).
     match req {
-        TargetRequirement::Creature => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
-        }
-        TargetRequirement::CreatureWithFilter(filter) => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
-        }
+        TargetRequirement::Creature => battlefield_targets(state, |o| {
+            state.is_creature(o.id, registry)
+                && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+        }),
+        TargetRequirement::CreatureWithFilter(filter) => battlefield_targets(state, |o| {
+            state.is_creature(o.id, registry)
+                && matches_target_filter(state, o, filter, caster, Some(spell_id), registry)
+                && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+        }),
         TargetRequirement::Spell => {
             // Only spells on the stack can be targeted (not triggered abilities).
             state.stack.iter()
@@ -697,30 +807,22 @@ pub(crate) fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
-        TargetRequirement::PermanentWithFilter(filter) => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
-        }
+        TargetRequirement::PermanentWithFilter(filter) => battlefield_targets(state, |o| {
+            matches_target_filter(state, o, filter, caster, Some(spell_id), registry)
+                && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+        }),
         TargetRequirement::AnyTarget => {
-            let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| state.is_creature(o.id, registry)
+            let mut targets = battlefield_targets(state, |o| {
+                (state.is_creature(o.id, registry)
                     || state.has_card_type(o.id, CardType::Planeswalker, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect();
-            for p in &state.players {
-                if can_target_player(state, p.id, caster, registry) {
-                    let t = Target::Player(p.id);
-                    if behavior.is_valid_target(state, caster, &t, registry) {
-                        targets.push(t);
-                    }
-                }
-            }
+                    && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                    && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+            });
+            push_player_targets(&mut targets, state, |p| {
+                can_target_player(state, p, caster, registry)
+                    && behavior.is_valid_target(state, caster, &Target::Player(p), registry)
+            });
             targets
         }
         TargetRequirement::PlayerOnly => {
@@ -750,20 +852,16 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::PlayerOrPlaneswalker => {
-            let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| can_target_player(state, p.id, caster, registry))
-                .map(|p| Target::Player(p.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect();
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
-                if is_pw && can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) {
-                    let t = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &t, registry) {
-                        targets.push(t);
-                    }
-                }
-            }
+            let mut targets = Vec::new();
+            push_player_targets(&mut targets, state, |p| {
+                can_target_player(state, p, caster, registry)
+                    && behavior.is_valid_target(state, caster, &Target::Player(p), registry)
+            });
+            push_battlefield_targets(&mut targets, state, |o| {
+                state.has_card_type(o.id, CardType::Planeswalker, registry)
+                    && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                    && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+            });
             targets
         }
         TargetRequirement::GraveyardCard => {
@@ -776,7 +874,7 @@ pub(crate) fn valid_targets_for_req(
             // graveyard any more. CR 601.2a moves the card to the stack and
             // CR 601.2c chooses targets after that, so it cannot be one of its
             // own. Purify the Grave was offered a cast targeting itself.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -784,7 +882,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCreature => {
             // Creature cards in caster's graveyard.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| {
                     o.id != spell_id
                         && o.zone == Zone::Graveyard
@@ -804,7 +902,7 @@ pub(crate) fn valid_targets_for_req(
             // back in its own `is_valid_target`. Two sibling requirements
             // disagreeing about whose graveyard they mean, with the card that
             // uses the looser one compensating, is a trap for the next card.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| {
                     o.id != spell_id
                         && o.zone == Zone::Graveyard
@@ -819,7 +917,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCardOwnedByCaster => {
             // Cards in the caster's own graveyard.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && o.owner == caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -827,7 +925,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCardOwnedByOpponent => {
             // Cards in any opponent's graveyard.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && o.owner != caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -835,7 +933,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::ExileCard => {
             // All cards in exile owned by the caster.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Exile && o.owner == caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -879,7 +977,7 @@ pub(crate) fn valid_targets_for_req(
             // Which player is only known once the co-target is chosen, so the
             // pairing in `generate_cast_actions_with_targets` narrows this.
             // Unconstrained here, it is every graveyard card but this spell.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))

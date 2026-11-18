@@ -26,11 +26,8 @@ impl CardBehavior for MakeAWish {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Get all cards in graveyard (excluding tokens).
-        let gy_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| state.is_card(o.id) && o.id != object_id)
-            .map(|o| o.id)
-            .collect();
+        let gy_cards = crate::cards::helpers::ids_where(state.objects_in_zone(Zone::Graveyard, controller),
+            |o| state.is_card(o.id) && o.id != object_id);
 
         // "Return two cards AT RANDOM from your graveyard to your hand."
         let to_return = state.choose_at_random(&gy_cards, 2);

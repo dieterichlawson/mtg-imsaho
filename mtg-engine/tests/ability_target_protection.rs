@@ -288,3 +288,101 @@ fn a_spells_player_target_list_puts_the_caster_first() {
             "the caster (p{}) is option 0", seat.0);
     }
 }
+
+/// A cast or activation a client assembles itself is checked against the
+/// rule the offered lists are built by (CR 601.2c, 602.2b), and that rule
+/// says a creature with protection from the source can't be targeted by
+/// it (CR 702.16b). The check of a submitted declaration asked hexproof and
+/// the card's restriction and not protection, so a hand-built Geistflame at
+/// a creature with protection from instants went onto the stack, though no
+/// list offered it.
+#[test]
+fn a_submitted_cast_at_a_creature_with_protection_from_it_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    state.until_end_of_turn.push(TemporaryEffect::GrantProtection {
+        target: creature,
+        filter: CreatureFilter::HasCardType(CardType::Instant),
+    });
+    let spell = castable_spell(&mut state, &reg, "Geistflame", P0);
+    assert!(!offered_targets(&state, &reg, spell).contains(&Target::Object(creature)),
+        "test precondition: no list offers it");
+
+    let after = cast_onto_stack(&state, &reg, spell, vec![Target::Object(creature)]);
+
+    assert_eq!(after.get_object(spell).unwrap().zone, Zone::Hand,
+        "the cast is refused before anything is paid");
+}
+
+/// The same for an activation: Avacynian Priest's ability, a Human's,
+/// named at a creature with protection from Humans.
+#[test]
+fn a_submitted_activation_at_a_creature_with_protection_from_its_source_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    let zombie = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(zombie).unwrap().subtypes = vec!["Zombie".into()];
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    protect_from_humans(&mut state, zombie);
+    assert!(!ability_targets(&state, &reg, priest).contains(&Target::Object(zombie)),
+        "test precondition: no list offers it");
+
+    let after = engine::submit_action(&state, &Action::ActivateAbility {
+        object_id: priest, ability_index: 0, targets: vec![Target::Object(zombie)],
+        tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+    }, &reg);
+
+    assert!(after.stack.is_empty() && !after.get_object(priest).unwrap().tapped,
+        "the activation is refused before its cost is paid");
+}
+
+/// The same for a loyalty ability (CR 606.3, 602.2b): Garruk Relentless's
+/// "0: deals 3 damage to target creature" named at an opponent's creature
+/// with hexproof, which no list offers. A cast's and an ordinary
+/// activation's submitted targets were checked; a loyalty activation's
+/// were not, and it went onto the stack.
+#[test]
+fn a_submitted_loyalty_activation_at_an_illegal_target_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    grant_keyword(&mut state, creature, Keyword::Hexproof);
+
+    let after = engine::submit_action(&state, &Action::ActivateLoyaltyAbility {
+        object_id: garruk, ability_index: 0, targets: vec![Target::Object(creature)],
+    }, &reg);
+
+    assert!(after.stack.is_empty(),
+        "an opponent's creature with hexproof is not a legal target, so the activation is refused");
+}
+
+/// The same for an "up to N" spell: the check of its submitted targets
+/// asked each one's requirement with hexproof, and the card's restriction,
+/// and not protection, as the other requirements' check had not until the
+/// fix above. A hand-built Feeling of Dread ("tap up to two target
+/// creatures") at a creature with protection from instants went onto the
+/// stack, though no list offers that creature; at one without, it still
+/// does.
+#[test]
+fn a_submitted_up_to_two_targets_cast_at_a_creature_with_protection_from_it_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let protected = ready_creature(&mut state, P1, 2, 2);
+    let open = ready_creature(&mut state, P1, 2, 2);
+    state.until_end_of_turn.push(TemporaryEffect::GrantProtection {
+        target: protected,
+        filter: CreatureFilter::HasCardType(CardType::Instant),
+    });
+    let spell = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+
+    let refused = cast_onto_stack(&state, &reg, spell, vec![Target::Object(open), Target::Object(protected)]);
+    assert_eq!(refused.get_object(spell).unwrap().zone, Zone::Hand,
+        "the cast is refused before anything is paid");
+
+    let cast = cast_onto_stack(&state, &reg, spell, vec![Target::Object(open)]);
+    assert_eq!(cast.get_object(spell).unwrap().zone, Zone::Stack,
+        "at a creature without protection it is cast");
+}

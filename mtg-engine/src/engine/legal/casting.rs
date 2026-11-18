@@ -6,6 +6,23 @@ use crate::actions::Action;
 use crate::ids::CardId;
 use crate::types::{Zone, CardType, ManaCost};
 
+/// Whether a card may be cast now, as far as its timing goes (CR 117.1a,
+/// 307.1, 301.1, 302.1, 303.1, 306.1, 702.8a): an instant, or a card with
+/// flash, whenever its caster has priority; a sorcery, creature,
+/// enchantment, artifact or planeswalker only when they could cast a
+/// sorcery (`is_sorcery_speed`: their main phase, the stack empty); and a
+/// land never (305.9). The same from a hand and from a graveyard: the
+/// graveyard's copy of this left out artifacts and planeswalkers.
+pub(crate) fn timing_allows(data: &crate::cards::CardData, is_sorcery_speed: bool) -> bool {
+    if data.card_types.contains(&CardType::Instant) || data.keywords.contains(&Keyword::Flash) {
+        return true;
+    }
+    let sorcery_speed_type = [CardType::Sorcery, CardType::Creature, CardType::Enchantment, CardType::Artifact, CardType::Planeswalker]
+        .iter()
+        .any(|t| data.card_types.contains(t));
+    sorcery_speed_type && is_sorcery_speed
+}
+
 /// Spells the player can cast from hand.
 pub(crate) fn from_hand(
     ctx: &Ctx,
@@ -26,28 +43,12 @@ pub(crate) fn from_hand(
             let data = behavior.card_data();
 
             // Check PreventCastingNamed: spells with the banned name can't be cast.
-            if casting_banned.contains(&data.name) {
+            if casting_banned.contains(&data.name.as_str()) {
                 continue;
             }
 
             // Determine if this spell can be cast right now.
-            let is_instant = data.card_types.contains(&CardType::Instant);
-            let is_sorcery_type = data.card_types.contains(&CardType::Sorcery)
-                || data.card_types.contains(&CardType::Creature)
-                || data.card_types.contains(&CardType::Enchantment)
-                || data.card_types.contains(&CardType::Artifact)
-                || data.card_types.contains(&CardType::Planeswalker);
-
-            let has_flash = data.keywords.contains(&Keyword::Flash);
-            let can_cast_timing = if is_instant || has_flash {
-                true // Instants and cards with flash can be cast anytime you have priority
-            } else if is_sorcery_type {
-                is_sorcery_speed
-            } else {
-                false
-            };
-
-            if !can_cast_timing {
+            if !timing_allows(&data, is_sorcery_speed) {
                 continue;
             }
 
@@ -81,13 +82,13 @@ pub(crate) fn from_hand(
                             (true, vec![])
                         } else {
                             // Need to tap for the colored portion.
-                            match mana::compute_autotap_around(&non_x_cost, &player_state.mana_pool, &mana_sources, &others) {
+                            match plan_payment(state, player, &non_x_cost, &player_state.mana_pool, &mana_sources, &others, registry) {
                                 Some(plan) => (true, plan),
                                 None => (false, vec![]),
                             }
                         }
                     } else {
-                        match mana::compute_autotap_around(&non_x_cost, &player_state.mana_pool, &mana_sources, &others) {
+                        match plan_payment(state, player, &non_x_cost, &player_state.mana_pool, &mana_sources, &others, registry) {
                             Some(plan) => (true, plan),
                             None => (false, vec![]),
                         }
@@ -97,7 +98,7 @@ pub(crate) fn from_hand(
                 }
             } else if let Some(cost) = &data.cost {
                 let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                match mana::compute_autotap_around(&effective_cost, &player_state.mana_pool, &mana_sources, &others) {
+                match plan_payment(state, player, &effective_cost, &player_state.mana_pool, &mana_sources, &others, registry) {
                     Some(plan) => (true, plan),
                     None => (false, vec![]),
                 }
@@ -127,8 +128,10 @@ pub(crate) fn from_hand(
                 seen_untargeted_casts.push(obj.card_id);
             }
 
+            // Chosen with the spell on the stack (CR 601.2a, 601.2c).
+            let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, obj.id, &target_req);
             let mut cast_actions = generate_cast_actions_with_targets(
-                state, player, obj.id, &target_req, behavior, registry,
+                &chosen_in, player, obj.id, &target_req, behavior, registry,
             );
 
             // Set the autotap plan on all generated cast actions.
@@ -180,7 +183,7 @@ pub(crate) fn from_hand(
                     &CastMethod::Alternative(alt_costs[0].clone()),
                 ).mana;
                 // Compute autotap for the alternative cost.
-                let alt_tap_plan = mana::compute_autotap_around(&alt_mana, &player_state.mana_pool, &mana_sources, &others)
+                let alt_tap_plan = plan_payment(state, player, &alt_mana, &player_state.mana_pool, &mana_sources, &others, registry)
                     .unwrap_or_default();
                 if can_pay_normal {
                     // Player can pay normally — add alternative cost copies
@@ -242,7 +245,7 @@ pub(crate) fn from_hand(
                 // UI can show the effective damage in the label.
                 let exile_x_from_gy_max = additional.exile_x_max;
                 actions.extend(cast_actions);
-                let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior, registry);
+                let spec = build_cast_target_spec(&chosen_in, player, obj.id, &target_req, behavior, registry);
                 let additional_cost_label = additional.label.clone();
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
@@ -286,7 +289,10 @@ fn graveyard_casts(
 ) -> Vec<(ManaCost, GyCast)> {
     let Some(obj) = state.get_object(object_id) else { return Vec::new() };
     let Some(behavior) = registry.get(obj.card_id) else { return Vec::new() };
-    let data = behavior.card_data();
+    // The printed costs, read from the registry rather than built with the
+    // rest of the card's data: a card in a graveyard shows its front face.
+    let (printed_cost, printed_flashback) =
+        (registry.printed_cost(obj.card_id, false), registry.printed_flashback_cost(obj.card_id, false));
     // CR 702.33: a card can have several instances of flashback at
     // once — a granted one (Snapcaster Mage, Past in Flames) alongside
     // its printed one — and the player may pay ANY of them. This used
@@ -305,17 +311,15 @@ fn graveyard_casts(
     // {1}{U}{U})" for a {1}{U}{U} card, which reads as a discount
     // that is not there, and left the hand copy and the graveyard
     // copy with indistinguishable menu rows (issue #300).
-    let mut fb_costs: Vec<(ManaCost, GyCast)> = state.until_end_of_turn.iter()
-        .filter_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
-            if *target == obj.id { Some((cost.clone(), GyCast::Flashback)) } else { None }
-        } else { None })
+    let mut fb_costs: Vec<(ManaCost, GyCast)> = granted_flashback_costs(state, obj.id).into_iter()
+        .map(|cost| (cost.clone(), GyCast::Flashback))
         .collect();
-    if let Some(c) = &data.flashback_cost {
+    if let Some(c) = printed_flashback {
         fb_costs.push((c.clone(), GyCast::Flashback));
     }
     if cast_from_gy {
         // Cast from graveyard uses the normal mana cost.
-        if let Some(c) = &data.cost {
+        if let Some(c) = printed_cost {
             fb_costs.push((c.clone(), GyCast::Permitted));
         }
         // CR 601.2b: an alternative cost replaces the mana cost of
@@ -346,6 +350,23 @@ fn graveyard_casts(
         }
     }
     unique
+}
+
+/// The costs flashback granted until end of turn gives object `id` (CR
+/// 702.34a: Snapcaster Mage's, Past in Flames'), in the order granted.
+///
+/// Its own function so that it is proved apart from what
+/// [`graveyard_casts`] makes of the costs (`proofs::actions::until_end_of_turn`):
+/// an effect read back off the turn's list is a union to symbolic
+/// execution, which leaves open which card a grant is on, and walked every
+/// way after, the costs offered ran the solver out of memory.
+pub(crate) fn granted_flashback_costs(state: &GameState, id: crate::ids::ObjectId) -> Vec<&ManaCost> {
+    state.until_end_of_turn.iter()
+        .filter_map(|e| match e {
+            crate::state::TemporaryEffect::GrantFlashback { target, cost } if *target == id => Some(cost),
+            _ => None,
+        })
+        .collect()
 }
 
 /// What casting a graveyard card one of [`graveyard_casts`]' ways costs
@@ -419,28 +440,16 @@ pub(crate) fn flashback(
             let data = behavior.card_data();
 
             // Check PreventCastingNamed: banned spells can't be cast, even via flashback.
-            if casting_banned.contains(&data.name) {
+            if casting_banned.contains(&data.name.as_str()) {
                 continue;
             }
 
             let unique = graveyard_casts(state, registry, obj.id, player);
             if unique.is_empty() { continue; }
 
-            let is_instant = data.card_types.contains(&CardType::Instant);
-            let is_sorcery_type = data.card_types.contains(&CardType::Sorcery)
-                || data.card_types.contains(&CardType::Creature)
-                || data.card_types.contains(&CardType::Enchantment);
-
-            let has_flash = data.keywords.contains(&Keyword::Flash);
-            let can_cast_timing = if is_instant || has_flash {
-                true
-            } else if is_sorcery_type {
-                is_sorcery_speed
-            } else {
-                false
-            };
-
-            if !can_cast_timing { continue; }
+            // CR 702.34a, 601.2: a card cast from a graveyard follows the
+            // timing its type allows, as from a hand.
+            if !timing_allows(&data, is_sorcery_speed) { continue; }
 
             // One castable option per distinct way to cast.
             for (fb_cost, kind) in &unique {
@@ -467,7 +476,7 @@ pub(crate) fn flashback(
                 .filter(|(id, _)| *id != obj.id)
                 .map(|(_, d)| d.clone())
                 .collect();
-            let Some(fb_tap_plan) = mana::compute_autotap_around(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &others) else {
+            let Some(fb_tap_plan) = plan_payment(state, player, fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &others, registry) else {
                 // This particular cost is unaffordable; another may not be.
                 continue;
             };
@@ -490,8 +499,10 @@ pub(crate) fn flashback(
                 seen_untargeted_flashbacks.push(key);
             }
 
+            // Chosen with the spell on the stack (CR 601.2a, 601.2c).
+            let chosen_in = crate::engine::targeting::as_targets_are_chosen(state, obj.id, &target_req);
             let mut cast_actions = generate_cast_actions_with_targets(
-                state, player, obj.id, &target_req, behavior, registry,
+                &chosen_in, player, obj.id, &target_req, behavior, registry,
             );
             // Each action carries the cost it was offered for, so the cast
             // handler charges the one the player picked rather than
@@ -511,7 +522,7 @@ pub(crate) fn flashback(
             }
             if !cast_actions.is_empty() {
                 actions.extend(cast_actions);
-                let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior, registry);
+                let spec = build_cast_target_spec(&chosen_in, player, obj.id, &target_req, behavior, registry);
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
                     name: data.name.clone(),
@@ -529,5 +540,67 @@ pub(crate) fn flashback(
             }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timing_allows;
+    use crate::cards::CardData;
+    use crate::types::{CardType, Keyword};
+
+    /// CR 307.1, 117.1a, 702.8a, 305.9: each type's timing, from a hand or
+    /// a graveyard alike. The graveyard's own copy of this check left out
+    /// artifacts and planeswalkers, and never offered either at any speed.
+    #[test]
+    fn each_card_type_is_cast_at_the_speed_its_type_allows() {
+        let card = |types: &[CardType], flash: bool| CardData {
+            card_types: types.to_vec(),
+            keywords: if flash { vec![Keyword::Flash] } else { vec![] },
+            ..CardData::default()
+        };
+        for t in [CardType::Sorcery, CardType::Creature, CardType::Enchantment, CardType::Artifact, CardType::Planeswalker] {
+            assert!(timing_allows(&card(&[t], false), true), "{t:?} at sorcery speed");
+            assert!(!timing_allows(&card(&[t], false), false), "{t:?} not otherwise");
+            assert!(timing_allows(&card(&[t], true), false), "{t:?} with flash at any time");
+        }
+        assert!(timing_allows(&card(&[CardType::Instant], false), false));
+        assert!(!timing_allows(&card(&[CardType::Land], false), true), "a land is played, never cast");
+    }
+
+    /// An artifact its card lets be cast from a graveyard, costing nothing.
+    struct GraveyardArtifact;
+
+    impl crate::cards::CardBehavior for GraveyardArtifact {
+        fn card_data(&self) -> CardData {
+            CardData {
+                name: "Graveyard Artifact".into(),
+                card_types: vec![CardType::Artifact],
+                cost: Some(crate::types::ManaCost::free()),
+                ..CardData::default()
+            }
+        }
+        fn can_cast_from_graveyard(&self) -> bool {
+            true
+        }
+    }
+
+    /// CR 601.3a, 307.1: a card its own text lets be cast from a graveyard
+    /// is offered there at the timing its type allows. The graveyard's
+    /// timing check left artifacts and planeswalkers out, so one was never
+    /// offered; no card in the pool is either, so no game reached it.
+    #[test]
+    fn an_artifact_castable_from_a_graveyard_is_offered_at_sorcery_speed() {
+        let mut registry = crate::cards::CardRegistry::new();
+        let card = registry.register(Box::new(GraveyardArtifact));
+        let mut state = crate::state::GameState::new(2);
+        state.step = crate::types::Step::PrecombatMain;
+        state.active_player = crate::ids::PlayerId(0);
+        state.priority_player = Some(crate::ids::PlayerId(0));
+        let id = state.create_object(card, crate::ids::PlayerId(0), crate::types::Zone::Graveyard, None, None);
+
+        let offered = crate::engine::legal_actions(&state, &registry).actions.iter()
+            .any(|a| matches!(a, crate::actions::Action::CastSpell { object_id, .. } if *object_id == id));
+        assert!(offered, "cast from the graveyard in its controller's main phase");
     }
 }

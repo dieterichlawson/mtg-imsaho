@@ -4,6 +4,43 @@ use crate::events::GameEvent;
 use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
+/// The targets that stopped being legal as a spell or ability resolved
+/// (CR 608.2b): each one `chosen` held as an object that `now` holds as
+/// illegal. Named, joined with commas, only when a log line writes them.
+///
+/// They were a list of names built as the targets were checked, for the
+/// log alone. In a proof `format!` stands in as nothing, so the list was
+/// built for no reader, and pushed to along paths symbolic execution could
+/// not tell apart it was a buffer it could not tell either: each name
+/// written into it rewrote every byte of each buffer it might be, which is
+/// what every proof of resolving ran out of memory on.
+struct NewlyIllegal<'a> {
+    state: &'a GameState,
+    chosen: &'a [Target],
+    now: &'a [Target],
+}
+
+impl NewlyIllegal<'_> {
+    fn ids(&self) -> impl Iterator<Item = crate::ids::ObjectId> + '_ {
+        self.chosen.iter().zip(self.now).filter_map(|(chosen, now)| match (chosen, now) {
+            (Target::Object(id), Target::Illegal) => Some(*id),
+            _ => None,
+        })
+    }
+}
+
+impl std::fmt::Display for NewlyIllegal<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, id) in self.ids().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str(&self.state.obj_name(id))?;
+        }
+        Ok(())
+    }
+}
+
 /// Check if a target is still legal at resolution time.
 pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, source_id: Option<crate::ids::ObjectId>, registry: &crate::cards::CardRegistry) -> bool {
     use crate::cards::TargetRequirement;
@@ -203,24 +240,28 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
 }
 
 fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
-    let entry = match state.stack.last() {
-        Some(e) => e.clone(),
-        None => return,
-    };
-
-    match entry {
-        StackEntry::Trigger(_) => {
+    // The entry is read where it lies, not cloned: in a proof a clone of an
+    // entry read off the heap clones the ability's target requirement as
+    // every shape one may have.
+    match state.stack.last() {
+        None => {}
+        Some(StackEntry::Trigger(_)) => {
             // Trigger resolution is handled by the triggers module.
             crate::triggers::resolve_next_trigger(state, registry);
         }
-        StackEntry::Spell(object_id) => {
+        Some(&StackEntry::Spell(object_id)) => {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness, loyalty, .. } => {
+        Some(StackEntry::Ability { .. }) => {
             // Still on the stack while it resolves (CR 608.2n), so a question
             // it asks is asked under it (#833).
             let on_stack = state.stack.pop();
+            let Some(StackEntry::Ability { source_id, ability_index, behavior_card_id, ref targets, x_value, activator,
+                ref target_requirement, ref target_zone_changes, sacrificed, sacrificed_toughness, loyalty, .. }) = on_stack
+            else {
+                unreachable!("the top of the stack is an ability")
+            };
             state.last_activated_x_value = x_value;
             state.last_activated_sacrifice = sacrificed;
             state.last_activated_sacrifice_toughness = sacrificed_toughness;
@@ -260,37 +301,42 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             // `is_valid_target`. Only the first and third were checked, so an
             // ability whose card restated nothing resolved against a target
             // that no longer matched its own wording.
-            let mut newly_illegal: Vec<String> = Vec::new();
-            let targets: Vec<Target> = targets.into_iter()
-                .map(|t| match t {
+            let chosen = targets;
+            let mut any_newly_illegal = false;
+            let targets: Vec<Target> = chosen.iter().enumerate()
+                .map(|(i, t)| match *t {
+                    // A new object since, as for a spell (CR 400.7).
                     Target::Object(id)
-                        if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
+                        if !still_the_object(state, t, target_zone_changes, i)
+                            || !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
                             || !target_requirement.as_ref().is_none_or(|req|
                                     is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
                             || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) => {
-                            newly_illegal.push(state.obj_name(id));
-                            Target::Illegal
-                        }
-                    other => other,
+                        any_newly_illegal = true;
+                        Target::Illegal
+                    }
+                    _ => t.clone(),
                 })
                 .collect();
             if !targets.is_empty() && targets.iter().all(|t| matches!(t, Target::Illegal)) {
                 state.log(LogLevel::Event,
                     format!("{name} ability fizzled (all targets illegal)"));
+                crate::cards::discard(on_stack);
                 return;
             }
             // Partial fizzle is said out loud, as for spells (CR 608.2b,
             // issue #135).
-            if !newly_illegal.is_empty() {
-                state.log(LogLevel::Event, format!(
-                    "{name} ability: target {} is illegal, resolving with the rest (CR 608.2b)",
-                    newly_illegal.join(", ")));
+            if any_newly_illegal {
+                let illegal = NewlyIllegal { state, chosen, now: &targets };
+                let line = format!(
+                    "{name} ability: target {illegal} is illegal, resolving with the rest (CR 608.2b)");
+                state.log(LogLevel::Event, line);
             }
 
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
                 state.resolving_ability_activator = Some(activator);
-                state.resolving_ability = on_stack;
+                crate::cards::discard(std::mem::replace(&mut state.resolving_ability, on_stack));
                 if loyalty {
                     // CR 606.5: loyalty abilities resolve like any other
                     // activated ability; their effects live in the loyalty
@@ -308,30 +354,103 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
                 // `choices.rs` clears it when the chain runs out.
                 if state.awaiting_action.is_none() {
                     state.resolving_ability_activator = None;
-                    state.resolving_ability = None;
+                    crate::cards::discard(state.resolving_ability.take());
                 }
+            } else {
+                crate::cards::discard(on_stack);
             }
         }
     }
 }
 
+/// The `zone_change_count` of each of `targets`' objects as they are now,
+/// a player's place held by 0: what each target is as it is locked in. An
+/// object id outlives the object's zone changes, and the object does not
+/// (CR 400.7): one that leaves and comes back is a new object, which what
+/// targeted the old one does not target.
+#[must_use]
+pub(crate) fn zone_changes_of(state: &GameState, targets: &[Target]) -> Vec<u32> {
+    targets.iter()
+        .map(|t| match t {
+            Target::Object(id) => state.get_object(*id).map_or(0, |o| o.zone_change_count),
+            _ => 0,
+        })
+        .collect()
+}
+
+/// Whether the `i`th of a list of targets is still the object it was as
+/// it was locked in, by the counts `zone_changes_of` recorded: a player is,
+/// and so is a target with no count recorded (an entry made before counts
+/// were, as a saved game's may be).
+#[must_use]
+pub(crate) fn still_the_object(state: &GameState, target: &Target, recorded: &[u32], i: usize) -> bool {
+    match (target, recorded.get(i)) {
+        (Target::Object(id), Some(&then)) => state.get_object(*id).is_some_and(|o| o.zone_change_count == then),
+        _ => true,
+    }
+}
+
 /// Resolve a spell from the stack.
 fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
-    let (card_id, mut targets, caster) = match state.get_object(object_id) {
-        Some(obj) => (obj.card_id, obj.targets.clone(), obj.controller),
+    let (card_id, targets, recorded, caster) = match state.get_object(object_id) {
+        Some(obj) => (obj.card_id, obj.targets.clone(), obj.target_zone_changes.clone(), obj.controller),
         None => return,
     };
+    resolve_spell_as(state, registry, object_id, card_id, targets, &recorded, caster);
+}
 
+/// [`resolve_spell`] once its card, its targets, the zone changes they had
+/// had as it was cast and its controller are read off the spell.
+///
+/// Its own function so that each half is proved apart
+/// (`proofs::actions::resolving`): read back off the spell's object, the
+/// targets are a list whose length symbolic execution does not see, and
+/// with the re-check walking that list the solver ran out of memory, at
+/// 12 GB as at 7. The read alone, or the re-check of a list it is handed,
+/// proves in about a minute.
+pub(crate) fn resolve_spell_as(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    object_id: crate::ids::ObjectId,
+    card_id: crate::ids::CardId,
+    mut targets: Vec<Target>,
+    recorded: &[u32],
+    caster: crate::ids::PlayerId,
+) {
+    // A target that has changed zones since the spell was cast is a new
+    // object and no longer its target (CR 400.7, 608.2b): illegal, as the
+    // re-check below takes an `Illegal` to be. A creature that died and was
+    // returned in response (Altar's Reap, then Grimoire of the Dead) was
+    // pumped by the Giant Growth cast on the creature it had been. Here and
+    // not as the list is read off the spell, whose length a proof does not
+    // see: walked there, it ran the read's proof out of memory.
+    for (i, t) in targets.iter_mut().enumerate() {
+        if !still_the_object(state, t, recorded, i) {
+            *t = Target::Illegal;
+        }
+    }
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
     // This now checks hexproof at resolution time (not just at cast time).
-    let target_req = registry.get(card_id)
-        .map_or(crate::cards::TargetRequirement::None, super::cards::CardBehavior::target_requirement);
+    // Read and not dropped in a proof (`cards::transient`).
+    let target_req: &crate::cards::TargetRequirement = &crate::cards::transient(registry.get(card_id)
+        .map_or(crate::cards::TargetRequirement::None, super::cards::CardBehavior::target_requirement));
     if !targets.is_empty() {
         let behavior = registry.get(card_id);
         let legal = |t: &Target| {
-            if !is_target_legal(state, t, &target_req, caster, Some(object_id), registry) {
+            if !is_target_legal(state, t, target_req, caster, Some(object_id), registry) {
                 return false;
+            }
+            // And whether it may still be targeted by this spell at all
+            // (CR 702.16b), as the re-checks of activated and triggered
+            // abilities ask: `is_target_legal` asks hexproof and not
+            // protection, so a spell whose only target gained protection
+            // from it resolved with that target marked illegal below, where
+            // the rules counter it.
+            if let Target::Object(id) = *t {
+                if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) {
+                    return false;
+                }
             }
             // Also re-check card-specific validity (e.g., "power 4 or greater").
             if let Some(b) = behavior {
@@ -359,15 +478,16 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // branch of a composite requirement, so Memory's Journey's graveyard
         // cards would be judged against its `PlayerOnly` first slot. A target
         // that has changed zones is already skipped by each card's own guard.
-        let mut newly_illegal: Vec<String> = Vec::new();
-        targets = targets.into_iter()
-            .map(|t| match t {
+        let chosen = std::mem::take(&mut targets);
+        let mut any_newly_illegal = false;
+        targets = chosen.iter()
+            .map(|t| match *t {
                 Target::Object(id)
                     if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) => {
-                        newly_illegal.push(state.obj_name(id));
-                        Target::Illegal
-                    }
-                other => other,
+                    any_newly_illegal = true;
+                    Target::Illegal
+                }
+                _ => t.clone(),
             })
             .collect();
         if !any_legal {
@@ -379,10 +499,12 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // CR 608.2b's second sentence: the spell resolves but does as much
         // as it can. A partial fizzle used to log byte-identically to a full
         // resolution (issue #135) — say which target dropped out.
-        if !newly_illegal.is_empty() {
-            state.log(LogLevel::Event, format!(
-                "{}: target {} is illegal, resolving with the rest (CR 608.2b)",
-                state.obj_name(object_id), newly_illegal.join(", ")));
+        if any_newly_illegal {
+            let illegal = NewlyIllegal { state, chosen: &chosen, now: &targets };
+            let line = format!(
+                "{}: target {illegal} is illegal, resolving with the rest (CR 608.2b)",
+                state.obj_name(object_id));
+            state.log(LogLevel::Event, line);
         }
     }
 

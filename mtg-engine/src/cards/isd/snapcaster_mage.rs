@@ -42,8 +42,8 @@ impl CardBehavior for SnapcasterMage {
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         let Target::Object(id) = target else { return false; };
         let Some(obj) = state.get_object(*id) else { return false; };
-        let is_instant_or_sorcery = state.face_data(obj.id, registry)
-            .is_some_and(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery));
+        let types = state.face_card_types(obj.id, registry);
+        let is_instant_or_sorcery = types.contains(&CardType::Instant) || types.contains(&CardType::Sorcery);
         if !is_instant_or_sorcery { return false; }
         // A card that already has a flashback grant is still a legal target:
         // "target instant or sorcery card in your graveyard" has no clause
@@ -59,7 +59,7 @@ impl CardBehavior for SnapcasterMage {
         // CR 702.33a: a flashback cost is "equal to its mana cost". A card with NO
         // mana cost has no flashback cost and simply cannot be cast this way —
         // substituting a free cost made it castable for {0}.
-        let Some(cost) = state.face_data(*target_id, registry).and_then(|d| d.cost.clone()) else { return };
+        let Some(cost) = state.face_cost(*target_id, registry).cloned() else { return };
         let Some(name) = state.get_object(*target_id).map(|o| o.name.clone()) else { return };
         state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: *target_id, cost });
         state.log(crate::state::LogLevel::Event,

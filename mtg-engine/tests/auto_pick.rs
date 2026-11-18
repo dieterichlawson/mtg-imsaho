@@ -344,6 +344,44 @@ fn travelers_amulet_offers_every_basic_land_in_the_library() {
     assert_eq!(state.get_object(basics[0]).unwrap().zone, Zone::Library);
 }
 
+/// A library search's answer is one of the cards it offered (CR 701.19a-b):
+/// the search was for a basic land card, so naming the Grizzly Bears or the
+/// Ghost Quarter in the same library is no answer, and the question stands
+/// with nothing moved. The answer was taken on trust, so any card named was
+/// put into its hand: a seat answering "search for a basic land" with
+/// any card in the library tutored it, as the looked-at choice once did.
+#[test]
+fn a_library_search_refuses_a_card_it_did_not_offer() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let in_library = |state: &mut mtg_engine::state::GameState, name: &str| {
+        let card_id = registry.get_id_by_name(name).unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = name.into();
+        state.get_player_mut(P0).library_order.push(id);
+        id
+    };
+    let forest = in_library(&mut state, "Forest");
+    let bears = in_library(&mut state, "Grizzly Bears");
+    let quarter = in_library(&mut state, "Ghost Quarter");
+
+    let amulet = named_permanent(&mut state, &registry, "Traveler's Amulet", P0);
+    activate_via_hooks(&mut state, &registry, amulet, 0, &[]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    let (_, options) = pending_object_choices(&state, "Traveler's Amulet");
+    assert_eq!(options, vec![forest], "only the basic land is offered");
+
+    for not_offered in [bears, quarter] {
+        let after = choose_object(&state, &registry, not_offered);
+        assert_eq!(after.get_object(not_offered).unwrap().zone, Zone::Library,
+            "a card the search did not offer stays where it is");
+        assert_eq!(pending_object_choices(&after, "the refused search").1, vec![forest],
+            "and the search's question stands as it was asked");
+    }
+    let after = choose_object(&state, &registry, forest);
+    assert_eq!(after.get_object(forest).unwrap().zone, Zone::Hand, "the card offered is found");
+}
+
 /// Bug E (`audits/AUDIT_BUGS.md)`: Nevermore auto-picks a name by
 /// reading the opponent's hand. Doubly wrong: (1) Nevermore's name
 /// choice is independent of any player's hand, and (2) the

@@ -232,6 +232,91 @@ fn untapping_an_untapped_permanent_emits_nothing() {
     assert!(!state.get_object(c).unwrap().tapped);
 }
 
+/// CR 110.5: only a permanent is tapped or untapped. `tap` asked of a
+/// card off the battlefield already did nothing; `untap` untapped it and
+/// announced it, which no game reached only because leaving the
+/// battlefield clears the flag. The untap proof in `proofs::actions`
+/// holds for every object, so the function now asks what the rule says.
+#[test]
+fn untapping_a_card_off_the_battlefield_does_nothing() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
+    state.get_object_mut(c).unwrap().tapped = true;
+
+    state.events.clear();
+    assert!(!state.untap(c), "a card in a graveyard is not a permanent, and does not untap");
+    assert!(state.events.is_empty(), "nothing untapped, nothing announced");
+}
+
+/// CR 701.8a: a discard moves a card from its owner's hand to their
+/// graveyard. Asked of a permanent, `discard_card` put it into the
+/// graveyard and announced a discard; every caller offers only a hand's
+/// cards, so no game reached it, and the discard proof in
+/// `proofs::actions` holds for every object now that the function asks.
+#[test]
+fn discarding_a_card_not_in_a_hand_does_nothing() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+
+    state.events.clear();
+    state.discard_card(c, &registry);
+    assert_eq!(state.get_object(c).unwrap().zone, Zone::Battlefield, "a permanent is not discarded");
+    assert!(state.events.is_empty(), "nothing discarded, nothing announced");
+}
+
+/// CR 701.3a: attaching takes the permanent "from where it currently is"
+/// and puts it onto the new object. `attach` took it off an object it was
+/// on but not off a player, so one attached to a player came out on both.
+/// Only Auras and Equipment are attached with it, never something on a
+/// player, so no game reached it; the attach proof in `proofs::actions`
+/// holds for every object now that the function does what the rule says.
+#[test]
+fn attaching_takes_it_off_the_player_it_was_on() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let aura = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(aura).unwrap().attached_to_player = Some(P1);
+
+    assert!(state.attach(aura, creature));
+    let o = state.get_object(aura).unwrap();
+    assert_eq!(o.attached_to, Some(creature));
+    assert_eq!(o.attached_to_player, None, "taken from where it was, a player");
+}
+
+/// CR 614.1c: "enters tapped" is a permanent's state as it arrives.
+/// `arrives_tapped` tapped whatever it was given, a card in a graveyard
+/// included; every caller hands it a permanent that has just entered, so no
+/// game reached it, and the proof in `proofs::actions` holds for every
+/// object now that the function asks.
+#[test]
+fn arriving_tapped_off_the_battlefield_taps_nothing() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
+
+    state.arrives_tapped(c);
+    assert!(!state.get_object(c).unwrap().tapped, "a card in a graveyard has no tapped status to arrive with");
+}
+
+/// CR 108.4: a card off the battlefield is controlled by its owner, so an
+/// effect cannot hand it to another player. `change_control` did, for a
+/// card anywhere; every caller asks it about a permanent, so no game
+/// reached it, and the proof in `proofs::actions` holds for every object
+/// now that the function asks.
+#[test]
+fn control_of_a_card_off_the_battlefield_does_not_change() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
+
+    state.events.clear();
+    state.change_control(c, P1);
+    assert_eq!(state.get_object(c).unwrap().controller, P0, "its owner is its controller");
+    assert!(state.events.is_empty(), "no control changed, none announced");
+}
+
 /// The leaves-the-battlefield log line names the destination: "died" for the
 /// graveyard, "was exiled" for exile — and only for a creature leaving the
 /// BATTLEFIELD. A card moving hand → graveyard did not die.

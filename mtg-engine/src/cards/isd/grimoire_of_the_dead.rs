@@ -31,7 +31,7 @@ impl CardBehavior for GrimoireOfTheDead {
             _ => return vec![],
         };
         let controller = obj.controller;
-        let has_cards_in_hand = !state.objects_in_zone(Zone::Hand, controller).is_empty();
+        let has_cards_in_hand = state.any_in_zone(Zone::Hand, controller, |_| true);
 
         let mut abilities = vec![];
 
@@ -81,8 +81,7 @@ impl CardBehavior for GrimoireOfTheDead {
             return;
         }
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
-            .iter().map(|o| o.id).collect();
+        let hand = state.ids_in_zone(Zone::Hand, controller, |_| true);
 
         match hand.len() {
             // `activated_abilities` does not offer the ability with an empty
@@ -129,13 +128,18 @@ impl CardBehavior for GrimoireOfTheDead {
                 // it has additional types (ruling 2011-09-22). We check card_types
                 // for Creature in addition to checking power (which is the heuristic
                 // for creatures created by the engine).
-                let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Graveyard).into_iter()
-                    .filter(|o| o.id != object_id && state.is_card(o.id))
-                    .filter(|o| {
-                        state.is_creature(o.id, registry)
-                    })
-                    .map(|o| o.id)
-                    .collect();
+                //
+                // In id order, by a loop into a list with room for every
+                // object, not filters collected into one that grows: a proof
+                // walks a filter's inner `find` again for each item it
+                // collects, and a list allocated at its first push is one it
+                // follows into two buffers (`helpers::ids_where`).
+                let mut creatures: Vec<ObjectId> = Vec::with_capacity(state.objects.len());
+                for o in state.all_objects_in_zone(Zone::Graveyard) {
+                    if o.id != object_id && state.is_card(o.id) && state.is_creature(o.id, registry) {
+                        creatures.push(o.id);
+                    }
+                }
 
                 // One event: every card enters at the same moment, black
                 // Zombies as they arrive. An Evil Twin among them holds the

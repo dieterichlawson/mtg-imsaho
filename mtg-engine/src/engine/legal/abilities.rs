@@ -16,16 +16,14 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
     // Check attached permanents too (auras granting abilities to creatures).
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         let obj_id = obj.id;
-        let obj_tapped = obj.tapped;
         let obj_card_id = obj.card_id;
-        let activated_this_turn = obj.abilities_activated_this_turn.clone();
 
         // Stony Silence: skip artifact activated abilities.
         if prevent_artifact_abilities {
             if state.has_card_type(obj_id, CardType::Artifact, registry) { continue; }
         }
 
-        let abilities = activated_abilities_of(state, registry, player, obj_id);
+        let abilities = activated_abilities_of(state, registry, obj_id);
         // Every spell in hand is "another spell" to an ability, so the whole
         // hand is the colour demand its tap plan protects — the same map a
         // cast plans against. Planning abilities against an empty hand let
@@ -39,6 +37,9 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             .collect();
 
         for (source_card_id, ab) in abilities {
+            if !restrictions_allow(state, obj, &ab, player, is_sorcery_speed, registry) {
+                continue;
+            }
             // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
             // We use compute_autotap (mirroring spell casting) so abilities with mana costs
             // appear as legal actions in main phase even when no mana is currently floating —
@@ -88,7 +89,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()
                 } else {
-                    match mana::compute_autotap_around(&non_x_cost, mana_pool, &ability_sources, &others) {
+                    match plan_payment(state, player, &non_x_cost, mana_pool, &ability_sources, &others, registry) {
                         Some(plan) => plan,
                         None => continue,
                     }
@@ -98,67 +99,19 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 // returns no taps itself then, unless spending the pool would
                 // strand a spell an untapped source could have kept castable
                 // (issue #678).
-                match mana::compute_autotap_around(&ab.cost, mana_pool, &ability_sources, &others) {
+                match plan_payment(state, player, &ab.cost, mana_pool, &ability_sources, &others, registry) {
                     Some(plan) => plan,
                     None => continue,
                 }
             };
-            // Check tap cost and summoning sickness. A creature that came
-            // under its controller's control this turn cannot pay `{T}`
-            // unless it has haste, and a non-creature permanent is never
-            // restricted by it though the flag is set on it (CR 302.6) —
-            // `has_summoning_sickness` is that sentence, once.
-            if ab.requires_tap {
-                if obj_tapped { continue; }
-                if state.has_summoning_sickness(obj.id, registry) {
-                    continue;
-                }
-            }
-            // Check the counter cost (CR 601.2h — the cost has to be payable).
-            if let Some((counter_type, amount)) = ab.counter_cost {
-                if state.get_counter_count(obj_id, counter_type) < amount { continue; }
-            }
-            // Check once-per-turn.
-            if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
-            // A "tap N creatures you control" cost needs N of them (CR
-            // 601.2h). Which N is asked when the ability is activated, not
-            // offered as one action per combination (issue #670).
-            if let Some(tap) = ab.tap_cost {
-                if crate::engine::actions::abilities::tap_cost_candidates(state, player, obj_id, registry).len() < tap.count {
-                    continue;
-                }
-            }
-            // Check sorcery speed.
-            if ab.sorcery_speed_only && !is_sorcery_speed { continue; }
             // Build the list of eligible sacrifices for this ability. We
             // enumerate one ActivateAbility per (target, sacrifice) combo so
             // the player chooses the sacrifice up front rather than having
             // the engine auto-pick (which could fizzle the ability by
             // sacrificing the very creature being targeted).
-            let eligible_sacrifices: Vec<Option<ObjectId>> = match &ab.sacrifice_cost {
-                SacrificeCost::None | SacrificeCost::SacrificeThis => {
-                    // None: no choice. SacrificeThis: the source pays itself, no choice either.
-                    vec![None]
-                }
-                SacrificeCost::SacrificeCreature => {
-                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
-                        .iter()
-                        .filter(|o| state.is_creature(o.id, registry))
-                        .map(|o| o.id)
-                        .collect();
-                    if creatures.is_empty() { continue; }
-                    creatures.into_iter().map(Some).collect()
-                }
-                SacrificeCost::SacrificeAnotherCreature => {
-                    // "Another" excludes the source permanent (the equipment / card itself).
-                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
-                        .iter()
-                        .filter(|o| state.is_creature(o.id, registry) && o.id != obj_id)
-                        .map(|o| o.id)
-                        .collect();
-                    if creatures.is_empty() { continue; }
-                    creatures.into_iter().map(Some).collect()
-                }
+            let Some(eligible_sacrifices) = sacrifices_offered(state, &ab.sacrifice_cost, obj_id, player, registry)
+            else {
+                continue;
             };
 
             // Generate actions based on targeting.
@@ -216,6 +169,74 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             // after the ability is activated, not by enumerating multiple entries.
         }
     }
+}
+
+/// What an ability of `source` may be activated sacrificing, one offer
+/// each (CR 602.2b via 601.2h): nothing for a cost without a sacrifice or
+/// one that sacrifices the source itself (no choice to make); each creature
+/// `player` controls on the battlefield for "sacrifice a creature", and
+/// each but the source for "sacrifice another creature", in the board's
+/// order. `None` when such a cost has no creature to pay it, and so the
+/// ability is not offered at all.
+pub(crate) fn sacrifices_offered(
+    state: &GameState,
+    cost: &crate::cards::SacrificeCost,
+    source: ObjectId,
+    player: PlayerId,
+    registry: &CardRegistry,
+) -> Option<Vec<Option<ObjectId>>> {
+    use crate::cards::SacrificeCost;
+    let another = match cost {
+        // None: no choice. SacrificeThis: the source pays itself, no choice either.
+        SacrificeCost::None | SacrificeCost::SacrificeThis => return Some(vec![None]),
+        SacrificeCost::SacrificeCreature => false,
+        // "Another" excludes the source permanent (the equipment / card itself).
+        SacrificeCost::SacrificeAnotherCreature => true,
+    };
+    let creatures: Vec<Option<ObjectId>> = state.objects_in_zone(Zone::Battlefield, player)
+        .iter()
+        .filter(|o| state.is_creature(o.id, registry) && !(another && o.id == source))
+        .map(|o| Some(o.id))
+        .collect();
+    (!creatures.is_empty()).then_some(creatures)
+}
+
+/// Whether an ability of `obj` may be activated now, as far as its costs
+/// other than mana and its restrictions go (CR 602.5b, 601.2h, 302.6):
+/// a `{T}` in its cost needs the permanent untapped and, if it is a
+/// creature, under its controller's control since their turn began
+/// (`has_summoning_sickness` is that sentence, once); a counter cost needs
+/// the counters on it; a once-each-turn ability not yet activated this
+/// turn; a "tap N untapped creatures you control" cost N of them besides
+/// it (which N is asked on activation, not offered as one action per
+/// combination, issue #670); and a sorcery-speed ability the time its
+/// controller could cast a sorcery. Its own function so that it is proved
+/// apart from the mana planning around it (`proofs::actions::offering`).
+pub(crate) fn restrictions_allow(
+    state: &crate::state::GameState,
+    obj: &crate::state::GameObject,
+    ab: &crate::cards::ActivatedAbilityDef,
+    player: crate::ids::PlayerId,
+    is_sorcery_speed: bool,
+    registry: &crate::cards::CardRegistry,
+) -> bool {
+    if ab.requires_tap && (obj.tapped || state.has_summoning_sickness(obj.id, registry)) {
+        return false;
+    }
+    if let Some((counter_type, amount)) = ab.counter_cost {
+        if state.get_counter_count(obj.id, counter_type) < amount {
+            return false;
+        }
+    }
+    if ab.once_per_turn && obj.abilities_activated_this_turn.contains(&ab.ability_index) {
+        return false;
+    }
+    if let Some(tap) = ab.tap_cost {
+        if crate::engine::actions::abilities::tap_cost_candidates(state, player, obj.id, registry).len() < tap.count {
+            return false;
+        }
+    }
+    !ab.sorcery_speed_only || is_sorcery_speed
 }
 
 /// Loyalty abilities: sorcery speed, once per turn per planeswalker.
@@ -282,14 +303,13 @@ pub(crate) fn loyalty(ctx: &Ctx, actions: &mut Vec<Action>) {
     }
 }
 
-/// Every activated ability `obj_id` has for `player` to activate: its own,
-/// one a copy effect grants, and one an attachment the player controls
-/// grants — each grant once (issue #533). What the menu offers, and what
-/// the auto-tapper keeps payable while it plans another cost (issue #837).
+/// Every activated ability `obj_id` has for its controller to activate:
+/// its own, one a copy effect grants, and one an attachment grants — each
+/// grant once (issue #533). What the menu offers, and what the auto-tapper
+/// keeps payable while it plans another cost (issue #837).
 pub(crate) fn activated_abilities_of(
     state: &crate::state::GameState,
     registry: &crate::cards::CardRegistry,
-    player: crate::ids::PlayerId,
     obj_id: ObjectId,
 ) -> Vec<(CardId, crate::cards::ActivatedAbilityDef)> {
     // Collect abilities from this permanent's card and attached auras.
@@ -312,16 +332,17 @@ pub(crate) fn activated_abilities_of(
         }
     }
     for attached in state.objects_in_id_order() {
-        // Only offer abilities granted by attachments the acting player
-        // controls. Every granted activated ability in the set includes
-        // sacrificing the attached source as a cost (paid in
-        // `pay_activation_cost`, e.g. Blazing Torch), and a player can
-        // only sacrifice permanents they control (CR 601.2g/701.13) — so
-        // an opponent-controlled attachment's granted ability is
-        // unpayable.
+        // An ability an Aura or Equipment grants is the permanent's own
+        // ("enchanted creature has ..."), so it is its controller's to
+        // activate (CR 602.2), whoever controls the attachment: a Skeletal
+        // Grimace on an opponent's creature gives that opponent its
+        // regeneration. This used to take only attachments the acting
+        // player controls, on the ground that every granted ability
+        // sacrifices its source; one whose cost does (Blazing Torch's) is
+        // offered by its card only when the creature's controller controls
+        // what it would sacrifice (CR 701.21a).
         if attached.zone == Zone::Battlefield
-            && attached.attached_to == Some(obj_id)
-            && attached.controller == player {
+            && attached.attached_to == Some(obj_id) {
             if let Some(behavior) = registry.get(attached.card_id) {
                 for ab in behavior.activated_abilities(state, obj_id, registry) {
                     abilities.push((attached.card_id, ab));

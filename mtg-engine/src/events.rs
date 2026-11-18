@@ -7,6 +7,7 @@ use crate::state::GameResult;
 /// Events emitted by state transitions. Used for game log, triggered abilities (future),
 /// and UI updates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum GameEvent {
     GameStarted,
     TurnStarted { player: PlayerId, turn: u32 },

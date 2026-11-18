@@ -148,3 +148,24 @@ fn the_bonus_stops_when_the_gang_leaves_the_battlefield() {
     assert_eq!(state.effective_power(ally, &reg).unwrap(), base,
         "the static ability is gone with its source");
 }
+
+/// CR 511.3: creatures are removed from combat as the end of combat step
+/// ends, not as it begins. Through that step an attacker is still
+/// attacking, and keeps the bonus; in the main phase after, it is not.
+#[test]
+fn an_attacker_keeps_the_bonus_through_the_end_of_combat_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let gang = named_permanent(&mut state, &reg, "Instigator Gang", P0);
+    let base = state.effective_power(gang, &reg).unwrap();
+    submit_declare_attackers(&mut state, &[(gang, P1)], &reg);
+
+    advance_to_step(&mut state, &reg, Step::EndCombat);
+    assert!(state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&gang)),
+        "the Gang is still attacking in the end of combat step (CR 511.3)");
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), base + 1, "and still has the bonus");
+
+    advance_to_step(&mut state, &reg, Step::PostcombatMain);
+    assert!(state.combat.is_none(), "removed from combat as the end of combat step ended");
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), base);
+}

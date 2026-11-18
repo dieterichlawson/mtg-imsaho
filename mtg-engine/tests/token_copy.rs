@@ -86,13 +86,13 @@ fn a_caller_that_mutates_the_returned_tokens_reaches_the_doubled_ones() {
     state.get_object_mut(army).unwrap().name = "Army of the Damned".into();
     reg.get(card_id).unwrap().on_resolve(&mut state, army, &[], &reg);
 
-    let zombies = count_tokens_named_by(&state, "Zombie", P0);
+    let zombies = count_tokens_named_by(&state, "Zombie Token", P0);
     assert!(zombies >= 26,
         "test precondition: 13 tokens doubled is 26, got {zombies}");
-    // The name is "Zombie" (CR 111.4). A loop filtering on any other string
+    // The name is "Zombie Token" (CR 111.4). A loop filtering on any other string
     // runs over nothing, which is exactly the claim the test exists to make.
     let tokens: Vec<_> = state.objects.values()
-        .filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0)
+        .filter(|o| o.is_token && o.name == "Zombie Token" && o.controller == P0)
         .collect();
     assert_eq!(tokens.len(), zombies, "the loop below has to run over something");
     for z in tokens {
@@ -103,31 +103,32 @@ fn a_caller_that_mutates_the_returned_tokens_reaches_the_doubled_ones() {
 }
 
 /// CR 111.4: "If the spell or ability doesn't specify the name of the token,
-/// its name is the same as its subtype(s)." The rule's worked example, a
-/// "Goblin Scout creature token", is named `Goblin Scout` — there is no
-/// literal "Token" in a token's name.
+/// its name is the same as its subtype(s) plus the word 'Token.'" The rule's
+/// worked example, Dwarven Reinforcements' Dwarf Berserker, is named
+/// `Dwarf Berserker Token`.
 ///
 /// This is a characteristic, not a label. "Creatures with the same name"
-/// (Sever the Bloodline) and "cards named" (Nevermore) compare it, and the
-/// engine used to derive `"<subtypes> Token"`, a string no printed card can
-/// ever be named — so a token could not match a card that shares its name,
-/// silently and with no error (issues #331, #334). The word "Token" belongs
-/// to the renderer, which is where the CLI and the LLM board now say it.
+/// (Sever the Bloodline) and "cards named" (Nevermore) compare it, and a
+/// card that enters as a copy of a token takes it (CR 707.2). Issues #331
+/// and #334 quoted an older edition of the rule, whose example named a
+/// "Goblin Scout creature token" `Goblin Scout`, and the name lost its
+/// "Token"; Evil Twin copying a Spirit token was then a card named
+/// `Spirit`. The generated boards of `card_semantics.rs` found it.
 #[test]
-fn an_unnamed_tokens_name_is_its_subtypes_alone() {
+fn an_unnamed_tokens_name_is_its_subtypes_plus_token() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let spirit = state.create_token_with_subtypes("", P0, 1, 1, vec![Color::White],
         vec![CardType::Creature], vec![Keyword::Flying], vec!["Spirit".into()], &reg)[0];
-    assert_eq!(state.get_object(spirit).unwrap().name, "Spirit");
-    assert_eq!(state.name_of(spirit, &reg), "Spirit",
-        "the name every same-name comparison reads is the subtype (CR 111.4)");
+    assert_eq!(state.get_object(spirit).unwrap().name, "Spirit Token");
+    assert_eq!(state.name_of(spirit, &reg), "Spirit Token",
+        "the name every same-name comparison reads is the subtype and the word Token (CR 111.4)");
 
-    let scout = state.create_token_with_subtypes("", P0, 1, 1, vec![Color::Red],
-        vec![CardType::Creature], vec![], vec!["Goblin".into(), "Scout".into()], &reg)[0];
-    assert_eq!(state.name_of(scout, &reg), "Goblin Scout",
-        "two subtypes make a two-word name, the rule's own example");
+    let berserker = state.create_token_with_subtypes("", P0, 2, 1, vec![Color::Red],
+        vec![CardType::Creature], vec![], vec!["Dwarf".into(), "Berserker".into()], &reg)[0];
+    assert_eq!(state.name_of(berserker, &reg), "Dwarf Berserker Token",
+        "two subtypes and the word Token, the rule's own example");
 
     // The other half of CR 111.4: an effect that *does* name its token keeps
     // that name, subtypes or not.

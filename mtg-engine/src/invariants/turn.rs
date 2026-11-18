@@ -168,7 +168,9 @@ pub(super) fn check_settled(state: &GameState, registry: &CardRegistry, v: &mut 
         v.push("declare attackers step past its declaration with no combat state".into());
     }
     let Some(c) = &state.combat else { return };
-    if !c.dealt_first_strike.is_empty() && state.step != Step::CombatDamage {
+    // Kept from the first combat damage step to the second, and through the
+    // end of combat step, whose end clears the combat (CR 511.3).
+    if !c.dealt_first_strike.is_empty() && !matches!(state.step, Step::CombatDamage | Step::EndCombat) {
         v.push(format!("first-strike damage recorded in {:?}", state.step));
     }
     if !c.attackers.is_empty() && !c.any_attackers_declared {

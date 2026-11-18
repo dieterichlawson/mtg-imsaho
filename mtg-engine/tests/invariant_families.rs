@@ -195,13 +195,13 @@ fn token_shape_rules_are_checked() {
         vec![], vec!["Wolf".into()], &reg)[0];
     clean(&state, &reg);
 
-    // CR 111.4: the name is the subtype(s) — the wrong word is wrong, and so
-    // is the right word with " Token" welded on (issues #331, #334).
+    // CR 111.4: the name is the subtype(s) plus the word "Token" — the
+    // wrong word is wrong, and so is the right word without "Token".
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Wolf Token".into();
+    s.get_object_mut(wolf).unwrap().name = "Wolf".into();
     flags_core(&s, &reg, "is not its subtypes");
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Spirit".into();
+    s.get_object_mut(wolf).unwrap().name = "Spirit Token".into();
     flags_core(&s, &reg, "is not its subtypes");
     let mut s = state.clone();
     s.get_object_mut(wolf).unwrap().zone_change_count = 1;
@@ -247,9 +247,10 @@ fn stack_entry_rules_are_checked() {
 
     let mut s = state.clone();
     s.stack.push(StackEntry::Ability {
+        target_zone_changes: Vec::new(),
         source_id: bear, ability_index: 0, behavior_card_id: s.get_object(bear).unwrap().card_id,
         targets: vec![Target::Object(bolt)], activator: P0, x_value: None, target_requirement: None,
-        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: None, source_name: None,
+        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: None, source_zone_changes: None, source_name: None,
     });
     flags_core(&s, &reg, "has targets but no requirement");
     flags_core(&s, &reg, "remembers a sacrificed creature's toughness but no sacrifice");
@@ -638,6 +639,7 @@ fn the_healthy_shapes_of_the_stack_are_not_flagged() {
     // "that creature's toughness" family).
     let mut s = state.clone();
     s.stack.push(StackEntry::Ability {
+        target_zone_changes: Vec::new(),
         source_id: bear,
         ability_index: 0,
         activator: P0,
@@ -647,7 +649,7 @@ fn the_healthy_shapes_of_the_stack_are_not_flagged() {
         sacrificed: Some(bear),
         sacrificed_toughness: Some(2),
         x_value: None,
-        loyalty: false, source_transforms: None, source_name: None,
+        loyalty: false, source_transforms: None, source_zone_changes: None, source_name: None,
     });
     clean_core(&s, &reg);
 
@@ -2363,9 +2365,10 @@ fn the_costs_an_action_pays_are_checked_against_the_pool() {
             c.get_player_mut(P0).mana_pool.mana.insert(*t, *n);
         }
         c.stack.push(StackEntry::Ability {
+            target_zone_changes: Vec::new(),
             source_id: cathar, ability_index: 0, behavior_card_id: card_id,
             targets: vec![], activator: P0, x_value: None, target_requirement: None,
-            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: None, source_name: None,
+            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: None, source_zone_changes: None, source_name: None,
         });
         for (t, n) in added {
             c.events.push(GameEvent::ManaAdded { player: P0, mana_type: *t, amount: *n });
@@ -2698,8 +2701,9 @@ fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
     p.pending_trigger_pushes_ap.clear();
     p.stack.push(StackEntry::Trigger(mtg_engine::triggers::PendingTrigger::new(
         mtg_engine::triggers::TriggerSource {
+            target_zone_changes: Vec::new(),
             id: bear, card_id: p.get_object(bear).unwrap().card_id, controller: P0,
-            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, source_transforms: None,
+            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, source_transforms: None, source_zone_changes: None,
         },
         mtg_engine::triggers::TriggerEvent::Upkeep,
     )));
@@ -4696,10 +4700,11 @@ fn the_target_arity_of_every_requirement_shape_is_checked() {
     let with = |req: R, n: usize| {
         let mut s = state.clone();
         s.stack.push(StackEntry::Ability {
+            target_zone_changes: Vec::new(),
             source_id: source, ability_index: 0, behavior_card_id: card_id,
             targets: creatures[..n].iter().map(|id| Target::Object(*id)).collect(),
             activator: P0, x_value: None, target_requirement: Some(req),
-            sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: None, source_name: None,
+            sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: None, source_zone_changes: None, source_name: None,
         });
         s
     };

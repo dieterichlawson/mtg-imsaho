@@ -14,15 +14,13 @@ impl SulfurFalls {
             Some(o) => o.controller,
             None => return false,
         };
-        state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .any(|o| {
-                if o.id == object_id {
-                    return false;
-                }
-                let has_subtype = |name: &str| state.has_subtype(o.id, name, registry);
-                has_subtype("Island") || has_subtype("Mountain")
-            })
+        state.any_in_zone(Zone::Battlefield, controller, |o| {
+            if o.id == object_id {
+                return false;
+            }
+            let has_subtype = |name: &str| state.has_subtype(o.id, name, registry);
+            has_subtype("Island") || has_subtype("Mountain")
+        })
     }
 }
 

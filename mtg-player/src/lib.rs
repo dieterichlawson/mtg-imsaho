@@ -49,6 +49,7 @@ pub mod gui;
 pub mod llm;
 pub mod scripted;
 pub mod game_log;
+pub mod hidden;
 pub mod watchdog;
 
 use mtg_engine::view::GameView;

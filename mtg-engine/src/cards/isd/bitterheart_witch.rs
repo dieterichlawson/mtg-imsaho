@@ -39,7 +39,7 @@ impl CardBehavior for BitterheartWitch {
     }
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], _registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // The player was targeted when the trigger went on the stack
         // (CR 603.3d). Remember which, so the search below knows where the
@@ -69,15 +69,20 @@ impl CardBehavior for BitterheartWitch {
             return;
         }
 
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
 
-        // Search library for Curse cards.
-        let curse_ids: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-            .filter(|&&obj_id| {
-                state.has_subtype(obj_id, "Curse", registry)
-            })
-            .copied()
-            .collect();
+        // Search library for Curse cards, in library order. A loop, not a
+        // filter collected: a filter hands out each item by an inner `find`
+        // over what is left, which a proof walks again for each item it
+        // collects (`engine::targeting`'s `push_battlefield_targets` says
+        // more).
+        let library = &state.get_player(controller).library_order;
+        let mut curse_ids: Vec<ObjectId> = Vec::new();
+        for &obj_id in library {
+            if state.has_subtype(obj_id, "Curse", registry) {
+                curse_ids.push(obj_id);
+            }
+        }
 
         // The shuffle happens here rather than after the Curse is found, so
         // that declining to find one still shuffles. "…then shuffle" is part of

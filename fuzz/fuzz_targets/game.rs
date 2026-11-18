@@ -131,6 +131,7 @@ fn violations(
     legal: &LegalActions,
     last: Option<&(GameState, Action)>,
     nontoken_baseline: &mut Option<Vec<usize>>,
+    shared_log: &mut mtg_engine::invariants::shared_log::SharedLog,
     decision: u64,
 ) -> Vec<String> {
     let registry = registry();
@@ -142,7 +143,14 @@ fn violations(
     if let Some((prev, act)) = last {
         v.extend(mtg_engine::invariants::check_transition(prev, Some(act), state, registry));
     }
+    // The log every seat is sent names no card no one has seen (CR 400.2).
+    v.extend(shared_log.check(last.map(|(prev, _)| prev), state));
     v.extend(mtg_engine::invariants::check_legal(state, acting, legal, registry));
+    // Nor does any view or menu read what its player cannot see (CR 401.2,
+    // 402.3), held to one decision in so many, as the runner holds it.
+    if decision % mtg_player::hidden::HIDDEN_EVERY == 0 {
+        v.extend(mtg_player::hidden::hidden_stays_hidden(state, acting, legal, registry));
+    }
 
     // No card enters or leaves the game (CR 400.1, 108.3).
     let mut counts = vec![0usize; state.players.len()];
@@ -199,6 +207,7 @@ fuzz_target!(|data: &[u8]| {
     let mut decisions: u64 = 0;
     let mut last: Option<(GameState, Action)> = None;
     let mut nontoken_baseline = None;
+    let mut shared_log = mtg_engine::invariants::shared_log::SharedLog::new();
     let mut watchdog = mtg_player::watchdog::ProgressWatchdog::new();
 
     engine::run_game_loop(&mut state, registry, &mut |state: &GameState, acting: PlayerId, legal: &LegalActions| {
@@ -206,7 +215,7 @@ fuzz_target!(|data: &[u8]| {
         if watchdog.observe(state) {
             panic!("{}", mtg_player::watchdog::stall_report(state, acting, legal, &format!("p{}", acting.0)));
         }
-        let found = violations(state, acting, legal, last.as_ref(), &mut nontoken_baseline, decisions);
+        let found = violations(state, acting, legal, last.as_ref(), &mut nontoken_baseline, &mut shared_log, decisions);
         assert!(
             found.is_empty(),
             "invariant violation at decision {decisions} (turn {}, {:?}):\n  {}",

@@ -25,6 +25,25 @@ pub(crate) fn finalize_spell_cast(
 
     *state.num_spells_cast_this_turn.entry(player).or_insert(0) += 1;
 
+    let line = cast_log_line(state, player, object_id, payment, targets, registry);
+    state.log(LogLevel::Event, line);
+    state.consecutive_passes = 0;
+}
+
+/// The one line the log writes about a cast: who cast what, how it was paid
+/// for, and what it targets. Its own function so that a proof of a cast's
+/// facts can stand in for the words (`proofs::actions::answering`): a
+/// proof that cannot see how many targets a cast holds builds the line for
+/// every count, and joined or pushed, the words of names it stands in for
+/// with nothing either wrote into a list of no room or grew one.
+pub(crate) fn cast_log_line(
+    state: &GameState,
+    player: PlayerId,
+    object_id: ObjectId,
+    payment: &CastPayment,
+    targets: &[crate::actions::Target],
+    registry: &CardRegistry,
+) -> String {
     let name = card_name(state, registry, object_id);
     let suffix = payment.annotation();
     let target_str = if targets.is_empty() {
@@ -38,8 +57,7 @@ pub(crate) fn finalize_spell_cast(
         }).collect();
         format!(" targeting {}", names.join(", "))
     };
-    state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
-    state.consecutive_passes = 0;
+    format!("p{} cast {}{}{}", player.0, name, suffix, target_str)
 }
 
 /// Which cost a spell was actually cast for, for the one line the log writes

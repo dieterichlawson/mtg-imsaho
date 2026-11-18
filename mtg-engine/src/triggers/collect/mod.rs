@@ -37,7 +37,23 @@ pub(crate) struct Collector {
 
 impl Collector {
     pub fn new(active_player: PlayerId) -> Self {
-        Self { active_player, ap: Vec::new(), nap: Vec::new() }
+        Self { active_player, ap: Self::list(), nap: Self::list() }
+    }
+
+    /// An empty list of triggers. In the proofs, with room for the few a
+    /// proof's board raises from the start: a list empty, and so
+    /// unallocated, until a push the solver may or may not take is one it
+    /// follows into an allocation down each way, with the trigger written
+    /// into each (most of what a proof of the collector cost).
+    #[cfg(not(kani))]
+    fn list() -> Vec<PendingTrigger> {
+        Vec::new()
+    }
+
+    /// See the other `list`.
+    #[cfg(kani)]
+    fn list() -> Vec<PendingTrigger> {
+        Vec::with_capacity(2)
     }
 
     /// Add a trigger, filing it by whether its controller is the active

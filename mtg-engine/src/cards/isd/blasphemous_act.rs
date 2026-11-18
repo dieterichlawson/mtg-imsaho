@@ -36,10 +36,8 @@ impl CardBehavior for BlasphemousAct {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .collect();
+        let creatures = crate::cards::helpers::ids_where(state.all_objects_in_zone(Zone::Battlefield),
+            |o| state.is_creature(o.id, registry));
         // One batch: "each creature" is dealt its damage at once, so every
         // event is settled (CR 616.1) before any of it lands.
         for id in creatures {

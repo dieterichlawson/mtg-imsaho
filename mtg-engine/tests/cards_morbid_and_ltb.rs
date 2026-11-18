@@ -1505,6 +1505,33 @@ fn skeletal_grimace_grants_regenerate_ability() {
         "Activating should add a regeneration shield");
 }
 
+/// "Enchanted creature ... has '{B}: Regenerate this creature.'" The
+/// ability is the creature's, so the creature's controller activates it
+/// (CR 602.2), whoever controls the Aura. A Grimace put on an opponent's
+/// creature used to grant an ability no one was offered: the menu took
+/// only grants from attachments the acting player controls.
+#[test]
+fn skeletal_grimace_on_an_opponents_creature_gives_them_the_regenerate_ability() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
+    assert_eq!(state.get_object(sg).unwrap().attached_to, Some(creature), "test setup");
+    assert_eq!(state.get_object(sg).unwrap().controller, P0, "test setup");
+
+    state.priority_player = Some(P1);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Black, 1);
+    let legal = engine::legal_actions(&state, &reg);
+    let regenerate = legal.actions.iter().find(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == creature));
+    assert!(regenerate.is_some(), "P1 controls the creature, so P1 may activate its ability: {:?}", legal.actions);
+
+    state = resolve_activated(engine::submit_action(&state, regenerate.unwrap(), &reg), &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1);
+}
+
 /// Skeletal Grimace regeneration saves creature from lethal damage.
 #[test]
 fn skeletal_grimace_regeneration_saves_from_lethal() {

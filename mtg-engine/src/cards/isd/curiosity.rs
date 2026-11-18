@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, Trig
 use crate::engine::draw_cards;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Curiosity — {U} Aura. Enchant creature.
 /// Whenever enchanted creature deals damage to an opponent, you may draw a card.
@@ -43,13 +43,19 @@ impl CardBehavior for Curiosity {
     /// at dispatch. Checking them at resolution instead meant the ability went
     /// on the stack every time ANY permanent damaged ANY player and then
     /// quietly did nothing, handing everyone a priority window each time.
+    ///
+    /// Read as the Aura was when the damage was dealt (CR 603.10): the
+    /// collector asks only of watchers on the battlefield then, and one the
+    /// state-based actions have since put into a graveyard beside the
+    /// creature it enchanted still enchanted it, under the controller it had.
+    /// Requiring it on the battlefield now meant a trampler that dealt
+    /// damage to its controller's opponent and died to its deathtouching
+    /// blocker in the same step drew nothing.
     fn should_trigger_on_damage_to_player(&self, state: &GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _registry: &CardRegistry) -> bool {
-        let Some(aura) = state.get_object(self_id).filter(|o| o.zone == Zone::Battlefield) else {
-            return false;
-        };
         // The source must be the enchanted creature, and the damage must have
         // gone to an opponent.
-        aura.attached_to == Some(source_id) && damaged_player != aura.controller
+        state.attached_creature(self_id) == Some(source_id)
+            && damaged_player != crate::cards::helpers::controller_of(state, self_id)
     }
 
     fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
@@ -58,7 +64,7 @@ impl CardBehavior for Curiosity {
         // the player who last controlled it, which is what `controller_of`
         // answers. Reading `o.controller` gave the owner in that one case,
         // because leaving the battlefield resets the field.
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // "You may draw a card" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
@@ -74,7 +80,7 @@ impl CardBehavior for Curiosity {
         if !yes {
             return;
         }
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // Logged from what the draw did, not what was asked (issue #623).
         let msg = if draw_cards(state, controller, 1, registry) == 0 {
             "Curiosity: drew no card (empty library)"

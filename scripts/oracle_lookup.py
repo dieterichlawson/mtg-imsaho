@@ -224,6 +224,9 @@ def parse_scryfall_card(data):
             "source_url": scryfall_url,
             "cached_at": str(date.today()),
         }
+        # A planeswalker's printed loyalty (CR 209.1).
+        if front.get("loyalty"):
+            card_data["loyalty"] = front["loyalty"]
         if len(faces) > 1:
             back = faces[1]
             card_data["back_face"] = {
@@ -245,6 +248,8 @@ def parse_scryfall_card(data):
             "source_url": scryfall_url,
             "cached_at": str(date.today()),
         }
+        if data.get("loyalty"):
+            card_data["loyalty"] = data["loyalty"]
 
     # Extract keywords from oracle text keywords array if present
     keywords = data.get("keywords", [])

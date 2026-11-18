@@ -38,7 +38,7 @@ impl CaravanVigil {
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {land_name} put into hand"));
+                format!("Caravan Vigil: revealed {land_name}, put into hand"));
 
             crate::cards::helpers::shuffle_library(state, controller);
 
@@ -67,8 +67,7 @@ impl CardBehavior for CaravanVigil {
         let basic_lands: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&obj_id| {
                 state.has_card_type(obj_id, CardType::Land, registry)
-                    && state.face_data(obj_id, registry)
-                        .is_some_and(|d| d.supertypes.iter().any(|st| matches!(st, Supertype::Basic)))
+                    && state.face_supertypes(obj_id, registry).contains(&Supertype::Basic)
             })
             .copied()
             .collect();
@@ -140,7 +139,7 @@ impl CardBehavior for CaravanVigil {
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {land_name} put into hand"));
+                format!("Caravan Vigil: revealed {land_name}, put into hand"));
         }
 
         // Shuffle library.

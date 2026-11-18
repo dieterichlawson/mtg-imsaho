@@ -44,6 +44,7 @@ pub struct EnteringPermanent {
 
 /// An event a replacement effect may act on before it happens.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum ReplaceableEvent {
     EntersBattlefield(EnteringPermanent),
     /// One or more tokens are about to be created under `controller`.
@@ -60,6 +61,7 @@ pub enum ReplaceableEvent {
 }
 
 /// What a replacement effect did to an event.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Replacement {
     /// The event happens, but like this instead.
     Modified(ReplaceableEvent),
@@ -146,6 +148,20 @@ pub fn for_entering(
         .unwrap_or_else(|| fallback.clone());
     run_entering_pass(state, after_copy.clone(), registry, Pass::EverythingElse)
         .unwrap_or(after_copy)
+}
+
+/// Whether the permanent `e` says is entering has `subtype` as it enters.
+/// CR 614.12 reads the permanent as it would exist on the battlefield,
+/// after the replacement effects already applied to how it enters, so one
+/// entering as a copy has the subtypes of what it copies (its copiable
+/// values, CR 707.2) and one entering as itself its own: an Evil Twin
+/// entering as a copy of a Human token is a Human to a Dearly Departed.
+#[must_use]
+pub fn enters_with_subtype(state: &GameState, e: &EnteringPermanent, subtype: &str, registry: &CardRegistry) -> bool {
+    match e.copy_of {
+        Some(source) => state.printed_subtypes_of(source, registry).iter().any(|s| s == subtype),
+        None => state.has_subtype(e.object, subtype, registry),
+    }
 }
 
 /// Ask for the enters-as-a-copy choices that deferred entries are waiting on

@@ -25,6 +25,7 @@ pub mod coral_merfolk;
 pub mod isd;
 pub use isd::*;
 
+#[cfg(not(kani))]
 use std::collections::HashMap;
 
 use crate::actions::Target;
@@ -63,10 +64,13 @@ pub fn push_ability(
         activator,
         x_value: state.last_activated_x_value,
         target_requirement,
+        // Stamped by `put_on_stack`.
+        target_zone_changes: Vec::new(),
         sacrificed: state.last_activated_sacrifice,
         sacrificed_toughness: state.last_activated_sacrifice_toughness,
         loyalty: false,
         source_transforms: None,
+        source_zone_changes: None,
         source_name: None,
     });
 }
@@ -95,10 +99,12 @@ pub fn push_loyalty_ability(
         activator,
         x_value: None,
         target_requirement,
+        target_zone_changes: Vec::new(),
         sacrificed: None,
         sacrificed_toughness: None,
         loyalty: true,
         source_transforms: None,
+        source_zone_changes: None,
         source_name: None,
     });
 }
@@ -186,19 +192,93 @@ pub const EXILE_COUNT: &str = "exile_count";
 /// [`AdditionalCost::ExileCreaturesFromGraveyard`] exiled, as
 /// `exiled_to_cost_0`, `exiled_to_cost_1`, … in the order they were exiled.
 ///
-/// The engine writes the *cards*, not anything derived from them. It used to
-/// write `exiled_power` instead — the power of the first one, read off while
-/// that card was still in the graveyard — which is one card's question
-/// (Corpse Lunge's) answered inside the cost machinery, at the wrong moment
-/// and in the wrong zone. What the cost did is that these cards were exiled;
-/// what a card wants to know about them is the card's own business, asked when
-/// it resolves.
+/// The engine writes the cards, and beside each its power as it last existed
+/// in the graveyard ([`EXILED_TO_COST_POWER`]).
 pub const EXILED_TO_COST: &str = "exiled_to_cost";
 
 /// The `card_state` key naming the `i`th card exiled to pay an additional cost.
 #[must_use]
 pub fn exiled_to_cost_key(i: usize) -> String {
-    format!("{EXILED_TO_COST}_{i}")
+    indexed_key(EXILED_TO_COST, "_", i)
+}
+
+/// The power of each card exiled to pay an additional cost, as it last
+/// existed in the graveyard it was exiled from, none below 0, written as the
+/// cost is paid: what "the exiled card's power" reads. The rules' ruling on
+/// those words (Corpse Explosion, 2022-04-29): "Use the card's power as it
+/// last existed in the graveyard to determine how much damage is dealt."
+/// A characteristic-defining power counts what was there, the card itself
+/// among it (CR 604.3): Boneyard Wurm with two other creature cards beside it
+/// is a 3/3 there. The engine read the power in exile, as the spell resolved,
+/// which left the Wurm out of its own count (defect 42).
+pub const EXILED_TO_COST_POWER: &str = "exiled_to_cost_power";
+
+/// The `card_state` key holding the power, as an id's number, of the `i`th
+/// card exiled to pay an additional cost ([`EXILED_TO_COST_POWER`]).
+#[must_use]
+pub fn exiled_to_cost_power_key(i: usize) -> String {
+    indexed_key(EXILED_TO_COST_POWER, "_", i)
+}
+
+/// `prefix`, `separator` and `i` in decimal, as a `card_state` key.
+///
+/// Spelled out digit by digit rather than with `format!`, because a key is
+/// game data and `format!` is for what a person reads: the proofs stub
+/// `format!` to return nothing (`proofs::cards` says why), which leaves
+/// the log empty and would make every indexed key the same key.
+#[must_use]
+pub fn indexed_key(prefix: &str, separator: &str, i: usize) -> String {
+    let mut digits = Vec::new();
+    let mut n = i;
+    loop {
+        digits.push(b'0' + u8::try_from(n % 10).expect("a digit"));
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    let mut key = String::with_capacity(prefix.len() + separator.len() + digits.len());
+    key.push_str(prefix);
+    key.push_str(separator);
+    key.extend(digits.iter().rev().map(|&d| char::from(d)));
+    key
+}
+
+/// The `card_state` key holding how many ids a list stored under `prefix`
+/// has: `<prefix>_len`.
+fn ids_len_key(prefix: &str) -> String {
+    let mut key = String::with_capacity(prefix.len() + 4);
+    key.push_str(prefix);
+    key.push_str("_len");
+    key
+}
+
+/// Keeps `ids` in `card_state` under `prefix`, in order, in place of
+/// whatever list was there: how many at `<prefix>_len`, and each at
+/// `<prefix>_<i>` ([`indexed_key`]). For a card whose resolution stops to
+/// ask a player something and has to pick up where it left off when the
+/// answer comes back.
+pub fn store_ids(card_state: &mut crate::state::CardState, prefix: &str, ids: &[ObjectId]) {
+    clear_ids(card_state, prefix);
+    card_state.insert(ids_len_key(prefix), ObjectId(ids.len() as u64));
+    for (i, id) in ids.iter().enumerate() {
+        card_state.insert(indexed_key(prefix, "_", i), *id);
+    }
+}
+
+/// The list [`store_ids`] kept under `prefix`; empty if there is none.
+#[must_use]
+pub fn load_ids(card_state: &crate::state::CardState, prefix: &str) -> Vec<ObjectId> {
+    let len = card_state.get(&ids_len_key(prefix)).map_or(0, |n| usize::try_from(n.0).unwrap_or(0));
+    (0..len).filter_map(|i| card_state.get(&indexed_key(prefix, "_", i)).copied()).collect()
+}
+
+/// Removes the list [`store_ids`] kept under `prefix`.
+pub fn clear_ids(card_state: &mut crate::state::CardState, prefix: &str) {
+    let len = card_state.remove(&ids_len_key(prefix)).map_or(0, |n| usize::try_from(n.0).unwrap_or(0));
+    for i in 0..len {
+        card_state.remove(&indexed_key(prefix, "_", i));
+    }
 }
 
 /// A mana ability definition.
@@ -237,7 +317,7 @@ pub enum SacrificeCost {
 }
 
 /// An additional cost required to cast a spell (beyond mana).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AdditionalCost {
     /// Sacrifice a creature you control (Altar's Reap, Infernal Plunge).
     SacrificeCreature,
@@ -380,6 +460,7 @@ impl TriggeredAbilityDef {
 /// Typed filter for creature or permanent targeting restrictions.
 /// Used instead of stringly-typed filters for compile-time safety.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum TargetFilter {
     /// No additional restriction beyond the base type.
     Any,
@@ -454,7 +535,7 @@ impl std::fmt::Display for TargetFilter {
 }
 
 /// Describes what targets a spell needs when cast.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TargetRequirement {
     /// No targets needed (vanilla creatures, Divination, etc.)
     None,
@@ -513,6 +594,26 @@ pub enum TargetRequirement {
     ExileCard,
     /// Choose one of several targeting modes (Ghoulcaller's Chant). Engine generates actions for each mode independently.
     ModalChoice(Vec<TargetRequirement>),
+}
+
+impl TargetRequirement {
+    /// Whether what it allows turns on a power ("target creature with power
+    /// 4 or greater"). A power is the one characteristic a target is judged
+    /// by that a card moving from its owner's hand or graveyard to the stack
+    /// can change, through what counts that zone (Sturmgeist's cards in hand,
+    /// Runechanter's Pike's instants and sorceries in a graveyard), which is
+    /// why a spell's targets are chosen with the spell already on the stack
+    /// (CR 601.2a, 601.2c; `engine::targeting::as_targets_are_chosen`).
+    #[must_use]
+    pub fn reads_power(&self) -> bool {
+        match self {
+            Self::CreatureWithFilter(f) | Self::PermanentWithFilter(f) => matches!(f, TargetFilter::PowerAtLeast(_)),
+            Self::TwoTargets(a, b) => a.reads_power() || b.reads_power(),
+            Self::UpToTargets(_, r) => r.reads_power(),
+            Self::ModalChoice(modes) => modes.iter().any(Self::reads_power),
+            _ => false,
+        }
+    }
 }
 
 /// The trait that every card implements.
@@ -1021,8 +1122,8 @@ pub trait CardBehavior: Send + Sync {
             // already applied inside `move_object`, and supertypes are
             // copiable values (CR 707.2), so a legend entering as a copy of
             // a non-legend is not legendary.
-            let legendary_now = state.face_data(object_id, registry)
-                .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
+            let legendary_now = state.face_supertypes(object_id, registry)
+                .contains(&crate::types::Supertype::Legendary);
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.is_legendary = legendary_now;
             }
@@ -1046,11 +1147,103 @@ pub trait CardBehavior: Send + Sync {
     }
 }
 
+/// A card name to the card that prints it: a `HashMap`, except in the
+/// proofs, where a `HashMap` cannot be built at all (it seeds its hasher
+/// from the operating system) and [`NameList`] stands in.
+#[cfg(not(kani))]
+type NameMap = HashMap<String, CardId>;
+#[cfg(kani)]
+type NameMap = NameList;
+
+/// A value built to be read and then dropped: the value itself, except in
+/// the proofs, where it is not dropped.
+///
+/// Building a card's data to read one part of it (whether it prints a
+/// trigger, what the trigger says, what a spell targets) and dropping it
+/// after is, in a proof that cannot tell which shapes the value holds,
+/// dropping every shape it might, recursively through the target
+/// requirements and filters inside it: nine tenths of what proving the
+/// trigger collector cost, out of memory at 7 GB. The proofs stand in for
+/// freeing as nothing (`proofs::cards::no_freeing`), and nothing in a
+/// card's data has a destructor that does anything but free, so leaving it
+/// undropped changes nothing a proof reads.
+#[cfg(not(kani))]
+pub(crate) fn transient<T>(value: T) -> T {
+    value
+}
+
+/// See the other `transient`.
+#[cfg(kani)]
+pub(crate) fn transient<T>(value: T) -> std::mem::ManuallyDrop<T> {
+    std::mem::ManuallyDrop::new(value)
+}
+
+/// Done with `value`: dropped, except in the proofs, where it is not, as
+/// [`transient`] says why. For a value the engine has finished with on one
+/// path and keeps on another (an ability's stack entry, kept as the
+/// resolving ability once it resolves, discarded when it does not).
+#[cfg(not(kani))]
+pub(crate) fn discard<T>(value: T) {
+    drop(value);
+}
+
+/// See the other `discard`.
+#[cfg(kani)]
+pub(crate) fn discard<T>(value: T) {
+    std::mem::forget(value);
+}
+
+/// The proofs' name map: each name with its card, in the order the cards
+/// were registered.
+///
+/// Not a map kept in key order, as `VecMap` is: that finds each name's
+/// place by comparing it with the names before it, and Kani cannot tell
+/// how two names on the heap compare, so every name's place, and every id
+/// read back by position, was the solver's to choose. Nevermore, which
+/// lists the registry's names, ran out of memory in symbolic execution.
+/// The order a `HashMap` gives is no order at all, and nothing reads one
+/// but Nevermore, which sorts. Compiled for tests too, whose unit tests
+/// hold it to the `HashMap` it stands in for.
+#[cfg(any(kani, test))]
+struct NameList(Vec<(String, CardId)>);
+
+#[cfg(any(kani, test))]
+impl NameList {
+    fn new() -> Self {
+        // Room for every card a proof's board registers, so that no push
+        // reallocates (`proofs::cards::no_growing`).
+        Self(Vec::with_capacity(16))
+    }
+
+    /// Adds `name`. A name is registered once (`card_names_are_unique`),
+    /// which a proof is held to here rather than handled: replacing the
+    /// card under a name already there, as a `HashMap` does, would be a
+    /// write at a place the solver chose.
+    fn insert(&mut self, name: String, id: CardId) {
+        assert!(!self.0.iter().any(|(n, _)| *n == name), "a card name registered twice");
+        self.0.push((name, id));
+    }
+
+    fn get(&self, name: &str) -> Option<&CardId> {
+        self.0.iter().find(|(n, _)| n == name).map(|(_, id)| id)
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(n, _)| n)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &CardId)> {
+        self.0.iter().map(|(n, id)| (n, id))
+    }
+}
+
 /// Registry mapping `CardIds` to their behavior implementations.
 pub struct CardRegistry {
-    cards: HashMap<CardId, Box<dyn CardBehavior>>,
+    /// Indexed by `CardId.0 - 1`, as `printed` is: ids are handed out in
+    /// order, by `register` alone.
+    cards: Vec<Box<dyn CardBehavior>>,
     next_id: u32,
-    name_to_id: HashMap<String, CardId>,
+    name_to_id: NameMap,
     /// BACK-face names, to the card that prints them.
     ///
     /// A card is named by its front face (CR 712.3), so that is what
@@ -1065,7 +1258,7 @@ pub struct CardRegistry {
     /// name and only `face_data_by_name` asks the wider question. It also
     /// means the two faces are told apart by which map answered, rather than
     /// by comparing a name against a name.
-    back_name_to_id: HashMap<String, CardId>,
+    back_name_to_id: NameMap,
     /// The continuous effects printed on each registered card's faces, built
     /// once at registration and indexed by `CardId.0 - 1`.
     ///
@@ -1094,17 +1287,28 @@ struct PrintedCard {
 }
 
 struct PrintedFace {
+    name: String,
     continuous_effects: Vec<ContinuousEffect>,
     keywords: Vec<Keyword>,
+    card_types: Vec<CardType>,
+    supertypes: Vec<Supertype>,
+    subtypes: Vec<String>,
+    cost: Option<ManaCost>,
+    color_indicator: Vec<Color>,
+    flashback_cost: Option<ManaCost>,
+    power: Option<i32>,
+    toughness: Option<i32>,
+    /// The kind of each triggered ability the face prints, in order.
+    trigger_kinds: Vec<TriggerKind>,
 }
 
 impl Default for CardRegistry {
     fn default() -> Self {
         Self {
-            cards: HashMap::new(),
+            cards: Vec::new(),
             next_id: 1,
-            name_to_id: HashMap::new(),
-            back_name_to_id: HashMap::new(),
+            name_to_id: NameMap::new(),
+            back_name_to_id: NameMap::new(),
             printed: Vec::new(),
         }
     }
@@ -1124,21 +1328,43 @@ impl CardRegistry {
         let name = data.name.clone();
         let back = card.back_face_data();
         let back_name = back.as_ref().map(|d| d.name.clone());
-        // `printed` is indexed by `id.0 - 1`, which holds because this is
-        // the only way a card enters the registry and ids are handed out
-        // in order.
+        let front_name = name.clone();
+        // `printed` and `cards` are indexed by `id.0 - 1`, which holds
+        // because this is the only way a card enters the registry and ids
+        // are handed out in order.
         debug_assert_eq!(self.printed.len(), (id.0 - 1) as usize);
+        debug_assert_eq!(self.cards.len(), (id.0 - 1) as usize);
         self.printed.push(PrintedCard {
             front: PrintedFace {
+                name: front_name,
                 continuous_effects: data.continuous_effects,
                 keywords: data.keywords,
+                card_types: data.card_types,
+                supertypes: data.supertypes,
+                subtypes: data.subtypes,
+                cost: data.cost,
+                color_indicator: data.color_indicator,
+                flashback_cost: data.flashback_cost,
+                power: data.power,
+                toughness: data.toughness,
+                trigger_kinds: data.triggered_abilities.iter().map(|t| t.kind.clone()).collect(),
             },
             back: back.map(|d| PrintedFace {
+                name: d.name,
                 continuous_effects: d.continuous_effects,
                 keywords: d.keywords,
+                card_types: d.card_types,
+                supertypes: d.supertypes,
+                subtypes: d.subtypes,
+                cost: d.cost,
+                color_indicator: d.color_indicator,
+                flashback_cost: d.flashback_cost,
+                power: d.power,
+                toughness: d.toughness,
+                trigger_kinds: d.triggered_abilities.iter().map(|t| t.kind.clone()).collect(),
             }),
         });
-        self.cards.insert(id, card);
+        self.cards.push(card);
         self.name_to_id.insert(name, id);
         if let Some(back_name) = back_name {
             self.back_name_to_id.insert(back_name, id);
@@ -1148,7 +1374,8 @@ impl CardRegistry {
 
     /// Look up a card's behavior by ID.
     pub fn get(&self, id: CardId) -> Option<&dyn CardBehavior> {
-        self.cards.get(&id).map(AsRef::as_ref)
+        let index = usize::try_from(id.0).ok()?.checked_sub(1)?;
+        self.cards.get(index).map(AsRef::as_ref)
     }
 
     /// Look up a card ID by name.
@@ -1209,6 +1436,103 @@ impl CardRegistry {
         Some(&card.front.keywords)
     }
 
+    /// The card types printed on the face `GameState::face_data` reads: the
+    /// back face when `transformed` and the card has one, the front face
+    /// otherwise; none for a card not in the registry. Read off the faces
+    /// kept at registration rather than by building the card's data again,
+    /// which the characteristics layer did once per question.
+    #[must_use]
+    pub fn printed_card_types(&self, id: CardId, transformed: bool) -> &[CardType] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.card_types.as_slice())
+    }
+
+    /// The subtypes printed on that face, as [`Self::printed_card_types`].
+    #[must_use]
+    pub fn printed_subtypes(&self, id: CardId, transformed: bool) -> &[String] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.subtypes.as_slice())
+    }
+
+    /// The supertypes printed on that face, as [`Self::printed_card_types`].
+    #[must_use]
+    pub fn printed_supertypes(&self, id: CardId, transformed: bool) -> &[Supertype] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.supertypes.as_slice())
+    }
+
+    /// The mana cost printed on that face, as [`Self::printed_card_types`]:
+    /// `None` for a face with no mana cost (a transforming back face, a
+    /// land) and for a card not in the registry.
+    #[must_use]
+    pub fn printed_cost(&self, id: CardId, transformed: bool) -> Option<&ManaCost> {
+        self.printed_face(id, transformed)?.cost.as_ref()
+    }
+
+    /// The flashback cost printed on that face (CR 702.33), as
+    /// [`Self::printed_cost`].
+    #[must_use]
+    pub fn printed_flashback_cost(&self, id: CardId, transformed: bool) -> Option<&ManaCost> {
+        self.printed_face(id, transformed)?.flashback_cost.as_ref()
+    }
+
+    /// The name printed on that face, as [`Self::printed_card_types`];
+    /// `None` for a card not in the registry.
+    #[must_use]
+    pub fn printed_name(&self, id: CardId, transformed: bool) -> Option<&str> {
+        Some(self.printed_face(id, transformed)?.name.as_str())
+    }
+
+    /// The power and toughness printed on that face, as
+    /// [`Self::printed_card_types`]; `None` for a card not in the registry.
+    #[must_use]
+    pub fn printed_pt(&self, id: CardId, transformed: bool) -> Option<(Option<i32>, Option<i32>)> {
+        let face = self.printed_face(id, transformed)?;
+        Some((face.power, face.toughness))
+    }
+
+    /// The power and toughness printed on the card's back face, or `None`
+    /// for a card with no back face — what `back_face_data()` says, where
+    /// [`Self::printed_pt`] would fall back to the front.
+    #[must_use]
+    pub fn printed_back_pt(&self, id: CardId) -> Option<(Option<i32>, Option<i32>)> {
+        let back = self.printed_card(id)?.back.as_ref()?;
+        Some((back.power, back.toughness))
+    }
+
+    /// Whether the card has a back face — `back_face_data().is_some()`,
+    /// without building it. False for a card not in the registry.
+    #[must_use]
+    pub fn has_back_face(&self, id: CardId) -> bool {
+        self.printed_card(id).is_some_and(|c| c.back.is_some())
+    }
+
+    /// The name printed on the card's back face, or `None` for a card with
+    /// no back face.
+    #[must_use]
+    pub fn printed_back_name(&self, id: CardId) -> Option<&str> {
+        Some(self.printed_card(id)?.back.as_ref()?.name.as_str())
+    }
+
+    /// Whether that face prints a triggered ability of this kind, as
+    /// [`Self::printed_card_types`].
+    #[must_use]
+    pub fn prints_trigger(&self, id: CardId, transformed: bool, kind: &TriggerKind) -> bool {
+        self.printed_face(id, transformed).is_some_and(|f| f.trigger_kinds.contains(kind))
+    }
+
+    /// The color indicator printed on that face (CR 204), as
+    /// [`Self::printed_card_types`]: empty on a face whose mana cost says
+    /// its colors.
+    #[must_use]
+    pub fn printed_color_indicator(&self, id: CardId, transformed: bool) -> &[Color] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.color_indicator.as_slice())
+    }
+
+    /// The face `GameState::face_data` reads (CR 712.8a, and a transformed
+    /// card with no back face showing its front).
+    fn printed_face(&self, id: CardId, transformed: bool) -> Option<&PrintedFace> {
+        let card = self.printed_card(id)?;
+        Some(if transformed { card.back.as_ref().unwrap_or(&card.front) } else { &card.front })
+    }
+
     fn printed_card(&self, id: CardId) -> Option<&PrintedCard> {
         id.0.checked_sub(1)
             .and_then(|i| self.printed.get(i as usize))
@@ -1246,6 +1570,19 @@ impl CardRegistry {
     /// Return all registered card names.
     pub fn all_names(&self) -> Vec<&str> {
         self.name_to_id.keys().map(String::as_str).collect()
+    }
+
+    /// Every registered card's name with its id, in the order `all_names`
+    /// gives the names: what `all_names` and `get_id_by_name` say together,
+    /// without looking each name up again.
+    pub fn names_and_ids(&self) -> impl Iterator<Item = (&str, CardId)> {
+        self.name_to_id.iter().map(|(name, id)| (name.as_str(), *id))
+    }
+
+    /// How many cards are registered.
+    #[must_use]
+    pub fn card_count(&self) -> usize {
+        self.cards.len()
     }
 
     /// Every name a card in the registry can have on the battlefield: the
@@ -1610,4 +1947,47 @@ pub fn ability_granting_grantor(
     obj.copy_grantor
         .filter(|&g| g != obj.card_id)
         .filter(|&g| registry.get(g).is_some_and(|b| b.grants_abilities_to_copies()))
+}
+
+/// `NameList`, the proofs' name map, against the `HashMap` every other
+/// build keeps, under `cargo test`: the proofs read names through it but
+/// hold it to nothing, and no `cargo test` sees it otherwise.
+#[cfg(test)]
+mod name_list_tests {
+    use super::{CardId, CardRegistry, NameList};
+    use std::collections::{HashMap, HashSet};
+
+    /// Every card's name registered, as the registry registers them: each
+    /// looks up its card, a name never registered looks up nothing, and
+    /// the names and pairs listed are those registered, in that order.
+    #[test]
+    fn a_name_list_answers_as_the_hash_map_it_stands_in_for() {
+        let registry = CardRegistry::with_all_cards();
+        let mut names: Vec<String> = registry.all_names().iter().map(ToString::to_string).collect();
+        names.sort();
+        let (mut list, mut map) = (NameList::new(), HashMap::new());
+        for (i, name) in names.iter().enumerate() {
+            let id = CardId(u32::try_from(i).expect("a few hundred") + 1);
+            list.insert(name.clone(), id);
+            map.insert(name.clone(), id);
+        }
+        for name in names.iter().map(String::as_str).chain(["", "Forest ", "forest", "Grizzly Bears, Again"]) {
+            assert_eq!(list.get(name), map.get(name), "get {name:?}");
+        }
+        assert_eq!(list.keys().collect::<Vec<_>>(), names.iter().collect::<Vec<_>>(), "the names, in the order registered");
+        let pairs: HashSet<(&String, &CardId)> = list.iter().collect();
+        assert_eq!(pairs, map.iter().collect::<HashSet<_>>(), "the names with their cards");
+        assert_eq!(list.iter().count(), names.len(), "each once");
+    }
+
+    /// A name registered twice is refused, where a `HashMap` would quietly
+    /// put the second card in the first one's place.
+    #[test]
+    #[should_panic(expected = "a card name registered twice")]
+    fn a_name_list_refuses_a_name_registered_twice() {
+        let mut list = NameList::new();
+        list.insert("Forest".into(), CardId(1));
+        list.insert("Island".into(), CardId(2));
+        list.insert("Forest".into(), CardId(3));
+    }
 }

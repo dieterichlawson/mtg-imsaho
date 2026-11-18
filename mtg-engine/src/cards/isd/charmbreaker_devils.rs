@@ -48,19 +48,26 @@ impl CardBehavior for CharmbreakerDevils {
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         // Find instant or sorcery cards in graveyard.
-        let candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            // "an instant or sorcery **card**" — CR 109.1. `face_data` is
-            // already None for a token, but relying on that leaves the rule
-            // unsaid.
-            .filter(|o| state.is_card(o.id) && state.face_data(o.id, registry)
-                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery))))
-            .map(|o| o.id)
-            .collect();
+        // In the graveyard's order, by a loop rather than a filter collected
+        // (Bitterheart Witch's search says why).
+        let mut candidates: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
+            // "an instant or sorcery **card**" — CR 109.1, so no token. The
+            // card types are read as the cast trigger below reads them, with
+            // `has_card_type`, rather than off a freshly built `face_data`:
+            // the same answer for a card in a graveyard, whose types are its
+            // printed ones (CR 400.7), without building the whole card to
+            // read one list.
+            if state.is_card(o.id)
+                && (state.has_card_type(o.id, CardType::Instant, registry)
+                    || state.has_card_type(o.id, CardType::Sorcery, registry)) {
+                candidates.push(o.id);
+            }
+        }
         if !candidates.is_empty() {
             let Some(chosen) = state.choose_at_random(&candidates, 1).first().copied()
             else { return };
@@ -96,7 +103,7 @@ impl CardBehavior for CharmbreakerDevils {
         // instant-speed control change between the cast and the resolution
         // would have swallowed the pump. CR 113.7a: the ability resolves and
         // the +4/+0 goes on this creature whoever controls it by then.
-        state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
+        state.add_until_end_of_turn(crate::state::TemporaryEffect::ModifyPT {
             target: self_id,
             power_mod: 4,
             toughness_mod: 0,

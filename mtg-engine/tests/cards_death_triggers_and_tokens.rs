@@ -39,8 +39,8 @@ use mtg_engine::types::*;
 fn token_making_spells_make_the_tokens_they_print() {
     // (spell, token name, power, toughness, color, subtype, keywords)
     const SPELLS: &[(&str, &str, i32, i32, Color, &str, &[Keyword])] = &[
-        ("Midnight Haunting", "Spirit", 1, 1, Color::White, "Spirit", &[Keyword::Flying]),
-        ("Moan of the Unhallowed", "Zombie", 2, 2, Color::Black, "Zombie", &[]),
+        ("Midnight Haunting", "Spirit Token", 1, 1, Color::White, "Spirit", &[Keyword::Flying]),
+        ("Moan of the Unhallowed", "Zombie Token", 2, 2, Color::Black, "Zombie", &[]),
     ];
 
     for &(spell_name, token_name, power, toughness, color, subtype, keywords) in SPELLS {
@@ -94,9 +94,9 @@ fn creatures_that_leave_spirits_behind_leave_the_right_number() {
         kill_by_damage(&mut state, &reg, creature);
         triggers::process_triggers(&mut state, &reg);
 
-        assert_eq!(count_tokens_named(&state, "Spirit"), count,
+        assert_eq!(count_tokens_named(&state, "Spirit Token"), count,
             "{name} should leave {count} Spirit token(s) behind");
-        for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
+        for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit Token") {
             assert_eq!((o.power, o.toughness), (Some(1), Some(1)), "{name}'s Spirits are 1/1");
             assert!(o.keywords.contains(&Keyword::Flying), "{name}'s Spirits fly");
             // "1/1 **white** **Spirit** creature tokens" — the two halves the
@@ -133,7 +133,7 @@ fn mausoleum_guard_leaves_its_spirits_to_whoever_controlled_it() {
     assert_eq!(state.get_object(guard).unwrap().zone, Zone::Graveyard,
         "test premise: the card itself goes to its owner's graveyard");
     let spirits: Vec<_> = state.objects.values()
-        .filter(|o| o.is_token && o.name == "Spirit")
+        .filter(|o| o.is_token && o.name == "Spirit Token")
         .collect();
     assert_eq!(spirits.len(), 2);
     for s in spirits {
@@ -770,6 +770,33 @@ fn falkenrath_noble_triggers_on_opponent_creature_death() {
         "Falkenrath Noble should drain opponent when any creature dies");
 }
 
+/// A Falkenrath Noble its owner's opponent has taken, dying beside another
+/// creature: both its triggers are its controller's as it died (CR 603.3a,
+/// 608.2g), the one for its own death and the one for the other's. The
+/// collector gave the second to the Noble's owner, its `controller` reset
+/// by the move, so the owner chose the target and gained the life.
+#[test]
+fn a_stolen_falkenrath_noble_dying_beside_a_creature_triggers_for_its_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let noble = named_permanent(&mut state, &reg, "Falkenrath Noble", P1);
+    state.get_object_mut(noble).unwrap().controller = P0;
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.get_object_mut(noble).unwrap().damage_marked = 2;
+    state.get_object_mut(bears).unwrap().damage_marked = 2;
+    check_state_based_actions(&mut state, &reg);
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+    let noble_triggers: Vec<_> = state.pending_trigger_pushes_ap.iter().chain(&state.pending_trigger_pushes_nap)
+        .filter(|t| t.source.id == noble)
+        .collect();
+    assert_eq!(noble_triggers.len(), 2, "one for each death");
+    assert!(noble_triggers.iter().all(|t| t.source.controller == P0),
+        "both are the controller's as it died: {:?}", noble_triggers.iter().map(|t| t.source.controller).collect::<Vec<_>>());
+}
+
 /// Falkenrath Noble SHOULD trigger when your own creature dies.
 #[test]
 fn falkenrath_noble_triggers_on_own_creature_death() {
@@ -1050,6 +1077,41 @@ fn murder_of_crows_draws_and_then_discards_when_you_accept() {
     assert!(state.awaiting_action.is_none(), "nothing is left pending");
 }
 
+/// A triggered ability is its controller's as it triggered (CR 603.3a),
+/// across the question it asks too: a Murder of Crows taken in response
+/// asks its "you may draw" of the player it triggered for, who draws and
+/// discards. It asked the player who had taken it, and drew from their
+/// library.
+#[test]
+fn murder_of_crows_taken_in_response_still_asks_and_draws_for_its_controller() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let crows = named_permanent(&mut state, &reg, "Murder of Crows", P0);
+    stock_library(&mut state, &reg, P0, 1);
+    stock_library(&mut state, &reg, P1, 1);
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions(&mut state, &reg);
+    triggers::collect_triggers(&mut state, &reg);
+    triggers::process_pending_trigger_pushes(&mut state, &reg);
+    assert_eq!(state.stack.len(), 1, "the trigger is on the stack");
+    // Taken in response.
+    state.get_object_mut(crows).unwrap().controller = P1;
+    triggers::resolve_next_trigger(&mut state, &reg);
+    assert!(matches!(state.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player: P0, .. })),
+        "the question is the trigger's controller's: {:?}", state.awaiting_action);
+
+    let state = answer(&state, &reg, mtg_engine::actions::ResolvedChoice::YesNoDecision(true));
+
+    assert!(state.get_player(P0).library_order.is_empty(), "the trigger's controller drew");
+    assert_eq!(state.objects_in_zone(Zone::Graveyard, P0).len(), 1, "and discarded what was drawn");
+    assert_eq!(state.get_player(P1).library_order.len(), 1, "and the player who took it drew nothing");
+    assert!(state.awaiting_action.is_none() && state.resolving_ability_activator.is_none(),
+        "nothing is left pending, nor a controller to read");
+}
+
 /// "**you may** draw" — declining does nothing at all. Without this, an
 /// implementation that ignored the answer and always drew would pass the
 /// accepting test above.
@@ -1305,7 +1367,7 @@ fn the_spirit_a_death_trigger_leaves_is_a_creature_entering() {
     kill_by_damage(&mut state, &reg, traveler);
     triggers::process_triggers(&mut state, &reg);
 
-    assert_eq!(count_tokens_named(&state, "Spirit"), 1,
+    assert_eq!(count_tokens_named(&state, "Spirit Token"), 1,
         "test premise: the Traveler left its Spirit");
     assert!(state.awaiting_action.is_some(),
         "and the Mentor is asking whether to pay {{1}} for it — the token \

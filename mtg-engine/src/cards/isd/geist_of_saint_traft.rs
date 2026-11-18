@@ -37,7 +37,7 @@ impl CardBehavior for GeistOfSaintTraft {
     }
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
+        let controller = crate::cards::helpers::ability_controller(state, self_id);
         let Some(source_card_id) = state.get_object(self_id).map(|o| o.card_id) else { return };
 
         // Create a 4/4 Angel token with flying, tapped and attacking.

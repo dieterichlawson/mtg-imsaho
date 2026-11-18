@@ -48,21 +48,24 @@ impl CardBehavior for UnbreathingHorde {
         event: &crate::replacement::ReplaceableEvent,
         registry: &CardRegistry,
     ) -> Option<crate::replacement::Replacement> {
+        // "You" is the player it enters under (CR 614.12: the permanent as
+        // it would exist on the battlefield), not whoever controlled the
+        // card last: Grimoire of the Dead returns an opponent's Horde under
+        // its own controller, whose Zombies are the ones it counts.
+        let crate::replacement::ReplaceableEvent::EntersBattlefield(entering) = event else { return None };
+        let controller = entering.controller;
         crate::cards::helpers::enters_with_counters(self_id, event, || {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
 
         // Count other Zombies on the battlefield.
-        let bf_count = u32::try_from(state.objects_in_zone(Zone::Battlefield, controller).into_iter()
-            .filter(|o| {
-                // "each OTHER Zombie you control". Belt and braces: CR 616.1
-                // works this out before the zone change, so the Horde is never
-                // among the battlefield objects here — dropping this filter
-                // fails no test, and cannot be made to. It stays because it is
-                // the card's own word, not because it is load-bearing.
-                o.id != self_id
-                && Self::is_zombie(state, o.id, registry)
-            })
-            .count()).unwrap_or(u32::MAX);
+        let bf_count = u32::try_from(state.count_in_zone(Zone::Battlefield, controller, |o| {
+            // "each OTHER Zombie you control". Belt and braces: CR 616.1
+            // works this out before the zone change, so the Horde is never
+            // among the battlefield objects here — dropping this filter
+            // fails no test, and cannot be made to. It stays because it is
+            // the card's own word, not because it is load-bearing.
+            o.id != self_id
+            && Self::is_zombie(state, o.id, registry)
+        })).unwrap_or(u32::MAX);
 
         // "each Zombie card in your graveyard" — with no "other", so the Horde
         // counts itself when it is the one in the graveyard. CR 616.1 runs this
@@ -72,13 +75,11 @@ impl CardBehavior for UnbreathingHorde {
         // with." That makes the count a plain one — it used to exclude
         // `self_id` and then add a `self_count` back, which is the same number
         // by a longer road.
-        let gy_count = u32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            // "each Zombie CARD" — CR 109.1: a token is not a card. The
-            // battlefield count above says just "Zombie", so it correctly
-            // includes tokens; this one must not.
-            .filter(|o| state.is_card(o.id) && Self::is_zombie(state, o.id, registry))
-            .count()).unwrap_or(u32::MAX);
+        // "each Zombie CARD" — CR 109.1: a token is not a card. The
+        // battlefield count above says just "Zombie", so it correctly
+        // includes tokens; this one must not.
+        let gy_count = u32::try_from(state.count_in_zone(Zone::Graveyard, controller,
+            |o| state.is_card(o.id) && Self::is_zombie(state, o.id, registry))).unwrap_or(u32::MAX);
 
         // Recorded even at zero: the replacement applies whatever the count
         // comes to, and a Horde that enters with no counters is a 0/0 that

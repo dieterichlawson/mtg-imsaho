@@ -58,6 +58,11 @@ impl CardBehavior for BlazingTorch {
         if !equip.is_empty() {
             return equip;
         }
+        // The equipped creature's ability, whose cost sacrifices the Torch:
+        // only a player who controls a Torch on it can pay that (CR 701.21a).
+        if attached_torch(state, object_id, registry).is_none() {
+            return vec![];
+        }
 
         // Asked about the creature the Torch is attached to: the ability the
         // Torch grants it.
@@ -116,11 +121,15 @@ impl CardBehavior for BlazingTorch {
 }
 
 /// The Blazing Torch attached to `creature_id` on the battlefield.
+/// A Blazing Torch attached to `creature_id` that the creature's controller
+/// controls: one they can sacrifice to activate the ability it grants.
 fn attached_torch(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Option<ObjectId> {
     let torch_card_id = registry.get_id_by_name("Blazing Torch")?;
+    let controller = state.get_object(creature_id)?.controller;
     state.all_objects_in_zone(Zone::Battlefield).into_iter()
         .find(|o| o.attached_to == Some(creature_id)
-            && o.card_id == torch_card_id)
+            && o.card_id == torch_card_id
+            && o.controller == controller)
         .map(|o| o.id)
 }
 

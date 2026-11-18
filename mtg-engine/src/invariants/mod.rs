@@ -22,6 +22,12 @@
 //! - [`check_legal`] looks at the legal action set offered at a decision
 //!   point: nothing the rules forbid is on the menu, and what they require
 //!   is.
+//! - [`shared_log::SharedLog`] holds the log every seat is sent to naming no
+//!   card no one has seen (CR 400.2), from one decision to the next. The
+//!   runner's `hidden_stays_hidden` holds each view and menu to the same:
+//!   none changes when every library is reversed or another player's hand
+//!   is dealt anew (401.2, 402.3). It is the runner's, which serializes
+//!   views already.
 
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
@@ -34,6 +40,7 @@ mod legal;
 mod objects;
 mod permanents;
 mod prompts;
+pub mod shared_log;
 mod stack;
 mod transition;
 mod turn;
@@ -486,12 +493,13 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // Combat state exists only during the steps that use it: it is created
     // when attackers are declared and cleared as the end-of-combat step
-    // begins.
+    // ends (CR 511.3).
     if state.combat.is_some()
         && !matches!(state.step,
             crate::types::Step::DeclareAttackers
             | crate::types::Step::DeclareBlockers
-            | crate::types::Step::CombatDamage)
+            | crate::types::Step::CombatDamage
+            | crate::types::Step::EndCombat)
     {
         v.push(format!("combat state present in step {:?}", state.step));
     }

@@ -38,7 +38,7 @@ impl CardBehavior for MoldgrafMonstrosity {
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.10c: "your" means last-known controller, not owner.
-        let controller = crate::cards::helpers::controller_of(state, object_id);
+        let controller = crate::cards::helpers::ability_controller(state, object_id);
 
         // "Exile it" applies to the card in the graveyard, and only there.
         // Two Monstrosities dying together each put a trigger on the stack;
@@ -48,21 +48,25 @@ impl CardBehavior for MoldgrafMonstrosity {
         //
         // The return happens either way — a trigger that can't do the first
         // part still does as much as it can (CR 608.2).
-        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Graveyard) {
+        // A Monstrosity that has died, come back and died again since is a
+        // new object too, and not the one this "it" names (CR 400.7).
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Graveyard) && !state.is_new_source(object_id) {
             state.move_object(object_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
                 "Moldgraf Monstrosity: exiled on death".into());
         }
 
-        // Find creature cards in the graveyard (excluding the Monstrosity itself, which is now exiled).
-        let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
+        // Find creature cards in the graveyard (excluding the Monstrosity
+        // itself, which is now exiled), in the graveyard's order, by a loop
+        // rather than a filter collected (Bitterheart Witch's search says why).
+        let mut creatures_in_gy: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
             // "return two creature **cards** at random from your graveyard" —
             // CR 109.1, so a token waiting on the next SBA check is not one.
-            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry)
-                && o.id != object_id)
-            .map(|o| o.id)
-            .collect();
+            if state.is_card(o.id) && state.is_creature(o.id, registry) && o.id != object_id {
+                creatures_in_gy.push(o.id);
+            }
+        }
 
         // "return two creature cards AT RANDOM".
         let to_return = state.choose_at_random(&creatures_in_gy, 2);

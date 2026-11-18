@@ -282,14 +282,14 @@ fn a_granted_creature_type_does_not_rename_a_token() {
     let (mut state, reg) = base();
     let zombie = state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Black],
         vec![CardType::Creature], vec![], vec!["Zombie".into()], &reg)[0];
-    assert_eq!(state.get_object(zombie).unwrap().name, "Zombie");
+    assert_eq!(state.get_object(zombie).unwrap().name, "Zombie Token");
 
     // What Olivia Voldaren's ability does: add a creature type at runtime.
     state.get_object_mut(zombie).unwrap().subtypes.push("Vampire".into());
 
     assert!(state.has_subtype(zombie, "Vampire", &reg));
     assert!(state.has_subtype(zombie, "Zombie", &reg));
-    assert_eq!(state.get_object(zombie).unwrap().name, "Zombie");
+    assert_eq!(state.get_object(zombie).unwrap().name, "Zombie Token");
     let v = check_core(&state, &reg);
     assert!(!v.iter().any(|m| m.contains("is not its subtypes")),
         "a granted subtype is not a rename (CR 111.4), got: {v:?}");
@@ -301,7 +301,8 @@ fn a_granted_creature_type_does_not_rename_a_token() {
     flags(&s, &reg, "is not its subtypes");
 }
 
-/// CR 111.4/205.3/707.8: a token is named after its subtypes, a subtype
+/// CR 111.4/205.3/707.8: a token is named after its subtypes and the word
+/// "Token", a subtype
 /// belongs to its card type, and the name cache agrees with the face.
 #[test]
 fn a_tokens_name_and_types_describe_what_it_is() {
@@ -310,15 +311,14 @@ fn a_tokens_name_and_types_describe_what_it_is() {
         vec![CardType::Creature], vec![], vec!["Wolf".into()], &reg)[0];
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
 
-    // CR 111.4: the name is the subtype(s), and nothing else. A different
-    // word is wrong, and so is the right word with " Token" welded on —
-    // that is a name no card can share, so "creatures with the same name"
-    // could never match the token (issues #331, #334).
+    // CR 111.4: the name is the subtype(s) plus the word "Token", and
+    // nothing else. A different word is wrong, and so is the subtype alone,
+    // which an older edition of the rule gave (issues #331, #334).
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Bear".into();
+    s.get_object_mut(wolf).unwrap().name = "Bear Token".into();
     flags(&s, &reg, "is not its subtypes");
     let mut s = state.clone();
-    s.get_object_mut(wolf).unwrap().name = "Wolf Token".into();
+    s.get_object_mut(wolf).unwrap().name = "Wolf".into();
     flags(&s, &reg, "is not its subtypes");
 
     // A token with subtypes and no creature type.

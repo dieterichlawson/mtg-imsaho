@@ -172,54 +172,42 @@ fn auto_paying_an_exile_cost_picks_the_strongest_creature_card() {
         state.get_object(lunge).unwrap().card_state
             .get(&mtg_engine::cards::exiled_to_cost_key(0)).copied(),
         Some(strong),
-        "and the spell records the card it exiled, so it can ask that card its \
-         power when it resolves");
+        "and the spell records the card it exiled, and its power there");
 }
 
-/// The auto-pick ranks by the power the spell will read, which is the power
-/// the card has *after* it has been exiled.
+/// The auto-pick ranks by the power the spell will read: the card's power as
+/// it last existed in the graveyard (the ruling on "the exiled card's power",
+/// Corpse Explosion's of 2022-04-29), which the payment records beside the
+/// card.
 ///
-/// Corpse Lunge "deals damage equal to the exiled creature's power", and the
-/// exiled creature is in exile when the spell resolves. For a
-/// characteristic-defining power that is not the power it had in the
-/// graveyard: Boneyard Wurm's is the number of creature cards in your
-/// graveyard, and exiling the Wurm is one of the things that changes that
-/// number (issue #576).
-///
-/// With a Wurm and a vanilla 2/2 in the graveyard both reading 2, exiling
-/// the Wurm makes Corpse Lunge deal 1 and exiling the 2/2 makes it deal 2.
-/// Ranking before the exile saw a tie and fell through to the object id.
+/// Issue #576 ranked by the power the card would have in exile instead, on
+/// the reading that the spell reads it there; the ruling says otherwise
+/// (defect 42). Boneyard Wurm's power is the number of creature cards in your
+/// graveyard, itself among them: beside a Grizzly Bears and a Savannah Lions
+/// it is a 3/3 there, and the card worth exiling.
 #[test]
-fn auto_paying_an_exile_cost_ranks_by_the_power_after_the_exile() {
+fn auto_paying_an_exile_cost_ranks_by_the_power_in_the_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // The Wurm goes in first, so it holds the lower object id and a tie
-    // broken by id would take it.
-    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
     let bears = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
-
-    // Two creature cards in the graveyard, so in the graveyard both read 2
-    // and nothing distinguishes them.
-    assert_eq!(state.effective_power(wurm, &reg), Some(2),
-        "the Wurm reads 2 while both cards are still in the graveyard");
-    assert_eq!(state.effective_power(bears, &reg), Some(2));
+    let lions = named_card_in_graveyard(&mut state, &reg, "Savannah Lions", P0);
+    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    assert_eq!(state.effective_power(wurm, &reg), Some(3),
+        "the Wurm reads 3 in the graveyard, counting itself");
 
     let lunge = spell_in_hand(&mut state, &reg, "Corpse Lunge", P0);
     mtg_engine::engine::pay_exile_creatures(&mut state, &reg, lunge, P0, 1, &[]);
 
-    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Exile,
-        "the 2/2 is the one worth exiling: it still has power 2 in exile, \
-         while the Wurm drops to 1 the moment it stops being a creature card \
-         in the graveyard");
-    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Graveyard);
-
-    // And the damage the spell will deal is the 2 the player was owed.
-    let exiled = state.get_object(lunge).unwrap().card_state
-        .get(&mtg_engine::cards::exiled_to_cost_key(0)).copied();
-    assert_eq!(exiled, Some(bears));
-    assert_eq!(state.effective_power(bears, &reg), Some(2),
-        "Corpse Lunge deals the exiled creature's power, read in exile");
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Exile, "the Wurm is the strongest there");
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(lions).unwrap().zone, Zone::Graveyard);
+    let spell = state.get_object(lunge).unwrap();
+    assert_eq!(spell.card_state.get(&mtg_engine::cards::exiled_to_cost_key(0)).copied(), Some(wurm));
+    assert_eq!(spell.card_state.get(&mtg_engine::cards::exiled_to_cost_power_key(0)).map(|p| p.0), Some(3),
+        "and the payment records the 3 it had there, which Corpse Lunge deals");
+    assert_eq!(state.effective_power(wurm, &reg), Some(2),
+        "though in exile it is a 2/2");
 }
 
 // ---------------------------------------------------------------------------
@@ -236,9 +224,13 @@ fn auto_paying_an_exile_cost_ranks_by_the_power_after_the_exile() {
 fn spell_costs_are_determined_in_one_place() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
+    // `src/proofs` is left out: the proofs, built only under Kani, read a
+    // card's printed additional cost to pin it to its Oracle text, which is
+    // not deciding what the spell costs.
     fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for e in std::fs::read_dir(dir).expect("readable").flatten() {
             let p = e.path();
+            if p.is_dir() && p.ends_with("src/proofs") { continue; }
             if p.is_dir() { walk(&p, out); }
             else if p.extension().is_some_and(|x| x == "rs") { out.push(p); }
         }

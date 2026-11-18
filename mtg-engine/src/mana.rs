@@ -40,42 +40,79 @@ struct RemainingCost {
     generic: u32,
 }
 
+/// A count per color, in `Color::ALL` order. An array rather than a
+/// `HashMap`: five keys, read and written by color and never iterated, and
+/// a `HashMap`'s seeded hashing is most of what a proof of the planner
+/// spends its time on.
+type PerColor = [u32; 5];
+
+/// `color`'s place in a [`PerColor`].
+fn color_slot(color: Color) -> usize {
+    match color {
+        Color::White => 0,
+        Color::Blue => 1,
+        Color::Black => 2,
+        Color::Red => 3,
+        Color::Green => 4,
+    }
+}
+
+/// The color a type of mana is, if it is one.
+fn color_of(mana_type: ManaType) -> Option<Color> {
+    match mana_type {
+        ManaType::White => Some(Color::White),
+        ManaType::Blue => Some(Color::Blue),
+        ManaType::Black => Some(Color::Black),
+        ManaType::Red => Some(Color::Red),
+        ManaType::Green => Some(Color::Green),
+        ManaType::Colorless => None,
+    }
+}
+
 /// Compute the "flexibility" of a mana source: how many distinct colors it can produce.
 /// Colorless-only = 0, mono = 1, dual = 2, etc.
 fn source_flexibility(source: &ManaSource) -> usize {
-    let mut colors = std::collections::HashSet::new();
+    let mut colors = [false; 5];
     for ability in &source.abilities {
         for &(mana_type, _) in &ability.produced {
-            match mana_type {
-                ManaType::White | ManaType::Blue | ManaType::Black
-                | ManaType::Red | ManaType::Green => { colors.insert(mana_type); }
-                ManaType::Colorless => {}
+            if let Some(c) = color_of(mana_type) {
+                colors[color_slot(c)] = true;
             }
         }
     }
-    colors.len()
+    colors.iter().filter(|&&made| made).count()
 }
 
 /// Compute the "hand demand" score for a source: how much other spells in hand
 /// need the colors this source produces. Higher = more demanded = prefer NOT tapping.
-fn hand_demand_score(source: &ManaSource, hand_demand: &std::collections::HashMap<Color, u32>) -> u32 {
+fn hand_demand_score(source: &ManaSource, hand_demand: &PerColor) -> u32 {
     let mut score = 0u32;
     for ability in &source.abilities {
         for &(mana_type, _) in &ability.produced {
-            let color = match mana_type {
-                ManaType::White => Some(Color::White),
-                ManaType::Blue => Some(Color::Blue),
-                ManaType::Black => Some(Color::Black),
-                ManaType::Red => Some(Color::Red),
-                ManaType::Green => Some(Color::Green),
-                ManaType::Colorless => None,
-            };
-            if let Some(c) = color {
-                score += hand_demand.get(&c).copied().unwrap_or(0);
+            if let Some(c) = color_of(mana_type) {
+                score += hand_demand[color_slot(c)];
             }
         }
     }
     score
+}
+
+/// `v.sort_by_key(key)`: stable, so entries with equal keys keep their
+/// order, each key computed once. An insertion sort, for the handful of
+/// pips and sources a payment orders: the standard sort's runs and
+/// networks of copies are what a proof of a payment spent its time in, and
+/// it was still in symbolic execution after an hour
+/// (`proofs::actions::paying`).
+fn sort_by_key_stable<T, K: Ord>(v: &mut [T], key: impl FnMut(&T) -> K) {
+    let mut keys: Vec<K> = v.iter().map(key).collect();
+    for i in 1..v.len() {
+        let mut j = i;
+        while j > 0 && keys[j - 1] > keys[j] {
+            keys.swap(j - 1, j);
+            v.swap(j - 1, j);
+            j -= 1;
+        }
+    }
 }
 
 /// Composite sort key for source priority: (opportunity cost tier, flexibility, hand demand).
@@ -84,16 +121,18 @@ fn hand_demand_score(source: &ManaSource, hand_demand: &std::collections::HashMa
 /// by other spells in hand are preferred.
 /// NOTE: If you change this logic, also update the "Auto-tap" bullet in `GAME_RULES`
 /// in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
-fn source_sort_key(source: &ManaSource, hand_demand: &std::collections::HashMap<Color, u32>) -> (ManaSourceKind, usize, u32) {
+fn source_sort_key(source: &ManaSource, hand_demand: &PerColor) -> (ManaSourceKind, usize, u32) {
     (source.source_kind, source_flexibility(source), hand_demand_score(source, hand_demand))
 }
 
 /// Build hand demand map: for each color, how many colored pips across all `hand_costs`.
-fn build_hand_demand(hand_costs: &[ManaCost]) -> std::collections::HashMap<Color, u32> {
-    let mut demand = std::collections::HashMap::new();
+fn build_hand_demand(hand_costs: &[ManaCost]) -> PerColor {
+    let mut demand = [0; 5];
     for cost in hand_costs {
-        for (color, count) in cost.colored_requirements() {
-            *demand.entry(color).or_insert(0) += count;
+        for symbol in &cost.symbols {
+            if let ManaSymbol::Colored(c) = symbol {
+                demand[color_slot(*c)] += 1;
+            }
         }
     }
     demand
@@ -240,6 +279,18 @@ impl Demand {
 /// [`compute_autotap`] around everything in `demands`, not only spells in
 /// hand: the plan's colour preferences count their pips, and a plan that
 /// leaves one unpayable is repaired when another plan would not.
+///
+/// Every plan it returns is one [`pool_after`] has run and found to pay
+/// `cost`, on every board and not only the ones a test enumerates: the
+/// greedy pass is a heuristic, and a plan of it the payment could not
+/// execute was once offered and then silently refused (issue #252).
+/// [`keep_the_hand_castable`] returns no other kind.
+///
+/// And it returns a plan whenever some plan pays, on every board small
+/// enough to search whole ([`EXHAUSTIVE_REPAIR_PLANS`] plans or fewer):
+/// where the greedy pass offers none that pays, every plan there is is
+/// tried ([`searched_plan`]). A cost the count rules out has no plan
+/// (`mtg_kernel::reach::reach_is_necessary`) and is not searched.
 #[must_use]
 pub fn compute_autotap_around(
     cost: &ManaCost,
@@ -248,8 +299,61 @@ pub fn compute_autotap_around(
     demands: &[Demand],
 ) -> Option<Vec<(ObjectId, usize)>> {
     let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
-    let plan = greedy_autotap(cost, pool, sources, &costs)?;
-    Some(keep_the_hand_castable(plan, cost, pool, sources, demands))
+    if let Some(plan) = greedy_autotap(cost, pool, sources, &costs)
+        .and_then(|plan| keep_the_hand_castable(plan, cost, pool, sources, demands))
+    {
+        return Some(plan);
+    }
+    let plan = searched_plan(cost, pool, sources)?;
+    keep_the_hand_castable(plan, cost, pool, sources, demands)
+}
+
+/// A plan for `cost` where the greedy pass offers none that pays: on a
+/// board of [`EXHAUSTIVE_REPAIR_PLANS`] plans or fewer, the best of every
+/// plan there is that pays (fewest sources with a side effect, then the
+/// lowest tiers, then the fewest taps), and on a bigger board none.
+///
+/// The count asks first: a cost out of reach ([`within_reach`]) has no plan
+/// (`mtg_kernel::reach::reach_is_necessary`), as most a player cannot
+/// afford are, so they are never searched.
+fn searched_plan(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) -> Option<Vec<(ObjectId, usize)>> {
+    // With nothing to tap the one plan is tapping nothing, which the
+    // greedy pass offers exactly when the pool can pay: there is nothing
+    // to search. (And a payment from the pool, as a resolving "you may
+    // pay" makes, does not follow the search at all.)
+    if sources.is_empty() {
+        return None;
+    }
+    if cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X)) || !within_reach(cost, pool, sources) {
+        return None;
+    }
+    let plans: usize = sources.iter()
+        .map(|s| s.abilities.len() + 1)
+        .try_fold(1usize, usize::checked_mul)
+        .unwrap_or(usize::MAX);
+    if plans > EXHAUSTIVE_REPAIR_PLANS {
+        return None;
+    }
+    let rank = |plan: &[(ObjectId, usize)]| -> (usize, u32, usize) {
+        let (mut side_effects, mut tiers) = (0, 0);
+        for source in plan.iter().filter_map(|(id, _)| sources.iter().find(|s| s.object_id == *id)) {
+            side_effects += usize::from(source.source_kind == ManaSourceKind::HasSideEffects);
+            tiers += source.source_kind as u32;
+        }
+        (side_effects, tiers, plan.len())
+    };
+    let mut best: Option<((usize, u32, usize), Vec<(ObjectId, usize)>)> = None;
+    every_plan(sources, 0, &mut Vec::new(), &mut |candidate: &[(ObjectId, usize)]| {
+        let mut candidate = candidate.to_vec();
+        free_abilities_first(&mut candidate, sources);
+        if plan_pays(&candidate, pool, sources, cost) {
+            let key = rank(&candidate);
+            if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
+                best = Some((key, candidate));
+            }
+        }
+    });
+    best.map(|(_, plan)| plan)
 }
 
 /// The pips of `hand_costs` that only one kind of mana pays — coloured and
@@ -276,18 +380,60 @@ fn pool_after(
     cost: &ManaCost,
     reserve: &ManaCost,
 ) -> Option<ManaPool> {
+    let mut pool = run_plan(plan, pool, sources, cost)?;
+    auto_pay_reserving(&mut pool, cost, reserve).ok()?;
+    Some(pool)
+}
+
+/// Whether `plan` pays `cost`: whether [`pool_after`] is `Some`, for any
+/// reserve, since a payment around a reserve is made exactly when the
+/// pool can pay at all (`pay_around`, proved in `mtg-kernel`). Asked
+/// without one, which is the cheaper question.
+fn plan_pays(plan: &[(ObjectId, usize)], pool: &ManaPool, sources: &[ManaSource], cost: &ManaCost) -> bool {
+    run_plan(plan, pool, sources, cost).is_some_and(|pool| can_pay(&pool, cost))
+}
+
+/// The pool once every entry of `plan` has run ([`tap_step`]), or `None`
+/// if one names no ability of its source or cannot be paid for.
+fn run_plan(
+    plan: &[(ObjectId, usize)],
+    pool: &ManaPool,
+    sources: &[ManaSource],
+    cost: &ManaCost,
+) -> Option<ManaPool> {
+    // A plan taps each source once at most, so one longer than the list of
+    // sources taps one twice, which no payment can. Walked by the sources'
+    // count and not by the plan's: where the plan is a choice between
+    // tapping nothing and tapping a source, as it is for a cost the pool
+    // may pay alone, a proof's solver leaves its length open, and walked
+    // by it each step ran to the loop's bound, a payment in each.
+    if plan.len() > sources.len() {
+        return None;
+    }
     let mut pool = pool.clone();
-    for &(object_id, ability_index) in plan {
+    for k in 0..sources.len() {
+        let Some(&(object_id, ability_index)) = plan.get(k) else { break };
         let ability = sources.iter()
             .find(|s| s.object_id == object_id)
             .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))?;
-        auto_pay_reserving(&mut pool, &ability.cost, cost).ok()?;
-        for &(mana_type, amount) in &ability.produced {
-            pool.add(mana_type, amount);
-        }
+        tap_step(&mut pool, ability, cost)?;
     }
-    auto_pay_reserving(&mut pool, cost, reserve).ok()?;
     Some(pool)
+}
+
+/// One entry of a plan, run on `pool`: the ability's own mana cost, if it
+/// has one, paid around `cost`, then what it adds; `None`, with the pool
+/// as it was, when the pool cannot pay the ability's cost. What the
+/// engine's activation does to the pool
+/// (`engine::activate_mana_source_reserving`, `proofs::actions::mana_abilities`).
+pub(crate) fn tap_step(pool: &mut ManaPool, ability: &ManaAbilityDef, cost: &ManaCost) -> Option<()> {
+    if !ability.cost.symbols.is_empty() {
+        auto_pay_reserving(pool, &ability.cost, cost).ok()?;
+    }
+    for &(mana_type, amount) in &ability.produced {
+        pool.add(mana_type, amount);
+    }
+    Some(())
 }
 
 /// Repair a plan that leaves a spell in hand uncastable when another plan
@@ -316,18 +462,23 @@ fn pool_after(
 /// as Phase 3 already holds — milling a card to save a colour is not a win.
 /// A greedy plan that strands nothing is returned untouched, so the tiers
 /// keep deciding everything they decided before.
+///
+/// Nor is any plan returned that [`pool_after`] does not find to pay
+/// `cost`. With nothing else to keep payable, a greedy plan that does not
+/// pay is no plan; otherwise it is searched around as one that strands
+/// everything would be, and with no plan found that pays, there is none.
 fn keep_the_hand_castable(
     plan: Vec<(ObjectId, usize)>,
     cost: &ManaCost,
     pool: &ManaPool,
     sources: &[ManaSource],
     demands: &[Demand],
-) -> Vec<(ObjectId, usize)> {
+) -> Option<Vec<(ObjectId, usize)>> {
     let castable_before: Vec<&Demand> = demands.iter()
         .filter(|d| d.payable(pool, sources, &[]))
         .collect();
     if castable_before.is_empty() {
-        return plan;
+        return plan_pays(&plan, pool, sources, cost).then_some(plan);
     }
     let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
     let reserve = hand_reserve(&costs);
@@ -348,9 +499,10 @@ fn keep_the_hand_castable(
             .filter(|d| !d.payable(&left, sources, p))
             .count())
     };
-    let Some(base) = stranded(&plan) else { return plan };
-    if base == 0 {
-        return plan;
+    // `None` when the greedy plan does not pay.
+    let base = stranded(&plan);
+    if base == Some(0) {
+        return Some(plan);
     }
     // A floor under what any plan strands: a hand spell the whole board
     // cannot pay together with `cost` is stranded by every plan. Counted
@@ -371,17 +523,19 @@ fn keep_the_hand_castable(
             !within_reach(&both, pool, &rest)
         })
         .count();
-    if base <= floor {
-        return plan;
+    if base.is_some_and(|base| base <= floor) {
+        return Some(plan);
     }
-    let mut best = ((side_effects(&plan), base, tier_sum(&plan), plan.len()), plan.clone());
-    let consider = |mut candidate: Vec<(ObjectId, usize)>,
-                        best: &mut ((usize, usize, u32, usize), Vec<(ObjectId, usize)>)| {
+    // The best plan found that pays, if any yet, and how it ranks.
+    type Ranked = Option<((usize, usize, u32, usize), Vec<(ObjectId, usize)>)>;
+    let mut best: Ranked = base.map(|base| ((side_effects(&plan), base, tier_sum(&plan), plan.len()), plan.clone()));
+    let above_floor = |best: &Ranked| best.as_ref().is_none_or(|(key, _)| key.1 > floor);
+    let consider = |mut candidate: Vec<(ObjectId, usize)>, best: &mut Ranked| {
         free_abilities_first(&mut candidate, sources);
         if let Some(n) = stranded(&candidate) {
             let key = (side_effects(&candidate), n, tier_sum(&candidate), candidate.len());
-            if key < best.0 {
-                *best = (key, candidate);
+            if best.as_ref().is_none_or(|(best_key, _)| key < *best_key) {
+                *best = Some((key, candidate));
             }
         }
     };
@@ -398,7 +552,7 @@ fn keep_the_hand_castable(
             }
         }
     }
-    if best.0 .1 > floor {
+    if above_floor(&best) {
         for source in &untapped {
             for ability in &source.abilities {
                 let mut candidate = plan.clone();
@@ -414,7 +568,7 @@ fn keep_the_hand_castable(
     // tapped for any one of its abilities or left alone; a bigger one is
     // left with the one-move repair rather than charged a search that
     // grows with it.
-    if best.0 .1 > floor {
+    if above_floor(&best) {
         let plans: usize = sources.iter()
             .map(|s| s.abilities.len() + 1)
             .try_fold(1usize, usize::checked_mul)
@@ -426,7 +580,7 @@ fn keep_the_hand_castable(
             });
         }
     }
-    best.1
+    best.map(|(_, plan)| plan)
 }
 
 /// How many plans `keep_the_hand_castable` will try one by one when the
@@ -503,8 +657,13 @@ fn greedy_autotap(
         }
     });
 
-    // Deduct floating mana: colorless-specific.
-    {
+    // Deduct floating mana: colorless-specific, for a cost with a `{C}`
+    // pip. Asked of every cost, `min` of the pool's `{C}` and nothing is an
+    // `if` over the pool that a proof's solver leaves open where the pool
+    // is its choice: every pass after it was followed as though `{C}` were
+    // still owed, out to a plan of none, and every proof of a payment with
+    // a source to tap paid for each step of the plan four times over.
+    if remaining.colorless > 0 {
         let available = sim_pool.get(ManaType::Colorless);
         let deduct = available.min(remaining.colorless);
         if deduct > 0 {
@@ -578,7 +737,7 @@ fn greedy_autotap(
     // Phase 2: Satisfy colored requirements (most-constrained color first).
     // Sort colored needs by scarcity: colors with fewest available sources first.
     let mut colored_needs = remaining.colored.clone();
-    colored_needs.sort_by_key(|&color| {
+    sort_by_key_stable(&mut colored_needs, |&color| {
         available.iter()
             .filter(|&&src_idx| can_produce_color(&sources[src_idx], color))
             .count()
@@ -602,7 +761,7 @@ fn greedy_autotap(
                     .map(|ability| (ability_cost(ability), source_sort_key(&sources[src_idx], &hand_demand), src_idx)))
                 .collect();
             // Stable, so equal keys keep the order the sources were given.
-            can.sort_by_key(|&(cost, key, _)| (cost, key));
+            sort_by_key_stable(&mut can, |&(cost, key, _)| (cost, key));
             can.into_iter().map(|(_, _, src_idx)| src_idx).collect()
         })
         .collect();
@@ -697,17 +856,9 @@ fn greedy_autotap(
                 .filter(|a| ability_total_mana(a) > ability_cost(a))
                 .min_by_key(|ability| {
                     // Score: sum of hand demand for colors produced.
-                    ability.produced.iter().map(|&(mt, _)| {
-                        let color = match mt {
-                            ManaType::White => Some(Color::White),
-                            ManaType::Blue => Some(Color::Blue),
-                            ManaType::Black => Some(Color::Black),
-                            ManaType::Red => Some(Color::Red),
-                            ManaType::Green => Some(Color::Green),
-                            ManaType::Colorless => None,
-                        };
-                        color.and_then(|c| hand_demand.get(&c).copied()).unwrap_or(0)
-                    }).sum::<u32>()
+                    ability.produced.iter()
+                        .map(|&(mt, _)| color_of(mt).map_or(0, |c| hand_demand[color_slot(c)]))
+                        .sum::<u32>()
                 })
                 .map(|a| a.ability_index)
                 .unwrap();
@@ -791,32 +942,32 @@ fn match_pips_to_sources(preferred: &[Vec<usize>], n_sources: usize) -> Option<V
 ///
 /// Being necessary rather than exact is the point for its one caller, the
 /// auto-pass gate: it can stop for a spell the planner missed, and it never
-/// passes a seat past a spell the sources really could pay for.
+/// passes a seat past a spell the sources really could pay for. That is
+/// `mtg_kernel::reach::reach_is_necessary`, proved for every pool, board
+/// and plan, of the count this hands it.
+///
+/// An ability's adds are counted by type, so one that listed a type twice
+/// would count as all of it; the count took the most of any one entry of
+/// a source's, which would have ruled out what such an ability pays.
+/// Latent: every mana ability in the pool adds one kind
+/// (`proofs::cards::mana`).
 #[must_use]
 pub fn within_reach(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) -> bool {
-    let cost = cost.without_x();
-    let net = |a: &ManaAbilityDef| ability_total_mana(a).saturating_sub(ability_cost(a));
-    let total: u32 = pool.total()
-        + sources.iter()
-            .map(|s| s.abilities.iter().map(net).max().unwrap_or(0))
-            .sum::<u32>();
-    if total < cost.mana_value() {
-        return false;
+    let reach: Vec<Vec<ReachAbility>> = sources.iter()
+        .map(|s| s.abilities.iter().map(reach_ability).collect())
+        .collect();
+    mtg_kernel::reach::within_reach(&pips_of(&cost.without_x()), &amounts_of(pool), &reach)
+}
+
+/// A mana ability as the count sees it: the pips of its own mana cost, and
+/// what it adds of each type, the way a plan's step pays and adds them
+/// ([`tap_step`]).
+fn reach_ability(ability: &ManaAbilityDef) -> ReachAbility {
+    let mut adds: Amounts = [0; 6];
+    for &(mana_type, amount) in &ability.produced {
+        adds[slot_of(mana_type)] += amount;
     }
-    let reach = |mana_type: ManaType| -> u32 {
-        pool.get(mana_type)
-            + sources.iter()
-                .map(|s| s.abilities.iter()
-                    .flat_map(|a| a.produced.iter())
-                    .filter(|&&(mt, _)| mt == mana_type)
-                    .map(|&(_, amount)| amount)
-                    .max()
-                    .unwrap_or(0))
-                .sum::<u32>()
-    };
-    let colored_ok = cost.colored_requirements().into_iter()
-        .all(|(color, count)| reach(ManaType::from(color)) >= count);
-    colored_ok && reach(ManaType::Colorless) >= cost.colorless_amount()
+    ReachAbility { cost: pips_of(&ability.cost), adds }
 }
 
 /// Check if a mana pool can pay a given cost.
@@ -876,6 +1027,7 @@ const GENERIC_ORDER: [ManaType; 6] = [
 // left here is reading the pool in and writing it back, and turning a cost
 // into `Pips` (`src/proofs/mana_payment.rs` proves the last with Kani).
 pub(crate) use mtg_kernel::mana::{pay_around, pay_fixed, surplus_order, Amounts, Pips};
+use mtg_kernel::reach::Ability as ReachAbility;
 
 pub(crate) fn slot_of(mana_type: ManaType) -> usize {
     match mana_type {
@@ -1528,6 +1680,43 @@ mod tests {
         assert!(within_reach(&w, &ManaPool::new(), &dual), "but it pays {{W}}");
     }
 
+    /// Where the greedy pass offers nothing, every plan is tried on a board
+    /// small enough: the best paying one is found (the Forest, not the
+    /// Assistant, which mills), a cost no plan pays has none though within
+    /// reach (one dual for both its colours), and a cost out of reach is
+    /// not searched.
+    #[test]
+    fn a_plan_is_searched_for_when_the_greedy_pass_offers_none() {
+        let g = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let mut mills = mono_ability(ManaType::Colorless);
+        mills.has_side_effects = true;
+        let sources = vec![
+            make_source(1, ManaSourceKind::HasSideEffects, vec![mills]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+        ];
+        assert_eq!(searched_plan(&g, &ManaPool::new(), &sources), Some(vec![(ObjectId(2), 0)]));
+        let rw = ManaCost::new(vec![ManaSymbol::Colored(Color::Red), ManaSymbol::Colored(Color::White)]);
+        let mut pool = ManaPool::new();
+        pool.add(ManaType::Green, 1);
+        let dual = vec![make_source(3, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Red, ManaType::White))];
+        assert!(within_reach(&rw, &pool, &dual), "by counting, {{R}}{{W}} is within reach of {{G}} and the dual");
+        assert_eq!(searched_plan(&rw, &pool, &dual), None, "one dual pays one of {{R}} and {{W}}");
+        assert_eq!(searched_plan(&g, &ManaPool::new(), &[]), None, "nothing to tap and nothing floating");
+    }
+
+    /// An ability that lists a type twice adds both: `{C}{C}` from one
+    /// that adds `{C}` and `{C}` is within reach, as tapping it pays. The
+    /// count took the most of any one entry, and ruled it out.
+    #[test]
+    fn within_reach_counts_every_entry_of_an_ability_by_type() {
+        let mut twice = mono_ability(ManaType::Colorless);
+        twice.produced = vec![(ManaType::Colorless, 1), (ManaType::Colorless, 1)];
+        let sources = vec![make_source(1, ManaSourceKind::BasicMana, vec![twice])];
+        let cc = ManaCost::new(vec![ManaSymbol::Colorless(2)]);
+        assert!(plan_pays(&[(ObjectId(1), 0)], &ManaPool::new(), &sources, &cc), "tapping it pays {{C}}{{C}}");
+        assert!(within_reach(&cc, &ManaPool::new(), &sources));
+    }
+
     /// Reach is per colour as well as in total: two Forests are two mana
     /// and still cannot pay {R}, nor {C}. A count that let enough mana of
     /// the wrong kind stand in stopped the auto-pass gate at every main
@@ -1628,6 +1817,30 @@ mod tests {
             .filter(|s| !plan.iter().any(|(id, _)| *id == s.object_id)).cloned().collect();
         assert!(greedy_autotap(&hand[0], &left, &untapped, &[]).is_some(),
             "{{W}}{{W}} is still castable after {plan:?}");
+    }
+
+    /// What the planner returns is a plan `pool_after` found to pay, on
+    /// every board: a greedy plan that does not pay is not handed on
+    /// (issue #252: one was offered, and the cast silently refused). With
+    /// a spell in hand to keep payable it is searched around for one that
+    /// does, and with none found, or nothing in hand, there is no plan.
+    /// Given here as a greedy pass that taps nothing for `{G}`.
+    #[test]
+    fn a_plan_that_does_not_pay_is_never_returned() {
+        let cost = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
+        let forest = vec![make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)])];
+        let mountain = vec![make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)])];
+        let hand = [Demand { cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]), keep: None }];
+        let both = [forest[0].clone(), mountain[0].clone()];
+        let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), &both, &hand);
+        assert_eq!(plan, Some(vec![(ObjectId(1), 0)]), "the Forest pays {{G}}, and the Mountain is kept for {{R}}");
+        for (sources, demands) in [(&forest, &hand[..0]), (&mountain, &hand[..0]), (&mountain, &hand[..])] {
+            let plan = keep_the_hand_castable(vec![], &cost, &ManaPool::new(), sources, demands);
+            assert_eq!(plan, None, "no plan from {sources:?}, around {demands:?}");
+        }
+        // A plan that pays, with nothing in hand, is returned as it is.
+        let plan = keep_the_hand_castable(vec![(ObjectId(1), 0)], &cost, &ManaPool::new(), &forest, &[]);
+        assert_eq!(plan, Some(vec![(ObjectId(1), 0)]));
     }
 
     /// Issue #684: a `{C}` pip paid with the free `{C}` of the only source

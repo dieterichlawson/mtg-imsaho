@@ -40,5 +40,5 @@ pub(crate) struct Ctx<'a> {
     /// auto-tap's color-demand map (issue #114).
     pub demands: Vec<(crate::ids::ObjectId, crate::mana::Demand)>,
     /// Card names that may not be cast at all (Nevermore).
-    pub casting_banned: Vec<String>,
+    pub casting_banned: Vec<&'a str>,
 }

@@ -1,0 +1,20 @@
+# The harnesses known not to prove, each with its last result in the last
+# run of every harness (scripts/kani-tiers.py write). The tiers in CI fail
+# on any other harness that does not prove; one of these that proves is
+# said so, to be taken off.
+proofs::actions::cast_answers::one_target_offered_is_cast_after_the_fixed_ones  # OOM
+proofs::actions::cast_answers::two_targets_offered_are_cast_in_the_order_chosen  # OOM
+proofs::actions::cast_answers::three_targets_for_an_up_to_two_slot_cancel_the_cast  # OOM
+proofs::actions::cast_answers::a_target_not_offered_cancels_the_cast  # OOM
+proofs::actions::casting_costs::a_creature_spell_of_three_and_black_costs_one_and_black_less_two  # OOM
+proofs::actions::casting_costs::a_creature_spell_of_one_and_black_costs_black_less_two  # OOM
+proofs::actions::paying::one_is_planned_with_an_untapped_forest_for_the_second_player  # OOM
+proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player  # OOM
+proofs::actions::trigger_order::the_order_given_is_the_order_the_triggers_go_on  # OOM
+proofs::actions::trigger_order::the_order_given_reversed_is_the_order_the_triggers_go_on  # OOM
+proofs::actions::trigger_order::an_order_naming_a_trigger_twice_is_refused  # OOM
+proofs::actions::trigger_order::an_order_leaving_a_trigger_out_is_refused  # OOM
+proofs::actions::trigger_order::the_first_trigger_chosen_goes_on_now  # OOM
+proofs::actions::trigger_order::the_second_trigger_chosen_goes_on_now  # OOM
+proofs::actions::trigger_order::a_trigger_past_those_offered_is_refused  # OOM
+proofs::actions::trigger_resolving::a_creature_dying_trigger_resolves_with_the_dead_and_its_target_unless_it_is_illegal  # OOM

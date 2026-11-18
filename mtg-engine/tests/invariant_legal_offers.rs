@@ -421,8 +421,9 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     flags(&s, P0, &legal, &reg, "on an artifact under Stony Silence");
 
     // CR 602.2: an ability offered "through" another card is one that card
-    // really grants — attached to this permanent under the acting player
-    // (Blazing Torch), or granted to a copy of it (Evil Twin).
+    // really grants — attached to this permanent (Blazing Torch), under
+    // whichever player, the ability being the permanent's (CR 113.3b), or
+    // granted to a copy of it (Evil Twin).
     let (mut state, reg) = base();
     let bearer = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     state.get_object_mut(bearer).unwrap().summoning_sick = false;
@@ -438,17 +439,12 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
         .expect("the Torch grants its bearer an ability").clone();
     clean(&state, P0, &legal, &reg);
 
-    // The Torch attached elsewhere, or under the opponent, or gone: the
-    // offer is through a card that grants this permanent nothing.
+    // The Torch attached elsewhere, or gone: the offer is through a card
+    // that grants this permanent nothing.
     for wrong in [
         {
             let mut s = state.clone();
             s.get_object_mut(torch).unwrap().attached_to = Some(victim);
-            s
-        },
-        {
-            let mut s = state.clone();
-            s.get_object_mut(torch).unwrap().controller = P1;
             s
         },
         {
@@ -459,8 +455,31 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     ] {
         let mut l = wrong_legal(&wrong, &reg);
         l.actions.insert(1, granted.clone());
-        flags(&wrong, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+        flags(&wrong, P0, &l, &reg, "which neither grants it as a copy nor is attached to it");
     }
+    // The Torch on it under the opponent: it grants the ability, whose cost
+    // sacrifices the Torch, which its bearer's controller cannot (CR
+    // 701.21a), so the card has no such ability to offer them.
+    let mut theirs = state.clone();
+    theirs.get_object_mut(torch).unwrap().controller = P1;
+    let mut l = wrong_legal(&theirs, &reg);
+    l.actions.insert(1, granted.clone());
+    quiet_about(&theirs, P0, &l, &reg, "neither grants it as a copy");
+    flags(&theirs, P0, &l, &reg, "does not have");
+
+    // An Aura granting one under the opponent (Skeletal Grimace cast on
+    // this player's creature): the ability is the creature's, activated by
+    // its controller (defect 11), and nothing to flag.
+    let (mut grimaced, reg2) = base();
+    let host = named_permanent(&mut grimaced, &reg2, "Grizzly Bears", P0);
+    let grimace = named_permanent(&mut grimaced, &reg2, "Skeletal Grimace", P1);
+    grimaced.get_object_mut(grimace).unwrap().attached_to = Some(host);
+    add_mana(&mut grimaced, P0, &[(ManaType::Black, 1)]);
+    grimaced.priority_player = Some(P0);
+    let offers = mtg_engine::engine::legal_actions(&grimaced, &reg2);
+    assert!(offers.actions.iter().any(|a| matches!(a, Action::ActivateAbility { object_id, source_card_id: Some(_), .. } if *object_id == host)),
+        "the Aura's ability is offered to the enchanted creature's controller");
+    quiet_about(&grimaced, P0, &offers, &reg2, "neither grants it as a copy");
 
     // A card that is nowhere near this permanent.
     let mut named = granted.clone();
@@ -469,7 +488,7 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     }
     let mut l = legal.clone();
     l.actions.insert(1, named);
-    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached to it");
 
     // The other way a card grants an ability to a permanent that is not
     // printed with it: a copy that keeps the copier's own abilities (CR
@@ -494,7 +513,7 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     quiet_about(&copies, P0, &through(evil_twin_card), &reg, "neither grants it as a copy");
     let grizzly = copies.get_object(bear).unwrap().card_id;
     flags(&copies, P0, &through(grizzly), &reg,
-        "which neither grants it as a copy nor is attached under p0");
+        "which neither grants it as a copy nor is attached to it");
 
     // Being the card a permanent is printed as is not enough on its own:
     // under Essence of the Wild a Grizzly Bears enters as a copy of the
@@ -510,7 +529,7 @@ fn an_activation_offer_can_pay_what_the_ability_costs() {
     l.actions.insert(1, Action::ActivateAbility {
         object_id: shaped, ability_index: 0, targets: vec![], tap_plan: vec![],
         sacrifice: None, x_value: None, source_card_id: Some(printed) });
-    flags(&wild, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+    flags(&wild, P0, &l, &reg, "which neither grants it as a copy nor is attached to it");
 
     // CR 605.3a: a mana ability offer names a permanent of the acting
     // player's, on the battlefield, with that ability — each half alone.
@@ -1473,7 +1492,7 @@ fn an_activation_offer_can_pay_the_costs_its_ability_asks_for() {
         *source_card_id = Some(state.get_object(victim).unwrap().card_id);
     }
     l.actions.insert(1, borrowed);
-    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached under p0");
+    flags(&state, P0, &l, &reg, "which neither grants it as a copy nor is attached to it");
 }
 
 /// CR 606.3/103.5/700.3: the offers the prompts do not enumerate — a

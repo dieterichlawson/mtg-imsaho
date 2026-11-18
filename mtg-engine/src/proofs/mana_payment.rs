@@ -61,14 +61,11 @@ fn any_symbol() -> ManaSymbol {
     }
 }
 
-fn any_cost() -> ManaCost {
-    let len: usize = kani::any();
-    kani::assume(len <= MAX_SYMBOLS);
+/// Any cost of `len` symbols.
+fn any_cost(len: usize) -> ManaCost {
     let mut symbols = Vec::with_capacity(MAX_SYMBOLS);
-    for i in 0..MAX_SYMBOLS {
-        if i < len {
-            symbols.push(any_symbol());
-        }
+    for _ in 0..len {
+        symbols.push(any_symbol());
     }
     ManaCost::new(symbols)
 }
@@ -84,12 +81,11 @@ fn each_type_has_its_own_slot() {
 }
 
 /// `pips_of` counts, for each type, the pips only that type can pay, and
-/// the generic mana; and together they are the cost's mana value.
-#[kani::proof]
-#[kani::solver(cadical)]
-#[kani::unwind(6)]
-fn counting_a_cost_counts_every_pip() {
-    let cost = any_cost();
+/// the generic mana; and together they are the cost's mana value. For a
+/// cost of `len` symbols, a constant in each harness below: over a length
+/// the solver chose, the proof ran out of memory at 3.5 GB.
+fn counting_a_cost_counts_every_pip(len: usize) {
+    let cost = any_cost(len);
     let pips: Pips = pips_of(&cost);
     let t = TYPES[usize::from(kani::any::<u8>() % 6)];
     let only_t: u32 = cost.symbols.iter().map(|s| match s {
@@ -97,9 +93,31 @@ fn counting_a_cost_counts_every_pip() {
         ManaSymbol::Colorless(n) if t == ManaType::Colorless => *n,
         _ => 0,
     }).sum();
-    kani::cover!(only_t > 1, "a type asked for more than once");
-    kani::cover!(pips.generic > 0 && only_t > 0, "generic beside a type's own pips");
+    if len > 1 {
+        kani::cover!(only_t > 1, "a type asked for more than once");
+        kani::cover!(pips.generic > 0 && only_t > 0, "generic beside a type's own pips");
+    }
     assert_eq!(pips.specific[slot_of(t)], only_t);
     assert_eq!(pips.generic, cost.generic_amount());
     assert_eq!(total(&pips.specific) + pips.generic, cost.mana_value());
+}
+
+/// [`counting_a_cost_counts_every_pip`] for each length a printed cost has.
+macro_rules! each_length {
+    ($($name:ident: $len:literal),* $(,)?) => {$(
+        #[kani::proof]
+        #[kani::solver(cadical)]
+        #[kani::unwind(6)]
+        fn $name() {
+            counting_a_cost_counts_every_pip($len);
+        }
+    )*};
+}
+
+each_length! {
+    counting_a_cost_of_no_symbol_counts_every_pip: 0,
+    counting_a_cost_of_one_symbol_counts_every_pip: 1,
+    counting_a_cost_of_two_symbols_counts_every_pip: 2,
+    counting_a_cost_of_three_symbols_counts_every_pip: 3,
+    counting_a_cost_of_four_symbols_counts_every_pip: 4,
 }

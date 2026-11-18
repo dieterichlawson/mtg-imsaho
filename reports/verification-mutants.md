@@ -1,3 +1,78 @@
+## The cards: who answers — 2026-11-09
+
+Each loyalty ability is tried with its planeswalker the other player's
+card, and each question the engine asks on a card's behalf is held to
+the player its text has answer it (`choosers` in
+`mtg-engine/tests/card_semantics.rs`): as a set, the endings hide who
+chose. Eighteen mutants, each moving one question, or one "you", to the
+wrong player or the wrong turn.
+
+| family | mutant | caught by |
+|---|---|---|
+| loyalty, borrowed | Garruk Relentless's "you" is his owner (the engine) | the loyalty test with Garruk the other player's card, 9 of 44 |
+| loyalty, borrowed | Liliana of the Veil's "you" is her owner (the engine) | the loyalty test with Liliana the other player's card: her owner divides the piles; before the asker check, nothing, since her controller only divides |
+| piles | Liliana's target player divides the piles (the engine) | the loyalty test |
+| pay or not | the caster of Frightful Delusion decides whether the countered spell's controller pays (the engine) | the spell test, on each board with Giant Growth on the stack |
+| discard | Frightful Delusion's "that player discards" asked of the other player (the engine) | the spell test, once the countered spell's controller holds two cards; before, nothing |
+| sacrifice | Tribute to Hunger's sacrifice chosen by its caster (the engine) | the spell test, once a question the text gives to a named player is theirs alone; before, nothing |
+| graveyard | Graveyard Shovel's exile chosen by its activator, not the target player (the engine) | the activated test, likewise; before, nothing |
+| loot | Civilized Scholar's discard asked of the other player (the engine) | the activated test, its source the activator's own card, the other player's and exiled in response |
+| curse | Curse of Oblivion's exile chosen by its controller, not the cursed player (the engine) | the upkeep test with a third card in the cursed player's graveyard, its owner either player |
+| curse | Curse of Oblivion exiles the first two of three without asking (the engine) | the upkeep test with a third card in the cursed player's graveyard |
+| combat | a blocked attacker's damage assigned by the blocker's controller (the engine) | 9 of the 48 tests, every combat test among them: the attacking player assigns (CR 510.1) |
+| trigger order | the active player orders the other player's triggers (the engine) | the double-block test, 75 of 1,092, and the equipment and aura tests: each player orders their own (CR 603.3b) |
+| replacements | which of two damage replacements applies is chosen by the damage source's controller, not the player dealt it (the engine) | the aura test, 9 of 37,347 combats (Undead Alchemist beside Ghostly Possession), and the equipment test (CR 616.1) |
+| trigger targets | a trigger's target is chosen by the other player as it goes on the stack (the engine) | the spell, upkeep and end-step tests (Bloodgift Demon, Reaper from the Abyss): its controller chooses (CR 603.3d) |
+| turn order | Divine Reckoning asks the other player to keep a creature before the active player (the engine) | the spell test, 2 of 5,269 casts (CR 101.4) |
+| turn order | Liliana of the Veil's +1 asks the other player to discard before the active player (the engine) | the loyalty test, 8 of 44, once the other player holds two cards; before, nothing, their discard forced |
+| look at | Forbidden Alchemy's choice among the cards looked at asked of the opponent (the engine) | the flashback test and the spell test, cast from the hand and by flashback |
+| combat triggers | Curiosity's "you may draw" asked of the opponent (the engine) | the double-block and Aura tests, through `combat_endings` |
+
+The first round missed three, and each became a fix in the reference.
+Graveyard Shovel's and Tribute to Hunger's choices asked of the caster
+were allowed because the rule let a card's controller answer any
+question; a question the text gives to players it names is now theirs
+alone. Frightful Delusion's discard asked of the wrong player was never
+asked at all: the countered spell's controller held one card once it
+was cast, and now holds two. Curse of Oblivion's choice was never asked
+either, the cursed player holding exactly the two cards it exiles; the
+reference now takes every two of three.
+
+## The views: hidden information — 2026-11-09
+
+A player's view, and what they are offered, must be the same whatever
+they cannot see: each library's order (CR 401.2), the other player's
+hand (402.3), what the other player looks at or searches through
+(701.16, 701.19). `tests/view_hidden_information.rs` checks it on boards
+of its own, and the fuzz runner on one decision in 32 of every
+invariant-checked game. Two are its defects' fixes undone, and two more
+leak on purpose. All four caught; with every fix in place, no failure
+over the campaigns the plan doc counts.
+
+| family | mutant | caught by |
+|---|---|---|
+| library order | a player's own library listed as it lies (defect 37's fix undone, the view) | the library-order test; and the fuzz, at the 32nd action of the first game |
+| question's cards | the names of the cards of a question put to one player in both views (defect 38's fix undone, the view) | the question test, a discard, a look and a search put to the other player |
+| hand | the other player's hand size reported as the id of their first card (the view) | the fuzz, dealing the hand anew, at the fourth decision of the first game (every decision held then) |
+| menu | the acting player's menu naming the other player's top library card (the engine's legal actions) | the fuzz, every library reversed, at the fourth decision of the first game (every decision held then) |
+
+## The log: hidden information — 2026-11-09
+
+The log every seat is sent (every line above `Private`) must name no card
+no one has seen. The fuzz runner reads each line written between two
+decisions for the objects it names, by id or by a name no card in view
+bears, and flags one in a hand or a library at both that was not revealed,
+not being cast and never in a public zone. Four mutants, each writing a
+hidden card into a shared line. All caught; with none, no failure over the
+campaigns the plan doc counts.
+
+| family | mutant | caught by |
+|---|---|---|
+| draw | each card drawn named at `Debug` ("p1 drew Swamp (#48)") | the fuzz, by id, at the first draw of the first game |
+| look | Delver of Secrets's look at the top card written with its id at `Debug`, not `Private` | the fuzz, by id, within eight seeds of a Delver deck |
+| look | Delver's look as the engine writes it, by name alone, at `Debug` | the fuzz, by name, at the second seed |
+| look | the card a look keeps (Forbidden Alchemy's) named at `Event`, not `Private` | the fuzz, by id, at the second seed |
+
 # What the proofs catch that the tests do not — 2026-10-25
 
 `mtg-kernel` holds the pieces of the rules proved with Verus: paying a mana
@@ -132,3 +207,445 @@ contracts state, whether or not anything downstream looks (C05, C07, F09),
 and the tests catch what the code is preferred to do beyond the contract
 (M07, M08, M10, M11). A kernel output nobody reads is a place the two can
 drift apart, and a debug assertion at the call site closes it.
+
+## The turn, state-based-action and block kernels — 2026-10-26
+
+Each kernel was broken four ways by hand, one line at a time, and Verus
+run on each break. Every break is rejected.
+
+| kernel | break | proof |
+|---|---|---|
+| `turn` | no attackers still goes on to combat damage | rejected |
+| `turn` | the first turn's draw step is not skipped | rejected |
+| `turn` | a cleanup step that does not repeat goes on to an untap step | rejected |
+| `turn` | priority needs one pass more than there are players | rejected |
+| `sba` | toughness 0 survives | rejected |
+| `sba` | deathtouch kills a creature dealt no damage | rejected |
+| `sba` | no counter pairs are removed | rejected |
+| `sba` | lethal damage needs one more point | rejected |
+| `blocks` | an attacker's minimum is short by one | rejected |
+| `blocks` | a block the rules refuse is let through | rejected |
+| `blocks` | a blocker may block a second attacker | rejected |
+| `blocks` | a block is miscounted towards its attacker's minimum | rejected |
+
+## The cards, family by family — 2026-10-26
+
+Each new family of `card_semantics.rs` was checked by breaking the engine
+in a card that uses it, or in the engine code under it, and running the
+whole file. 48 mutants; 47 caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| mana abilities | Sol Ring makes one | the mana test |
+| | Deranged Assistant mills nothing | the mana test |
+| | summoning sickness ignored for mana | the mana test |
+| combat text | Stromkirk Noble blockable by Humans | the fight test |
+| | Grave Bramble protected from Vampires | the fight test |
+| | Falkenrath Marauders takes one counter | the fight test |
+| | Night Revelers' haste keyed to Elves | the fight test |
+| | Sturmgeist draws nothing | the fight test |
+| | Vampire Interloper can block | the fight test |
+| | Bloodcrazed Neonate not forced to attack | the fight test |
+| | Invisible Stalker blockable | the fight test |
+| | Balefire Dragon deals half | the fight test, once the defender also declines to block |
+| statics and lords | Battleground Geist gives +2 | the cast test and the standing-by test |
+| | Battleground Geist pumps itself | the cast test and the fight test |
+| | Battleground Geist pumps the opponent's Spirits | the cast test and the fight test |
+| | Gallows Warden gives nothing | the cast test and the standing-by test |
+| | One-Eyed Scarecrow shrinks its own fliers | the cast test and the fight test |
+| | One-Eyed Scarecrow shrinks every opposing creature | the cast test and the fight test |
+| | Scourge of Geier Reach counts its own creatures | the cast test and the fight test |
+| | Angelic Overseer without indestructible | the cast test and the standing-by test |
+| | the engine's "other" includes the source | the cast test and the fight test |
+| | state-based actions ignore indestructible | **only** the standing-by test |
+| other deaths | Rage Thrower deals 1 | the cast test |
+| | Unruly Mob watches the opponent's creatures | the cast test |
+| | Village Cannibals watch Elves | the cast test |
+| | Falkenrath Noble's own death drains nothing | the cast test |
+| | Selhoff Occultist mills two | the cast test |
+| | Lumberknot takes two counters | the cast test |
+| | a watcher sees its own death | the cast test |
+| | a watcher that dies in the same batch does not look back | the cast test, **only** through two deaths at once |
+| upkeep | Bloodgift Demon drains 2 | the upkeep test |
+| | Angel of Flight Alabaster returns any card | the upkeep test |
+| | Splinterfright mills one | the upkeep test |
+| | Curse of the Bloody Tome mills three | the upkeep test |
+| | Curse of the Pierced Heart deals 2 | the upkeep test |
+| | Curse of Oblivion exiles one | the upkeep test |
+| | "your upkeep" fires every upkeep | the upkeep test, in the other player's turn |
+| | a Curse fires in its controller's upkeep | the upkeep test, in the other player's turn |
+| | the untap step untaps every player's permanents | the upkeep test, with the lands tapped |
+| Equipment | Butcher's Cleaver gives +2 | the activated-ability and standing-by tests |
+| | Butcher's Cleaver's lifelink for Elves | the activated-ability and standing-by tests |
+| | Cobbled Wings give reach | the activated-ability and standing-by tests |
+| | Mask of Avacyn gives +1/+1 | the activated-ability and standing-by tests |
+| | Sharpened Pitchfork without first strike | the activated-ability and cast tests |
+| | Runechanter's Pike counts creature cards | the activated-ability test |
+| | equip at instant speed | the activated-ability test's timing check |
+| | a fallen Equipment goes to the graveyard | the standing-by test |
+| | `equip_target_is_legal` accepts another player's creature | **missed** |
+
+The survivor is reachable only through the re-check at resolution (CR
+608.2b): the targets the engine offers come from the ability's target
+requirement, not from that function, so it matters only when the creature
+changes control between activation and resolution. No card the grammar
+reads changes control yet; Traitorous Blood will.
+
+Three mutants were caught only by a check added for the family: a
+creature standing by out of combat, two deaths at once, and the other
+player's turn. Each of those checks was added because the family's text
+named a case the first version did not reach, and each then caught a
+break nothing else did. The reading for later families: a test is chosen
+from the text's cases, not from the engine's code paths.
+
+## The cards, family by family, continued — 2026-10-26
+
+The same method for the families after the first 48: 52 mutants, 51
+caught and one equivalent.
+
+| family | mutant | caught by |
+|---|---|---|
+| restricting Auras | Pacifism lets it block | the Aura fights |
+| | Furor of the Bitten does not force the attack | the Aura fights |
+| | Bonds of Faith stops Humans blocking | the Aura fights |
+| | Ghostly Possession prevents nothing | the Aura fights |
+| | Claustrophobia lets it untap | the turn test |
+| | Claustrophobia does not tap | the cast test |
+| | Curse of the Nightly Hunt forces the wrong player | the Aura fights |
+| | the engine prevents combat damage only to the creature | the Aura fights |
+| | the engine prevents combat damage only by the creature | the Aura fights |
+| X | Devil's Play deals X-1 | the cast test |
+| | Harvest Pyre deals 2X | the cast test |
+| | Kessig Wolf Run gives +X/+X | the activated-ability test |
+| | the engine records a spell's X one more than paid | the cast test |
+| | the engine halves an ability's X | the activated-ability test |
+| the mana pool | Brimstone Volley costs one less | the cast test, **only** once the pool is observed |
+| | Grizzled Outcasts costs one less | the cast test, **only** once the pool is observed |
+| | Kessig Wolf Run's ability costs no {G} | the activated-ability test |
+| ability costs | Disciple of Griselbrand gains one more | the activated-ability test |
+| | Skirsdag Cultist cannot sacrifice itself | the activated-ability test |
+| | Demonmail Hauberk gives +4/+1 | the activated-ability test |
+| | Moorland Haunt exiles any card | the activated-ability test |
+| | Moorland Haunt's Spirit cannot fly | the activated-ability test |
+| | equip's sacrifice is "another creature" | **equivalent**: an Equipment is not a creature |
+| regeneration | Manor Skeleton gets no shield | the activated-ability test |
+| | Full Moon's Rise shields the opponent's Werewolves | the activated-ability test |
+| | regeneration does not tap | the lethal-damage follow-up |
+| | regeneration leaves the damage | the lethal-damage follow-up |
+| | state-based actions need two shields | the lethal-damage follow-up |
+| | a destroy effect needs two shields | **only** the destroyed-by-an-effect follow-up |
+| others' choices | Tribute to Hunger gains the power | the cast test |
+| | Tribute to Hunger offers the opponent one creature | the cast test |
+| | Divine Reckoning lets only the active player keep one | the cast test |
+| | Divine Reckoning destroys the creature chosen | the cast test |
+| what lasts the turn | "until end of turn" never ends | **only** the next-turn check |
+| | damage stays past the turn | **only** the next-turn check |
+| | regeneration shields last past the turn | **only** the next-turn check, for abilities |
+| at random | Make a Wish returns one card | the cast test |
+| | Moldgraf Monstrosity returns the first two, not two at random | **only** the seeds' completeness |
+| | Moldgraf Monstrosity stays in the graveyard | the dies check |
+| | Desperate Ravings draws one | the cast test |
+| | the engine's random choice is always the first | **only** the seeds' completeness |
+| searches | Caravan Vigil's battlefield option without a death | the cast test |
+| | Traveler's Amulet puts the land onto the battlefield | the activated-ability test |
+| | Ghost Quarter's land enters tapped | the activated-ability test |
+| | Ghost Quarter's search is the activator's | the activated-ability test |
+| combat triggers | Ashmouth Hound deals 2 | the fight test |
+| | Geist of Saint Traft's Angel is a 3/4 | the fight test |
+| | Geist of Saint Traft's Angel stays after combat | the fight test |
+| | Kessig Cagebreakers makes one Wolf | the fight test |
+| | Wooden Stake destroys any blocker | the Equipment fights |
+| | Rakish Heir counts only itself | the standing-by fights |
+| | Curse of Stalked Prey gives two counters | the Aura fights |
+
+Nine of the 51 are caught only by a check added for their family, and
+four of those checks are not about one card at all: the pool observed
+after a cast, the next turn, the second way to destroy, and the seeds
+having to reach every way "at random" allows. Each of the four found a
+gap that every card already read was passing through: a spell could cost
+less than its text, an "until end of turn" effect could last forever, and
+an engine with no randomness at all would have passed every random card.
+The checks were written from the rules the text invokes, not from the
+engine's code, which is why they reach what no card-specific test did.
+
+While writing these, the reference was wrong twice and the engine right:
+two Rakish Heirs each trigger, and Tribute to Hunger's "that creature" is
+the creature it made its controller sacrifice. Each was a fix to the
+reference, made after reading the rule, and both are now regression
+cases in the fights and casts.
+
+
+## The cards: double-faced cards, end steps, and small templates — 2026-10-26
+
+The same method for the families since: 45 mutants, 44 caught and one
+equivalent.
+
+| family | mutant | caught by |
+|---|---|---|
+| small templates | Elder Cathar gives a Human one counter | the dies check |
+| | Elder of Laurels counts one more | the activated-ability test |
+| | Infernal Plunge adds {R}{R} | the cast test |
+| | Sever the Bloodline exiles only the target | **only** the board with two of a name |
+| | Graveyard Shovel gains 3 | the activated-ability test |
+| | Brain Weevil discards nothing | the activated-ability test |
+| | Cellar Door takes the top card | the activated-ability test |
+| | Tree of Redemption's toughness one more than the life it took | the activated-ability test |
+| werewolf back faces | Bane of Hanweir is not forced to attack | the fights |
+| | Wildblood Pack gives +2/+0 | the fights |
+| | Instigator Gang pumps creatures that are not attacking | the fights |
+| | Terror of Kruin Pass gives every creature menace | the fights |
+| control change | Traitorous Blood does not untap | **only** the board with a tapped creature |
+| | Olivia does not make it a Vampire | the activated-ability test |
+| | Olivia's counter goes on the target | the activated-ability test |
+| | the cleanup keeps control taken until end of turn | **only** the next-turn check |
+| any transform | Thraben Sentry watches every player's creatures | the dies check |
+| | Thraben Sentry never transforms | the dies check |
+| | a second Sentry trigger transforms it back | **only** every "may" taken |
+| | declining transforms it too | the dies check |
+| | Thraben Militia lacks trample | the dies check |
+| | Thraben Militia is 4/4 | the dies check |
+| back faces' abilities | Ulvenwald Primordials do not regenerate | the activated-ability test |
+| | Ulvenwald Mystics offer the Primordials' regeneration | **only** nothing beyond its text |
+| | the engine's fight is one-sided | the activated-ability test |
+| | Daybreak Ranger targets any creature | the activated-ability test |
+| | Nightfall Predator's fight is free | the activated-ability test |
+| | Daybreak Ranger reads the face up at resolution | **only** a flip in response |
+| end steps | Unholy Fiend loses 2 | the end-step test |
+| | Unholy Fiend's trigger on every end step | the end-step test |
+| | Reaper from the Abyss triggers with no death | **only** the stack count |
+| | Reaper's own check lets Demons in | **equivalent**: its target requirement says the same |
+| | Reaper's requirement and check both let Demons in | the end-step test |
+| | Cloistered Youth transforms when declined | the turn test |
+| Mayor of Avabruck | Howlpack Alpha leaves out Wolves | the end-step test, the fights |
+| | Howlpack Alpha pumps itself | the fights, the werewolf test |
+| | the Mayor pumps the opponent's Humans | the cast test |
+| | Howlpack Alpha's Wolf on every end step | the end-step test |
+| | the Wolf token is a Werewolf too | the end-step test |
+| Bloodline Keeper | four Vampires are enough | **only** one short of enough |
+| | every permanent counts as a Vampire | the activated-ability test |
+| | Lord of Lineage pumps itself | a flip in response |
+| | Lord of Lineage pumps the opponent's Vampires | **only** the opponent's Vampire on the board |
+| | Lord of Lineage offers the Keeper's transform | **only** nothing beyond its text, with either face's conditions met |
+| | the engine drops CR 701.27f | a flip in response |
+
+Six mutants survived when first run, and each became a check or a board
+that every card read now passes through: a "you may" taken every time and
+declined every time, since a set of endings can hide a wrong answer to one
+behind a right answer to another; the number of things put on the stack,
+since a trigger whose "if" is false must not trigger at all; each
+permanent offering nothing its text does not print, with what either
+face asks for met; an "if you control N" tried one short; and a Vampire
+on the opponent's side. None was written for its card.
+
+Two engine defects were found in the round, both by the reference
+reading a rule the engine did not: CR 701.27f, under which an ability
+does not transform its source if it has transformed since the ability
+went on the stack (a test asserted the opposite), and CR 113.7a, under
+which Daybreak Ranger's ability is the face's it was activated from.
+Both are fixed, with regression tests that fail without the fix.
+
+## The cards: watchers, flashback, the library, and declarations — 2026-10-26
+
+The same method for the families since: 45 mutants, 45 caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| a creature that keeps itself tapped | Galvanic Juggernaut untaps | the turn test |
+| | Galvanic Juggernaut need not attack | **only** the declarations test |
+| | a death does not untap it | the dies check, the watcher tapped |
+| counted tokens | Endless Ranks rounds up | the turn test, three Zombies |
+| | the opponent's Zombies count | the turn test |
+| | every player's upkeep | the turn test |
+| a discard of one's choice | Murder of Crows discards the first card unasked | the dies check, with a Bears in hand |
+| | no discard | the dies check |
+| | declining draws too | the dies check |
+| | it draws two | the dies check |
+| Civilized Scholar | any discard transforms it | the activated-ability test |
+| | no untap | the activated-ability test |
+| | the first card discarded unasked | the activated-ability test |
+| | Homicidal Brute triggers after attacking | **only** the stack count, having attacked |
+| | Homicidal Brute does not tap | the end-step test |
+| flashback | a flashback spell goes to the graveyard | the flashback test |
+| | a sorcery's flashback at instant speed | the flashback test |
+| triggers on casts | Charmbreaker Devils see the opponent's spells | **only** once the opponent casts in the game loop |
+| | the Devils see any spell | the cast-watcher test, a creature cast |
+| | the Devils get +3/+0 | the cast-watcher test |
+| | the Devils return any card | the turn test |
+| | Burning Vengeance sees casts from the hand | the cast-watcher test |
+| | Burning Vengeance sees the opponent's spells | the cast-watcher test |
+| can't block this turn | Nightbird's Clutches stop only one | the cast and flashback tests |
+| | the Clutches target up to one | the cast and flashback tests |
+| | the engine ignores "can't block this turn" | every check, through what is observed |
+| | it lasts past the turn | the next-turn check |
+| triggers on creatures entering | Mentor of the Meek sees power 1 or less | the enter-watcher test |
+| | Mentor sees the opponent's creatures | the enter-watcher test |
+| | Mentor draws when it cannot pay | **only** a cast with no mana left |
+| | Champion of the Parish sees any creature | the enter-watcher test |
+| | Champion sees the opponent's Humans | the enter-watcher test |
+| the library | Mulch keeps the nonlands | the cast test |
+| | Mulch reveals three | the cast test |
+| | Forbidden Alchemy looks at three | the cast and flashback tests |
+| | Delver of Secrets transforms on any card | **only** the turn test with a land on top |
+| | Delver transforms unrevealed | the turn test |
+| | Mindshrieker gets one more | the activated-ability test |
+| | Cellar Door never finds a creature | **only** once a library holds one |
+| granted abilities | Skeletal Grimace gives +1/+0 | the granted-ability test, the Aura fights |
+| | the regeneration is free | the granted-ability test |
+| | no shield | the granted-ability test |
+| attack or block | Hamlet Captain pumps itself | the fights |
+| | the Captain pumps any creature | the standing-by fights |
+| | the Captain does nothing as it blocks | the standing-by fights |
+
+Four checks came from mutants that first survived. Galvanic Juggernaut is
+not a fighter, having a trigger the combat reference does not play out,
+so nothing asked whether it must attack: every creature that does not
+fight is now held to its declarations. The opponent's spells had been
+cast with `submit_action` alone, which sets off nothing, so a Devils that
+saw them passed; the opponent now casts in the game loop. A Mentor that
+draws without paying could not be seen while the test always floated the
+mana. And, written before any mutant, whether a creature may block and
+must attack is now part of what every check observes, which the engine
+passed on every board at once, Vampire Interloper and Goblin Piker
+included.
+
+Changing the board's libraries, from five basic lands to an instant, three
+lands and a creature card, turned a Cellar Door branch that had never run
+into a checked one, and made the Delver, Mulch, Forbidden Alchemy and
+Mindshrieker templates mean something. The harness had relied on the drawn
+card being a land the active player could play, so that the game stopped
+in their main phase; each player now holds a land instead.
+
+## The cards: double blocks — 2026-11-09
+
+The combat reference took a single blocker until now; it takes a list,
+with every damage assignment order the attacking player may announce
+(CR 509.2) and every division under it (510.1c-d). The same method for
+the double-block test (`every_double_block_ends_as_the_rules_say`): four
+mutants, four caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| the division | a blocker assigned damage before the one ahead of it has lethal (the reference) | the double-block test, 204 of 587 |
+| the order | one order only (the reference) | the double-block test, 320 of 587 |
+| | the blockers placed in the order declared, not the order chosen (the engine, `ChosenOrder`) | the double-block test, 320 of 587 |
+| a gain on any death | Abattoir Ghoul gains nothing when Creepy Doll's coin destroys a creature it damaged (the reference) | **only** with the Doll beside the Ghoul, 9 of 1,092 |
+
+The last was the reference's own bug, found by the exhaustive sweep
+(every fighter blocked by every two kinds of fighter, about 100,000
+double blocks) before any mutant: the Ghoul's "dies" had been counted only
+for deaths to damage, in the state-based actions. The default run now
+puts the Doll beside the Ghoul so that it is seen without the sweep. The
+sweep also turned up a legendary creature paired with itself, which the
+legend rule leaves alone (CR 704.5j); such pairs are not fought.
+
+## The cards: planeswalkers — 2026-11-09
+
+The reference had read no planeswalker; it reads Garruk Relentless, both
+faces, and Liliana of the Veil (`every_loyalty_ability_does_what_its_text_says`),
+and the Oracle cache now carries a planeswalker's printed loyalty, which
+`card_characteristics` holds the engine's starting loyalty to; and every
+card and every ability that may target a planeswalker is cast beside one
+on each side. Sixteen mutants, sixteen caught, two of them only by a
+check added for them.
+
+| family | mutant | caught by |
+|---|---|---|
+| printed loyalty | Liliana enters with 4 | `card_characteristics` |
+| Garruk Relentless | takes no damage back from the creature | the loyalty test, 11 of 14 |
+| | transforms at one or fewer, not two or fewer | **only** once Garruk is tried at four loyalty, a power-2 creature leaving exactly two |
+| Garruk, the Veil-Cursed | −3 counts every card in the graveyard | the loyalty test |
+| | +1's Wolf has no deathtouch | the loyalty test |
+| | −1 finds any card | the loyalty test |
+| | −1 puts the card onto the battlefield | the loyalty test |
+| Liliana of the Veil | +1: only the active player discards | the loyalty test |
+| | −2 targets only opponents | the loyalty test, its offers |
+| | the pile chosen is ignored, pile A always sacrificed | **only** by one division played with each pile chosen |
+| loyalty abilities | twice in a turn | the loyalty test, 13 of 14 |
+| | one counter short of the cost | the loyalty test, its offers |
+| the reference | no 704.5i: a planeswalker with no loyalty stays | the loyalty test, 12 of 22 |
+| damage | noncombat damage marked on a planeswalker, no loyalty removed | the cast test beside planeswalkers, 165 of 4,608 |
+| targets | "any target" without planeswalkers | the cast test beside planeswalkers, 5 |
+| | "target player or planeswalker" without planeswalkers | the cast test, 155, and Stensia Bloodhall's ability |
+
+The two that first survived each became a check. No creature on the
+board has power 1, so Garruk at his printed three went to one or to none
+and never to exactly two; each ability is now tried at one more than the
+printed loyalty as well. And as a set of endings the piles cannot show
+who chose one: Liliana's controller may make any pile, so every pile is
+reachable whichever the target player picks; one division, the first
+permanent against the rest, is now played with each pile chosen.
+
+## The cards: two attackers — 2026-11-09
+
+The combat reference took one attacker; it takes a list, each with its
+blockers and what it attacks, and deals their damage together
+(`every_two_attackers_fight_together_as_the_rules_say`). Two mutants,
+two caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| watchers | a combat damage watcher must still be on the battlefield once the state-based actions are done (the engine) | the two-attacker test, 8 of 2,056, and the standing fights, 5 of 37,347 |
+| milled cards | a milled card's watcher must still be on the battlefield (the engine as it was: defect 31) | **only** the two-attacker test, 5 of 2,895, once Undead Alchemist joined its default pool |
+
+The reference was wrong twice before the engine was. It counted Rakish
+Heir's "whenever a Vampire you control deals combat damage to a player"
+after the state-based actions had taken a Heir blocked and killed in the
+same step, though the trigger is seen as the damage is dealt (CR 603.2);
+an Aura's draw and a Curse's counters were read the same way and are now
+read with it. And it played the end of combat after an attack had killed
+the defending player, removing Wildblood Pack's bonus from the attackers
+of a game that had already ended (104.2a). Then the sweep found the
+engine's own: defect 31, which the default run reaches only since Undead
+Alchemist and the attacking-creature anthems joined its pool. And reading
+the Aura's draw at damage time turned the Aura fights up a second, defect
+32: Curiosity on Festerhide Boar trampling over Ambush Viper drew nothing,
+the Aura asked for on the battlefield after it had followed the Boar into
+the graveyard. Both had passed every fight before: the reference was
+wrong the same way the engine was.
+
+## The cards: borrowed attackers — 2026-11-09
+
+Every kind of fighter attacks its owner under the other player's control
+(`every_borrowed_fighter_attacks_its_owner`, 802 combats), each
+activated ability, upkeep and end-step permanent, and enter and cast
+watcher is tried as the other player's card, and every card that targets is cast on a board with a creature on each side the other's. Nine mutants, six caught, and the one missed at first was defect 34.
+
+| family | mutant | caught by |
+|---|---|---|
+| control | `last_known_controller` answers a permanent's owner (the engine) | the borrowed test, 70 of 802 |
+| combat damage triggers | the trigger of "whenever this creature deals combat damage to a player" is controlled by its source's owner (the engine) | the borrowed test, 9 of 802, since defect 34's fix; before it, nothing |
+| lifelink | lifelink gains its source's owner life (the engine) | not caught: the fighters' one lifelinker, Markov Patrician, has power 0 |
+| control, activated abilities | `last_known_controller` answers a permanent's owner, each activated ability tried with its source the other player's card (the engine) | `every_readable_activated_ability_does_what_its_text_says`, 54 of 130 abilities |
+| control, upkeep and end step | the step trigger collector reads a permanent's owner as the player whose upkeep or end step it is (the engine) | the turn tests with each permanent the other player's card: 23 of 72 upkeeps, 12 of 40 end steps |
+| control, enter watchers | the creature-entering collector gives the watcher's trigger to its owner (the engine) | the enter-watcher test with the watcher the other player's card, 1 of 12 casts |
+| control, every card | the battlefield of a player read as what they own rather than control (the engine) | `every_readable_card_does_what_its_text_says` on the board with a creature on each side the other player's card, 22 of 5,269 casts, and none on any other board |
+| control, every card | `last_known_controller` answers a permanent's owner (the engine) | not caught by the card sweep: no card cast there reads a target's controller |
+| control, cast watchers | the spell-cast collector gives the watcher's trigger to its owner (the engine) | not caught: the pool's two cast watchers pump themselves (Charmbreaker Devils) or deal damage to any target (Burning Vengeance), whose endings are the same whoever chooses the target; whether "you cast" holds is read apart |
+
+The second was missed because no card read the trigger's controller:
+each hook read its source's controller again as it resolved, so who the
+trigger was given to decided nothing. That is defect 34 (CR 603.3a): a
+Sturmgeist taken in response drew for the player who took it. With the
+engine setting a trigger's controller around its hook and the hooks
+reading it, the mutant shows. The third is a gap in the pool: no
+creature that fights gains life by dealing damage.
+
+## The cards: an ability's source gone in response — 2026-11-09
+
+Each activated ability, but one whose source paid for it by leaving, and
+each loyalty ability, is played again with its source exiled while it
+waits on the stack. Two mutants, both caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| sources gone | Skirsdag Cultist's damage needs the Cultist on the battlefield (the engine) | the activated-ability test, every target of the Cultist's ability, its source exiled in response |
+| sources gone | Garruk Relentless's 0 does nothing once Garruk is gone (the engine) | the loyalty test, 22 of 22 of Garruk's first ability with Garruk exiled in response |
+
+The reference was wrong twice first, and the engine right: it read Tree
+of Redemption's toughness off a Tree no longer there, and it let Olivia
+Voldaren's "for as long as you control" steal outlast Olivia (CR 611.2b).
+It had also chosen the resolution's answers before the source left, so
+that Stitcher's Apprentice sacrificed an Apprentice already gone; and it
+gained Garruk's target's lifelink for damage dealt to a Garruk no longer
+there.
+

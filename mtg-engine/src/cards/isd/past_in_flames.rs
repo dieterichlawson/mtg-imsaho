@@ -36,23 +36,28 @@ impl CardBehavior for PastInFlames {
         // in the turn does not gain it. Past in Flames itself is still on the
         // stack here, and the engine moves it afterwards, so it is not in its
         // own list.
-        let targets: Vec<(ObjectId, ManaCost)> = state.objects_in_zone(Zone::Graveyard, controller).into_iter()
-            .filter(|o| state.is_card(o.id) && o.id != object_id)
-            .filter_map(|o| {
-                state.face_data(o.id, registry).and_then(|d| {
-                    let is_instant_or_sorcery = d.card_types.contains(&CardType::Instant)
-                        || d.card_types.contains(&CardType::Sorcery);
-                    // CR 702.33a: the flashback cost is "equal to its mana
-                    // cost", so a card with no mana cost gains no usable
-                    // flashback — it is skipped, not given a free cost.
-                    if is_instant_or_sorcery {
-                        d.cost.clone().map(|c| (o.id, c))
-                    } else {
-                        None
-                    }
-                })
-            })
-            .collect();
+        //
+        // The list is allocated at its largest and filled in a loop: a
+        // filtered `collect` allocates when it keeps its first card, which
+        // a proof has to take both ways.
+        let graveyard = state.objects_in_zone(Zone::Graveyard, controller);
+        let mut targets: Vec<(ObjectId, ManaCost)> = Vec::with_capacity(graveyard.len());
+        for o in graveyard {
+            if !state.is_card(o.id) || o.id == object_id {
+                continue;
+            }
+            let types = state.face_card_types(o.id, registry);
+            let is_instant_or_sorcery = types.contains(&CardType::Instant)
+                || types.contains(&CardType::Sorcery);
+            // CR 702.33a: the flashback cost is "equal to its mana
+            // cost", so a card with no mana cost gains no usable
+            // flashback — it is skipped, not given a free cost.
+            if is_instant_or_sorcery {
+                if let Some(cost) = state.face_cost(o.id, registry) {
+                    targets.push((o.id, cost.clone()));
+                }
+            }
+        }
 
         let mut count = 0;
         for (target_id, cost) in targets {

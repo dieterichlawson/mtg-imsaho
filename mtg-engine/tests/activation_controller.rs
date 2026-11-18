@@ -83,3 +83,24 @@ fn an_ability_without_x_carries_no_x_onto_the_stack() {
         other => panic!("expected the ability on the stack, got {other:?}"),
     }
 }
+
+/// Tree of Redemption's "exchange your life total with this creature's
+/// toughness" is its activator's life total (CR 602.2a), whoever controls
+/// the Tree as it resolves. Its resolution read the Tree's controller, so
+/// a Tree taken in response exchanged the taker's life.
+#[test]
+fn tree_of_redemption_taken_in_response_exchanges_its_activators_life() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let tree = named_permanent(&mut state, &reg, "Tree of Redemption", P0);
+    state.players[0].life = 7;
+    activate_via_hooks(&mut state, &reg, tree, 0, &[]);
+    // Taken in response.
+    state.change_control(tree, P1);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.players[0].life, 13, "the activator's life became the Tree's toughness");
+    assert_eq!(state.players[1].life, 20, "and the player who took the Tree kept theirs");
+    assert_eq!(state.effective_toughness(tree, &reg), Some(7), "and the Tree's toughness is the activator's life");
+}

@@ -180,10 +180,15 @@ fn apply_destroy_all(
     // Phase 2 — capture the death events, still against that same state, so a
     // creature whose toughness depends on the others (Splinterfright counting
     // creature cards in the graveyard) is remembered as it was.
-    let deaths: Vec<(ObjectId, Option<GameEvent>)> = decisions.iter()
-        .filter(|(_, r)| *r == DestroyResult::Died)
-        .map(|&(id, _)| (id, death_event(state, id, Some(registry))))
-        .collect();
+    //
+    // One entry for each decision, none for a permanent that does not die,
+    // rather than an entry for each death: the deaths' count is the
+    // decisions' answers, and a proof walking a list of that length walks
+    // it for every length to the loop's bound.
+    let mut deaths: Vec<Option<GameEvent>> = Vec::with_capacity(decisions.len());
+    for &(id, result) in decisions {
+        deaths.push(if result == DestroyResult::Died { death_event(state, id, Some(registry)) } else { None });
+    }
 
     // Phase 3 — apply.
     for &(id, result) in decisions {
@@ -191,8 +196,15 @@ fn apply_destroy_all(
             regenerate(state, id);
         }
     }
-    for (id, event) in deaths {
-        if let Some(event) = event {
+    // By index, each event taken out where it lies, not the list walked by
+    // value: a proof walking a list of events by value makes each step an
+    // `Option` of the widest event, field by field.
+    for i in 0..decisions.len() {
+        let (id, result) = decisions[i];
+        if result != DestroyResult::Died {
+            continue;
+        }
+        if let Some(event) = deaths[i].take() {
             state.events.push(event);
             state.creature_died_this_turn = true;
         }
@@ -357,10 +369,20 @@ pub fn regenerate_sba(state: &mut GameState, id: ObjectId) {
     regenerate(state, id);
 }
 
-/// Destroy during SBA processing (public for sba.rs).
+/// Destroy during SBA processing (public for sba.rs), with its death as
+/// the pass captured it: before any creature the pass removes had left
+/// (CR 704.3, 608.2h), not as the board stands once those before it have.
 /// Skips the indestructible check since SBAs snapshot that separately.
-pub fn destroy_sba(state: &mut GameState, id: ObjectId, registry: &CardRegistry) {
-    destroy(state, id, Some(registry));
+pub fn destroy_sba(state: &mut GameState, id: ObjectId, death: Option<GameEvent>, registry: &CardRegistry) {
+    if !on_battlefield(state, id) {
+        return;
+    }
+    if let Some(event) = death {
+        state.events.push(event);
+        state.creature_died_this_turn = true;
+    }
+    // move_object handles the death/graveyard log message.
+    state.move_object(id, Zone::Graveyard, registry);
 }
 
 /// Remove a creature from the current combat (if any).

@@ -43,22 +43,32 @@ impl CardBehavior for BackFromTheBrink {
         // surface could tell apart, an `--check-invariants` abort on any
         // non-singleton deck, and a random seat that weighted this ability N
         // times over everything else (issue #631).
-        let mut seen = std::collections::HashSet::new();
-        let creatures: Vec<_> = state.objects_in_zone(Zone::Graveyard, controller)
-            .into_iter()
-            .filter(|o| {
-                // "exile a creature **card**" — CR 109.1: a token in a graveyard
-                // is not a card, and is only there until the next SBA check.
-                //
-                // `&&` binds tighter than `||`, so the second half of this used
-                // to read `... || face_data says Creature` with no `is_card`
-                // guard at all — saying the opposite of the comment above it.
-                // It was also redundant: `is_creature` already consults the
-                // active face's card types.
-                state.is_card(o.id) && state.is_creature(o.id, registry)
-            })
-            .filter(|o| seen.insert(o.name.clone()))
-            .collect();
+        //
+        // The names seen are a list, not a `HashSet`: a graveyard is a few
+        // dozen cards at most, and a hash set's keys are random, which a
+        // proof of this card has to take as any keys at all.
+        //
+        // In the graveyard's order, by a loop rather than filters collected
+        // (Bitterheart Witch's search says why), each list starting empty: a
+        // list allocated at the graveyard's length is one of a size a proof
+        // leaves open.
+        let mut seen: Vec<&str> = Vec::new();
+        let mut creatures: Vec<&crate::state::GameObject> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
+            // "exile a creature **card**" — CR 109.1: a token in a graveyard
+            // is not a card, and is only there until the next SBA check.
+            //
+            // `&&` binds tighter than `||`, so the second half of this used
+            // to read `... || face_data says Creature` with no `is_card`
+            // guard at all — saying the opposite of the comment above it.
+            // It was also redundant: `is_creature` already consults the
+            // active face's card types.
+            if !(state.is_card(o.id) && state.is_creature(o.id, registry)) || seen.contains(&o.name.as_str()) {
+                continue;
+            }
+            seen.push(&o.name);
+            creatures.push(o);
+        }
 
         creatures.into_iter().map(|creature| {
             // Look up the creature's mana cost from the registry. X is 0 in a
@@ -66,8 +76,8 @@ impl CardBehavior for BackFromTheBrink {
             // announcement (CR 107.3e) — without this the engine saw {X} in
             // the ability's cost and put the player through the X-funding
             // prompt, letting them dump mana into a value that can only be 0.
-            let mana_cost = state.face_data(creature.id, registry)
-                .and_then(|d| d.cost.clone())
+            let mana_cost = state.face_cost(creature.id, registry)
+                .cloned()
                 .unwrap_or_else(ManaCost::free)
                 .without_x();
 

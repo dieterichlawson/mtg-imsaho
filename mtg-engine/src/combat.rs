@@ -114,63 +114,69 @@ pub fn declare_blockers_with_registry(
     // that are actually attacking may be blocked (CR 509.1a). In a two-player
     // game the defender is the non-active player.
     let defender = state.opponent(state.active_player);
-    let mut valid: Vec<(ObjectId, ObjectId)> = Vec::new();
-    for &(blocker, attacker) in assignments {
-        // The same pair submitted twice is one block, not two (seen from a
-        // pasted line of repeated pairs — issue #50).
-        if valid.contains(&(blocker, attacker)) {
-            continue;
-        }
-        // CR 509.1b: a creature can block only one attacker. No card in this
-        // set lifts that (there is no "can block an additional creature"
-        // effect in the engine), so a blocker already spoken for refuses any
-        // further assignment — without this, one blocker blocked two
-        // attackers and dealt its full power to each (issue #62).
-        if let Some(&(_, first)) = valid.iter().find(|&&(b, _)| b == blocker) {
-            state.log(crate::state::LogLevel::Info, format!(
-                "ignored illegal block: {} is already blocking {} and can block \
-                 only one attacker (CR 509.1b)",
-                state.obj_name(blocker), state.obj_name(first)));
-            continue;
-        }
-        let is_attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker));
+
+    // Which pairs stand is proved in `mtg_kernel::blocks::judge_blocks`:
+    // what it accepts is a legal declaration (CR 509.1a-b), and a legal
+    // submission is accepted whole. Here the board is read into its terms,
+    // each distinct blocker and attacker numbered in order of first mention.
+    let mut blockers: Vec<ObjectId> = Vec::new();
+    let mut attackers: Vec<ObjectId> = Vec::new();
+    let index = |list: &mut Vec<ObjectId>, id: ObjectId| -> usize {
+        list.iter().position(|&x| x == id).unwrap_or_else(|| { list.push(id); list.len() - 1 })
+    };
+    let pairs: Vec<(usize, usize)> = assignments.iter()
+        .map(|&(b, a)| (index(&mut blockers, b), index(&mut attackers, a)))
+        .collect();
+    let legal: Vec<Vec<bool>> = blockers.iter().map(|&blocker| {
         let defenders_creature = state.get_object(blocker).is_some_and(|o| o.controller == defender);
-        if is_attacking && defenders_creature && can_block_attacker(state, blocker, attacker, registry) {
-            valid.push((blocker, attacker));
-        } else {
-            // A submitted pair the rules refuse (CR 509.1) is dropped — but
-            // never silently: a block that vanishes without a trace cost
-            // real games before the log said anything (issue #40). The
-            // prompt's `legal_blocks` is the up-front source of truth; this
-            // line is the audit trail for anything that slips past it.
-            state.log(crate::state::LogLevel::Info, format!(
+        attackers.iter().map(|&attacker| {
+            let is_attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker));
+            is_attacking && defenders_creature && can_block_attacker(state, blocker, attacker, registry)
+        }).collect()
+    }).collect();
+    let minimum: Vec<u32> = attackers.iter().map(|&a| minimum_blockers(state, a, registry)).collect();
+    let verdicts = mtg_kernel::blocks::judge_blocks(&pairs, &legal, &minimum);
+
+    // Every pair the rules refuse is dropped — but never silently: a block
+    // that vanishes without a trace cost real games before the log said
+    // anything (issues #40, #72). The prompt's `legal_blocks` and
+    // `min_blockers` are the up-front source of truth; these lines are the
+    // audit trail for anything that slips past them.
+    use mtg_kernel::blocks::Verdict;
+    let mut valid: Vec<(ObjectId, ObjectId)> = Vec::new();
+    for (k, &(blocker, attacker)) in assignments.iter().enumerate() {
+        match verdicts[k] {
+            Verdict::Accepted => valid.push((blocker, attacker)),
+            // The same pair submitted twice is one block, not two (seen
+            // from a pasted line of repeated pairs — issue #50).
+            Verdict::Duplicate => {}
+            // CR 509.1b: a creature can block only one attacker. No card in
+            // this set lifts that, so a blocker already spoken for refuses
+            // any further assignment — without this, one blocker blocked two
+            // attackers and dealt its full power to each (issue #62).
+            Verdict::BlockerTaken => {
+                let first = assignments[..k].iter().zip(&verdicts)
+                    .find(|(&(b, _), v)| b == blocker && !matches!(v, Verdict::Illegal | Verdict::BlockerTaken))
+                    .map_or(attacker, |(&(_, a), _)| a);
+                state.log(crate::state::LogLevel::Info, format!(
+                    "ignored illegal block: {} is already blocking {} and can block \
+                     only one attacker (CR 509.1b)",
+                    state.obj_name(blocker), state.obj_name(first)));
+            }
+            Verdict::Illegal => state.log(crate::state::LogLevel::Info, format!(
                 "ignored illegal block: {} can't block {}",
-                state.obj_name(blocker), state.obj_name(attacker)));
+                state.obj_name(blocker), state.obj_name(attacker))),
+            Verdict::UnderMinimum => {
+                let a = pairs[k].1;
+                let blocked = pairs.iter().zip(&verdicts)
+                    .filter(|(p, v)| p.1 == a && matches!(v, Verdict::Accepted | Verdict::UnderMinimum))
+                    .count();
+                state.log(crate::state::LogLevel::Info, format!(
+                    "ignored illegal block: {} blocking {} — it can't be blocked by \
+                     fewer than {} creatures (CR 509.1b), and only {} blocked it",
+                    state.obj_name(blocker), state.obj_name(attacker), minimum[a], blocked));
+            }
         }
-    }
-
-    // Minimum blocker enforcement: for attackers with menace or MinimumBlockers
-    // effects, verify they have enough blockers. If not, remove the block
-    // assignments for that attacker (can't be blocked by fewer than N creatures).
-    let mut blocker_counts: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
-    for &(_, attacker) in &valid {
-        *blocker_counts.entry(attacker).or_insert(0) += 1;
-    }
-
-    // The same never-silently rule as the per-pairing filter above: a
-    // dropped under-minimum block turned "Bears blocks Terror" into
-    // "declared no blockers" with no trace, and the defender ate 10 damage
-    // without ever learning why (issue #72). The prompt's `min_blockers`
-    // is the up-front source of truth; this line is the audit trail.
-    let (valid, dropped) = partition_under_minimum_blocks(
-        &valid, |attacker| minimum_blockers(state, attacker, registry));
-    for (blocker, attacker) in dropped {
-        let min = minimum_blockers(state, attacker, registry);
-        state.log(crate::state::LogLevel::Info, format!(
-            "ignored illegal block: {} blocking {} — it can't be blocked by \
-             fewer than {} creatures (CR 509.1b), and only {} blocked it",
-            state.obj_name(blocker), state.obj_name(attacker), min,
-            blocker_counts.get(&attacker).copied().unwrap_or(0)));
     }
 
     declare_blockers(state, &valid);
@@ -370,10 +376,9 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
     };
 
     // Check if any creature has first/double strike to determine damage steps.
-    let any_first_strike = combat.attackers.keys().copied().chain(combat.blocking()).any(|id| {
-        state.has_keyword(id, Keyword::FirstStrike, registry)
-            || state.has_keyword(id, Keyword::DoubleStrike, registry)
-    });
+    let strikes_first = |id: ObjectId| state.has_keyword(id, Keyword::FirstStrike, registry)
+        || state.has_keyword(id, Keyword::DoubleStrike, registry);
+    let any_first_strike = combat.attackers.keys().any(|&id| strikes_first(id)) || combat.any_blocking(strikes_first);
 
     if any_first_strike {
         // First strike damage step: only first/double strikers deal damage.
@@ -408,12 +413,9 @@ pub fn any_first_strike_in_combat(state: &GameState, registry: &CardRegistry) ->
     let Some(combat) = &state.combat else { return false };
     // CR 510.4 asks about every attacking or blocking creature, and a
     // blocker whose attacker left combat is still one (CR 510.1d, #983).
-    combat.attackers.keys().copied()
-        .chain(combat.blocking())
-        .any(|id| {
-            state.has_keyword(id, Keyword::FirstStrike, registry)
-                || state.has_keyword(id, Keyword::DoubleStrike, registry)
-        })
+    let strikes_first = |id: ObjectId| state.has_keyword(id, Keyword::FirstStrike, registry)
+        || state.has_keyword(id, Keyword::DoubleStrike, registry);
+    combat.attackers.keys().any(|&id| strikes_first(id)) || combat.any_blocking(strikes_first)
 }
 
 /// Run one combat damage step for the turn machinery (CR 510.1-510.2,
@@ -489,7 +491,7 @@ fn deal_damage_step(
 }
 
 /// Queue every event of one combat damage step, in attacker order.
-fn queue_damage_step(
+pub(crate) fn queue_damage_step(
     state: &mut GameState,
     combat: &CombatState,
     registry: &CardRegistry,
@@ -510,9 +512,7 @@ fn queue_damage_step(
         if attacker_deals && first_strike_only {
             // CR 510.5: record membership so the regular step knows this
             // creature already dealt its damage (unless double strike).
-            if let Some(c) = state.combat.as_mut() {
-                c.dealt_first_strike.insert(attacker_id);
-            }
+            mark_dealt_first_strike(state, attacker_id);
         }
 
         let attacker_power = if attacker_deals {
@@ -563,21 +563,24 @@ fn queue_damage_step(
             // Blocked: the blockers deal their damage to the attacker, and
             // the attacker's is divided among them as the attacking player
             // chose (CR 510.1c-d), with any trample overflow beyond them.
-            let live = live_blockers(state, attacker_id, &blockers);
+            let live: Vec<bool> = blockers.iter().map(|&b| still_blocking(state, attacker_id, b)).collect();
             let division = divide_combat_damage(
                 attacker_power,
-                &with_lethal(state, attacker_id, &live, registry),
+                &live_with_lethal(state, attacker_id, &blockers, &live, registry),
                 has_trample,
                 combat.chosen_damage.get(&attacker_id).map_or(&[], Vec::as_slice),
             );
 
-            for (&blocker_id, &(_, assigned)) in live.iter().zip(&division.to_blockers) {
+            // Each live blocker in order, with what the division assigns
+            // it, the `k`th live one the `k`th assigned.
+            let mut k = 0;
+            for (&blocker_id, _) in blockers.iter().zip(&live).filter(|&(_, &l)| l) {
+                let Some(&(_, assigned)) = division.to_blockers.get(k) else { break };
+                k += 1;
                 // Blocker deals damage to attacker.
                 let blocker_deals = deals_in_step(state, blocker_id, first_strike_only, registry);
                 if blocker_deals && first_strike_only {
-                    if let Some(c) = state.combat.as_mut() {
-                        c.dealt_first_strike.insert(blocker_id);
-                    }
+                    mark_dealt_first_strike(state, blocker_id);
                 }
                 if blocker_deals {
                     let blocker_power = u32::try_from(state.effective_power(blocker_id, registry).unwrap_or(0).max(0)).unwrap_or(0);
@@ -620,13 +623,25 @@ fn queue_damage_step(
 /// first-strike step, creatures with first or double strike; in the
 /// regular step, double strikers and every creature that dealt none in the
 /// first-strike step.
-fn deals_in_step(state: &GameState, id: ObjectId, first_strike_only: bool, registry: &CardRegistry) -> bool {
+///
+/// Its own function, as is [`mark_dealt_first_strike`], so that each is
+/// proved apart from the step (`proofs::actions::combat_damage`).
+pub(crate) fn deals_in_step(state: &GameState, id: ObjectId, first_strike_only: bool, registry: &CardRegistry) -> bool {
     let double_strike = state.has_keyword(id, Keyword::DoubleStrike, registry);
     if first_strike_only {
         double_strike || state.has_keyword(id, Keyword::FirstStrike, registry)
     } else {
         double_strike
             || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&id))
+    }
+}
+
+/// Record that `id` dealt combat damage in the first-strike step (CR
+/// 510.4), so that the regular step knows it has dealt its damage unless
+/// it has double strike.
+pub(crate) fn mark_dealt_first_strike(state: &mut GameState, id: ObjectId) {
+    if let Some(c) = state.combat.as_mut() {
+        c.dealt_first_strike.insert(id);
     }
 }
 
@@ -651,25 +666,33 @@ fn assignment_order(combat: &CombatState, attacker: ObjectId) -> Vec<ObjectId> {
     blockers
 }
 
-/// The blockers that are still in this combat: on the battlefield and
-/// still blocking `attacker`. One removed since blockers were declared
-/// (it regenerated between damage steps, or left the battlefield) neither
-/// deals nor is assigned combat damage (CR 506.4c); the attacker remains
-/// blocked (CR 510.1c), and its damage is divided among the rest.
-fn live_blockers(state: &GameState, attacker: ObjectId, blockers: &[ObjectId]) -> Vec<ObjectId> {
-    blockers.iter().copied()
-        .filter(|&b| state.get_object(b).is_some_and(|o| o.zone == Zone::Battlefield))
-        .filter(|&b| state.combat.as_ref().is_some_and(|c|
-            c.blocker_assignments.get(&attacker).is_some_and(|v| v.contains(&b))))
-        .collect()
+/// Whether `blocker` is still in this combat: on the battlefield and still
+/// blocking `attacker`. One removed since blockers were declared (it
+/// regenerated between damage steps, or left the battlefield) neither deals
+/// nor is assigned combat damage (CR 506.4c); the attacker remains blocked
+/// (CR 510.1c), and its damage is divided among the rest.
+fn still_blocking(state: &GameState, attacker: ObjectId, blocker: ObjectId) -> bool {
+    state.get_object(blocker).is_some_and(|o| o.zone == Zone::Battlefield)
+        && state.combat.as_ref().is_some_and(|c|
+            c.blocker_assignments.get(&attacker).is_some_and(|v| v.contains(&blocker)))
 }
 
-/// Each blocker with the lethal damage it must be assigned (CR 510.1c):
-/// its toughness less the damage already marked on it, or 1 from a source
-/// with deathtouch (CR 702.2c).
-fn with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], registry: &CardRegistry) -> Vec<(ObjectId, u32)> {
+/// Each of `blockers` still in combat (`live`, beside it), in order, with
+/// the lethal damage it must be assigned (CR 510.1c): its toughness less
+/// the damage already marked on it, or 1 from a source with deathtouch
+/// (CR 702.2c).
+///
+/// Each blocker is read where it lies in `blockers`, its answer beside
+/// it, and not from a list of the live ones: a proof reads a filtered
+/// list at positions the board decides, so every blocker looked up from
+/// one was any of them (`proofs::actions::combat_damage`).
+fn live_with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], live: &[bool], registry: &CardRegistry) -> Vec<(ObjectId, u32)> {
     let deathtouch = state.has_keyword(attacker, Keyword::Deathtouch, registry);
-    blockers.iter().map(|&b| {
+    let mut out = Vec::with_capacity(blockers.len());
+    for (&b, &l) in blockers.iter().zip(live) {
+        if !l {
+            continue;
+        }
         let lethal = if deathtouch {
             1
         } else {
@@ -677,8 +700,9 @@ fn with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], reg
             let marked = state.get_object(b).map_or(0, |o| o.damage_marked);
             u32::try_from((toughness - i32::try_from(marked).unwrap_or(i32::MAX)).max(0)).unwrap_or(0)
         };
-        (b, lethal)
-    }).collect()
+        out.push((b, lethal));
+    }
+    out
 }
 
 /// One attacker's combat damage divided among its blockers.
@@ -738,29 +762,41 @@ pub fn divide_combat_damage(
 
 /// Ask the attacking player the next open division of this step's combat
 /// damage, if there is one (CR 510.1c-d). True when a prompt was raised.
-fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) -> bool {
-    let Some(combat) = state.combat.clone() else { return false };
+pub(crate) fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) -> bool {
+    let Some(prompt) = next_damage_division(state, registry, first_strike_only) else { return false };
+    state.awaiting_action = Some(prompt);
+    true
+}
+
+/// The question [`ask_next_damage_division`] raises, if there is one, read
+/// off the combat where it lies: nothing here changes the game, so the
+/// combat needs no copy (a copy of its maps was most of what a proof of
+/// the question followed).
+fn next_damage_division(state: &GameState, registry: &CardRegistry, first_strike_only: bool) -> Option<crate::state::AwaitingAction> {
+    let combat = state.combat.as_ref()?;
     for (&attacker, &defending_player) in &combat.attackers {
         if state.get_object(attacker).is_none_or(|o| o.zone != Zone::Battlefield)
             || !deals_in_step(state, attacker, first_strike_only, registry)
         {
             continue;
         }
-        let live = live_blockers(state, attacker, &assignment_order(&combat, attacker));
-        if live.is_empty() {
+        let blockers = assignment_order(combat, attacker);
+        let still: Vec<bool> = blockers.iter().map(|&b| still_blocking(state, attacker, b)).collect();
+        if !still.iter().any(|&l| l) {
             continue;
         }
         let power = u32::try_from(state.effective_power(attacker, registry).unwrap_or(0).max(0)).unwrap_or(0);
         let trample = state.has_keyword(attacker, Keyword::Trample, registry);
         let chosen = combat.chosen_damage.get(&attacker).map_or(&[][..], Vec::as_slice);
-        let division = divide_combat_damage(power, &with_lethal(state, attacker, &live, registry), trample, chosen);
+        let live = live_with_lethal(state, attacker, &blockers, &still, registry);
+        let division = divide_combat_damage(power, &live, trample, chosen);
         let Some((blocker, min, max)) = division.open else { continue };
 
         // What a surplus left here goes on to: the next blocker, or what
         // the trampler is attacking.
-        let position = live.iter().position(|&b| b == blocker).unwrap_or(0);
+        let position = live.iter().position(|&(b, _)| b == blocker).unwrap_or(0);
         let onward = match live.get(position + 1) {
-            Some(&next) => state.obj_name(next),
+            Some(&(next, _)) => state.obj_name(next),
             None => match combat.planeswalker_defenders.get(&attacker) {
                 Some(&walker) => state.obj_name(walker),
                 None => format!("p{}", defending_player.0),
@@ -775,16 +811,15 @@ fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, firs
             "Combat damage from {} ({power} power, CR 510.1c): how much of the {max} left goes to {blocker_name}? At least {min} (lethal), at most {max}; the rest goes on to {onward}",
             state.obj_name(attacker),
         );
-        state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+        return Some(crate::state::AwaitingAction::ResolutionChoice {
             player: state.active_player,
             source: attacker,
             choice: crate::state::ResolutionChoiceKind::AssignCombatDamage {
                 description, attacker, blocker, min, max, options, first_strike_only,
             },
         });
-        return true;
     }
-    false
+    None
 }
 
 /// Record the attacking player's answer at an `AssignCombatDamage` prompt.
@@ -932,16 +967,19 @@ pub fn legal_blocks(
     }).collect()
 }
 
-/// What an attacker's evasion asks of any blocker.
-struct AttackerEvasion {
+/// What an attacker's evasion asks of any blocker. Its block restrictions
+/// are the filters where they are printed, not clones of them: a filter
+/// cloned off the heap is one a proof cannot tell from any other, and
+/// matching a blocker against it was every filter there is.
+struct AttackerEvasion<'a> {
     id: ObjectId,
     flying: bool,
     intimidate: bool,
     palette: Vec<crate::types::Color>,
     unblockable: bool,
     /// `CanOnlyBeBlockedBy` filters, with the source each is read against.
-    only_by: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
-    protections: crate::state::Protections,
+    only_by: Vec<(&'a crate::types::CreatureFilter, ObjectId, PlayerId)>,
+    protections: crate::state::Protections<'a>,
 }
 
 /// What a blocker brings to any attacker.
@@ -967,8 +1005,8 @@ impl BlockerReach {
     }
 }
 
-impl AttackerEvasion {
-    fn of(state: &GameState, id: ObjectId, registry: &CardRegistry) -> Self {
+impl<'a> AttackerEvasion<'a> {
+    fn of(state: &'a GameState, id: ObjectId, registry: &'a CardRegistry) -> Self {
         let intimidate = state.has_keyword(id, Keyword::Intimidate, registry);
         let mut only_by = Vec::new();
         // Block restriction (e.g., Orchard Spirit: only flying/reach can
@@ -980,7 +1018,7 @@ impl AttackerEvasion {
             registry,
             &mut |e, source| {
                 if let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = e {
-                    only_by.push((allowed_blockers.clone(), source.id, source.controller));
+                    only_by.push((allowed_blockers, source.id, source.controller));
                 }
                 true
             },

@@ -745,14 +745,18 @@ fn ludevics_abomination_offers_no_activated_ability() {
 /// Once the ability is on the stack it is its own object and resolves on its
 /// own terms (CR 113.7a); transforming is not a zone change, so the permanent
 /// underneath it is the same object throughout (CR 400.7, CR 712.8). Nothing
-/// in "put a hatchling counter on this creature ... remove all of them and
-/// transform it" asks which face is up, so activations held back after the
-/// flip land their counters on Ludevic's Abomination and, at five, flip it
-/// back.
+/// in "put a hatchling counter on this creature ... remove all of them" asks
+/// which face is up, so activations held on the stack from before the flip
+/// land their counters on Ludevic's Abomination, and at five remove them. Their
+/// "transform it" does nothing: the permanent has transformed since they went
+/// on the stack (CR 701.28f).
 ///
 /// The card used to open its resolution with `if is_transformed { return }`,
 /// reasoning that the back face has no activated abilities — which is true and
-/// beside the point, since the ability is no longer on the permanent.
+/// beside the point, since the ability is no longer on the permanent. This test
+/// then said the fifth surplus activation flips it back, and simulated "held"
+/// activations by activating them after the flip, where 701.28f has nothing to
+/// say; all six are on the stack at once here.
 #[test]
 fn surplus_activations_keep_working_after_the_flip() {
     let reg = registry();
@@ -760,17 +764,18 @@ fn surplus_activations_keep_working_after_the_flip() {
 
     let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
 
-    // Five activations reach the flip.
+    // Six activations on the stack at once, four counters on it already.
     state.add_counters(subject, CounterType::Hatchling, 4);
-    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    for _ in 0..6 {
+        activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    }
+
+    // The first to resolve reaches five and flips it.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert!(state.get_object(subject).unwrap().is_transformed,
         "precondition: it is Ludevic's Abomination now");
 
-    // Four more copies of the ability, held on the stack from before the flip,
-    // resolve one at a time.
     for expected in 1..=4 {
-        activate_via_hooks(&mut state, &reg, subject, 0, &[]);
         mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
         assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), expected,
             "the counter goes on the permanent whichever face is up");
@@ -778,13 +783,14 @@ fn surplus_activations_keep_working_after_the_flip() {
             "four counters is not five");
     }
 
-    // The fifth removes them all and transforms it — back to the front face.
-    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    // The last removes them all, and does not transform it: it has transformed
+    // since this activation went on the stack.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.stack.is_empty());
     let obj = state.get_object(subject).unwrap();
-    assert!(!obj.is_transformed, "\"transform it\" flips whichever face is up");
-    assert_eq!(obj.name, "Ludevic's Test Subject");
-    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0);
+    assert!(obj.is_transformed, "\"transform it\" is ignored after a transform since it was activated (CR 701.28f)");
+    assert_eq!(state.name_of(subject, &reg), "Ludevic's Abomination");
+    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0, "\"remove all of them\" still happens");
 }
 
 // -------------------------------------------------------------------------
@@ -891,6 +897,38 @@ fn two_simultaneous_deaths_trigger_twice_and_transform_once() {
     assert_eq!(state.stack.len(), 0);
 }
 
+/// A watcher that dies in the same event as the creature it sees die
+/// triggers from the face it had (CR 603.10a, 712.8): leaving the
+/// battlefield turns a double-faced card face up (712.8a), and the face
+/// was read off the card after its move, so a Thraben Militia, which has
+/// no death trigger, dying beside another creature raised Thraben Sentry's,
+/// which then sat on the stack doing nothing. A Sentry dying so still
+/// triggers.
+#[test]
+fn a_watcher_dying_with_the_creature_triggers_from_the_face_it_had() {
+    let reg = registry();
+    for transformed in [true, false] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let sentry = named_permanent(&mut state, &reg, "Thraben Sentry", P0);
+        if transformed {
+            mtg_engine::cards::helpers::apply_transform(&mut state, sentry, &reg);
+            assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");
+        }
+        let other = ready_creature(&mut state, P0, 1, 1);
+
+        mtg_engine::destruction::try_destroy_all(&mut state, &[sentry, other], &reg);
+        mtg_engine::sba::check_state_based_actions(&mut state, &reg);
+        mtg_engine::triggers::collect_triggers(&mut state, &reg);
+
+        let face = if transformed { "Thraben Militia" } else { "Thraben Sentry" };
+        assert_eq!(state.get_object(sentry).unwrap().zone, Zone::Graveyard, "{face} died");
+        let triggers = state.stack.len() + state.pending_trigger_pushes_ap.len() + state.pending_trigger_pushes_nap.len();
+        assert_eq!(triggers, usize::from(!transformed),
+            "{face}, dying beside another creature, triggers {} (stack {:?})",
+            if transformed { "nothing: Militia has no death trigger" } else { "once" }, state.stack);
+    }
+}
+
 // -------------------------------------------------------------------------
 // Bloodline Keeper
 // -------------------------------------------------------------------------
@@ -906,8 +944,8 @@ fn bloodline_keeper_creates_vampire_token() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Should have a Vampire token.
-    assert_eq!(count_tokens_named(&state, "Vampire"), 1);
-    let token = find_token_named(&state, "Vampire").unwrap();
+    assert_eq!(count_tokens_named(&state, "Vampire Token"), 1);
+    let token = find_token_named(&state, "Vampire Token").unwrap();
     let obj = state.get_object(token).unwrap();
     assert_eq!(obj.power, Some(2));
     assert_eq!(obj.toughness, Some(2));
@@ -937,8 +975,14 @@ fn two_bloodline_keeper_transforms_on_the_stack_transform_it_once() {
     assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage", "the first one transforms it");
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.stack.is_empty());
     assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage",
         "the second does nothing: it has transformed since that ability went on the stack");
+
+    // And Lord of Lineage has no transform ability of its own to activate.
+    let card_id = state.get_object(keeper).unwrap().card_id;
+    let abilities = reg.get(card_id).unwrap().activated_abilities(&state, keeper, &reg);
+    assert!(abilities.iter().all(|a| a.ability_index != 1), "Lord of Lineage has no transform ability");
 }
 
 // -------------------------------------------------------------------------
@@ -1078,8 +1122,8 @@ fn garruk_creates_wolf_token() {
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1);
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1);
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
 }
 
@@ -1118,8 +1162,8 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
     behavior.on_loyalty_ability(&mut state, garruk, 10, &[], &reg);
 
-    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Should create a Wolf token");
-    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(count_tokens_named(&state, "Wolf Token"), 1, "Should create a Wolf token");
+    let wolf = find_token_named(&state, "Wolf Token").unwrap();
     let obj = state.get_object(wolf).unwrap();
     assert_eq!(obj.power, Some(1), "Wolf should be 1/1");
     assert_eq!(obj.toughness, Some(1), "Wolf should be 1/1");
@@ -1202,6 +1246,48 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
     // creature2 should still be on the battlefield.
     assert_eq!(new_state.get_object(creature2).unwrap().zone, Zone::Battlefield,
         "Non-chosen creature should remain on battlefield");
+}
+
+/// Garruk, the Veil-Cursed's -1 searches the library of the player who
+/// activated it (CR 602.2a: "you" is the ability's controller), not of
+/// whoever controls Garruk by the time it resolves. It sacrificed the
+/// activator's creature and then searched the new controller's library.
+#[test]
+fn garruk_back_face_tutor_searches_the_activators_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 3);
+    helpers::apply_transform(&mut state, garruk, &reg);
+    let sac_target = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
+    let mut in_library = |player| {
+        let card = spell_in_hand(&mut state, &reg, "Grizzly Bears", player);
+        state.move_object(card, Zone::Library, &reg);
+        state.get_player_mut(player).library_order.push(card);
+        card
+    };
+    let ours = in_library(P0);
+    let theirs = in_library(P1);
+
+    // P0 activated the -1; P1 took Garruk before it resolved.
+    state.get_object_mut(garruk).unwrap().controller = P1;
+    state.resolving_ability_activator = Some(P0);
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
+
+    assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
+        "the activator's creature is sacrificed");
+    match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player, choice: mtg_engine::state::ResolutionChoiceKind::ChooseFromLibrary { options, searcher, .. }, ..
+        }) => {
+            assert_eq!((*player, *searcher), (P0, P0), "the activator searches");
+            assert_eq!(options, &vec![ours], "in their own library; {theirs:?} is in the other player's");
+        }
+        other => panic!("expected a library search, got {other:?}"),
+    }
 }
 
 /// Garruk, the Veil-Cursed's -1: "Search your library for a creature card, reveal
@@ -1553,6 +1639,31 @@ fn back_face_homicidal_brute_has_end_step_trigger() {
     )).count();
     assert_eq!(end_step_triggers, 1,
         "Back-face Homicidal Brute should fire its end-step transform-back trigger");
+}
+
+/// CR 113.7a, 701.28f: Homicidal Brute's end-step ability, answered by
+/// Moonmist turning the Brute (a Human) back into Civilized Scholar, is still
+/// the Brute's: it taps the Scholar, and its "then transform it" is ignored,
+/// the permanent having transformed since the ability went on the stack. The
+/// card used to check the face up at resolution and do nothing at all.
+#[test]
+fn homicidal_brutes_end_step_ability_taps_it_after_a_transform_in_response() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::EndStep, P0);
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, scholar, &registry);
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    assert_eq!(state.stack.len(), 1, "the Brute's end-step trigger is on the stack");
+
+    // Moonmist, in response.
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.name_of(scholar, &registry), "Civilized Scholar");
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
+
+    let obj = state.get_object(scholar).unwrap();
+    assert!(obj.tapped, "the Brute's ability taps it, whichever face is up");
+    assert!(!obj.is_transformed, "and does not transform it back (CR 701.28f)");
 }
 
 // -------------------------------------------------------------------------

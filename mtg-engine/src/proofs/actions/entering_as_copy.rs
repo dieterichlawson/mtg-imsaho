@@ -1,0 +1,182 @@
+//! A permanent that may enter as a copy of a creature (Evil Twin, CR
+//! 614.12b, 707.9): its entry waits on the choice, which is asked before
+//! anything else looks at the board (`replacement::
+//! process_pending_entry_choices`) and, answered, finishes the entry
+//! (`record_entry_choice`). What the permanent is once it has entered as
+//! a copy is Evil Twin's own proof; the answer itself is `answering`'s.
+//!
+//! Not proved here: an entry that is one of several put onto the
+//! battlefield in one event (`GameState::put_onto_battlefield_together`,
+//! #1064, #1065), which waits for every answer of its event and then
+//! enters with the rest. `tests/enters_as_copy.rs` and
+//! `tests/cards_complex_creatures.rs` play those.
+
+use crate::proofs::held::Held;
+use crate::actions::Target;
+use crate::cards::CardRegistry;
+use crate::ids::{ObjectId, PlayerId};
+use crate::proofs::cards::{asked_for, card_proof, Act, Blank};
+use crate::state::{AwaitingAction, EnterAsCopyChoice, GameState, PendingEffect};
+use crate::types::Zone;
+
+/// The answer recorded and the entry finished (`record_entry_choice`, CR
+/// 614.12b, 110.2): the permanent holds the answer (a copy of the creature
+/// chosen, or declined), is no longer waiting on a choice (every other
+/// permanent waiting still is), and is put onto the battlefield, under
+/// the player its entry was to give it to if `held` names one, and
+/// otherwise as it enters by default (its owner's control). For an entry
+/// that is no part of a held event of several, either answer,
+/// another permanent waiting or none, and `held` a constant of each
+/// harness: left to the solver, the map it is held in was taken apart
+/// every way a map of it might be.
+fn recording(held: Option<PlayerId>) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let entering = state.create_object(blank, PlayerId(0), Zone::Stack, Some(0), Some(0));
+    let copied = state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    let waiting = state.create_object(blank, PlayerId(1), Zone::Stack, Some(0), Some(0));
+    let other_waits: bool = kani::any();
+    state.pending_entry_choices.reserve(2);
+    state.pending_entry_choices.push(entering);
+    if other_waits {
+        state.pending_entry_choices.push(waiting);
+    }
+    if let Some(p) = held {
+        state.pending_entry_controllers.insert(entering, p);
+    }
+    let choice = if kani::any() { EnterAsCopyChoice::Copy(copied) } else { EnterAsCopyChoice::Declined };
+
+    crate::replacement::record_entry_choice(&mut state, entering, choice, &registry);
+
+    assert!(state.get_object(entering).expect("on the board").entering_copy_choice == choice);
+    let one = [waiting];
+    let still: &[ObjectId] = if other_waits { &one } else { &[] };
+    assert!(state.pending_entry_choices.as_slice() == still);
+    assert!(state.pending_entry_controllers.is_empty() && state.pending_entry_batches.is_empty());
+    assert!(match held {
+        Some(p) => asked_for(&[Act::MoveUnder(entering, Zone::Battlefield, p)]),
+        None => asked_for(&[Act::Move(entering, Zone::Battlefield)]),
+    });
+    std::mem::forget((registry, state, choice));
+}
+
+card_proof! {
+    /// [`recording`] of an entry with no controller held for it.
+    fn an_entry_choice_recorded_finishes_the_entry_under_its_owner() {
+        recording(None);
+    }
+}
+
+card_proof! {
+    /// [`recording`] of an entry held for the other player's control.
+    fn an_entry_choice_recorded_finishes_the_entry_under_the_controller_held() {
+        recording(Some(PlayerId(1)));
+    }
+}
+
+/// Whether each of the board's objects 2 and 3 is a creature: any answer.
+static mut CREATURE: Held<[Option<bool>; 2]> = Held::new([None; 2], (&raw const CREATURE).cast());
+
+/// Stands in for `GameState::is_creature` (`predicates`): any answer for
+/// objects 2 and 3, the same each time.
+#[allow(dead_code)] // each named only by `kani::stub`
+fn creature(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
+    let i = match id.0 {
+        2 => 0,
+        3 => 1,
+        _ => panic!("an object this proof does not ask about"),
+    };
+    // SAFETY: a proof runs on one thread, and only this function names CREATURE.
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE.value) };
+    *answers[i].get_or_insert_with(kani::any::<bool>)
+}
+
+/// What the entry was told, once: declined (none to copy), or asked of
+/// whom, among which (up to two), and about which permanent.
+static mut TOLD: Held<Option<(Option<EnterAsCopyChoice>, Option<(ObjectId, PlayerId, [Option<ObjectId>; 2], usize, bool)>)>> = Held::new(None, (&raw const TOLD).cast());
+
+#[allow(dead_code)]
+fn entry_recorded(state: &mut GameState, object: ObjectId, choice: EnterAsCopyChoice, _: &CardRegistry) {
+    // SAFETY: as in `creature`, for TOLD.
+    let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD.value) };
+    assert!(t.is_none(), "told once");
+    *t = Some((Some(choice), None));
+    state.pending_entry_choices.retain(|&id| id != object);
+}
+
+#[allow(dead_code)]
+fn asked(
+    state: &mut GameState, source: ObjectId, player: PlayerId, options: Vec<Target>, effect: PendingEffect, _: &str, _: &CardRegistry,
+) {
+    let id = |i: usize| match options.get(i) {
+        Some(Target::Object(o)) => Some(*o),
+        _ => None,
+    };
+    let about = matches!(effect, PendingEffect::EnterAsCopy { object } if object == source);
+    // SAFETY: as in `entry_recorded`.
+    let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD.value) };
+    assert!(t.is_none(), "told once");
+    *t = Some((None, Some((source, player, [id(0), id(1)], options.len(), about))));
+    // What asking leaves: a question waiting.
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+    std::mem::forget((options, effect));
+}
+
+// Not `card_proof!`, which stands in for asking with a recorder that
+// leaves no question waiting: the loop asking it would ask again.
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+#[kani::stub(crate::state::GameState::is_creature, creature)]
+#[kani::stub(crate::replacement::record_entry_choice, entry_recorded)]
+#[kani::stub(crate::cards::helpers::present_optional_target_choice, asked)]
+/// A permanent waiting on what it enters as, asked (`process_pending_
+/// entry_choices`, CR 614.12b, 115.1): its controller is asked whether
+/// it enters as a copy of a creature, and of which, among exactly the
+/// creatures on the battlefield, in the board's order (a choice and not
+/// a target, so none is left out for hexproof or protection); with no
+/// creature there to copy, it enters as its printed self, unasked; and
+/// one waiting that is no longer anywhere is passed over. For a
+/// permanent either player's waiting behind one gone, and two other
+/// objects, each on the battlefield or not and a creature or not.
+fn a_permanent_that_may_enter_as_a_copy_is_asked_among_the_creatures_there() {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let controller = PlayerId(u8::from(kani::any::<bool>()));
+    let entering = state.create_object(blank, controller, Zone::Stack, Some(0), Some(0));
+    let mut on = [false; 2];
+    for o in &mut on {
+        *o = kani::any();
+        state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), if *o { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
+    }
+    state.pending_entry_choices.reserve(2);
+    state.pending_entry_choices.push(ObjectId(9));
+    state.pending_entry_choices.push(entering);
+
+    crate::replacement::process_pending_entry_choices(&mut state, &registry);
+
+    let mut expected = [None; 2];
+    let mut n = 0;
+    for (i, &o) in on.iter().enumerate() {
+        let id = ObjectId(i as u64 + 2);
+        if o && creature(&state, id, &registry) {
+            expected[n] = Some(id);
+            n += 1;
+        }
+    }
+    // SAFETY: as in `entry_recorded`.
+    let t = unsafe { *std::ptr::addr_of!(TOLD.value) };
+    if n == 0 {
+        assert!(t == Some((Some(EnterAsCopyChoice::Declined), None)) && state.pending_entry_choices.is_empty());
+    } else {
+        assert!(t == Some((None, Some((entering, controller, expected, n, true)))));
+        assert!(state.pending_entry_choices.as_slice() == [entering]);
+    }
+    std::mem::forget((registry, state));
+}
