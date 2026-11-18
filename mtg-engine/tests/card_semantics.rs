@@ -3520,9 +3520,11 @@ struct World {
     /// The cards a board starts with in exile, by id, for what targets
     /// them; `exile` holds them by name too.
     exiled: BTreeMap<ObjectId, Model>,
-    /// The permanent an ability of `source` last exiled, as it was: what
-    /// "the exiled card" of that source's other ability means (CR 607.2a).
-    linked_exile: Option<(ObjectId, Model)>,
+    /// The permanents exiled by an ability of a source, each with that
+    /// source and as it was: what "the exiled card" of that source's other
+    /// ability means (CR 607.2a). One for each source: two Fiend Hunters
+    /// that exile each other each have their own.
+    linked_exile: Vec<(ObjectId, Model)>,
     /// A creature died this turn (CR 700.4), which morbid reads.
     a_creature_died: bool,
     /// Spells on the stack below the one being checked, by id, last cast
@@ -4333,7 +4335,7 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
         exiled: BTreeMap::new(),
-        linked_exile: None,
+        linked_exile: Vec::new(),
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
@@ -5697,16 +5699,15 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     } else {
                         // A permanent an ability exiles, linked to its source.
                         if let (Some(src), Some(m)) = (w.source, w.permanents.get(&id).cloned()) {
-                            w.linked_exile = Some((src, m));
+                            w.linked_exile.push((src, m));
                         }
                         w.leave(id, Dest::Exile);
                     }
                 }
             }
             Effect::ReturnTheExiledCard => {
-                if let Some((src, m)) = w.linked_exile.clone().filter(|(src, _)| Some(*src) == w.source) {
-                    let _ = src;
-                    w.linked_exile = None;
+                if let Some(at) = w.linked_exile.iter().position(|(src, _)| Some(*src) == w.source) {
+                    let (_, m) = w.linked_exile.remove(at);
                     // A token exiled ceased to exist (CR 111.7, 704.5d), and
                     // what has left the battlefield as a token comes back to
                     // no zone (111.8): nothing returns.
@@ -10566,7 +10567,7 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
         exiled: BTreeMap::new(),
-        linked_exile: None,
+        linked_exile: Vec::new(),
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
