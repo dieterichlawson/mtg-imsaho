@@ -3920,6 +3920,39 @@ impl World {
         }
     }
 
+    /// The `i`th token made as this resolved dies, as it last existed
+    /// (CR 700.4, 603.10a), and ceases to exist (704.5d): what watches
+    /// deaths sees it, under an id no object has (such a token has none
+    /// here).
+    fn token_dies(&mut self, i: usize) {
+        let token = self.tokens.remove(i);
+        if token.is_creature() {
+            self.a_creature_died = true;
+            let id = ObjectId(u64::MAX - u64::try_from(self.died.len()).expect("a few"));
+            self.died.push((id, token, self.deaths));
+        }
+    }
+
+    /// The tokens made so far become permanents like any other, each
+    /// under an id no object has: what triggers from here on may target
+    /// them (CR 111.1, 603.3d), which the reference's targets are
+    /// permanents with ids.
+    fn number_tokens(&mut self) {
+        const FIRST: u64 = 1 << 40;
+        let mut ids = Vec::new();
+        for token in std::mem::take(&mut self.tokens) {
+            let top = self.permanents.keys().chain(self.yard.keys()).map(|id| id.0).filter(|n| (FIRST..u64::MAX / 2).contains(n)).max();
+            let id = ObjectId(top.map_or(FIRST, |n| n + 1));
+            self.permanents.insert(id, token);
+            ids.push(id);
+        }
+        for src in &mut self.entered {
+            if let Src::Token(i) = src {
+                *src = Src::Permanent(ids[*i]);
+            }
+        }
+    }
+
     /// A card leaves a graveyard for `to`, by id.
     fn leave_yard(&mut self, id: ObjectId) -> Option<Model> {
         let m = self.yard.remove(&id)?;
@@ -4172,9 +4205,9 @@ impl World {
             self.deaths += 1;
             let before = self.clone();
             // A token dies too (CR 700.4), and then ceases to exist (704.5d).
-            self.a_creature_died |= tokens_dying.contains(&true);
-            let mut flags = tokens_dying.into_iter();
-            self.tokens.retain(|_| !flags.next().expect("one per token"));
+            for i in (0..tokens_dying.len()).rev().filter(|i| tokens_dying[*i]) {
+                self.token_dies(i);
+            }
             // Toughness 0 is not destruction (704.5f); lethal damage is
             // (704.5g-h), and a shield can stop it.
             for (id, zero) in dying {
@@ -5336,10 +5369,17 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     let t = w.pt_of(&w.permanents[&id]).1.unwrap_or(0);
                     let life = w.life[c];
                     let m = w.permanents.get_mut(&id).expect("the source");
-                    // The toughness it is set to is its base (CR 613.4b);
-                    // what changes it on top of that still does.
-                    let on_top = t - m.toughness.unwrap_or(0);
-                    m.toughness = Some(life - on_top);
+                    // Its toughness is set to the life total (CR 613.4b),
+                    // and what changes a toughness applies after that: its
+                    // counters, which the model keeps counted in, and what
+                    // the board gives it, which is added as it is read.
+                    // "Any toughness-modifying effects, counters, Auras, or
+                    // Equipment will apply after its toughness is set to
+                    // your former life total": a 2/15 under Lunarch Mantle
+                    // at 7 life becomes a 2/9, the life 15 (the card's
+                    // ruling, 2018-03-16).
+                    let counters = i32::try_from(m.counters.0).expect("a few") - i32::try_from(m.counters.1).expect("a few");
+                    m.toughness = Some(life + counters);
                     w.life[c] = t;
                 }
             }
@@ -5418,12 +5458,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.leave(victim, Dest::Graveyard);
                     w.a_creature_died = true;
                 }
-                Some(Src::Token(i)) => {
-                    // A token dies too, and then ceases to exist (CR 700.4,
-                    // 704.5d).
-                    w.tokens.remove(i);
-                    w.a_creature_died = true;
-                }
+                Some(Src::Token(i)) => w.token_dies(i),
                 None => {}
             },
             Effect::EachPlayerChoosesACreature => {}
@@ -6641,6 +6676,10 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     if triggers.is_empty() {
         return vec![w];
     }
+    // What goes on the stack now may target a token this resolution made
+    // (a Pitchburn Devils sacrificed to Stitcher's Apprentice and the
+    // Homunculus made just before).
+    w.number_tokens();
     let (ap, nap): (Vec<_>, Vec<_>) = triggers.iter().partition(|(_, c, _)| *c == active);
     // Two triggers alike (the same ability, of sources alike) end the same
     // in either order, so each order of what differs is tried once: three
