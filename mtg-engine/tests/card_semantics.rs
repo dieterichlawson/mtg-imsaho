@@ -8803,6 +8803,116 @@ fn every_flashback_spell_does_what_its_text_says_on_every_small_board() {
     });
 }
 
+/// One permanent with an upkeep trigger, or that keeps something tapped,
+/// placed on one board under P0, and the turn of `active` begun from the
+/// end step before it: the untap step, the upkeep and its trigger if this
+/// is the upkeep its text names, each way it can resolve, and the draw
+/// (CR 502-504), against what [`next_turn_outcomes`] says; `borrowed`
+/// makes it the other player's card, and `which` names the board in what
+/// is reported. An Aura is put on a creature of the board, and is not
+/// played on a board with none.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn check_turn_begins_on(card: &Printed, spec: &Spec, active: PlayerId, borrowed: bool, which: &str, (mut state, mut world): (GameState, World),
+    cards: &[(Printed, Spec)], registry: &CardRegistry, failures: &mut Vec<String>, upkeeps: &mut usize) {
+    let curse = spec.upkeep.as_ref().is_some_and(|u| u.enchanted_player);
+    let id = if curse {
+        let id = attach_curse_to_player(&mut state, &registry, &card.name, P0, P1);
+        world.permanents.insert(id, Model { attached: Some(Target::Player(P1)), ..model_of(spec, card, P0) });
+        id
+    } else if spec.enchants {
+        // On the Grizzly Bears if the board has them, on any creature
+        // otherwise; with none to enchant there is nothing to play.
+        let Some(bears) = world.permanents.iter()
+            .find(|(_, m)| m.name.as_deref() == Some("Grizzly Bears"))
+            .or_else(|| world.permanents.iter().find(|(_, m)| m.is_creature()))
+            .map(|(id, _)| *id)
+        else { return };
+        let id = named_permanent(&mut state, &registry, &card.name, P0);
+        state.attach(id, bears);
+        state.get_object_mut(bears).expect("on the board").tapped = true;
+        world.permanents.get_mut(&bears).expect("on the board").tapped = true;
+        world.permanents.insert(id, Model { attached: Some(Target::Object(bears)), ..model_of(spec, card, P0) });
+        id
+    } else {
+        let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        // A creature that keeps itself tapped, tapped, so that is
+        // what its text has to do.
+        let tapped = spec.statics.iter().any(|st| matches!(st, Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
+        state.get_object_mut(id).expect("just placed").tapped = tapped;
+        world.permanents.get_mut(&id).expect("just placed").tapped = tapped;
+        id
+    };
+    if borrowed {
+        state.get_object_mut(id).expect("just placed").owner = P1;
+        world.permanents.get_mut(&id).expect("just placed").owner = P1;
+    }
+    // Three of what the trigger counts, so that half of it rounds.
+    let counted = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).filter_map(|e| match e {
+        Effect::Tokens { half_of: Some(Filter(clauses)), .. } => Some(clauses),
+        _ => None,
+    });
+    for clause in counted.flatten() {
+        add_creatures_of(&mut state, &mut world, &registry, &cards, clause.head.as_deref().expect("a subtype"), 3, P0);
+    }
+    world.refresh();
+    // A creature the board leaves with no toughness (a Splinterfright with
+    // no creature card in its graveyard) is dead before any turn begins:
+    // not a board to begin one on.
+    if world.permanents.get(&id).is_some_and(|m| m.is_creature() && world.pt_of(m).1.is_some_and(|t| t <= 0)) {
+        return;
+    }
+    // Every land tapped in the turn before, so the untap step has
+    // something to untap, and something to leave tapped.
+    for (land, m) in world.permanents.iter_mut().filter(|(_, m)| m.types.iter().any(|t| t == "land")) {
+        m.tapped = true;
+        state.get_object_mut(*land).expect("on the battlefield").tapped = true;
+    }
+    let before = if active == P0 { P1 } else { P0 };
+    state.step = Step::EndStep;
+    state.active_player = before;
+    state.priority_player = Some(before);
+    state.num_spells_cast_this_turn = BTreeMap::from([(before, 1)]);
+    *upkeeps += 1;
+    let want = next_turn_outcomes(spec, &world, id, active);
+    // The engine passes for a player with nothing to do, so the
+    // first question after the draw is the active player's land
+    // drop.
+    let (got, asked) = questions_asked(|| every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain)));
+    // Who answers what it asks: its controller, or the player its
+    // text names, the enchanted player for a Curse.
+    let targets = spec.upkeep.as_ref().map(|u| target_sets(&u.trigger.spec, &World { source: Some(id), ..world.clone() }, P0)).filter(|sets| sets.len() == 1).map(|mut sets| sets.remove(0)).unwrap_or_default();
+    if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got))
+        .or_else(|| wrong_chooser(&triggers_text(spec), &targets, &world, P0, id, &asked))
+    {
+        failures.push(format!("{} in player {}'s turn{}{which}: {why}", card.name, active.0,
+            if borrowed { ", its owner the other player" } else { "" }));
+    }
+}
+
+/// Every permanent the grammar reads with an upkeep trigger, or that
+/// keeps something tapped, placed on every small board
+/// ([`on_every_small_board`]) under P0, either face, and each player's
+/// turn begun ([`check_turn_begins_on`]): the board's own permanents
+/// untap, lose their damage and shields, and stay as they are otherwise.
+#[test]
+fn every_turn_begins_as_its_text_says_on_every_small_board() {
+    let backs = {
+        let registry = registry();
+        let cache = oracle_cache();
+        back_faces(&readable(&registry, &cache).0)
+    };
+    let keeps_tapped = |s: &Spec| s.statics.iter().any(|st| matches!(st,
+        Static::Restricts { what, .. } | Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
+    on_every_small_board("upkeeps", &|small, on, which, failures, upkeeps| {
+        for (card, spec) in small.cards.iter().chain(&backs).filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
+            for active in [P0, P1] {
+                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+                check_turn_begins_on(card, spec, active, false, which, made, small.cards, small.registry, failures, upkeeps);
+            }
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -9586,72 +9696,9 @@ fn every_turn_begins_as_its_text_says() {
                 world.yard.insert(id, Model::printed(&cache["Think Twice"], P1));
                 world.graveyard[1].push("Think Twice".to_string());
             }
-            let curse = spec.upkeep.as_ref().is_some_and(|u| u.enchanted_player);
-            let id = if curse {
-                let id = attach_curse_to_player(&mut state, &registry, &card.name, P0, P1);
-                world.permanents.insert(id, Model { attached: Some(Target::Player(P1)), ..model_of(spec, card, P0) });
-                id
-            } else if spec.enchants {
-                let bears = world.permanents.iter()
-                    .find(|(_, m)| m.name.as_deref() == Some("Grizzly Bears"))
-                    .map(|(id, _)| *id)
-                    .expect("on the board");
-                let id = named_permanent(&mut state, &registry, &card.name, P0);
-                state.attach(id, bears);
-                state.get_object_mut(bears).expect("on the board").tapped = true;
-                world.permanents.get_mut(&bears).expect("on the board").tapped = true;
-                world.permanents.insert(id, Model { attached: Some(Target::Object(bears)), ..model_of(spec, card, P0) });
-                id
-            } else {
-                let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
-                // A creature that keeps itself tapped, tapped, so that is
-                // what its text has to do.
-                let tapped = spec.statics.iter().any(|st| matches!(st, Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
-                state.get_object_mut(id).expect("just placed").tapped = tapped;
-                world.permanents.get_mut(&id).expect("just placed").tapped = tapped;
-                id
-            };
-            if borrowed {
-                state.get_object_mut(id).expect("just placed").owner = P1;
-                world.permanents.get_mut(&id).expect("just placed").owner = P1;
-            }
-            // Three of what the trigger counts, so that half of it rounds.
-            let counted = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).filter_map(|e| match e {
-                Effect::Tokens { half_of: Some(Filter(clauses)), .. } => Some(clauses),
-                _ => None,
-            });
-            for clause in counted.flatten() {
-                add_creatures_of(&mut state, &mut world, &registry, &cards, clause.head.as_deref().expect("a subtype"), 3, P0);
-            }
-            world.refresh();
-            // Every land tapped in the turn before, so the untap step has
-            // something to untap, and something to leave tapped.
-            for (land, m) in world.permanents.iter_mut().filter(|(_, m)| m.types.iter().any(|t| t == "land")) {
-                m.tapped = true;
-                state.get_object_mut(*land).expect("on the battlefield").tapped = true;
-            }
-            let before = if active == P0 { P1 } else { P0 };
-            state.step = Step::EndStep;
-            state.active_player = before;
-            state.priority_player = Some(before);
-            state.num_spells_cast_this_turn = BTreeMap::from([(before, 1)]);
-            upkeeps += 1;
-            let want = next_turn_outcomes(spec, &world, id, active);
-            // The engine passes for a player with nothing to do, so the
-            // first question after the draw is the active player's land
-            // drop.
-            let (got, asked) = questions_asked(|| every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain)));
-            // Who answers what it asks: its controller, or the player its
-            // text names, the enchanted player for a Curse.
-            let targets = spec.upkeep.as_ref().map(|u| target_sets(&u.trigger.spec, &World { source: Some(id), ..world.clone() }, P0)).filter(|sets| sets.len() == 1).map(|mut sets| sets.remove(0)).unwrap_or_default();
-            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got))
-                .or_else(|| wrong_chooser(&triggers_text(spec), &targets, &world, P0, id, &asked))
-            {
-                failures.push(format!("{} in player {}'s turn{}{}{}{}: {why}", card.name, active.0,
-                    if rotated { ", a land on top of the library" } else { "" }, if rich { ", with two Swamps more" } else { "" },
-                    if borrowed { ", its owner the other player" } else { "" },
-                    if full { ", a third card in the cursed player's graveyard" } else { "" }));
-            }
+            let which = format!("{}{}{}", if rotated { ", a land on top of the library" } else { "" }, if rich { ", with two Swamps more" } else { "" },
+                if full { ", a third card in the cursed player's graveyard" } else { "" });
+            check_turn_begins_on(card, spec, active, borrowed, &which, (state, world), &cards, &registry, &mut failures, &mut upkeeps);
         }
     }
     assert!(upkeeps > 0);
