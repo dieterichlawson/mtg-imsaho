@@ -3962,6 +3962,32 @@ impl World {
         }
     }
 
+    /// The cards in the graveyards that have no id here (milled or
+    /// discarded since the board was made, which the reference keeps by
+    /// name) are given one no object has, as [`World::number_tokens`]
+    /// gives tokens: what picks among the cards of a graveyard, a target
+    /// or a card at random, picks among all of them.
+    fn number_graveyard(&mut self) {
+        const FIRST: u64 = 1 << 41;
+        for p in [P0, P1] {
+            let mut unnumbered = self.graveyard[p.0 as usize].clone();
+            for m in self.yard.values().filter(|m| m.owner == p) {
+                if let Some(at) = unnumbered.iter().position(|n| Some(n) == m.name.as_ref()) {
+                    unnumbered.remove(at);
+                }
+            }
+            for name in unnumbered {
+                let model = match cached_oracle().get(&name) {
+                    Some(card) => Model::printed(card, p),
+                    None if BASIC_LANDS.contains(&name.as_str()) => basic_land(&name, p),
+                    None => panic!("{name} is in a graveyard, and the reference has no record of it"),
+                };
+                let top = self.yard.keys().map(|id| id.0).filter(|n| (FIRST..u64::MAX / 2).contains(n)).max();
+                self.yard.insert(ObjectId(top.map_or(FIRST, |n| n + 1)), model);
+            }
+        }
+    }
+
     /// A card leaves a graveyard for `to`, by id.
     fn leave_yard(&mut self, id: ObjectId) -> Option<Model> {
         let m = self.yard.remove(&id)?;
@@ -5984,6 +6010,20 @@ fn pay(world: &World, payment: &Option<Payment>) -> World {
 /// likely). The world unchanged when it has none.
 fn random_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
     let c = caster.0 as usize;
+    // A card returned at random is any card there as this resolves, one
+    // milled a moment ago among them (Woodland Sleuth's trigger resolving
+    // after an Armored Skaab's that entered beside it).
+    let numbered;
+    let world = if spec.effects.iter().any(|e| matches!(e, Effect::ReturnAtRandom { .. })) {
+        numbered = {
+            let mut w = world.clone();
+            w.number_graveyard();
+            w
+        };
+        &numbered
+    } else {
+        world
+    };
     let mut ways = vec![world.clone()];
     let mut drawn = 0;
     for effect in &spec.effects {
@@ -6687,8 +6727,9 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     }
     // What goes on the stack now may target a token this resolution made
     // (a Pitchburn Devils sacrificed to Stitcher's Apprentice and the
-    // Homunculus made just before).
+    // Homunculus made just before), or a card put into a graveyard since.
     w.number_tokens();
+    w.number_graveyard();
     let (ap, nap): (Vec<_>, Vec<_>) = triggers.iter().partition(|(_, c, _)| *c == active);
     // Two triggers alike (the same ability, of sources alike) end the same
     // in either order, so each order of what differs is tried once: three
