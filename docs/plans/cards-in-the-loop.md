@@ -333,6 +333,7 @@ the same check as on the hand-made boards, now a function of the board:
 | flashback | every flashback read, cast from the graveyard (`check_flashback_on`) | 61,226, 15 s |
 | upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 55,396, 5 s |
 | end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,256, 2 s |
+| loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 22,000, 5 s |
 
 Every one of those agrees with its card's text. They run in
 `scripts/prove.sh exhaustive`, and so on every push and pull request.
@@ -367,10 +368,16 @@ cast check; the opponent's spell held on the stack cast on any creature
 of theirs; the source "exiled in response" played only where the
 ability is alone on the stack.
 
+One cut, where the reference does not yet read far enough: a loyalty
+ability that searches a library shuffles it, and what a death trigger of
+the board's then mills or draws is any card of it, which the reference
+does not play; such an ability (Garruk, the Veil-Cursed's sacrifice) is
+not played beside a permanent that triggers on a death.
+
 **Next.** The two-piece run to its end, each disagreement worked to its
-cause. Then the properties still on hand-made boards alone: loyalty
-abilities, the werewolves' transformations, the watchers of casts and
-entries, and combat. Three pieces as they entered is 88 million boards
+cause. Then the properties still on hand-made boards alone: the
+werewolves' transformations, the watchers of casts and entries, and
+combat; and the cut above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 

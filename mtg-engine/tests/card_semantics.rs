@@ -9009,6 +9009,224 @@ fn every_turn_ends_as_its_text_says_on_every_small_board() {
     });
 }
 
+/// One loyalty ability of a planeswalker placed on one board under P0 at
+/// `loyalty`: the engine gives it the abilities its text has, at their
+/// costs; offers this one at exactly the targets its text allows when the
+/// loyalty pays for it (CR 606.3, 606.6) and not with a spell on the stack;
+/// and activated at each and resolved it does what its text says, every
+/// way its questions can be answered, with what the board's own triggers
+/// then do. `card` is the card placed, turned to its back if `back`;
+/// `walker` its read face, `k` the ability's place among its abilities,
+/// `need` the loyalty it costs, and `name` names it in what is reported.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn check_loyalty_on(card: &Printed, back: bool, walker: &Walker, k: usize, loyalty: u32, need: u32, borrowed: bool, name: &str,
+    (mut state, mut world): (GameState, World), registry: &CardRegistry, cache: &BTreeMap<String, Printed>, failures: &mut Vec<String>) {
+    let ability = &walker.abilities[k];
+    let card_id = registry.get_id_by_name(&card.name).expect("a card in the pool");
+    let behavior = registry.get(card_id).expect("a card in the pool");
+    let id = place_walker(&mut state, &mut world, &registry, card, back, loyalty, P0);
+    if borrowed {
+        state.get_object_mut(id).expect("just placed").owner = P1;
+        world.permanents.get_mut(&id).expect("just placed").owner = P1;
+    }
+    // "Each player discards a card" with a choice for each, so
+    // that who chooses first shows (CR 101.4).
+    if ability.spec.effects.contains(&Effect::EachPlayerDiscards) {
+        spell_in_hand(&mut state, &registry, "Plains", P1);
+        world.hand[1].push("Plains".to_string());
+    }
+    world.refresh();
+    let defs = behavior.loyalty_abilities(&state, id);
+    if defs.len() != walker.abilities.len() {
+        failures.push(format!("{name}: the engine gives it {} loyalty abilities, the text {}", defs.len(), walker.abilities.len()));
+        return;
+    }
+    let def = &defs[k];
+    if def.loyalty_change != ability.change {
+        failures.push(format!("{name}: costs {:+} loyalty, the text {:+}", def.loyalty_change, ability.change));
+        return;
+    }
+    world.source = Some(id);
+    let key = |t: &Vec<Target>| t.iter().map(target_key).collect::<Vec<_>>();
+    let mut expected = if loyalty >= need { target_sets(&ability.spec, &world, P0) } else { Vec::new() };
+    expected.sort_by_key(key);
+    let offers = |state: &GameState| -> Vec<Vec<Target>> {
+        engine::legal_actions(state, &registry).actions.into_iter()
+            .filter_map(|a| match a {
+                Action::ActivateLoyaltyAbility { object_id, ability_index, targets } if object_id == id && ability_index == def.ability_index => Some(targets),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut offered = offers(&state);
+    offered.sort_by_key(key);
+    if offered != expected {
+        failures.push(format!("{name}: offered at {offered:?}, the text allows {expected:?}"));
+        return;
+    }
+    let (mut busy, mut busy_world) = (state.clone(), world.clone());
+    if the_opponent_holds_a_spell_if_they_can(&mut busy, &mut busy_world, &registry, &cache) && !offers(&busy).is_empty() {
+        failures.push(format!("{name}: offered with a spell on the stack"));
+    }
+    for targets in &expected {
+        let act = Action::ActivateLoyaltyAbility { object_id: id, ability_index: def.ability_index, targets: targets.clone() };
+        // The cost, paid as it is activated, and the state-based
+        // actions before anyone has priority again.
+        let mut paid = world.clone();
+        let m = paid.permanents.get_mut(&id).expect("the planeswalker");
+        m.named_counters.insert("loyalty".to_string(), loyalty.checked_add_signed(ability.change).expect("affordable, as offered"));
+        paid.state_based_actions();
+        // And what its resolution set off on the board, each way.
+        let want: Vec<World> = resolution_ways(&ability.spec, &paid, targets, P0).into_iter()
+            .flat_map(|w| {
+                let mut after = apply(&ability.spec, &w, targets, P0);
+                after.state_based_actions();
+                settle_triggers(after)
+            })
+            .map(|mut after| {
+                after.refresh();
+                after
+            })
+            .collect();
+        let at = format!("{name} at {targets:?}");
+        let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
+        if let Some(why) = disagreement(&want, &endings, &registry) {
+            failures.push(format!("{at}: {why}"));
+            continue;
+        }
+        if let Some(why) = wrong_chooser(&ability.spec, targets, &world, P0, id, &asked) {
+            failures.push(format!("{at}: {why}"));
+        }
+        let endings = endings.expect("compared");
+        // The planeswalker exiled in response, when its cost has
+        // not already put it into the graveyard: the ability
+        // resolves all the same (CR 113.7a), its answers chosen
+        // among what is left, and what it does to or by the
+        // planeswalker itself reads it as it last existed
+        // (608.2h).
+        if paid.permanents.contains_key(&id) {
+            let mut gone = paid.clone();
+            gone.leave(id, Dest::Exile);
+            gone.refresh();
+            let want: Vec<World> = resolution_ways(&ability.spec, &gone, targets, P0).into_iter()
+                .flat_map(|w| {
+                    let mut after = apply(&ability.spec, &w, targets, P0);
+                    after.state_based_actions();
+                    settle_triggers(after)
+                })
+                .map(|mut after| {
+                    after.refresh();
+                    after
+                })
+                .collect();
+            let mut held = engine::submit_action(&state, &act, &registry);
+            if held.stack.len() == 1 && held.priority_player == Some(P0) {
+                held.move_object(id, Zone::Exile, &registry);
+                let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
+                if let Some(why) = disagreement(&want, &endings, &registry)
+                    .or_else(|| wrong_chooser(&ability.spec, targets, &world, P0, id, &asked))
+                {
+                    failures.push(format!("{at}, the planeswalker exiled in response: {why}"));
+                }
+            }
+        }
+        // As a set of endings, the piles hide who chose: every
+        // pile is reachable whoever picks. So one division,
+        // the first permanent against the rest: the target
+        // player choosing either pile sacrifices that pile.
+        if let ([Effect::PilesSacrificed { .. }], [Target::Player(p)]) = (&ability.spec.effects[..], &targets[..]) {
+            let theirs: Vec<ObjectId> = paid.permanents.iter().filter(|(_, m)| m.controller == *p).map(|(id, _)| *id).collect();
+            // With nothing of theirs to divide there is no division.
+            let (first, rest) = theirs.split_first().map_or((None, &[][..]), |(f, r)| (Some(*f), r));
+            for (pile, sacrificed) in first.into_iter().flat_map(|first| [(0, vec![first]), (1, rest.to_vec())]) {
+                let first = &first.expect("a pile of it");
+                // Where the pile's deaths set off a trigger of the board's,
+                // the play has more to answer than the division and the
+                // pile: the endings above hold those boards.
+                let quiet = {
+                    let mut after = apply(&ability.spec, &World { chosen: sacrificed.clone(), ..paid.clone() }, targets, P0);
+                    after.state_based_actions();
+                    let seen = World { died: Vec::new(), entered: Vec::new(), ..after.clone() }.observed();
+                    let settled = settle_triggers(after);
+                    settled.len() == 1 && settled[0].observed() == seen
+                };
+                if !quiet {
+                    continue;
+                }
+                let script = [Answer::Objects(vec![*first]), Answer::Index(pile, String::new())];
+                let want = {
+                    let mut after = apply(&ability.spec, &World { chosen: sacrificed, ..paid.clone() }, targets, P0);
+                    after.state_based_actions();
+                    after
+                };
+                let got = match play_from(&state, &registry, None, Vec::new(), Some(Action::ActivateLoyaltyAbility {
+                    object_id: id, ability_index: def.ability_index, targets: targets.clone() }), Scene::Main, &script) {
+                    Ok(Played::Done(e)) => Ok(vec![*e]),
+                    Ok(Played::Asks(_)) => Err("asked more than the division and the pile".to_string()),
+                    Err(why) => Err(why),
+                };
+                if let Some(why) = disagreement(&[want], &got, &registry) {
+                    failures.push(format!("{at}, the first permanent a pile of its own, pile {pile} chosen: {why}"));
+                }
+            }
+        }
+        if let Some(again) = endings.iter().find(|e| engine::legal_actions(e, &registry).actions.iter()
+            .any(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, .. } if *object_id == id)))
+        {
+            failures.push(format!("{at}: a loyalty ability of it is offered again the same turn, with {} loyalty",
+                again.get_counter_count(id, CounterType::Loyalty)));
+        }
+        // Played on into the opponent's turn, where what lasted
+        // this one is gone (CR 514.2).
+        if lasts_the_turn(&ability.spec) {
+            if let ([after], [w]) = (&endings[..], &want[..]) {
+                let mut after = after.clone();
+                after.num_spells_cast_this_turn = BTreeMap::from([(P0, 1)]);
+                let next = next_turn_outcomes(&Spec::default(), w, id, P1);
+                if let Some(why) = disagreement(&next, &every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain)), &registry) {
+                    failures.push(format!("{at}, in the next turn: {why}"));
+                }
+            }
+        }
+    }
+}
+
+/// Every loyalty ability the grammar reads, its planeswalker placed on
+/// every small board ([`on_every_small_board`]) under P0, either face, at
+/// its printed loyalty and at the loyalty the ability costs
+/// ([`check_loyalty_on`]).
+#[test]
+fn every_loyalty_ability_does_what_its_text_says_on_every_small_board() {
+    let walkers = planeswalker_faces();
+    on_every_small_board("loyalty abilities", &|small, on, which, failures, checked| {
+        for (face, front, walker) in &walkers {
+            let Ok(walker) = walker else { continue };
+            let card = front.as_ref().unwrap_or(face);
+            let card_id = small.registry.get_id_by_name(&card.name).expect("a card in the pool");
+            let printed = small.registry.get(card_id).expect("a card in the pool").starting_loyalty().expect("a planeswalker's printed loyalty");
+            for (k, ability) in walker.abilities.iter().enumerate() {
+                let need = u32::try_from(-ability.change).unwrap_or(0);
+                let mut loyalties = vec![printed, need];
+                loyalties.retain(|l| *l > 0);
+                loyalties.dedup();
+                // An ability that searches shuffles, and what a trigger of
+                // the board's then mills or draws is any card of that
+                // library, which the reference does not yet play: such an
+                // ability is not played beside a permanent that triggers
+                // on a death (Garruk's sacrifice beside a Selhoff
+                // Occultist).
+                let shuffles = format!("{:?}", ability.spec.effects).contains("Search");
+                for loyalty in loyalties {
+                    let Some(made) = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, shuffles) else { continue };
+                    *checked += 1;
+                    let name = format!("{}'s ability {k} at {loyalty} loyalty{which}", face.name);
+                    check_loyalty_on(card, front.is_some(), walker, k, loyalty, need, false, &name, made, small.registry, small.cache, failures);
+                }
+            }
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -9520,151 +9738,7 @@ fn every_loyalty_ability_does_what_its_text_says() {
                 checked += 1;
                 let name = format!("{}'s ability {k} at {loyalty} loyalty{}", face.name,
                     if borrowed { ", its owner the other player" } else { "" });
-                let (mut state, mut world) = board(&registry, &cache);
-                let id = place_walker(&mut state, &mut world, &registry, card, front.is_some(), loyalty, P0);
-                if borrowed {
-                    state.get_object_mut(id).expect("just placed").owner = P1;
-                    world.permanents.get_mut(&id).expect("just placed").owner = P1;
-                }
-                // "Each player discards a card" with a choice for each, so
-                // that who chooses first shows (CR 101.4).
-                if ability.spec.effects.contains(&Effect::EachPlayerDiscards) {
-                    spell_in_hand(&mut state, &registry, "Plains", P1);
-                    world.hand[1].push("Plains".to_string());
-                }
-                world.refresh();
-                let defs = behavior.loyalty_abilities(&state, id);
-                if defs.len() != walker.abilities.len() {
-                    failures.push(format!("{name}: the engine gives it {} loyalty abilities, the text {}", defs.len(), walker.abilities.len()));
-                    continue;
-                }
-                let def = &defs[k];
-                if def.loyalty_change != ability.change {
-                    failures.push(format!("{name}: costs {:+} loyalty, the text {:+}", def.loyalty_change, ability.change));
-                    continue;
-                }
-                world.source = Some(id);
-                let key = |t: &Vec<Target>| t.iter().map(target_key).collect::<Vec<_>>();
-                let mut expected = if loyalty >= need { target_sets(&ability.spec, &world, P0) } else { Vec::new() };
-                expected.sort_by_key(key);
-                let offers = |state: &GameState| -> Vec<Vec<Target>> {
-                    engine::legal_actions(state, &registry).actions.into_iter()
-                        .filter_map(|a| match a {
-                            Action::ActivateLoyaltyAbility { object_id, ability_index, targets } if object_id == id && ability_index == def.ability_index => Some(targets),
-                            _ => None,
-                        })
-                        .collect()
-                };
-                let mut offered = offers(&state);
-                offered.sort_by_key(key);
-                if offered != expected {
-                    failures.push(format!("{name}: offered at {offered:?}, the text allows {expected:?}"));
-                    continue;
-                }
-                let (mut busy, mut busy_world) = (state.clone(), world.clone());
-                the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
-                if !offers(&busy).is_empty() {
-                    failures.push(format!("{name}: offered with a spell on the stack"));
-                }
-                for targets in &expected {
-                    let act = Action::ActivateLoyaltyAbility { object_id: id, ability_index: def.ability_index, targets: targets.clone() };
-                    // The cost, paid as it is activated, and the state-based
-                    // actions before anyone has priority again.
-                    let mut paid = world.clone();
-                    let m = paid.permanents.get_mut(&id).expect("the planeswalker");
-                    m.named_counters.insert("loyalty".to_string(), loyalty.checked_add_signed(ability.change).expect("affordable, as offered"));
-                    paid.state_based_actions();
-                    let want: Vec<World> = resolution_ways(&ability.spec, &paid, targets, P0).into_iter()
-                        .map(|w| {
-                            let mut after = apply(&ability.spec, &w, targets, P0);
-                            after.state_based_actions();
-                            after.refresh();
-                            after
-                        })
-                        .collect();
-                    let at = format!("{name} at {targets:?}");
-                    let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
-                    if let Some(why) = disagreement(&want, &endings, &registry) {
-                        failures.push(format!("{at}: {why}"));
-                        continue;
-                    }
-                    if let Some(why) = wrong_chooser(&ability.spec, targets, &world, P0, id, &asked) {
-                        failures.push(format!("{at}: {why}"));
-                    }
-                    let endings = endings.expect("compared");
-                    // The planeswalker exiled in response, when its cost has
-                    // not already put it into the graveyard: the ability
-                    // resolves all the same (CR 113.7a), its answers chosen
-                    // among what is left, and what it does to or by the
-                    // planeswalker itself reads it as it last existed
-                    // (608.2h).
-                    if paid.permanents.contains_key(&id) {
-                        let mut gone = paid.clone();
-                        gone.leave(id, Dest::Exile);
-                        gone.refresh();
-                        let want: Vec<World> = resolution_ways(&ability.spec, &gone, targets, P0).into_iter()
-                            .map(|w| {
-                                let mut after = apply(&ability.spec, &w, targets, P0);
-                                after.state_based_actions();
-                                after.refresh();
-                                after
-                            })
-                            .collect();
-                        let mut held = engine::submit_action(&state, &act, &registry);
-                        if held.stack.len() == 1 && held.priority_player == Some(P0) {
-                            held.move_object(id, Zone::Exile, &registry);
-                            let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
-                            if let Some(why) = disagreement(&want, &endings, &registry)
-                                .or_else(|| wrong_chooser(&ability.spec, targets, &world, P0, id, &asked))
-                            {
-                                failures.push(format!("{at}, the planeswalker exiled in response: {why}"));
-                            }
-                        }
-                    }
-                    // As a set of endings, the piles hide who chose: every
-                    // pile is reachable whoever picks. So one division,
-                    // the first permanent against the rest: the target
-                    // player choosing either pile sacrifices that pile.
-                    if let ([Effect::PilesSacrificed { .. }], [Target::Player(p)]) = (&ability.spec.effects[..], &targets[..]) {
-                        let theirs: Vec<ObjectId> = paid.permanents.iter().filter(|(_, m)| m.controller == *p).map(|(id, _)| *id).collect();
-                        let (first, rest) = theirs.split_first().expect("a permanent to divide");
-                        for (pile, sacrificed) in [(0, vec![*first]), (1, rest.to_vec())] {
-                            let script = [Answer::Objects(vec![*first]), Answer::Index(pile, String::new())];
-                            let want = {
-                                let mut after = apply(&ability.spec, &World { chosen: sacrificed, ..paid.clone() }, targets, P0);
-                                after.state_based_actions();
-                                after
-                            };
-                            let got = match play_from(&state, &registry, None, Vec::new(), Some(Action::ActivateLoyaltyAbility {
-                                object_id: id, ability_index: def.ability_index, targets: targets.clone() }), Scene::Main, &script) {
-                                Ok(Played::Done(e)) => Ok(vec![*e]),
-                                Ok(Played::Asks(_)) => Err("asked more than the division and the pile".to_string()),
-                                Err(why) => Err(why),
-                            };
-                            if let Some(why) = disagreement(&[want], &got, &registry) {
-                                failures.push(format!("{at}, the first permanent a pile of its own, pile {pile} chosen: {why}"));
-                            }
-                        }
-                    }
-                    if let Some(again) = endings.iter().find(|e| engine::legal_actions(e, &registry).actions.iter()
-                        .any(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, .. } if *object_id == id)))
-                    {
-                        failures.push(format!("{at}: a loyalty ability of it is offered again the same turn, with {} loyalty",
-                            again.get_counter_count(id, CounterType::Loyalty)));
-                    }
-                    // Played on into the opponent's turn, where what lasted
-                    // this one is gone (CR 514.2).
-                    if lasts_the_turn(&ability.spec) {
-                        if let ([after], [w]) = (&endings[..], &want[..]) {
-                            let mut after = after.clone();
-                            after.num_spells_cast_this_turn = BTreeMap::from([(P0, 1)]);
-                            let next = next_turn_outcomes(&Spec::default(), w, id, P1);
-                            if let Some(why) = disagreement(&next, &every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain)), &registry) {
-                                failures.push(format!("{at}, in the next turn: {why}"));
-                            }
-                        }
-                    }
-                }
+                check_loyalty_on(card, front.is_some(), &walker, k, loyalty, need, borrowed, &name, board(&registry, &cache), &registry, &cache, &mut failures);
             }
         }
     }
