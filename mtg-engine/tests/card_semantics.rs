@@ -9552,6 +9552,109 @@ fn every_cast_watcher_sees_what_its_text_says_on_every_small_board() {
     });
 }
 
+/// A combat on one board in P0's turn, every way it can be declared: the
+/// engine offers as attackers exactly P0's creatures that may attack and
+/// requires exactly those that must (CR 508.1a, 508.1d); for each set of
+/// attackers that meets the requirement it offers each of P1's creatures
+/// exactly the attackers it may block alone (509.1a-b); and for each way
+/// of blocking, each blocker one attacker or none and an attacker with
+/// menace two blockers or none (702.111b), the combat ends every way the
+/// reference allows and no other ([`combat_of`]). `which` names the board
+/// in what is reported.
+fn check_combat_on(which: &str, (state, world): (GameState, World), registry: &CardRegistry, failures: &mut Vec<String>, combats: &mut usize) {
+    let named = |id: &ObjectId| world.permanents[id].name.clone().or_else(|| world.permanents[id].token_name.clone()).unwrap_or_default();
+    let may_attack = |m: &Model| m.is_creature() && !m.tapped && (!m.sick || has(m, Keyword::Haste))
+        && !has(m, Keyword::Defender) && !restricted(m, Restriction::CantAttack);
+    let eligible: Vec<ObjectId> = world.permanents.iter().filter(|(_, m)| m.controller == P0 && may_attack(m)).map(|(id, _)| *id).collect();
+    let must: Vec<ObjectId> = eligible.iter().copied().filter(|id| restricted(&world.permanents[id], Restriction::AttacksEachCombat)).collect();
+    let asked = combat_questions_of(&state, registry, &[]);
+    let (mut offered, mut required) = (asked.eligible.clone(), asked.must_attack.clone());
+    offered.sort();
+    required.sort();
+    if offered != eligible {
+        failures.push(format!("a combat{which}: offered as attackers {:?}, and the text says {:?}",
+            offered.iter().map(named).collect::<Vec<_>>(), eligible.iter().map(named).collect::<Vec<_>>()));
+        return;
+    }
+    if required != must {
+        failures.push(format!("a combat{which}: required to attack {:?}, and the text says {:?}",
+            required.iter().map(named).collect::<Vec<_>>(), must.iter().map(named).collect::<Vec<_>>()));
+        return;
+    }
+    let theirs: Vec<ObjectId> = world.permanents.iter().filter(|(_, m)| m.controller == P1 && m.is_creature() && !m.tapped).map(|(id, _)| *id).collect();
+    for set in 1..(1u32 << eligible.len()) {
+        let attackers: Vec<ObjectId> = eligible.iter().enumerate().filter(|(i, _)| set >> i & 1 == 1).map(|(_, id)| *id).collect();
+        if !must.iter().all(|m| attackers.contains(m)) {
+            continue;
+        }
+        // The reference resolves one targeted attack trigger a combat.
+        if attackers.iter().filter(|a| world.permanents[a].combat.on_attack.is_some()).count() > 1 {
+            continue;
+        }
+        let about = format!("{:?} attacking{which}", attackers.iter().map(named).collect::<Vec<_>>());
+        // What each of the other player's creatures may block, as the
+        // attackers stand once declared: tapped unless vigilant, and what
+        // attacking gives them given.
+        let mut declared = world.clone();
+        for a in &attackers {
+            let m = declared.permanents.get_mut(a).expect("an attacker");
+            m.attacking = true;
+            if !has(m, Keyword::Vigilance) {
+                m.tapped = true;
+            }
+        }
+        declared.refresh();
+        let may: BTreeMap<ObjectId, Vec<ObjectId>> = theirs.iter()
+            .map(|b| (*b, attackers.iter().copied().filter(|a| evasion_allows(&declared.permanents[a], &declared.permanents[b])).collect::<Vec<_>>()))
+            .filter(|(_, a)| !a.is_empty())
+            .collect();
+        // A targeted attack trigger may change who blocks what before the
+        // blocks are asked for: what is offered then is the reference's
+        // combat's to say, each way it resolves.
+        let plain = attackers.iter().all(|a| world.permanents[a].combat.on_attack.is_none() && world.permanents[a].combat.on_attack_tokens.is_none());
+        if plain {
+            let offered: BTreeMap<ObjectId, Vec<ObjectId>> = combat_questions_of(&state, registry, &attackers).blocks
+                .map(|(legal, _)| legal.into_iter().map(|(b, mut a)| { a.sort(); (b, a) }).filter(|(_, a)| !a.is_empty()).collect())
+                .unwrap_or_default();
+            if offered != may {
+                failures.push(format!("{about}: offered the blocks {offered:?}, and the text allows {may:?}"));
+                continue;
+            }
+        }
+        // Each way of blocking: each blocker one of the attackers it may
+        // block, or none.
+        let mut ways: Vec<Vec<(ObjectId, ObjectId)>> = vec![Vec::new()];
+        for (b, options) in &may {
+            ways = ways.into_iter()
+                .flat_map(|way| std::iter::once(way.clone()).chain(options.iter().map(move |a| [way.clone(), vec![(*b, *a)]].concat())))
+                .collect();
+        }
+        for blocks in ways {
+            let blockers_of = |a: &ObjectId| -> Vec<ObjectId> { blocks.iter().filter(|(_, x)| x == a).map(|(b, _)| *b).collect() };
+            if attackers.iter().any(|a| has(&declared.permanents[a], Keyword::Menace) && blockers_of(a).len() == 1) {
+                continue;
+            }
+            *combats += 1;
+            let attacks: Vec<Attack> = attackers.iter().map(|a| Attack { attacker: *a, blockers: blockers_of(a), defender: Target::Player(P1) }).collect();
+            let want = combat_of(&world, &attacks);
+            let endings = combat_endings(&state, registry, &world, &(attackers.iter().map(|a| (*a, Target::Player(P1))).collect(), blocks.clone()));
+            if let Some(why) = disagreement(&want, &endings, registry) {
+                failures.push(format!("{about}, blocked {:?}: {why}", blocks.iter().map(|(b, a)| (named(b), named(a))).collect::<Vec<_>>()));
+            }
+        }
+    }
+}
+
+/// A combat on every small board ([`on_every_small_board`]), every way it
+/// can be declared ([`check_combat_on`]).
+#[test]
+fn every_combat_ends_as_the_rules_say_on_every_small_board() {
+    on_every_small_board("combats", &|small, on, which, failures, combats| {
+        let Some(made) = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false) else { return };
+        check_combat_on(which, made, small.registry, failures, combats);
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -10390,6 +10493,15 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
     if attacks.iter().any(|t| !t.blockers.is_empty()) {
         w.state_based_actions();
     }
+    // What a death by then sets off, each way it resolves, before the
+    // damage (CR 603.3b, 510.1).
+    settle_triggers(w).into_iter().flat_map(|w| combat_damage(w, attacks)).collect()
+}
+
+/// [`combat_after_attacking`] from the blocks declared and their triggers
+/// resolved: the damage of each step, what it sets off, and the end of
+/// combat.
+fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
     let fast = |m: &Model| has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike);
     let any_fast = attacks.iter().any(|t| w.permanents.get(&t.attacker).is_some_and(fast) || t.blockers.iter().any(|b| w.permanents.get(b).is_some_and(fast)))
         || w.tokens.iter().any(|t| t.attacking && fast(t));
@@ -10660,7 +10772,9 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
                         })
                         .collect();
                 }
-                next.extend(drawn.into_iter().map(|d| (d, orders.clone())));
+                // And what the step's deaths set off on the board, each
+                // way it resolves, before the next step (CR 510.4, 603.3b).
+                next.extend(drawn.into_iter().flat_map(settle_triggers).map(|d| (d, orders.clone())));
             }
         }
         worlds = next;
@@ -10682,7 +10796,7 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
         }
         w.state_based_actions();
     }
-    worlds.into_iter().map(|(w, _)| w).collect()
+    worlds.into_iter().flat_map(|(w, _)| settle_triggers(w)).collect()
 }
 
 /// Every way a blocked attacker may divide `n` combat damage among the
@@ -10919,6 +11033,12 @@ struct Asked {
 }
 
 fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> Asked {
+    combat_questions_of(state, registry, &[a])
+}
+
+/// [`combat_questions`] with all of `attackers` declared at the other
+/// player, if each is offered; with none, only the attackers' question.
+fn combat_questions_of(state: &GameState, registry: &CardRegistry, attackers: &[ObjectId]) -> Asked {
     let mut state = state.clone();
     let mut asked = Asked { eligible: Vec::new(), must_attack: Vec::new(), planeswalkers: Vec::new(), blocks: None };
     let mut decisions = 0;
@@ -10934,8 +11054,8 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
                 asked.eligible.clone_from(eligible);
                 asked.must_attack.clone_from(must_attack);
                 asked.planeswalkers.clone_from(defending_planeswalkers);
-                if eligible.contains(&a) {
-                    Action::DeclareAttackers { attackers: vec![(a, P1)], planeswalker_attacks: Vec::new() }
+                if !attackers.is_empty() && attackers.iter().all(|a| eligible.contains(a)) {
+                    Action::DeclareAttackers { attackers: attackers.iter().map(|a| (*a, P1)).collect(), planeswalker_attacks: Vec::new() }
                 } else {
                     Action::AbandonGame
                 }
