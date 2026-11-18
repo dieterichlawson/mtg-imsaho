@@ -327,6 +327,21 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
 /// What every card hook leaves behind on an object — the contract card code
 /// is held to whichever card wrote the field.
 fn contract(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
+    // A held batch waits on at least one answer; one with none outstanding
+    // would never enter (`replacement::record_entry_choice` releases it).
+    for batch in &state.pending_entry_batches {
+        let members = &batch.objects;
+        if !members.iter().any(|id| state.pending_entry_choices.contains(id)) {
+            v.push(format!("{}'s simultaneous entry is held with no enters-as-copy choice outstanding", batch.source_name));
+        }
+        // And every member is a card the allocator handed out and that still
+        // exists to enter (the resume half, as #1062 for triggers).
+        for id in members {
+            if state.get_object(*id).is_none() {
+                v.push(format!("{}'s held entry names #{}, which does not exist", batch.source_name, id.0));
+            }
+        }
+    }
     for obj in state.objects_in_id_order() {
         let id = obj.id;
         let tag = format!("#{} ({})", id.0, obj.name);
@@ -339,6 +354,11 @@ fn contract(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
         // exists to remove.
         if state.pending_entry_choices.contains(&id) && on_bf {
             v.push(format!("{tag} is on the battlefield while still queued for its enters-as-copy choice (CR 614.12b)"));
+        }
+        // A held batch has not entered: every member is where it came from
+        // until the last chooser answers (CR 603.6a, #1064).
+        if on_bf && state.pending_entry_batches.iter().any(|b| b.objects.contains(&id)) {
+            v.push(format!("{tag} is on the battlefield while its simultaneous entry is still held (CR 603.6a)"));
         }
 
         if !obj.is_token {

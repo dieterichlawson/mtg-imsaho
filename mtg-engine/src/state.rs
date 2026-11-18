@@ -375,6 +375,16 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_controllers: std::collections::BTreeMap<ObjectId, PlayerId>,
 
+    /// Cards one effect puts onto the battlefield at the same time, held
+    /// together while any of them waits on its enters-as-a-copy choice
+    /// (`put_onto_battlefield_together`). They enter as one event once the
+    /// last answer is in, so a copy cannot be of a card entering beside it
+    /// (CR 614.12b, 707: it copies what is on the battlefield as it enters),
+    /// and nothing that cares what is there sees half the batch (#1064,
+    /// #1065).
+    #[serde(default)]
+    pub pending_entry_batches: Vec<EntryBatch>,
+
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
     /// one ends the permanent goes to whichever of the rest is latest — a
@@ -688,6 +698,7 @@ impl GameState {
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
             pending_entry_controllers: std::collections::BTreeMap::new(),
+            pending_entry_batches: Vec::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -1291,6 +1302,115 @@ impl GameState {
         self.move_object_inner(id, to, None, registry)
     }
 
+    /// Whether putting this object onto the battlefield has to wait for its
+    /// controller to choose what it enters as (CR 614.12b): it is not there
+    /// yet, it has not been asked, and its card makes the choice.
+    fn entry_waits_on_copy_choice(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield
+            && o.entering_copy_choice == EnterAsCopyChoice::Unasked
+            && registry.get(o.card_id)
+                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters))
+    }
+
+    /// Put several cards onto the battlefield as one event — "put all
+    /// creature cards from all graveyards onto the battlefield".
+    ///
+    /// They enter at the same moment (CR 603.6a), so a card among them that
+    /// chooses what to enter as a copy of chooses from what was on the
+    /// battlefield before any of them arrived: a creature entering beside it
+    /// is not there to copy (CR 614.12b, 707). This used to move each card
+    /// in turn and defer only the Evil Twins, so a Twin was offered the
+    /// creatures returning with it, and state-based actions ran between two
+    /// Twins' answers with half the batch in — killing a 0/0 Boneyard Wurm
+    /// mid-resolution and making the second Twin's Festerhide Boar copy enter
+    /// with morbid (#1064, #1065).
+    ///
+    /// If any member has a copy choice outstanding, none of them moves: each
+    /// chooser is queued under the controller it enters for, and the batch
+    /// enters once the last answer is recorded
+    /// (`replacement::record_entry_choice`). The additions go on with the
+    /// entry, so a deferred member gets them too (#1067).
+    pub fn put_onto_battlefield_together(
+        &mut self,
+        objects: Vec<ObjectId>,
+        controller: Option<PlayerId>,
+        additions: EntryAdditions,
+        source_name: &str,
+        summary: &str,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        let batch = EntryBatch {
+            objects, controller, additions,
+            source_name: source_name.to_string(),
+            summary: summary.to_string(),
+        };
+        let choosers: Vec<ObjectId> = batch.objects.iter().copied()
+            .filter(|&id| self.entry_waits_on_copy_choice(id, registry))
+            .collect();
+        if choosers.is_empty() {
+            self.enter_batch(batch, registry);
+            return;
+        }
+        for id in choosers {
+            let name = self.obj_name(id);
+            self.log(LogLevel::Event, format!("{source_name}: {name} is choosing what to enter as"));
+            if !self.pending_entry_choices.contains(&id) {
+                self.pending_entry_choices.push(id);
+            }
+            if let Some(c) = controller {
+                self.pending_entry_controllers.insert(id, c);
+            }
+        }
+        self.pending_entry_batches.push(batch);
+    }
+
+    /// The batch whose entry `object` belongs to, if one is held, taken out
+    /// once no member is still waiting on its choice.
+    pub(crate) fn take_ready_entry_batch(&mut self, object: ObjectId) -> Option<Option<EntryBatch>> {
+        let i = self.pending_entry_batches.iter().position(|b| b.objects.contains(&object))?;
+        let waiting = self.pending_entry_batches[i].objects.iter()
+            .any(|id| self.pending_entry_choices.contains(id));
+        Some((!waiting).then(|| self.pending_entry_batches.remove(i)))
+    }
+
+    /// Every member of a batch onto the battlefield, each with the batch's
+    /// additions, and the lines that say so.
+    pub(crate) fn enter_batch(&mut self, batch: EntryBatch, registry: &crate::cards::CardRegistry) {
+        let EntryBatch { objects, controller, additions, source_name, summary } = batch;
+        let described: Vec<String> = additions.colors.iter()
+            .map(|c| format!("{c:?}").to_lowercase())
+            .chain(additions.subtypes.iter().cloned())
+            .collect();
+        let described = if described.is_empty() { String::new() }
+            else { format!(" as a {}", described.join(" ")) };
+        let mut entered = 0;
+        for id in objects {
+            let name = self.obj_name(id);
+            // A member answered its choice, so nothing defers it any more;
+            // its held controller is the batch's.
+            self.pending_entry_controllers.remove(&id);
+            let moved = self.move_object_inner(id, Zone::Battlefield, controller, registry);
+            if !moved || self.get_object(id).is_none_or(|o| o.zone != Zone::Battlefield) {
+                continue;
+            }
+            entered += 1;
+            if let Some(obj) = self.get_object_mut(id) {
+                for s in &additions.subtypes {
+                    if !obj.subtypes.contains(s) {
+                        obj.subtypes.push(s.clone());
+                    }
+                }
+                for c in &additions.colors {
+                    if !obj.colors.contains(c) {
+                        obj.colors.push(*c);
+                    }
+                }
+            }
+            self.log(LogLevel::Event, format!("{source_name}: {name} returned{described}"));
+        }
+        self.log(LogLevel::Event, format!("{source_name}: {entered} {summary}"));
+    }
+
     fn move_object_inner(
         &mut self,
         id: ObjectId,
@@ -1305,13 +1425,7 @@ impl GameState {
         // its controller before anyone receives priority, and the answer
         // re-runs this move. Nothing ever sees the permanent on the
         // battlefield as its printed self with the choice outstanding.
-        if to == Zone::Battlefield
-            && self.objects.get(&id).is_some_and(|o| o.zone != Zone::Battlefield)
-            && self.objects.get(&id)
-                .is_some_and(|o| o.entering_copy_choice == EnterAsCopyChoice::Unasked)
-            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
-                .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
-        {
+        if to == Zone::Battlefield && self.entry_waits_on_copy_choice(id, registry) {
             if !self.pending_entry_choices.contains(&id) {
                 self.pending_entry_choices.push(id);
             }
@@ -4324,6 +4438,31 @@ pub enum EnterAsCopyChoice {
     Declined,
     /// Asked, and answered with the permanent to enter as a copy of.
     Copy(ObjectId),
+}
+
+/// What an effect that puts cards onto the battlefield adds to each of them
+/// as they arrive (Grimoire of the Dead: "They're black Zombies in addition
+/// to their other colors and types").
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryAdditions {
+    pub colors: Vec<crate::types::Color>,
+    pub subtypes: Vec<String>,
+}
+
+/// One effect's simultaneous entry, held while a member chooses what to
+/// enter as (see `GameState::pending_entry_batches`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryBatch {
+    /// Every card the effect puts onto the battlefield, in the order logged.
+    pub objects: Vec<ObjectId>,
+    /// The controller they enter under, when not their owners.
+    pub controller: Option<PlayerId>,
+    pub additions: EntryAdditions,
+    /// The effect's source, for the log lines.
+    pub source_name: String,
+    /// What the count line says arrived ("creatures returned from all
+    /// graveyards").
+    pub summary: String,
 }
 
 /// Serde fallback for `GameObject::base_controller` in saves written before

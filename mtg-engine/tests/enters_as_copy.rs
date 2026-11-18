@@ -237,6 +237,30 @@ fn asked(state: &mtg_engine::state::GameState) -> Option<mtg_engine::ids::Player
     }
 }
 
+/// CR 614.12b, 707: the Twin copies what is on the battlefield as it enters,
+/// and the cards entering with it are not there yet. The engine moved every
+/// other card first and then asked, so the Twin was offered the Festerhide
+/// Boar returning beside it (#1065).
+#[test]
+fn a_twin_returned_with_other_creatures_cannot_copy_them() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let boar = in_graveyard(&mut state, &reg, "Festerhide Boar", P0);
+
+    let state = resolve_grimoire(state, &reg);
+
+    let offered = pending_choice_options(&state);
+    assert_eq!(offered, vec![Target::Object(bear)],
+        "only what was already on the battlefield is a copy to choose");
+    assert_eq!(state.get_object(boar).unwrap().zone, Zone::Graveyard,
+        "the batch enters together, after the choice");
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(boar).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &reg), "Grizzly Bears");
+}
+
 /// CR 109.5, 614.12b: the choice belongs to the player the permanent enters
 /// under. p0's Grimoire returning p1's Twin asked p1 (#1066).
 #[test]
@@ -251,4 +275,65 @@ fn an_opponents_twin_returned_under_your_control_asks_you() {
     assert_eq!(asked(&state), Some(P0), "got {:?}", state.awaiting_action);
     let state = answer(&state, &reg, bear);
     assert_eq!(state.get_object(twin).unwrap().controller, P0);
+}
+
+/// CR 613.1a, 613.1d-e: Grimoire's "black Zombies" applies on top of the
+/// copy. The deferred Twin skipped the stamp, and the count line counted the
+/// two Twins still choosing as returned (#1067).
+#[test]
+fn a_twin_returned_by_grimoire_is_a_black_zombie_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let boar = in_graveyard(&mut state, &reg, "Festerhide Boar", P1);
+
+    let mut state = resolve_grimoire(state, &reg);
+    let before: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(!before.iter().any(|l| l.contains("creatures returned")),
+        "nothing has returned while the Twin chooses: {before:?}");
+    state.game_log.clear();
+    let state = answer(&state, &reg, bear);
+
+    for id in [twin, boar] {
+        assert!(state.has_subtype(id, "Zombie", &reg), "#{} is a Zombie", id.0);
+        assert!(state.colors_of(id, &reg).contains(&Color::Black), "#{} is black", id.0);
+    }
+    assert!(state.has_subtype(twin, "Bear", &reg), "and still the Bear it copied");
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(lines.iter().any(|l| l == "Grimoire of the Dead: 2 creatures returned from all graveyards"),
+        "{lines:?}");
+    assert!(lines.iter().any(|l| l.starts_with("Grimoire of the Dead: Evil Twin (#") && l.ends_with(") returned as a black Zombie")),
+        "{lines:?}");
+}
+
+/// CR 704.3: no state-based action runs inside a resolution. With two Twins
+/// in the batch, SBAs ran between their answers: a Boneyard Wurm that the
+/// first Twin's leaving had made 0/0 died, and the second Twin's copy of a
+/// Festerhide Boar entered with morbid's counters (#1064).
+#[test]
+fn two_twins_in_one_batch_see_no_state_based_action_between_answers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
+    let traveler = named_permanent(&mut state, &reg, "Doomed Traveler", P1);
+    let boar = named_permanent(&mut state, &reg, "Festerhide Boar", P1);
+    let first = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let second = in_graveyard(&mut state, &reg, "Evil Twin", P1);
+
+    let state = resolve_grimoire(state, &reg);
+    let state = answer(&state, &reg, traveler);
+
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Battlefield,
+        "the resolution is not over, so nothing has died");
+    assert_eq!(state.get_object(first).unwrap().zone, Zone::Graveyard,
+        "and nothing has entered: the batch waits on the second answer");
+    assert!(pending_choice_options(&state).contains(&Target::Object(wurm)));
+
+    let state = answer(&state, &reg, boar);
+    assert_eq!(state.name_of(second, &reg), "Festerhide Boar");
+    assert!(state.get_object(second).unwrap().counters.is_empty(),
+        "no creature had died as it entered, so morbid adds nothing (CR 603.2)");
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Graveyard,
+        "once the batch is in, the 0/0 Wurm dies to SBA");
 }

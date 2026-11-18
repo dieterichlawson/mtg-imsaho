@@ -171,6 +171,10 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
         else {
             state.pending_entry_choices.remove(0);
             state.pending_entry_controllers.remove(&object);
+            // A batch it belonged to is waiting on one fewer answer.
+            if let Some(Some(batch)) = state.take_ready_entry_batch(object) {
+                state.enter_batch(batch, registry);
+            }
             continue;
         };
         // "A copy of any creature on the battlefield" is a choice, not a
@@ -217,6 +221,14 @@ pub fn record_entry_choice(
         obj.entering_copy_choice = choice;
     }
     state.pending_entry_choices.retain(|&id| id != object);
+    // A member of a simultaneous entry waits for the rest of its batch, and
+    // the last answer puts every member in at once (#1064, #1065).
+    if let Some(ready) = state.take_ready_entry_batch(object) {
+        if let Some(batch) = ready {
+            state.enter_batch(batch, registry);
+        }
+        return;
+    }
     // The entry the deferral belonged to may have asked for a controller
     // other than the owner (Grimoire of the Dead, Moldgraf Monstrosity,
     // Fiend Hunter). It was held rather than written, so it is applied now,

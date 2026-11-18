@@ -137,39 +137,24 @@ impl CardBehavior for GrimoireOfTheDead {
                     .map(|o| o.id)
                     .collect();
 
-                let count = creatures.len();
-                for cid in creatures {
-                    let name = state.obj_name(cid);
-                    // A card with a copy choice outstanding (Evil Twin) has
-                    // its entry deferred until its controller answers, so it
-                    // has NOT moved yet. Stamping it anyway left it in its
-                    // owner's graveyard wearing this Grimoire's controller
-                    // and a Zombie subtype — CR 108.4 and CR 400.7, reported
-                    // by the fuzzer from fifteen seeds (issues #335-#349).
-                    if !state.move_object_under_control(cid, Zone::Battlefield, controller, registry) {
-                        state.log(crate::state::LogLevel::Event, format!(
-                            "Grimoire of the Dead: {name} is choosing what to enter as"));
-                        continue;
-                    }
-                    // No `is_legendary` stamping here any more: the legend rule
-                    // reads the active face (`state.is_legendary`), so a
-                    // reanimated legend is caught by CR 704.5j without every
-                    // card that puts one onto the battlefield remembering to
-                    // say so.
-                    if let Some(obj) = state.get_object_mut(cid) {
-                        // They're black Zombies in addition to their other colors and types.
-                        if !obj.subtypes.contains(&"Zombie".into()) {
-                            obj.subtypes.push("Zombie".into());
-                        }
-                        if !obj.colors.contains(&Color::Black) {
-                            obj.colors.push(Color::Black);
-                        }
-                    }
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: {name} returned as a black Zombie"));
-                }
-                state.log(crate::state::LogLevel::Event,
-                    format!("Grimoire of the Dead: {count} creatures returned from all graveyards"));
+                // One event: every card enters at the same moment, black
+                // Zombies as they arrive. An Evil Twin among them holds the
+                // whole batch until it has chosen, from the creatures that
+                // were already here (#1064, #1065), and gets the Zombie and
+                // black with the rest (#1067). No `is_legendary` stamping:
+                // the legend rule reads the active face, so a reanimated
+                // legend is caught by CR 704.5j.
+                state.put_onto_battlefield_together(
+                    creatures,
+                    Some(controller),
+                    crate::state::EntryAdditions {
+                        colors: vec![Color::Black],
+                        subtypes: vec!["Zombie".into()],
+                    },
+                    "Grimoire of the Dead",
+                    "creatures returned from all graveyards",
+                    registry,
+                );
             }
             _ => {}
         }
