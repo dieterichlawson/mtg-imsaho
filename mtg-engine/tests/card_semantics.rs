@@ -9416,6 +9416,142 @@ fn every_enter_watcher_sees_what_its_text_says_on_every_small_board() {
     });
 }
 
+/// What is cast beside a permanent that watches for spells being cast.
+#[derive(Clone, Copy, Debug)]
+enum CastBeside {
+    /// Its controller's Think Twice, from their hand or by flashback from
+    /// their graveyard.
+    ThinkTwice { flashback: bool },
+    /// Its controller's Grizzly Bears, a creature spell.
+    GrizzlyBears,
+    /// The other player's Think Twice.
+    TheOpponents,
+}
+
+/// One permanent that watches for spells being cast, placed on one board
+/// under P0 as `cast` is cast beside it: a cast its text names sets it
+/// off, the trigger goes on the stack above the spell and resolves first
+/// every way it can, and the spell after it (CR 601.2i, 603.3, 608.1),
+/// with what either sets off on the board; a cast it does not name, and
+/// the other player's, set off nothing, which the stack count sees.
+/// `borrowed` makes the watcher the other player's card, and `which`
+/// names the board in what is reported.
+#[allow(clippy::too_many_arguments)]
+fn check_cast_watcher_on(card: &Printed, spec: &Spec, (cast, borrowed): (CastBeside, bool), which: &str,
+    (mut state, mut world): (GameState, World), registry: &CardRegistry, cache: &BTreeMap<String, Printed>, failures: &mut Vec<String>, casts: &mut usize) {
+    let watch = spec.on_cast.as_deref().expect("a watcher of casts");
+    let watcher = place_face(&mut state, &mut world, &registry, card, spec, P0);
+    if borrowed {
+        state.get_object_mut(watcher).expect("just placed").owner = P1;
+        world.permanents.get_mut(&watcher).expect("just placed").owner = P1;
+    }
+    world.refresh();
+    if world.permanents.get(&watcher).is_some_and(|m| m.is_creature() && world.pt_of(m).1.is_some_and(|t| t <= 0)) {
+        return;
+    }
+    *casts += 1;
+    let names = |spell: &Printed, from_graveyard: bool| {
+        (watch.kinds.is_empty() || watch.kinds.iter().any(|k| spell.types().0.iter().any(|t| t.to_lowercase() == *k)))
+            && (!watch.from_graveyard || from_graveyard)
+    };
+    let (twice, twice_spec) = (&cache["Think Twice"], read(&cache["Think Twice"]).expect("Think Twice reads"));
+    let what = format!("{} as {cast:?} is cast{}{which}", card.name, if borrowed { ", the watcher the other player's card" } else { "" });
+    // The trigger of a cast the text names, each way it resolves, on the
+    // board with the spell on the stack.
+    let triggered = |world: &World, named: bool| -> Vec<World> {
+        let mut w = world.clone();
+        w.source = Some(watcher);
+        if named { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] }
+    };
+    let (want, got, asked): (Vec<World>, Result<Vec<GameState>, String>, Vec<Question>) = match cast {
+        CastBeside::ThinkTwice { flashback } => {
+            let (spell, cost) = if flashback {
+                let there = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some("Think Twice")).map(|(id, _)| *id);
+                let spell = match there {
+                    Some(id) => {
+                        world.yard.remove(&id);
+                        let at = world.graveyard[0].iter().position(|n| n == "Think Twice").expect("in the graveyard");
+                        world.graveyard[0].remove(at);
+                        id
+                    }
+                    None => card_in_graveyard(&mut state, &registry, "Think Twice", P0),
+                };
+                (spell, twice_spec.flashback.clone())
+            } else {
+                (spell_in_hand(&mut state, &registry, "Think Twice", P0), None)
+            };
+            fund(&mut state, P0, cost.as_ref().unwrap_or(&mana_cost(&twice.mana_cost).expect("a cost")), 0);
+            let want = triggered(&world, names(twice, flashback)).iter()
+                .map(|w| {
+                    let mut after = resolve(&twice_spec, w, &[], P0, twice, spell);
+                    if flashback {
+                        let last = after.graveyard[0].pop().expect("the spell");
+                        after.exile[0].push(last);
+                    }
+                    after
+                })
+                .flat_map(settle_triggers)
+                .collect();
+            let first = cast_for(spell, Vec::new(), cost.as_ref());
+            let (got, asked) = questions_asked(|| every_ending_casting(&state, &registry, spell, &[], Some(first.clone())));
+            (want, got, asked)
+        }
+        CastBeside::GrizzlyBears => {
+            let (bears, bears_spec) = (&cache["Grizzly Bears"], read_creature(&cache["Grizzly Bears"]).expect("Grizzly Bears reads"));
+            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == "Grizzly Bears") {
+                Some(o) => {
+                    let at = world.hand[0].iter().position(|n| n == "Grizzly Bears").expect("in the reference's hand");
+                    world.hand[0].remove(at);
+                    o.id
+                }
+                None => spell_in_hand(&mut state, &registry, "Grizzly Bears", P0),
+            };
+            fund(&mut state, P0, &mana_cost(&bears.mana_cost).expect("a cost"), 0);
+            let want = triggered(&world, names(bears, false)).iter().flat_map(|w| creature_outcomes(&bears_spec, w, P0, bears, spell)).collect();
+            let (got, asked) = questions_asked(|| every_ending(&state, &registry, Some(spell)));
+            (want, got, asked)
+        }
+        CastBeside::TheOpponents => {
+            let spell = spell_in_hand(&mut state, &registry, "Think Twice", P1);
+            fund(&mut state, P1, &mana_cost(&twice.mana_cost).expect("a cost"), 0);
+            state.priority_player = Some(P1);
+            let want = settle_triggers(resolve(&twice_spec, &world, &[], P1, twice, spell));
+            let got = every_ending_from(&state, &registry, None, Some(cast_action(spell, Vec::new())));
+            (want, got, Vec::new())
+        }
+    };
+    // The engine puts the spell on the stack as well.
+    let mut from = state.clone();
+    from.stack_puts += 1;
+    if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got))
+        .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, watcher, &asked))
+    {
+        failures.push(format!("{what}: {why}"));
+    }
+}
+
+/// Every permanent the grammar reads that watches for spells being cast,
+/// placed on every small board ([`on_every_small_board`]) under P0, as
+/// its controller casts an instant from their hand and by flashback and a
+/// creature, and as the other player casts an instant
+/// ([`check_cast_watcher_on`]).
+#[test]
+fn every_cast_watcher_sees_what_its_text_says_on_every_small_board() {
+    on_every_small_board("casts beside a cast watcher", &|small, on, which, failures, casts| {
+        for (card, spec) in small.cards.iter().filter(|(_, s)| s.on_cast.is_some()) {
+            let cases = [
+                (CastBeside::ThinkTwice { flashback: false }, false), (CastBeside::ThinkTwice { flashback: true }, false),
+                (CastBeside::ThinkTwice { flashback: false }, true), (CastBeside::ThinkTwice { flashback: true }, true),
+                (CastBeside::GrizzlyBears, false), (CastBeside::TheOpponents, false),
+            ];
+            for case in cases {
+                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+                check_cast_watcher_on(card, spec, case, which, made, small.registry, small.cache, failures, casts);
+            }
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
