@@ -353,9 +353,12 @@ with only its target's numbers left open. So the 715 harnesses that asserted
 a record of calls are removed (2026-11-18), and a card's proof is to run the
 engine itself: the engine in the loop is the reference's job, on generated
 boards and on every board of a stated small size rather than boards written
-for each test (`docs/plans/cards-in-the-loop.md`). The 285 card harnesses
-kept are of what a card declares and of what its own code writes to the
-state, each of which the engine's own proofs read.
+for each test (`docs/plans/cards-in-the-loop.md`, part B: on every board
+of one piece, 2,032 of them, every cast, activated ability, flashback,
+upkeep and end step the grammar reads agrees with its text, some 810,000
+plays in all, and they run in the `proofs` workflow). The 285 card
+harnesses kept are of what a card declares and of what its own code
+writes to the state, each of which the engine's own proofs read.
 
 ### Tier 4: whole-game properties
 

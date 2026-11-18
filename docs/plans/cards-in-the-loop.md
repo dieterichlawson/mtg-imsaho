@@ -301,25 +301,78 @@ writes to the state (a question, an until-end-of-turn effect), each read
 by an engine function with a proof of its own. No stand-in is between
 those assertions and the code they are of.
 
-### B1. Every small board (next)
+### B1. Every small board (under way)
 
 The generated boards are a sample. A proof by exhaustion is the same
-check over every board of a stated size: every card of the pool cast,
-with the real engine, at every target set and every answer and every
-order its triggers may take, on every board of at most N other objects,
-each any permanent of the vocabulary on either side in each state of wear
-(tapped, damaged, a counter of either kind, a shield, borrowed), a
-creature token of each kind, or any card of the pool in either graveyard;
-and the games the engine ends in held to the games the text allows. That
-is a statement about every board in a bound, as a Kani proof is, with the
-engine itself under the card and the reference as its specification.
+check over every board of a stated size, and that is what a card's proof
+now is: the real engine under the card, every case of a family counted
+out whole, and the reference as the specification.
 
-Scale, from what the generated boards measure (about 1,600 casts a second
-on four cores in release): one other object is some 800 boards and a
-quarter of a million casts, minutes; two is some 350,000 boards and 94
-million casts, 16 hours on four cores and an hour on 64; three is beyond
-one machine of any size offered so far without cutting the family (the
-permanents alone, or one state of wear), which is said where it is cut.
+**The family.** A board is what every board holds (the hands and
+libraries of the fixed board, 20 life each, the first player's main
+phase) and a multiset of at most N pieces. A piece is a permanent of the
+vocabulary on either side in a state of wear (as it entered, tapped, the
+other player's card, 1 damage, a +1/+1 counter, a -1/-1 counter, a
+regeneration shield; the last four a creature's), a creature token on
+either side likewise (the nine kinds the set makes or nearly, and two of
+no colour or subtype), or a card of the pool in either graveyard: 2,170
+pieces, 808 of them as they entered. Boards of one piece wear every
+state; larger boards are as they entered unless asked otherwise
+(`CARD_SEMANTICS_SMALL_WORN`). Not boards of the family, and counted as
+such by each run: one whose permanent cannot be worn as asked or is left
+with no toughness (dead, it is another board), and one with two
+permanents that trigger on deaths.
+
+**What is played on each board** (`on_every_small_board`), each through
+the same check as on the hand-made boards, now a function of the board:
+
+| | what | one piece (2,032 boards) |
+|---|---|---|
+| casts | every non-land card the grammar reads, cast at every target set and every answer (`check_cast_on`) | 568,483, 37 s |
+| activated abilities | every one read, of either face, its permanent placed under the player to act: offered at exactly its targets and sacrifices, paid, resolved every way (`check_activated_on`) | 111,760, 24 s |
+| flashback | every flashback read, cast from the graveyard (`check_flashback_on`) | 61,226, 15 s |
+| upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 55,396, 5 s |
+| end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,256, 2 s |
+
+Every one of those agrees with its card's text. They run in
+`scripts/prove.sh exhaustive`, and so on every push and pull request.
+`CARD_SEMANTICS_SMALL=2` is every board of two pieces: 327,645 boards,
+about 91 million casts and 18 million activations, some six hours for the
+five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
+names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
+
+**What it has found so far.** No engine defect yet; six gaps of the
+reference, each on a board nobody wrote and in each the engine right:
+
+- the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
+  together by Moldgraf Monstrosity (two pieces);
+- a token made as a resolution goes and dead before it ends (Stitcher's
+  Apprentice's Homunculus, sacrificed to the ability that made it) is a
+  death a Lumberknot sees (activated abilities, one piece);
+- such a token may be the target of what triggers during that
+  resolution (a Pitchburn Devils sacrificed to the same ability);
+- "exchange your life total with this creature's toughness" sets the
+  toughness and applies the board's effects after (Tree of Redemption
+  under Glorious Anthem; the card's ruling of 2018-03-16);
+- a card returned at random from a graveyard may be one milled a moment
+  before (Woodland Sleuth's trigger after Armored Skaab's; two pieces);
+- a creature that arrived this turn does not tap for mana (a Deranged
+  Assistant returned beside the Mentor of the Meek whose trigger asks
+  for {1}, CR 302.6; two pieces).
+
+And what the checks had taken from their hand-made boards and no longer
+do: a board's own triggers, set off by a cost or a resolution, settled
+every way in the activated and flashback checks as they were in the
+cast check; the opponent's spell held on the stack cast on any creature
+of theirs; the source "exiled in response" played only where the
+ability is alone on the stack.
+
+**Next.** The two-piece run to its end, each disagreement worked to its
+cause. Then the properties still on hand-made boards alone: loyalty
+abilities, the werewolves' transformations, the watchers of casts and
+entries, and combat. Three pieces as they entered is 88 million boards
+and about 25 billion casts: some 500 hours on these four cores, a day
+and a half on 64, which is what a larger machine would be asked for.
 
 ### B2. Kani with the engine under a card: what fits
 
