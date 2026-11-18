@@ -334,6 +334,7 @@ the same check as on the hand-made boards, now a function of the board:
 | upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 55,396, 5 s |
 | end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,256, 2 s |
 | loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 22,000, 5 s |
+| werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 24,384, 2 s |
 
 Every one of those agrees with its card's text. They run in
 `scripts/prove.sh exhaustive`, and so on every push and pull request.
@@ -376,8 +377,7 @@ not played beside a permanent that triggers on a death.
 
 **Next.** The two-piece run to its end, each disagreement worked to its
 cause. Then the properties still on hand-made boards alone: the
-werewolves' transformations, the watchers of casts and entries, and
-combat; and the cut above. Three pieces as they entered is 88 million boards
+watchers of casts and entries, and combat; and the cut above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 

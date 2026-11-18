@@ -9227,6 +9227,63 @@ fn every_loyalty_ability_does_what_its_text_says_on_every_small_board() {
     });
 }
 
+/// One werewolf placed on one board under P0, and two of its upkeeps
+/// begun: after a turn in which no spells were cast it transforms to its
+/// back face, keeping what has happened to it, and after one in which a
+/// player cast two it transforms back (CR 603.4, 712.8); `which` names
+/// the board in what is reported.
+fn check_werewolf_on(card: &Printed, which: &str, (mut state, mut world): (GameState, World), registry: &CardRegistry, failures: &mut Vec<String>) {
+    let id = named_permanent(&mut state, &registry, &card.name, P0);
+    world.permanents.insert(id, Model::printed_with_faces(card, P0));
+    // The upkeep starts, and with it each werewolf's trigger: first
+    // after a quiet turn, then after a turn of two spells.
+    for (phase, cast_last_turn) in [("after a turn with no spells", 0), ("after a turn of two spells", 2)] {
+        state.step = Step::Upkeep;
+        state.priority_player = Some(P0);
+        state.num_spells_cast_last_turn = [(P1, cast_last_turn)].into_iter().filter(|(_, n)| *n > 0).collect();
+        fire_step_trigger(&mut state, Step::Upkeep, &registry);
+        for m in world.permanents.values_mut().filter(|m| m.other_face.is_some()) {
+            if m.transformed == (cast_last_turn >= 2) {
+                m.transform();
+            }
+        }
+        let drawn = world.library[0].remove(0);
+        world.hand[0].push(drawn);
+        // On to the main phase, whatever a face's ability gives its
+        // controller to do on the way.
+        state = match play_from(&state, &registry, None, Vec::new(), None, Scene::Until(Step::PrecombatMain), &[]) {
+            Ok(Played::Done(after)) => *after,
+            Ok(Played::Asks(options)) => {
+                failures.push(format!("{}{which} {phase}: the engine asked a question the text does not, answerable {options:?}", card.name));
+                break;
+            }
+            Err(why) => {
+                failures.push(format!("{}{which} {phase}: {why}", card.name));
+                break;
+            }
+        };
+        let (got, want) = (observe(&state, &registry), world.observed());
+        if got != want {
+            failures.push(format!("{}{which} {phase}:\n      {}", card.name, differences(&got, &want)));
+            break;
+        }
+    }
+}
+
+/// Every werewolf the grammar reads, placed on every small board
+/// ([`on_every_small_board`]) under P0, transforming and transforming back
+/// ([`check_werewolf_on`]).
+#[test]
+fn every_readable_werewolf_transforms_as_its_text_says_on_every_small_board() {
+    on_every_small_board("werewolves", &|small, on, which, failures, werewolves| {
+        for (card, spec) in small.cards.iter().filter(|(_, s)| s.werewolf) {
+            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+            *werewolves += 1;
+            check_werewolf_on(card, which, made, small.registry, failures);
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -9763,42 +9820,7 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
     let mut werewolves = 0;
     for (card, _) in cards.iter().filter(|(_, s)| s.werewolf) {
         werewolves += 1;
-        let (mut state, mut world) = board(&registry, &cache);
-        let id = named_permanent(&mut state, &registry, &card.name, P0);
-        world.permanents.insert(id, Model::printed_with_faces(card, P0));
-        // The upkeep starts, and with it each werewolf's trigger: first
-        // after a quiet turn, then after a turn of two spells.
-        for (phase, cast_last_turn) in [("after a turn with no spells", 0), ("after a turn of two spells", 2)] {
-            state.step = Step::Upkeep;
-            state.priority_player = Some(P0);
-            state.num_spells_cast_last_turn = [(P1, cast_last_turn)].into_iter().filter(|(_, n)| *n > 0).collect();
-            fire_step_trigger(&mut state, Step::Upkeep, &registry);
-            for m in world.permanents.values_mut().filter(|m| m.other_face.is_some()) {
-                if m.transformed == (cast_last_turn >= 2) {
-                    m.transform();
-                }
-            }
-            let drawn = world.library[0].remove(0);
-            world.hand[0].push(drawn);
-            // On to the main phase, whatever a face's ability gives its
-            // controller to do on the way.
-            state = match play_from(&state, &registry, None, Vec::new(), None, Scene::Until(Step::PrecombatMain), &[]) {
-                Ok(Played::Done(after)) => *after,
-                Ok(Played::Asks(options)) => {
-                    failures.push(format!("{} {phase}: the engine asked a question the text does not, answerable {options:?}", card.name));
-                    break;
-                }
-                Err(why) => {
-                    failures.push(format!("{} {phase}: {why}", card.name));
-                    break;
-                }
-            };
-            let (got, want) = (observe(&state, &registry), world.observed());
-            if got != want {
-                failures.push(format!("{} {phase}:\n      {}", card.name, differences(&got, &want)));
-                break;
-            }
-        }
+        check_werewolf_on(card, "", board(&registry, &cache), &registry, &mut failures);
     }
     assert!(werewolves > 0);
     assert!(failures.is_empty(), "{}", failures.join("\n  "));
