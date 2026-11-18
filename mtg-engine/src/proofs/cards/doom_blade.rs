@@ -1,6 +1,14 @@
 //! Doom Blade — {1}{B} Instant. "Destroy target nonblack creature."
+//!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
 
-use super::{card_proof, destroys_its_target, resolve, Kinds, ANY_PERMANENT};
+use super::{card_proof, Kinds};
 use crate::actions::Target;
 use crate::cards::doom_blade::DoomBlade;
 use crate::cards::{CardBehavior, TargetFilter, TargetRequirement};
@@ -45,24 +53,3 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// As it resolves holding a permanent or a card of any characteristics,
-    /// Doom Blade asks for that permanent to be destroyed, or for nothing
-    /// if it is no longer one, and nothing else changes.
-    fn doom_blade_destroys_its_target() {
-        let r = resolve(Box::new(DoomBlade), &ANY_PERMANENT, |_, _| {}, |other, _| Target::Object(other));
-        assert!(destroys_its_target(&r) && r.nothing_else_changed());
-        kani::cover!(super::acted() > 0, "a permanent destroyed");
-        std::mem::forget(r);
-    }
-}
-
-card_proof! {
-    /// As it resolves with its target gone illegal (CR 608.2b), Doom Blade
-    /// asks for nothing, and nothing changes.
-    fn doom_blade_does_nothing_to_an_illegal_target() {
-        let r = resolve(Box::new(DoomBlade), &ANY_PERMANENT, |_, _| {}, |_, _| Target::Illegal);
-        assert!(destroys_its_target(&r) && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
-}

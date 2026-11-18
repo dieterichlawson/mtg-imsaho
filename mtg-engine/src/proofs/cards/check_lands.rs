@@ -1,6 +1,14 @@
 //! The check-lands: "This land enters tapped unless you control a <land
 //! type> or a <land type>." (CR 614.1d, 305.6)
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Clifftop Retreat: a Mountain or a Plains.
 //! - Hinterland Harbor: a Forest or an Island.
 //! - Isolated Chapel: a Plains or a Swamp.

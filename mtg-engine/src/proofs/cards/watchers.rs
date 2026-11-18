@@ -2,6 +2,14 @@
 //! a spell being cast, combat damage, or blocks (CR 603.2), with the
 //! condition each one's text puts on that event.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Champion of the Parish, 1/1: "Whenever another Human you control
 //!   enters, put a +1/+1 counter on this creature."
 //! - Mentor of the Meek, 2/2: "Whenever another creature you control with
@@ -26,13 +34,11 @@
 //! own entering ("another") is the engine's (`triggers::collect`), proved
 //! in `proofs::actions::triggering`.
 
-use super::{act, acted, any_object, any_object_of, any_target, asked_for, board, card_proof, case_by_case, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
-use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TargetRequirement as R, TriggerKind};
-use crate::damage::DamageKind;
-use crate::events::DamageTarget;
+use super::{acted, any_object, any_object_of, board, card_proof, case_by_case, each_is, kept, triggers, Form, Kinds, Snapshot};
+use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TriggerKind};
 use crate::ids::{CardId, ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameObject, GameState, PendingEffect, ResolutionChoiceKind, TemporaryEffect as T};
-use crate::types::{CardType, CounterType, ManaCost, ManaSymbol, Zone};
+use crate::state::{GameObject, GameState, TemporaryEffect as T};
+use crate::types::{CardType, Zone};
 
 use crate::cards::isd;
 
@@ -101,30 +107,6 @@ impl Board {
     fn is(&self, id: ObjectId, subtype: &str) -> bool {
         self.get(id).subtypes.iter().any(|s| s == subtype)
     }
-
-    /// One of the other two objects.
-    fn either(&self) -> ObjectId {
-        if kani::any() { self.others[0] } else { self.others[1] }
-    }
-}
-
-card_proof! {
-    /// Champion of the Parish: triggers for a Human entering under its
-    /// controller's control, and nothing else entering; a +1/+1 counter on
-    /// itself.
-    fn champion_of_the_parish_grows_when_a_human_of_yours_enters() {
-        assert!(triggers(&isd::champion_of_the_parish::ChampionOfTheParish) == [(TriggerKind::AnyCreatureEnters, None)]);
-        let mut b = watching(Box::new(isd::champion_of_the_parish::ChampionOfTheParish), false);
-        let entered = b.either();
-        let under = PlayerId(u8::from(kani::any::<bool>()));
-        let fires = b.behavior().should_trigger_on_creature_enters(&b.state, b.me, entered, under, &b.registry);
-        assert!(fires == (under == b.you && b.is(entered, "Human")));
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_any_creature_enters(&mut b.state, b.me, entered, under, &b.registry);
-        assert!(asked_for(&[Act::Counters(b.me, CounterType::PlusOnePlusOne, 1)]) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-    }
 }
 
 /// Mentor of the Meek's board: its creature and two others, of no
@@ -155,80 +137,6 @@ case_by_case! { mentor_of_the_meek_triggers_for_another_small_creature_of_yours;
     mentor_of_the_meek_triggers_for_a_small_creature_token: 2,
 }
 
-/// Mentor of the Meek's effect: its controller is asked whether to pay
-/// {1} if they can (with no way to pay it the "may" has one answer, and
-/// nothing is asked or done, CR 117.3, #940), and on "yes" pays it and, if
-/// it was paid, draws a card (CR 117.12a... "if you do"); on "no",
-/// nothing. Whether they can is the planner's (`any_payment_plan` stands
-/// in for it: a plan or none). Answered `yes` or not, a constant in each
-/// harness: the trigger and both answers in one harness ran out of memory
-/// at four gigabytes in symbolic execution.
-fn mentor_of_the_meek_draws_for_a_small_creature_if_you_pay(yes: bool) {
-    let mut b = watching_of(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false, &CREATURES);
-    let entered = b.either();
-    let under = b.you;
-    let before = Snapshot::of(&b.state);
-    let card = b.card();
-    b.registry.get(card).expect("registered").on_any_creature_enters(&mut b.state, b.me, entered, under, &b.registry);
-    let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-        player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
-    }) if *player == b.you && *source == b.me && *source_card == b.me);
-    assert!(acted() == 0 && super::planned() == Some(asked));
-    kani::cover!(asked, "asked, a payment planned");
-    kani::cover!(!asked, "not asked, none planned");
-    if !asked {
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-        return;
-    }
-    crate::proofs::cards::clear_prompt(&mut b.state);
-    assert!(Snapshot::of(&b.state) == before);
-    b.registry.get(card).expect("registered").on_yes_no_choice(&mut b.state, b.me, yes, &b.registry);
-    let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-    if yes {
-        match act(0) {
-            Some(Act::Pay(p, cost, true)) => {
-                assert!(*p == b.you && *cost == one && acted() == 2 && Some(&Act::Draw(b.you, 1)) == act(1));
-            }
-            Some(Act::Pay(p, cost, false)) => {
-                assert!(*p == b.you && *cost == one && acted() == 1);
-            }
-            _ => panic!("pays first"),
-        }
-    } else {
-        assert!(acted() == 0);
-    }
-    std::mem::forget(b);
-}
-
-case_by_case! { mentor_of_the_meek_draws_for_a_small_creature_if_you_pay;
-    mentor_of_the_meek_pays_and_draws_on_yes: true,
-    mentor_of_the_meek_does_nothing_on_no: false,
-}
-
-card_proof! {
-    /// Burning Vengeance: triggers for a spell its controller casts from a
-    /// graveyard, and no other (CR 601.2a: where it was cast from is the
-    /// spell's); 2 damage from it to any target.
-    fn burning_vengeance_deals_two_when_you_cast_from_a_graveyard() {
-        assert!(triggers(&isd::burning_vengeance::BurningVengeance) == [(TriggerKind::SpellCast, Some(R::AnyTarget))]);
-        let mut b = watching(Box::new(isd::burning_vengeance::BurningVengeance), false);
-        let caster = PlayerId(u8::from(kani::any::<bool>()));
-        let spell = b.state.create_object(CardId(1), caster, Zone::Stack, None, None);
-        let from = match kani::any::<u8>() % 3 { 0 => Some(Zone::Hand), 1 => Some(Zone::Graveyard), _ => None };
-        b.state.get_object_mut(spell).expect("just created").cast_from_zone = from;
-        let fires = b.behavior().should_trigger_on_spell_cast(&b.state, b.me, caster, spell, &b.registry);
-        assert!(fires == (caster == b.you && from == Some(Zone::Graveyard)));
-        let target = any_target(b.others);
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_spell_cast(&mut b.state, b.me, caster, spell, &[target.clone()], &b.registry);
-        assert!(asked_for(&[Act::Effect(target, PendingEffect::DealDamage { amount: 2, source_id: b.me })]));
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-    }
-}
-
 card_proof! {
     /// Charmbreaker Devils: triggers for an instant or sorcery spell its
     /// controller casts, and no other spell (CR 603.2: both are the
@@ -250,46 +158,6 @@ card_proof! {
         b.registry.get(card).expect("registered").on_spell_cast(&mut b.state, b.me, caster, spell, &[], &b.registry);
         assert!(b.state.until_end_of_turn[before.until_end_of_turn()..] == [T::ModifyPT { target: b.me, power_mod: 4, toughness_mod: 0 }]);
         assert!(acted() == 0 && Snapshot::of(&b.state).without_until_end_of_turn() == before.without_until_end_of_turn());
-        std::mem::forget(b);
-    }
-}
-
-card_proof! {
-    /// Rakish Heir: triggers for combat damage to a player dealt by a
-    /// Vampire its controller controls, and no other; a +1/+1 counter on
-    /// that Vampire.
-    fn rakish_heir_grows_your_vampire_that_dealt_combat_damage() {
-        assert!(triggers(&isd::rakish_heir::RakishHeir) == [(TriggerKind::AnyCombatDamageToPlayer, None)]);
-        let mut b = watching(Box::new(isd::rakish_heir::RakishHeir), true);
-        let source = b.either();
-        let damaged = PlayerId(u8::from(kani::any::<bool>()));
-        let fires = b.behavior().should_trigger_on_damage_to_player(&b.state, b.me, source, damaged, &b.registry);
-        assert!(fires == (b.get(source).controller == b.you && b.is(source, "Vampire")));
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_any_combat_damage_to_player(&mut b.state, b.me, source, damaged, 2, &b.registry);
-        assert!(asked_for(&[Act::Counters(source, CounterType::PlusOnePlusOne, 1)]) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-    }
-}
-
-card_proof! {
-    /// Ashmouth Hound: triggers as it blocks and as it becomes blocked; 1
-    /// damage from it to the creature it blocked, or that blocked it.
-    fn ashmouth_hound_deals_one_to_what_it_fights_in_combat() {
-        assert!(triggers(&isd::ashmouth_hound::AshmouthHound) == [(TriggerKind::Blocks, None), (TriggerKind::BecomesBlocked, None)]);
-        let mut b = watching(Box::new(isd::ashmouth_hound::AshmouthHound), true);
-        let other = b.either();
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        let hound = b.registry.get(card).expect("registered");
-        if kani::any() {
-            hound.on_blocks(&mut b.state, b.me, other, &b.registry);
-        } else {
-            hound.on_becomes_blocked(&mut b.state, b.me, other, &b.registry);
-        }
-        assert!(asked_for(&[Act::Damage { source: b.me, target: DamageTarget::Object(other), amount: 1, kind: DamageKind::NonCombat }]));
-        assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
 }

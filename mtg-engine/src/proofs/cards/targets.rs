@@ -2,6 +2,14 @@
 //! says it: the requirement it names, and that it accepts whatever that
 //! requirement offers (it adds no condition of its own).
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! What each requirement then offers is the engine's, proved once for
 //! every card in `proofs::actions::targeting` (the requirement's own
 //! logic) and `proofs::actions::predicates` (what each filter, and

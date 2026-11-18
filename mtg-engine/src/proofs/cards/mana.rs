@@ -1,6 +1,14 @@
 //! Every card with a mana ability (CR 605.1a): what each of its mana
 //! abilities costs and what it adds, against its Oracle text.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! A basic land's ability is the one its land type gives it, "{T}: Add
 //! {W}" for a Plains and so on (CR 305.6). The duals, "{T}: Add {R} or
 //! {W}", are two abilities, one per colour, as a choice of ability is a
@@ -17,7 +25,7 @@
 use super::{blank_board, card_proof};
 use crate::cards::CardBehavior;
 use crate::ids::PlayerId;
-use crate::types::{ManaCost, ManaSymbol, ManaType, Zone};
+use crate::types::{ManaSymbol, ManaType, Zone};
 
 /// One mana ability as a text prints it: its mana cost beyond {T}, and
 /// what it adds.
@@ -89,35 +97,3 @@ mana! {
         => [(0, C, 1), (1, W, 1), (1, U, 1), (1, B, 1), (1, R, 1), (1, G, 1)],
 }
 
-card_proof! {
-    /// Deranged Assistant: "{T}, Mill a card: Add {C}", which exists exactly
-    /// while its controller has a card in their library to mill (CR 118.3,
-    /// 701.17a), and says it does more than add mana; activated, its
-    /// controller mills a card.
-    fn deranged_assistant_taps_and_mills_for_colorless() {
-        let (registry, mut state, blank) = blank_board();
-        let controller = PlayerId(u8::from(kani::any::<bool>()));
-        let id = state.create_object(blank, controller, Zone::Battlefield, None, None);
-        let stocked: bool = kani::any();
-        if stocked {
-            let card = state.create_object(blank, controller, Zone::Library, None, None);
-            if controller == PlayerId(0) {
-                state.players[0].library_order.push(card);
-            } else {
-                state.players[1].library_order.push(card);
-            }
-        }
-        let abilities = isd::deranged_assistant::DerangedAssistant.mana_abilities(&state, id);
-        if stocked {
-            assert!(abilities.len() == 1);
-            let a = &abilities[0];
-            assert!(a.requires_tap && a.cost == ManaCost::free() && a.produced == [(C, 1)] && a.has_side_effects);
-        } else {
-            assert!(abilities.is_empty());
-        }
-        // The mill, paid as the ability is activated: its controller's.
-        isd::deranged_assistant::DerangedAssistant.on_activate_mana_ability(&mut state, id, 0, &registry);
-        assert!(super::asked_for(&[super::Act::Mill(controller, 1)]));
-        std::mem::forget((registry, state, abilities));
-    }
-}

@@ -1,6 +1,14 @@
 //! The spells that change a target until end of turn, tap or untap it,
 //! put counters on it, or make a player lose life.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Giant Growth, {G} Instant: "Target creature gets +3/+3 until end of
 //!   turn."
 //! - Moment of Heroism, {1}{W} Instant: "Target creature gets +2/+2 and
@@ -26,12 +34,12 @@
 //! effects then do, until the cleanup step ends them (CR 514.2), is the
 //! engine's, proved in `proofs::actions`.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, case_by_case, each_is, picked, Act, ANY_PERMANENT, Form, Snapshot};
+use super::{acted, any_object, board, card_proof, each_is, picked, ANY_PERMANENT, Form, Snapshot};
 use crate::actions::Target;
-use crate::cards::{CardBehavior, TargetFilter, TargetRequirement};
+use crate::cards::{CardBehavior, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, TemporaryEffect as T};
-use crate::types::{CounterType, Keyword, Zone};
+use crate::types::Zone;
 
 /// `card` resolving holding `targets` (picked from two objects of the
 /// board, each a permanent or card of any characteristics), cast by player
@@ -51,11 +59,6 @@ fn resolve_holding(card: Box<dyn CardBehavior>, targets: impl FnOnce([ObjectId; 
 fn up_to_two_creatures(card: &dyn CardBehavior) -> bool {
     let r = std::mem::ManuallyDrop::new(card.target_requirement());
     matches!(&*r, TargetRequirement::UpToTargets(2, each) if matches!(**each, TargetRequirement::Creature))
-}
-
-/// The first object, or a target gone illegal.
-fn one(objects: [ObjectId; 2]) -> Vec<Target> {
-    vec![if kani::any() { Target::Object(objects[0]) } else { Target::Illegal }]
 }
 
 /// Up to two: none, either, or both, in either order.
@@ -83,91 +86,6 @@ fn on_battlefield(state: &GameState, targets: &[Target]) -> Vec<ObjectId> {
     })
 }
 
-/// `card`, holding one target, adds exactly `effects(target)` until end of
-/// turn when that target is a permanent, and nothing otherwise; asks for
-/// `acts(target)` then, and for nothing otherwise; and changes nothing
-/// else.
-fn lasts_the_turn<const N: usize>(card: Box<dyn CardBehavior>, effects: fn(ObjectId) -> [T; N], acts: fn(ObjectId) -> Vec<Act>) {
-    let (registry, state, _, targets, before) = resolve_holding(card, one);
-    let added = &state.until_end_of_turn[before.until_end_of_turn()..];
-    match on_battlefield(&state, &targets).as_slice() {
-        [id] => {
-            let expected = std::mem::ManuallyDrop::new(effects(*id));
-            assert!(added == *expected);
-            assert!(asked_for(&acts(*id)));
-            assert!(Snapshot::of(&state).without_until_end_of_turn() == before.without_until_end_of_turn());
-        }
-        _ => {
-            assert!(added.is_empty() && acted() == 0);
-            assert!(Snapshot::of(&state) == before);
-        }
-    }
-    std::mem::forget((registry, state));
-}
-
-card_proof! {
-    /// Giant Growth: "target creature" (CR 115.1), +3/+3 until end of turn.
-    fn giant_growth_gives_plus_three_plus_three() {
-        assert!(crate::cards::giant_growth::GiantGrowth.target_requirement() == TargetRequirement::Creature);
-        lasts_the_turn(Box::new(crate::cards::giant_growth::GiantGrowth),
-            |id| [T::ModifyPT { target: id, power_mod: 3, toughness_mod: 3 }], |_| vec![]);
-    }
-}
-
-card_proof! {
-    /// Moment of Heroism: "target creature", +2/+2 and lifelink until end
-    /// of turn.
-    fn moment_of_heroism_gives_plus_two_plus_two_and_lifelink() {
-        assert!(crate::cards::isd::moment_of_heroism::MomentOfHeroism.target_requirement() == TargetRequirement::Creature);
-        lasts_the_turn(Box::new(crate::cards::isd::moment_of_heroism::MomentOfHeroism),
-            |id| [T::ModifyPT { target: id, power_mod: 2, toughness_mod: 2 }, T::GrantKeyword { target: id, keyword: Keyword::Lifelink }],
-            |_| vec![]);
-    }
-}
-
-card_proof! {
-    /// Ranger's Guile: "target creature you control", +1/+1 and hexproof
-    /// until end of turn.
-    fn rangers_guile_gives_plus_one_plus_one_and_hexproof() {
-        assert!(crate::cards::isd::rangers_guile::RangersGuile.target_requirement()
-            == TargetRequirement::CreatureWithFilter(TargetFilter::YouControl));
-        lasts_the_turn(Box::new(crate::cards::isd::rangers_guile::RangersGuile),
-            |id| [T::ModifyPT { target: id, power_mod: 1, toughness_mod: 1 }, T::GrantKeyword { target: id, keyword: Keyword::Hexproof }],
-            |_| vec![]);
-    }
-}
-
-card_proof! {
-    /// Spidery Grasp: "target creature", untapped, then +2/+4 and reach
-    /// until end of turn.
-    fn spidery_grasp_untaps_and_gives_plus_two_plus_four_and_reach() {
-        assert!(crate::cards::isd::spidery_grasp::SpideryGrasp.target_requirement() == TargetRequirement::Creature);
-        lasts_the_turn(Box::new(crate::cards::isd::spidery_grasp::SpideryGrasp),
-            |id| [T::ModifyPT { target: id, power_mod: 2, toughness_mod: 4 }, T::GrantKeyword { target: id, keyword: Keyword::Reach }],
-            |id| vec![Act::Untap(id)]);
-    }
-}
-
-/// Feeling of Dread: "up to two target creatures" (CR 115.1, 601.2c),
-/// each still a permanent tapped (701.21a), in order, and nothing else.
-/// Holding [`up_to_two_of`]'s choice `which`, a constant in each harness:
-/// the five in one ran out of memory.
-fn feeling_of_dread_taps_up_to_two(which: u8) {
-    assert!(up_to_two_creatures(&crate::cards::isd::feeling_of_dread::FeelingOfDread));
-    let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::feeling_of_dread::FeelingOfDread), |o| up_to_two_of(which, o));
-    let tapped = on_battlefield(&state, &targets);
-    assert!(asked_each(tapped.len(), |i| Act::Tap(tapped[i])) && Snapshot::of(&state) == before);
-    std::mem::forget((registry, state, tapped));
-}
-
-case_by_case! { feeling_of_dread_taps_up_to_two;
-    feeling_of_dread_with_no_target: 0,
-    feeling_of_dread_holding_the_first: 1,
-    feeling_of_dread_holding_the_second: 2,
-    feeling_of_dread_holding_both: 3,
-    feeling_of_dread_holding_both_the_other_way_round: 4,
-}
-
 card_proof! {
     /// Nightbird's Clutches: "up to two target creatures", each still a
     /// permanent unable to block this turn, and nothing else.
@@ -182,50 +100,3 @@ card_proof! {
     }
 }
 
-/// Travel Preparations: "up to two target creatures", a +1/+1 counter
-/// on each, in order, and nothing else. A target no longer a permanent
-/// takes none, which `add_counters` decides (CR 122.1, and its proof in
-/// `proofs::actions`), so the card asks for each. Holding
-/// [`up_to_two_of`]'s choice `which`, a constant in each harness: the five
-/// in one ran out of memory.
-fn travel_preparations_counts_up_to_two(which: u8) {
-    assert!(up_to_two_creatures(&crate::cards::isd::travel_preparations::TravelPreparations));
-    let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::travel_preparations::TravelPreparations), |o| up_to_two_of(which, o));
-    let countered = picked(&targets, |t| match t { Target::Object(id) => Some(*id), _ => unreachable!() });
-    assert!(asked_each(countered.len(), |i| Act::Counters(countered[i], CounterType::PlusOnePlusOne, 1)));
-    assert!(Snapshot::of(&state) == before);
-    std::mem::forget((registry, state, countered));
-}
-
-case_by_case! { travel_preparations_counts_up_to_two;
-    travel_preparations_with_no_target: 0,
-    travel_preparations_holding_the_first: 1,
-    travel_preparations_holding_the_second: 2,
-    travel_preparations_holding_both: 3,
-    travel_preparations_holding_both_the_other_way_round: 4,
-}
-
-card_proof! {
-    /// Bump in the Night: "target opponent" (CR 115.1, 102.2), who loses 3
-    /// life (119.3); with its target gone illegal, nothing.
-    fn bump_in_the_night_makes_its_target_lose_three() {
-        assert!(crate::cards::isd::bump_in_the_night::BumpInTheNight.target_requirement() == TargetRequirement::OpponentOnly);
-        let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::bump_in_the_night::BumpInTheNight), |_| {
-            vec![match kani::any::<u8>() % 3 {
-                0 => Target::Player(PlayerId(0)),
-                1 => Target::Player(PlayerId(1)),
-                _ => Target::Illegal,
-            }]
-        });
-        match targets[0] {
-            Target::Player(p) => {
-                assert!(asked_for(&[Act::Life(p, -3)]));
-            }
-            _ => {
-                assert!(acted() == 0);
-            }
-        }
-        assert!(Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
-    }
-}

@@ -1,27 +1,36 @@
-//! Every card, proved against its Oracle text.
+//! What each card declares, proved against its Oracle text; and the
+//! harness the engine's own proofs share.
 //!
-//! A card proof runs the card's own code, unchanged, on a game state whose
-//! relevant parts are left to Kani: which target the spell holds, which
-//! player controls what, whether a creature died this turn. It asserts what
-//! the card's text says must happen, and that nothing else does.
+//! A card's Oracle text reaches the game in two ways. Part of it the card
+//! declares, as data the engine reads: its abilities and their costs, what
+//! each may target, its triggers and their scopes, the static effects it
+//! prints. The rest its code does as it resolves, mostly by calling the
+//! engine: deal that damage, destroy that creature, draw a card (CR 120,
+//! 701).
 //!
-//! What the card's text says happens is, in the rules, a sequence of
-//! actions: deal 1 damage to that target, destroy that creature, draw a
-//! card (CR 120, 701). The engine performs each one; the card asks for it.
-//! So a card proof replaces the engine function that performs an action
-//! with a recorder ([`record_effect`] and the others here), and asserts
-//! that the card asked for exactly the actions its text names, with the
-//! right objects, players and amounts, under the conditions its text
-//! states. That the engine then performs each action as the rules say is
-//! proved once per action, in `proofs::actions`, rather than once per card
-//! that asks for it, and with the same recorders standing in for the
-//! actions that action itself asks for. The two together are the card's proof; neither half
-//! is a test of the other.
+//! The proofs in this module are of the first part, and of what a card's
+//! code writes to the game state itself: a question asked of a player, an
+//! effect that lasts the turn. Each runs the card's own code, unchanged,
+//! on a game state whose relevant parts are left to Kani, and asserts what
+//! was declared or written. That the engine reads each declaration as the
+//! rules say is proved in `proofs::actions`.
 //!
-//! A recorder changes nothing. A card that reads the board back after an
-//! action (whether the destroyed creature died, say) is proved with a
-//! recorder that also does what the action's own proof says it does, for
-//! every outcome that proof allows.
+//! They are not of the second part. This module used to hold some seven
+//! hundred harnesses more, each running a card's resolution with every
+//! engine action replaced by a recorder and asserting the list of calls
+//! the card made: what the card asked for, not what the game was
+//! afterwards. Nothing tied a recorder to the action it stood in for, and
+//! the assertion was close to the card's own code read back, so they were
+//! no evidence that a card works, and they are gone. What a card does
+//! through the engine is checked with the real engine in the loop, by
+//! `tests/card_semantics.rs` (`docs/plans/cards-in-the-loop.md`).
+//!
+//! The recorders stay ([`record_effect`] and the others here, and
+//! `card_proof!`, which puts them in), for `proofs::actions`: an engine
+//! function is proved one at a time, the functions it calls standing
+//! aside as recorders, each of which has its own proof there. A recorder
+//! changes nothing; a proof here that runs card code under them asserts
+//! only state the card wrote itself.
 //!
 //! Three things are taken out of every proof: `format!`, whose machinery
 //! CBMC does not get through ([`no_format`] stands in), the game log, which
@@ -53,30 +62,22 @@ mod auras;
 mod board_spells;
 mod check_lands;
 mod choices;
-mod combat_triggers;
 mod counted_pt;
 mod curses;
-mod damage_spells;
 mod death_and_attack_triggers;
-mod death_watchers;
-mod destroy_spells;
 mod doom_blade;
 mod effect_spells;
 mod enters;
 mod equipment;
 mod graveyard_spells;
-mod looking;
 mod mana;
 mod planeswalkers;
 mod replacements;
-mod simple_spells;
 mod statics;
 mod steps;
-mod targeted_spells;
 mod targets;
 mod transforming;
 mod watchers;
-mod werewolves;
 
 /// An action a card asked the engine for.
 #[derive(Debug, Clone, PartialEq)]
@@ -437,34 +438,6 @@ pub fn record_tokens(
     new_ids(state, n)
 }
 
-/// Stands in for `GameState::create_tokens_with_subtypes` as
-/// [`record_tokens`] does, and makes the tokens as well, for a card that
-/// reads the board back afterwards: each a token of no card, on the
-/// battlefield under `controller`, with exactly the characteristics asked
-/// for (CR 111.3). What else creating them does (replacement effects,
-/// triggers) is the action's own proof's. Up to two, which is every board
-/// here that reads them back.
-#[allow(dead_code, clippy::too_many_arguments)] // named only by `kani::stub`
-pub fn make_tokens(
-    state: &mut GameState, n: u32, _: &str, controller: PlayerId, power: i32, toughness: i32,
-    colors: Vec<Color>, types: Vec<CardType>, keywords: Vec<Keyword>, subtypes: Vec<String>, _: &CardRegistry,
-) -> Vec<ObjectId> {
-    assert!(n <= 2, "more tokens made than a proof here reads back");
-    record(Act::Tokens { n, controller, power, toughness, colors: colors.clone(), types: types.clone(), keywords: keywords.clone(), subtypes: subtypes.clone() });
-    let mut ids = Vec::with_capacity(2);
-    for _ in 0..n {
-        let id = state.create_object(CardId(0), controller, Zone::Battlefield, Some(power), Some(toughness));
-        let o = state.get_object_mut(id).expect("just created");
-        o.is_token = true;
-        o.colors = colors.clone();
-        o.card_types = types.clone();
-        o.keywords = keywords.clone();
-        o.subtypes = subtypes.clone();
-        ids.push(id);
-    }
-    ids
-}
-
 /// The most tokens one action here makes: Army of the Damned's thirteen,
 /// and some to spare.
 const MAX_TOKENS: usize = 16;
@@ -505,18 +478,6 @@ pub fn record_arrives_tapped(_: &mut GameState, id: ObjectId) {
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_mill_one(_: &mut GameState, id: ObjectId, _: &CardRegistry) {
     record(Act::MillCard(id));
-}
-
-/// Stands in for `engine::mill_one` for a card that reads the library
-/// again after it: as [`record_mill_one`], and the card taken out of its
-/// owner's library, which `move_object` does as it moves it (and which
-/// `proofs::actions` proves).
-#[allow(dead_code)] // named only by `kani::stub`
-pub fn take_milled(state: &mut GameState, id: ObjectId, _: &CardRegistry) {
-    record(Act::MillCard(id));
-    let owner = state.get_object(id).expect("a card in a library").owner;
-    let library = if owner == PlayerId(0) { &mut state.players[0].library_order } else { &mut state.players[1].library_order };
-    library.retain(|card| *card != id);
 }
 
 /// Stands in for `destruction::try_destroy_no_regen`, as [`record_destroy`].
@@ -631,13 +592,6 @@ pub fn any_payment_plan(_: &GameState, _: PlayerId, _: &crate::types::ManaCost, 
 /// proof that a question is asked exactly when there is a way to pay.
 static mut PLANNED: Held<Option<bool>> = Held::new(None, (&raw const PLANNED).cast());
 
-/// What [`any_payment_plan`] last answered: `Some(true)` a plan, `Some(false)`
-/// none, `None` not asked.
-pub fn planned() -> Option<bool> {
-    // SAFETY: as in `any_payment_plan`.
-    unsafe { *std::ptr::addr_of!(PLANNED.value) }
-}
-
 /// Stands in for `GameState::create_token_copy`: the id the token would
 /// have, as [`record_tokens`].
 #[allow(dead_code)] // named only by `kani::stub`
@@ -695,15 +649,6 @@ pub fn record_counter_exiling(_: &mut GameState, spell: ObjectId, _: &CardRegist
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_counters(_: &mut GameState, id: ObjectId, kind: CounterType, n: u32) {
     record(Act::Counters(id, kind, n));
-}
-
-/// Stands in for `GameState::add_counters` as [`record_counters`] does, and
-/// adds them as well, for a card that reads the count back: by
-/// `add_counters_quiet`, which is `add_counters` without its log line.
-#[allow(dead_code)] // named only by `kani::stub`
-pub fn add_counters(state: &mut GameState, id: ObjectId, kind: CounterType, n: u32) {
-    record(Act::Counters(id, kind, n));
-    let _ = state.add_counters_quiet(id, kind, n);
 }
 
 /// Stands in for `GameState::remove_counters`.
@@ -903,13 +848,6 @@ pub fn record_clear_ids(card_state: &mut crate::state::CardState, prefix: &str) 
     }
 }
 
-/// Whether [`record_store_ids`] keeps no list: every card that kept one has
-/// cleared it.
-pub fn no_ids_kept() -> bool {
-    // SAFETY: as in `kept_at`.
-    unsafe { (*std::ptr::addr_of!(KEPT.value)).iter().all(Option::is_none) }
-}
-
 /// Stands in for `helpers::shuffle_library`.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_shuffle(_: &mut GameState, player: PlayerId) {
@@ -1104,27 +1042,12 @@ pub fn no_name(_: &GameState, _: crate::ids::ObjectId) -> String {
 /// proof runs under (the module doc says why each).
 macro_rules! card_proof {
     ($(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind(7) $(#[$meta])* fn $name() $body }
     };
     (unwind($n:literal) $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind($n) tokens(record_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
+        $crate::proofs::cards::card_proof! { @with unwind($n) $(#[$meta])* fn $name() $body }
     };
-    // For a card that reads the board back after creating tokens: the
-    // tokens made, as [`make_tokens`] says.
-    (making_tokens $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(make_tokens) counters(record_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
-    };
-    // For a card that reads counters back after adding them: the counters
-    // added, as [`add_counters`] says.
-    (adding_counters $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(add_counters) mill(record_mill_one) under(record_move_under) $(#[$meta])* fn $name() $body }
-    };
-    // For a card that reads the library back after milling a card from
-    // it: the card taken out of the library, as [`take_milled`] says.
-    (taking_milled $(#[$meta:meta])* fn $name:ident() $body:block) => {
-        $crate::proofs::cards::card_proof! { @with unwind(7) tokens(record_tokens) counters(record_counters) mill(take_milled) under(record_move_under) $(#[$meta])* fn $name() $body }
-    };
-    (@with unwind($n:literal) tokens($tokens:ident) counters($counters:ident) mill($mill:ident) under($under:ident) $(#[$meta:meta])* fn $name:ident() $body:block) => {
+    (@with unwind($n:literal) $(#[$meta:meta])* fn $name:ident() $body:block) => {
         $(#[$meta])*
         #[kani::proof]
         #[kani::unwind($n)]
@@ -1140,10 +1063,10 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::attach, $crate::proofs::cards::record_attach)]
         #[kani::stub($crate::engine::draw_cards, $crate::proofs::cards::record_draw)]
         #[kani::stub($crate::engine::mill_cards, $crate::proofs::cards::record_mill)]
-        #[kani::stub($crate::state::GameState::create_tokens_with_subtypes, $crate::proofs::cards::$tokens)]
+        #[kani::stub($crate::state::GameState::create_tokens_with_subtypes, $crate::proofs::cards::record_tokens)]
         #[kani::stub($crate::cards::helpers::counter_spell, $crate::proofs::cards::record_counter)]
         #[kani::stub($crate::cards::helpers::counter_spell_exiling, $crate::proofs::cards::record_counter_exiling)]
-        #[kani::stub($crate::state::GameState::add_counters, $crate::proofs::cards::$counters)]
+        #[kani::stub($crate::state::GameState::add_counters, $crate::proofs::cards::record_counters)]
         #[kani::stub($crate::state::GameState::remove_counters, $crate::proofs::cards::record_remove_counters)]
         #[kani::stub($crate::cards::helpers::apply_transform, $crate::proofs::cards::record_transform)]
         #[kani::stub($crate::state::GameState::tap, $crate::proofs::cards::record_tap)]
@@ -1156,7 +1079,7 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::discard_card_for, $crate::proofs::cards::record_discard_for)]
         #[kani::stub($crate::state::GameState::choose_at_random, $crate::proofs::cards::record_random)]
         #[kani::stub($crate::state::GameState::put_into_library, $crate::proofs::cards::record_to_library)]
-        #[kani::stub($crate::state::GameState::move_object_under_control, $crate::proofs::cards::$under)]
+        #[kani::stub($crate::state::GameState::move_object_under_control, $crate::proofs::cards::record_move_under)]
         #[kani::stub($crate::cards::helpers::shuffle_library, $crate::proofs::cards::record_shuffle)]
         #[kani::stub($crate::cards::helpers::sorted, $crate::proofs::cards::names_in_order)]
         #[kani::stub($crate::cards::store_ids, $crate::proofs::cards::record_store_ids)]
@@ -1169,7 +1092,7 @@ macro_rules! card_proof {
         #[kani::stub($crate::destruction::try_destroy_all, $crate::proofs::cards::record_destroy_all)]
         #[kani::stub($crate::destruction::try_destroy_all_by, $crate::proofs::cards::record_destroy_all_by)]
         #[kani::stub($crate::state::GameState::arrives_tapped, $crate::proofs::cards::record_arrives_tapped)]
-        #[kani::stub($crate::engine::mill_one, $crate::proofs::cards::$mill)]
+        #[kani::stub($crate::engine::mill_one, $crate::proofs::cards::record_mill_one)]
         #[kani::stub($crate::destruction::try_destroy_no_regen, $crate::proofs::cards::record_destroy_no_regen)]
         #[kani::stub($crate::damage::deal_damage, $crate::proofs::cards::record_damage)]
         #[kani::stub($crate::damage::queue_damage, $crate::proofs::cards::record_queue)]
@@ -1212,22 +1135,6 @@ macro_rules! case_by_case {
     )*};
     (unwind($n:literal) $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
         $crate::proofs::cards::card_proof! { unwind($n)
-            /// The proof above it, for one case.
-            fn $name() {
-                ($proof)($case);
-            }
-        }
-    )*};
-    (making_tokens $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
-        $crate::proofs::cards::card_proof! { making_tokens
-            /// The proof above it, for one case.
-            fn $name() {
-                ($proof)($case);
-            }
-        }
-    )*};
-    (taking_milled $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
-        $crate::proofs::cards::card_proof! { taking_milled
             /// The proof above it, for one case.
             fn $name() {
                 ($proof)($case);
@@ -1320,17 +1227,6 @@ impl Snapshot {
         self.until_end_of_turn
     }
 
-    /// How many tokens were to be exiled at end of combat.
-    pub fn end_of_combat_exiles(&self) -> usize {
-        self.end_of_combat_exiles
-    }
-
-    /// This snapshot without its count of tokens to exile at end of
-    /// combat, for a proof that reads which were added itself.
-    pub fn without_end_of_combat_exiles(&self) -> Self {
-        Snapshot { end_of_combat_exiles: 0, ..self.clone() }
-    }
-
     /// This snapshot without its count of until-end-of-turn effects, for a
     /// proof that reads which effects were added itself.
     pub fn without_until_end_of_turn(&self) -> Self {
@@ -1403,18 +1299,6 @@ impl Snapshot {
             if row.id == id {
                 row.attached_to = Some(host);
                 row.attached_to_player = None;
-            }
-        }
-        s
-    }
-
-    /// This snapshot with `id` attached to player `p`, and nothing else
-    /// changed.
-    pub fn with_attached_player(&self, id: ObjectId, p: PlayerId) -> Self {
-        let mut s = self.clone();
-        for row in &mut s.objects {
-            if row.id == id {
-                row.attached_to_player = Some(p);
             }
         }
         s
@@ -1606,17 +1490,6 @@ pub fn each_case(n: u8, proof: impl Fn(u8)) {
         if which == i {
             proof(i);
         }
-    }
-}
-
-/// The target at place `i` of [`any_target`]'s list.
-pub fn target_at(objects: [ObjectId; 2], i: u8) -> Target {
-    match i {
-        0 => Target::Object(objects[0]),
-        1 => Target::Object(objects[1]),
-        2 => Target::Player(PlayerId(0)),
-        3 => Target::Player(PlayerId(1)),
-        _ => Target::Illegal,
     }
 }
 
@@ -1874,64 +1747,6 @@ pub fn any_color() -> Color {
         3 => Color::Red,
         _ => Color::Green,
     }
-}
-
-/// A card resolving: the game after, the card's spell, the target it
-/// held, and the board before. (The registry is kept so that it is not
-/// dropped before the proof forgets it.)
-pub struct Resolved {
-    _registry: CardRegistry,
-    pub state: GameState,
-    pub spell: ObjectId,
-    pub target: Target,
-    pub before: Snapshot,
-}
-
-impl Resolved {
-    /// Nothing changed but by the actions the card asked for, which the
-    /// recorders took and did not perform.
-    pub fn nothing_else_changed(&self) -> bool {
-        Snapshot::of(&self.state) == self.before
-    }
-}
-
-/// `card`, cast by player 0, resolving on a board of one other card of any
-/// characteristics `kinds` allows ([`any_object`]), after `prepare`
-/// has set what the card's text reads (a creature having died this turn,
-/// the X it was cast with), holding the target `target` picks from that
-/// object and the spell.
-pub fn resolve(
-    card: Box<dyn CardBehavior>,
-    kinds: &Kinds,
-    prepare: impl FnOnce(&mut GameState, ObjectId),
-    target: impl FnOnce(ObjectId, ObjectId) -> Target,
-) -> Resolved {
-    let (registry, mut state, blank, card) = board(card);
-    let other = any_object(&mut state, blank, kinds, Form::Card);
-    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
-    prepare(&mut state, spell);
-    let target = target(other, spell);
-    let before = Snapshot::of(&state);
-    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[target.clone()], &registry);
-    Resolved { _registry: registry, state, spell, target, before }
-}
-
-/// What a spell that destroys its target asks for as it resolves: that
-/// target destroyed, if it is still a permanent (CR 701.8a); with its
-/// target gone, a card in a graveyard or illegal, nothing (400.7, 608.2b).
-pub fn destroys_its_target(r: &Resolved) -> bool {
-    match r.target {
-        Target::Object(id) if r.state.get_object(id).is_some_and(|o| o.zone == Zone::Battlefield) => asked_for(&[Act::Destroy(id)]),
-        _ => acted() == 0,
-    }
-}
-
-/// What a spell that deals `amount` damage to its target asks for as it
-/// resolves: that damage, dealt by the spell, to that target, whatever it
-/// is (CR 120.1); a target gone illegal is the action's to ignore
-/// (`proofs::actions` proves it does).
-pub fn deals_damage_to_its_target(r: &Resolved, amount: u32) -> bool {
-    asked_for(&[Act::Effect(r.target.clone(), PendingEffect::DealDamage { amount, source_id: r.spell })])
 }
 
 /// Characteristics that no damage or destroy spell's resolution reads, for

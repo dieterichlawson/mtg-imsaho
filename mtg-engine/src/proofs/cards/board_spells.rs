@@ -2,6 +2,14 @@
 //! enchantment, each card in a graveyard or a library that their text
 //! names, and only those.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Hysterical Blindness, {2}{U} Instant: "Creatures your opponents
 //!   control get -4/-0 until end of turn."
 //! - Rally the Peasants, {2}{W} Instant: "Creatures you control get +2/+0
@@ -45,16 +53,13 @@
 //! in the order the game lists them.
 
 use super::{
-    act, acted, any_object, any_object_of, asked_each, asked_for, board, both, card_proof, case_by_case, each_is,
-    either, has_subtype, kept, listed, new_ids, picked, were, Act, Form, Kinds, Snapshot,
+    acted, any_object, any_object_of, board, both, card_proof, case_by_case, each_is,
+    has_subtype, kept, Form, Kinds, Snapshot,
 };
-use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
-use crate::damage::DamageKind;
-use crate::destruction::DestroyResult;
-use crate::events::DamageTarget;
+use crate::cards::{CardBehavior, CardRegistry};
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{GameObject, GameState, TemporaryEffect as T};
-use crate::types::{CardType, Color, CreatureFilter as F, Keyword, ManaType, Zone};
+use crate::types::{CardType, CreatureFilter as F, Keyword, Zone};
 
 use crate::cards::isd;
 
@@ -63,7 +68,6 @@ use crate::cards::isd;
 struct Resolved {
     _registry: CardRegistry,
     state: GameState,
-    spell: ObjectId,
     others: [ObjectId; 2],
     before: Snapshot,
 }
@@ -93,22 +97,11 @@ fn resolve(card: Box<dyn CardBehavior>, kinds: &Kinds) -> Resolved {
     resolve_on(registry, state, card, others)
 }
 
-/// [`resolve`], the card of exactly `subtypes[0]` and the token of
-/// `subtypes[1]`.
-fn resolve_of(card: Box<dyn CardBehavior>, kinds: &Kinds, subtypes: [&[&str]; 2]) -> Resolved {
-    let (registry, mut state, blank, card) = board(card);
-    let others = [
-        any_object_of(&mut state, blank, kinds, Form::Card, subtypes[0]),
-        any_object_of(&mut state, blank, kinds, Form::Token, subtypes[1]),
-    ];
-    resolve_on(registry, state, card, others)
-}
-
 fn resolve_on(registry: CardRegistry, mut state: GameState, card: CardId, others: [ObjectId; 2]) -> Resolved {
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
     let before = Snapshot::of(&state);
     registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-    Resolved { _registry: registry, state, spell, others, before }
+    Resolved { _registry: registry, state, others, before }
 }
 
 fn creature(o: &GameObject) -> bool {
@@ -117,12 +110,6 @@ fn creature(o: &GameObject) -> bool {
 
 fn yours(o: &GameObject) -> bool {
     o.controller == PlayerId(0)
-}
-
-/// A creature card in player 0's graveyard (CR 404.1: a graveyard is its
-/// owner's).
-fn creature_card_in_your_graveyard(o: &GameObject) -> bool {
-    o.zone == Zone::Graveyard && o.owner == PlayerId(0) && !o.is_token && o.card_types.contains(&CardType::Creature)
 }
 
 const CREATURES: Kinds = Kinds { types: &[CardType::Creature, CardType::Enchantment], subtypes: &[], keywords: &[] };
@@ -230,382 +217,6 @@ card_proof! {
         assert!(acted() == 0 && r.nothing_else_changed());
         std::mem::forget(r);
     }
-}
-
-card_proof! {
-    /// Rolling Temblor: 2 damage from the spell to each creature without
-    /// flying, all of it dealt at once (CR 120.1, queued and then dealt),
-    /// and nothing else.
-    fn rolling_temblor_deals_two_to_each_creature_without_flying() {
-        const FLIERS: Kinds = Kinds { types: &[CardType::Creature, CardType::Enchantment], subtypes: &[], keywords: &[Keyword::Flying] };
-        let r = resolve(Box::new(isd::rolling_temblor::RollingTemblor), &FLIERS);
-        let ids = r.those(|o| creature(o) && !o.keywords.contains(&Keyword::Flying));
-        let n = ids.len();
-        let queued = |i: usize| Act::Queue { source: r.spell, target: DamageTarget::Object(ids[i]), amount: 2, kind: DamageKind::NonCombat };
-        assert!(acted() == n + 1 && were(0, n, queued) && were(n, 1, |_| Act::DealQueued));
-        assert!(r.added().is_empty() && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
-}
-
-/// Moonmist: each Human on the battlefield transformed (whether it can be
-/// is the action's, CR 701.28c), then combat damage prevented this turn
-/// from every creature but Wolves and Werewolves, and nothing else. With
-/// each of the other two objects a Human, a Wolf, both or neither (the
-/// subtypes of `SUBTYPES` at `card` and `token`), a constant in each
-/// harness: over subtypes the solver chose, the proof ran out of memory at
-/// four and a half gigabytes.
-fn moonmist_transforms_humans_and_spares_werewolves_and_wolves((card, token): (usize, usize)) {
-    const SUBTYPES: [&[&str]; 4] = [&[], &["Human"], &["Wolf"], &["Human", "Wolf"]];
-    const CREATURE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
-    let r = resolve_of(Box::new(isd::moonmist::Moonmist), &CREATURE, [SUBTYPES[card], SUBTYPES[token]]);
-    let humans = r.those(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Human"));
-    let prevents = matches!(r.added(), [T::PreventCombatDamageExcept { filter, source_name }]
-        if either(filter, |f| has_subtype(f, "Wolf"), |f| has_subtype(f, "Werewolf")) && source_name == "Moonmist");
-    assert!(asked_each(humans.len(), |i| Act::Transform(humans[i])) && prevents && r.nothing_else_changed());
-    std::mem::forget((r, humans));
-}
-
-case_by_case! { moonmist_transforms_humans_and_spares_werewolves_and_wolves;
-    moonmist_over_a_card_neither_human_nor_wolf_and_a_token_neither_human_nor_wolf: (0, 0),
-    moonmist_over_a_card_neither_human_nor_wolf_and_a_human_token: (0, 1),
-    moonmist_over_a_card_neither_human_nor_wolf_and_a_wolf_token: (0, 2),
-    moonmist_over_a_card_neither_human_nor_wolf_and_a_human_wolf_token: (0, 3),
-    moonmist_over_a_human_card_and_a_token_neither_human_nor_wolf: (1, 0),
-    moonmist_over_a_human_card_and_a_human_token: (1, 1),
-    moonmist_over_a_human_card_and_a_wolf_token: (1, 2),
-    moonmist_over_a_human_card_and_a_human_wolf_token: (1, 3),
-    moonmist_over_a_wolf_card_and_a_token_neither_human_nor_wolf: (2, 0),
-    moonmist_over_a_wolf_card_and_a_human_token: (2, 1),
-    moonmist_over_a_wolf_card_and_a_wolf_token: (2, 2),
-    moonmist_over_a_wolf_card_and_a_human_wolf_token: (2, 3),
-    moonmist_over_a_human_wolf_card_and_a_token_neither_human_nor_wolf: (3, 0),
-    moonmist_over_a_human_wolf_card_and_a_human_token: (3, 1),
-    moonmist_over_a_human_wolf_card_and_a_wolf_token: (3, 2),
-    moonmist_over_a_human_wolf_card_and_a_human_wolf_token: (3, 3),
-}
-
-card_proof! {
-    /// Paraselene: every enchantment destroyed at once, as one event, then
-    /// 1 life for each that was destroyed, which is each one that died,
-    /// whatever the others did; and nothing else.
-    fn paraselene_destroys_all_enchantments_and_gains_a_life_for_each() {
-        const ENCHANTMENTS: Kinds = Kinds { types: &[CardType::Enchantment, CardType::Creature], subtypes: &[], keywords: &[] };
-        let r = resolve(Box::new(isd::paraselene::Paraselene), &ENCHANTMENTS);
-        let enchantments = r.those(|o| o.zone == Zone::Battlefield && o.card_types.contains(&CardType::Enchantment));
-        let Some(Act::DestroyAll(outcomes)) = act(0) else { panic!("destroys first") };
-        assert!(outcomes.iter().map(|(id, _)| *id).eq(enchantments.iter().copied()));
-        let died = outcomes.iter().filter(|(_, o)| *o == DestroyResult::Died).count();
-        if died > 0 {
-            assert!(acted() == 2 && Some(&Act::Life(PlayerId(0), i32::try_from(died).expect("small"))) == act(1));
-        } else {
-            assert!(acted() == 1);
-        }
-        assert!(r.added().is_empty() && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
-}
-
-card_proof! {
-    /// Gnaw to the Bone: 2 life for each creature card in its controller's
-    /// graveyard; with none, nothing.
-    fn gnaw_to_the_bone_gains_two_for_each_creature_card_in_your_graveyard() {
-        let r = resolve(Box::new(isd::gnaw_to_the_bone::GnawToTheBone), &CREATURES);
-        let n = i32::try_from(r.those(creature_card_in_your_graveyard).len()).expect("small");
-        if n > 0 {
-            assert!(asked_for(&[Act::Life(PlayerId(0), 2 * n)]));
-        } else {
-            assert!(acted() == 0);
-        }
-        assert!(r.added().is_empty() && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
-}
-
-card_proof! {
-    /// Spider Spawning: a 1/2 green Spider creature token with reach for
-    /// each creature card in its controller's graveyard, under its
-    /// controller's control, as one event; and nothing else.
-    fn spider_spawning_makes_a_spider_for_each_creature_card_in_your_graveyard() {
-        let r = resolve(Box::new(isd::spider_spawning::SpiderSpawning), &CREATURES);
-        let n = u32::try_from(r.those(creature_card_in_your_graveyard).len()).expect("small");
-        assert!(asked_for(&[Act::Tokens {
-            n, controller: PlayerId(0), power: 1, toughness: 2, colors: vec![Color::Green],
-            types: vec![CardType::Creature], keywords: vec![Keyword::Reach], subtypes: vec!["Spider".into()],
-        }]));
-        assert!(r.added().is_empty() && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
-}
-
-/// What one of [`graveyard_board`]'s objects is: a card in its
-/// controller's (player 0's) graveyard, a token there (one state-based
-/// actions have yet to see, CR 704.5d), the other player's in their
-/// graveyard, a card or a token, or on the battlefield, either player's, a
-/// card or a token.
-#[derive(Clone, Copy, PartialEq)]
-enum Grave {
-    Card,
-    Token,
-    Theirs,
-    Battlefield,
-}
-
-/// A board for the spells that read their caster's graveyard: the spell,
-/// cast by player 0, and an object of each of `shapes`, each in a
-/// graveyard put on its owner's pile as it arrives (CR 404.2). The
-/// objects' ids, in order. Each object's shape a constant of the harness:
-/// over owners, zones and tokens the solver chose, the cards Make a Wish
-/// chose among were a list it left open, and the proof of the choice
-/// alone ran out of memory at 12 GB (56 million clauses).
-fn graveyard_board(card: Box<dyn CardBehavior>, shapes: [Grave; 3]) -> (CardRegistry, GameState, ObjectId, [ObjectId; 3]) {
-    let (registry, mut state, blank, card) = board(card);
-    let mut ids = [ObjectId(0); 3];
-    for i in 0..3 {
-        let (owner, zone, token) = match shapes[i] {
-            Grave::Card => (PlayerId(0), Zone::Graveyard, false),
-            Grave::Token => (PlayerId(0), Zone::Graveyard, true),
-            Grave::Theirs => (PlayerId(1), Zone::Graveyard, kani::any()),
-            Grave::Battlefield => (PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, kani::any()),
-        };
-        let id = state.create_object(blank, owner, zone, None, None);
-        state.get_object_mut(id).expect("just created").is_token = token;
-        if shapes[i] != Grave::Battlefield {
-            state.players[usize::from(owner.0)].graveyard_order.push(id);
-        }
-        ids[i] = id;
-    }
-    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
-    (registry, state, spell, ids)
-}
-
-/// Make a Wish: two of the cards in its controller's graveyard (all of
-/// them, if fewer) chosen at random and returned to their hand, and
-/// nothing else. A token there is not a card (CR 111.1), and the other
-/// player's graveyard is not "your graveyard" (404.1). On a board of three
-/// objects of the shapes `shapes`, so that two are chosen of as many as
-/// three.
-fn make_a_wish_returns_two_at_random(shapes: [Grave; 3]) {
-    let (registry, mut state, spell, ids) = graveyard_board(Box::new(isd::make_a_wish::MakeAWish), shapes);
-    let mut cards = Vec::with_capacity(3);
-    for i in 0..3 {
-        if shapes[i] == Grave::Card {
-            cards.push(ids[i]);
-        }
-    }
-    let before = Snapshot::of(&state);
-    let card = state.get_object(spell).expect("on the stack").card_id;
-    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-    assert!(Some(&Act::Random(listed(&cards), 2)) == act(0));
-    assert!(acted() == 1 + cards.len().min(2));
-    // The cards returned are told apart by the ids their moves name, not by
-    // comparing the two moves: each is a recorded action, of a variant the
-    // solver leaves open, and `!=` between two of them is every variant
-    // compared with every other.
-    let mut returned = [ObjectId(0); 2];
-    for i in 1..acted() {
-        let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
-        assert!(cards.contains(id));
-        returned[i - 1] = *id;
-    }
-    assert!(acted() < 3 || returned[0] != returned[1]);
-    assert!(Snapshot::of(&state) == before);
-    std::mem::forget((registry, state, cards, before));
-}
-
-case_by_case! { make_a_wish_returns_two_at_random;
-    make_a_wish_over_card_card_card: [Grave::Card, Grave::Card, Grave::Card],
-    make_a_wish_over_card_card_token: [Grave::Card, Grave::Card, Grave::Token],
-    make_a_wish_over_card_card_theirs: [Grave::Card, Grave::Card, Grave::Theirs],
-    make_a_wish_over_card_card_battlefield: [Grave::Card, Grave::Card, Grave::Battlefield],
-    make_a_wish_over_card_token_card: [Grave::Card, Grave::Token, Grave::Card],
-    make_a_wish_over_card_token_token: [Grave::Card, Grave::Token, Grave::Token],
-    make_a_wish_over_card_token_theirs: [Grave::Card, Grave::Token, Grave::Theirs],
-    make_a_wish_over_card_token_battlefield: [Grave::Card, Grave::Token, Grave::Battlefield],
-    make_a_wish_over_card_theirs_card: [Grave::Card, Grave::Theirs, Grave::Card],
-    make_a_wish_over_card_theirs_token: [Grave::Card, Grave::Theirs, Grave::Token],
-    make_a_wish_over_card_theirs_theirs: [Grave::Card, Grave::Theirs, Grave::Theirs],
-    make_a_wish_over_card_theirs_battlefield: [Grave::Card, Grave::Theirs, Grave::Battlefield],
-    make_a_wish_over_card_battlefield_card: [Grave::Card, Grave::Battlefield, Grave::Card],
-    make_a_wish_over_card_battlefield_token: [Grave::Card, Grave::Battlefield, Grave::Token],
-    make_a_wish_over_card_battlefield_theirs: [Grave::Card, Grave::Battlefield, Grave::Theirs],
-    make_a_wish_over_card_battlefield_battlefield: [Grave::Card, Grave::Battlefield, Grave::Battlefield],
-    make_a_wish_over_token_card_card: [Grave::Token, Grave::Card, Grave::Card],
-    make_a_wish_over_token_card_token: [Grave::Token, Grave::Card, Grave::Token],
-    make_a_wish_over_token_card_theirs: [Grave::Token, Grave::Card, Grave::Theirs],
-    make_a_wish_over_token_card_battlefield: [Grave::Token, Grave::Card, Grave::Battlefield],
-    make_a_wish_over_token_token_card: [Grave::Token, Grave::Token, Grave::Card],
-    make_a_wish_over_token_token_token: [Grave::Token, Grave::Token, Grave::Token],
-    make_a_wish_over_token_token_theirs: [Grave::Token, Grave::Token, Grave::Theirs],
-    make_a_wish_over_token_token_battlefield: [Grave::Token, Grave::Token, Grave::Battlefield],
-    make_a_wish_over_token_theirs_card: [Grave::Token, Grave::Theirs, Grave::Card],
-    make_a_wish_over_token_theirs_token: [Grave::Token, Grave::Theirs, Grave::Token],
-    make_a_wish_over_token_theirs_theirs: [Grave::Token, Grave::Theirs, Grave::Theirs],
-    make_a_wish_over_token_theirs_battlefield: [Grave::Token, Grave::Theirs, Grave::Battlefield],
-    make_a_wish_over_token_battlefield_card: [Grave::Token, Grave::Battlefield, Grave::Card],
-    make_a_wish_over_token_battlefield_token: [Grave::Token, Grave::Battlefield, Grave::Token],
-    make_a_wish_over_token_battlefield_theirs: [Grave::Token, Grave::Battlefield, Grave::Theirs],
-    make_a_wish_over_token_battlefield_battlefield: [Grave::Token, Grave::Battlefield, Grave::Battlefield],
-    make_a_wish_over_theirs_card_card: [Grave::Theirs, Grave::Card, Grave::Card],
-    make_a_wish_over_theirs_card_token: [Grave::Theirs, Grave::Card, Grave::Token],
-    make_a_wish_over_theirs_card_theirs: [Grave::Theirs, Grave::Card, Grave::Theirs],
-    make_a_wish_over_theirs_card_battlefield: [Grave::Theirs, Grave::Card, Grave::Battlefield],
-    make_a_wish_over_theirs_token_card: [Grave::Theirs, Grave::Token, Grave::Card],
-    make_a_wish_over_theirs_token_token: [Grave::Theirs, Grave::Token, Grave::Token],
-    make_a_wish_over_theirs_token_theirs: [Grave::Theirs, Grave::Token, Grave::Theirs],
-    make_a_wish_over_theirs_token_battlefield: [Grave::Theirs, Grave::Token, Grave::Battlefield],
-    make_a_wish_over_theirs_theirs_card: [Grave::Theirs, Grave::Theirs, Grave::Card],
-    make_a_wish_over_theirs_theirs_token: [Grave::Theirs, Grave::Theirs, Grave::Token],
-    make_a_wish_over_theirs_theirs_theirs: [Grave::Theirs, Grave::Theirs, Grave::Theirs],
-    make_a_wish_over_theirs_theirs_battlefield: [Grave::Theirs, Grave::Theirs, Grave::Battlefield],
-    make_a_wish_over_theirs_battlefield_card: [Grave::Theirs, Grave::Battlefield, Grave::Card],
-    make_a_wish_over_theirs_battlefield_token: [Grave::Theirs, Grave::Battlefield, Grave::Token],
-    make_a_wish_over_theirs_battlefield_theirs: [Grave::Theirs, Grave::Battlefield, Grave::Theirs],
-    make_a_wish_over_theirs_battlefield_battlefield: [Grave::Theirs, Grave::Battlefield, Grave::Battlefield],
-    make_a_wish_over_battlefield_card_card: [Grave::Battlefield, Grave::Card, Grave::Card],
-    make_a_wish_over_battlefield_card_token: [Grave::Battlefield, Grave::Card, Grave::Token],
-    make_a_wish_over_battlefield_card_theirs: [Grave::Battlefield, Grave::Card, Grave::Theirs],
-    make_a_wish_over_battlefield_card_battlefield: [Grave::Battlefield, Grave::Card, Grave::Battlefield],
-    make_a_wish_over_battlefield_token_card: [Grave::Battlefield, Grave::Token, Grave::Card],
-    make_a_wish_over_battlefield_token_token: [Grave::Battlefield, Grave::Token, Grave::Token],
-    make_a_wish_over_battlefield_token_theirs: [Grave::Battlefield, Grave::Token, Grave::Theirs],
-    make_a_wish_over_battlefield_token_battlefield: [Grave::Battlefield, Grave::Token, Grave::Battlefield],
-    make_a_wish_over_battlefield_theirs_card: [Grave::Battlefield, Grave::Theirs, Grave::Card],
-    make_a_wish_over_battlefield_theirs_token: [Grave::Battlefield, Grave::Theirs, Grave::Token],
-    make_a_wish_over_battlefield_theirs_theirs: [Grave::Battlefield, Grave::Theirs, Grave::Theirs],
-    make_a_wish_over_battlefield_theirs_battlefield: [Grave::Battlefield, Grave::Theirs, Grave::Battlefield],
-    make_a_wish_over_battlefield_battlefield_card: [Grave::Battlefield, Grave::Battlefield, Grave::Card],
-    make_a_wish_over_battlefield_battlefield_token: [Grave::Battlefield, Grave::Battlefield, Grave::Token],
-    make_a_wish_over_battlefield_battlefield_theirs: [Grave::Battlefield, Grave::Battlefield, Grave::Theirs],
-    make_a_wish_over_battlefield_battlefield_battlefield: [Grave::Battlefield, Grave::Battlefield, Grave::Battlefield],
-}
-
-card_proof! {
-    /// Infernal Plunge: sacrificing a creature is its additional cost, paid
-    /// as it is cast (CR 601.2h); it adds {R}{R}{R} to its controller's
-    /// pool, and nothing else.
-    fn infernal_plunge_adds_three_red() {
-        assert!(isd::infernal_plunge::InfernalPlunge.card_data().additional_cost == Some(AdditionalCost::SacrificeCreature));
-        let r = resolve(Box::new(isd::infernal_plunge::InfernalPlunge), &CREATURES);
-        assert!(asked_for(&[Act::Mana(PlayerId(0), ManaType::Red, 3)]));
-        assert!(r.added().is_empty() && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
-}
-
-card_proof! { unwind(15)
-    /// Army of the Damned: thirteen 2/2 black Zombie creature tokens under
-    /// its controller's control, as one event, each put onto the
-    /// battlefield tapped; and nothing else.
-    fn army_of_the_damned_makes_thirteen_tapped_zombies() {
-        let (registry, mut state, _, card) = board(Box::new(isd::army_of_the_damned::ArmyOfTheDamned));
-        let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
-        let before = Snapshot::of(&state);
-        registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        // The two built in place: a list of one pushed to would grow, which
-        // no proof here lets a list do.
-        let expected = [Act::Tokens {
-            n: 13, controller: PlayerId(0), power: 2, toughness: 2, colors: vec![Color::Black],
-            types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
-        }, Act::ArrivesTapped { first: new_ids(&state, 1)[0], count: 13 }];
-        assert!(asked_for(&expected) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
-    }
-}
-
-/// A board for the spells that read a library or a hand: the spell, cast
-/// by player 0, and up to `library` cards in player 0's library and up to
-/// `hand` in their hand, each a land or not.
-///
-/// Every card is made, and those the board does not hold are in exile,
-/// which neither spell reads: a card made or not as the solver chooses is
-/// an object count it leaves open, and with it every later object's id,
-/// and so where in the board's map each is. The library is its cards top
-/// first, cut to its length, for the same reason: a card pushed or not
-/// moves where the next one goes.
-fn cards_in_zones(card: Box<dyn CardBehavior>, library: usize, hand: usize) -> (CardRegistry, GameState, ObjectId, CardId) {
-    let (in_library, in_hand): (usize, usize) = (kani::any(), kani::any());
-    kani::assume(in_library <= library && in_hand <= hand);
-    cards_held(card, library, hand, in_library, in_hand)
-}
-
-/// [`cards_in_zones`]'s board with `in_library` of its `library` cards in
-/// the library and `in_hand` of its `hand` in the hand, as the caller
-/// says.
-fn cards_held(card: Box<dyn CardBehavior>, library: usize, hand: usize, in_library: usize, in_hand: usize)
-    -> (CardRegistry, GameState, ObjectId, CardId) {
-    let (registry, mut state, blank, card) = board(card);
-    state.players[0].library_order = Vec::with_capacity(library);
-    for i in 0..library + hand {
-        let held = if i < library { i < in_library } else { i - library < in_hand };
-        let zone = match (held, i < library) {
-            (false, _) => Zone::Exile,
-            (true, true) => Zone::Library,
-            (true, false) => Zone::Hand,
-        };
-        let id = state.create_object(blank, PlayerId(0), zone, None, None);
-        let o = state.get_object_mut(id).expect("just created");
-        o.card_types = Vec::with_capacity(1);
-        if kani::any() {
-            o.card_types.push(CardType::Land);
-        }
-        if i < library {
-            state.players[0].library_order.push(id);
-        }
-    }
-    state.players[0].library_order.truncate(in_library);
-    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
-    (registry, state, spell, blank)
-}
-
-card_proof! {
-    /// Desperate Ravings: two cards drawn, then one card of the hand as it
-    /// is after the draw discarded, chosen at random; with that hand empty,
-    /// nothing discarded; and nothing else.
-    fn desperate_ravings_draws_two_then_discards_at_random() {
-        let (registry, mut state, spell, _) = cards_in_zones(Box::new(isd::desperate_ravings::DesperateRavings), 2, 1);
-        registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
-            .on_resolve(&mut state, spell, &[], &registry);
-        let hand = picked(&state.objects_in_zone(Zone::Hand, PlayerId(0)), |o| Some(o.id));
-        assert!(Some(&Act::Draw(PlayerId(0), 2)) == act(0) && Some(&Act::Random(listed(&hand), 1)) == act(1));
-        if hand.is_empty() {
-            assert!(acted() == 2);
-        } else {
-            let Some(Act::Discard(id)) = act(2) else { panic!("discards") };
-            assert!(acted() == 3 && hand.contains(id));
-        }
-        std::mem::forget((registry, state));
-    }
-}
-
-/// Mulch: of the top four cards of its controller's library (all of them,
-/// if fewer), the lands put into their hand and the rest milled into their
-/// graveyard, in library order; and nothing else. Proved for libraries of
-/// up to five cards, so that one is past the fourth, each card a land or
-/// not, the library's length a constant in each harness: over a length
-/// the solver chose, the proof ran out of memory at twelve gigabytes.
-fn mulch_puts_the_lands_of_the_top_four_in_hand_and_the_rest_in_the_graveyard(library: usize) {
-    let (registry, mut state, spell, _) = cards_held(Box::new(isd::mulch::Mulch), library, 0, library, 0);
-    let before = Snapshot::of(&state);
-    let top: Vec<ObjectId> = state.players[0].library_order.iter().take(4).copied().collect();
-    registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
-        .on_resolve(&mut state, spell, &[], &registry);
-    let land = |id: &ObjectId| state.get_object(*id).expect("on the board").card_types.contains(&CardType::Land);
-    let lands = kept(&top, |id| land(&id));
-    let rest = kept(&top, |id| !land(&id));
-    assert!(acted() == top.len() && were(0, lands.len(), |i| Act::Move(lands[i], Zone::Hand))
-        && were(lands.len(), rest.len(), |i| Act::MillCard(rest[i])));
-    assert!(Snapshot::of(&state) == before);
-    std::mem::forget((registry, state));
-}
-
-case_by_case! { mulch_puts_the_lands_of_the_top_four_in_hand_and_the_rest_in_the_graveyard;
-    mulch_over_an_empty_library: 0,
-    mulch_over_a_library_of_one: 1,
-    mulch_over_a_library_of_two: 2,
-    mulch_over_a_library_of_three: 3,
-    mulch_over_a_library_of_four: 4,
-    mulch_over_a_library_of_five: 5,
 }
 
 /// Past in Flames resolving over its board: an instant, a sorcery and a

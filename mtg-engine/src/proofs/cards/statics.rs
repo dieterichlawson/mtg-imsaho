@@ -5,6 +5,14 @@
 //! keywords are each card's printed characteristics, checked against the
 //! Oracle record for every card.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Glorious Anthem: "Creatures you control get +1/+1."
 //! - Angelic Overseer: "As long as you control a Human, this creature has
 //!   hexproof and indestructible."

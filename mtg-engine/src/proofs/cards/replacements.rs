@@ -2,6 +2,14 @@
 //! each does to every event the engine offers it, and that it leaves every
 //! other event alone.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Diregraf Ghoul, 2/2: "This creature enters tapped."
 //! - Grimgrin, Corpse-Born, 5/5: "Grimgrin enters tapped and ..."
 //! - Festerhide Boar, 3/3 Trample: "Morbid — This creature enters with two
@@ -29,12 +37,12 @@
 //! library, and damage being dealt. Which permanents' effects the engine
 //! asks, and in what order it applies them, is `proofs::actions`'.
 
-use super::{acted, asked_for, blank_board, card_proof, Act};
+use super::{acted, blank_board, card_proof};
 use crate::cards::{CardBehavior, CardRegistry};
-use crate::events::{DamageTarget, LossReason};
+use crate::events::DamageTarget;
 use crate::ids::{ObjectId, PlayerId};
 use crate::replacement::{EnteringPermanent, ReplaceableEvent as Ev, Replacement};
-use crate::state::{EnterAsCopyChoice, GameResult, GameState};
+use crate::state::{EnterAsCopyChoice, GameState};
 use crate::types::{CardType, CounterType, Zone};
 
 use crate::cards::isd;
@@ -264,39 +272,6 @@ card_proof! {
 }
 
 card_proof! {
-    /// Laboratory Maniac: its controller drawing from an empty library
-    /// instead wins the game (CR 104.2b): the draw replaced, so it is not
-    /// the draw from an empty library that loses (704.5b), and the
-    /// opponent loses as the effect says they do, and the game ends with
-    /// its controller the winner. Anyone else's draw, and every other
-    /// event, as it is.
-    fn laboratory_maniac_wins_instead_of_drawing_from_an_empty_library() {
-        let mut o = offer(Box::new(isd::laboratory_maniac::LaboratoryManiac));
-        for p in 0..2 {
-            o.state.players[p].has_drawn_from_empty = true;
-        }
-        let replaced = o.replace();
-        match o.event {
-            Ev::DrawsFromEmptyLibrary { player } if player == o.you => {
-                assert!(replaced == Some(Replacement::Replaced));
-                let opponent = PlayerId(1 - player.0);
-                assert!(asked_for(&[
-                    Act::Loses(opponent, LossReason::OpponentWon { source: o.me }),
-                    Act::GameEnds(GameResult::Winner(player)),
-                ]));
-                assert!(!o.state.players[usize::from(player.0)].has_drawn_from_empty);
-                assert!(o.state.players[usize::from(opponent.0)].has_drawn_from_empty);
-            }
-            _ => {
-                assert!(replaced.is_none() && acted() == 0);
-                assert!(o.state.players[0].has_drawn_from_empty && o.state.players[1].has_drawn_from_empty);
-            }
-        }
-        std::mem::forget((o, replaced));
-    }
-}
-
-card_proof! {
     /// Essence of the Wild: another creature entering under its
     /// controller's control enters as a copy of it (CR 614.1c, 706.9),
     /// even one already entering as a copy of something else, another copy
@@ -358,73 +333,3 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Undead Alchemist: combat damage a Zombie its controller controls
-    /// would deal to a player is instead that many cards milled by that
-    /// player (CR 614.1a), while the Alchemist is on the battlefield; any
-    /// other damage, and every other event, as it is. It offers the
-    /// replacement exactly when it applies.
-    fn undead_alchemist_turns_your_zombies_combat_damage_into_milling() {
-        let (registry, mut state, blank, card) = super::board(Box::new(isd::undead_alchemist::UndeadAlchemist));
-        let you = PlayerId(u8::from(kani::any::<bool>()));
-        let on: bool = kani::any();
-        let me = state.create_object(card, PlayerId(0), if on { Zone::Battlefield } else { Zone::Graveyard }, None, None);
-        if on {
-            state.get_object_mut(me).expect("just created").controller = you;
-        }
-        const ZOMBIES: super::Kinds = super::Kinds { types: &[CardType::Creature], subtypes: &["Zombie"], keywords: &[] };
-        let source = super::any_object(&mut state, blank, &ZOMBIES, super::Form::Token);
-        let player = PlayerId(u8::from(kani::any::<bool>()));
-        let amount: u32 = kani::any();
-        kani::assume((1..=5).contains(&amount));
-        let combat: bool = kani::any();
-        let to_player: bool = kani::any();
-        let event = Ev::DealsDamage {
-            source,
-            target: if to_player { DamageTarget::Player(player) } else { DamageTarget::Object(me) },
-            amount,
-            combat,
-        };
-        let s = state.get_object(source).expect("on the board");
-        let applies = on && combat && to_player && s.controller == you && s.subtypes.iter().any(|t| t == "Zombie");
-        let alchemist = registry.get(card).expect("registered");
-        assert!(alchemist.replacement_offer(&state, me, &event, &registry).is_some() == applies);
-        let replaced = alchemist.replace_event(&mut state, me, &event, &registry);
-        if applies {
-            assert!(replaced == Some(Replacement::Replaced) && asked_for(&[Act::Mill(player, amount as usize)]));
-        } else {
-            assert!(replaced.is_none() && acted() == 0);
-        }
-        std::mem::forget((registry, state, replaced, event));
-    }
-}
-
-card_proof! {
-    /// Undead Alchemist: "Whenever a creature card is put into an
-    /// opponent's graveyard from their library" (which milling the engine
-    /// tells it about, `proofs::actions`), that card exiled if it is still
-    /// in a graveyard, and a 2/2 black Zombie creature token for its
-    /// controller either way (the card's ruling).
-    fn undead_alchemist_exiles_milled_creatures_for_zombies() {
-        assert!(super::triggers(&isd::undead_alchemist::UndeadAlchemist) == [(crate::cards::TriggerKind::CreatureCardMilled, None)]);
-        let (registry, mut state, blank, card) = super::board(Box::new(isd::undead_alchemist::UndeadAlchemist));
-        let you = PlayerId(u8::from(kani::any::<bool>()));
-        let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
-        state.get_object_mut(me).expect("just created").controller = you;
-        let still_there: bool = kani::any();
-        let milled = state.create_object(blank, PlayerId(1 - you.0), if still_there { Zone::Graveyard } else { Zone::Exile }, None, None);
-        let before = super::Snapshot::of(&state);
-        registry.get(card).expect("registered").on_creature_card_milled(&mut state, me, milled, PlayerId(1 - you.0), &registry);
-        let zombie = Act::Tokens {
-            n: 1, controller: you, power: 2, toughness: 2, colors: vec![crate::types::Color::Black],
-            types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
-        };
-        if still_there {
-            assert!(asked_for(&[Act::Move(milled, Zone::Exile), zombie]));
-        } else {
-            assert!(asked_for(&[zombie]));
-        }
-        assert!(super::Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
-    }
-}

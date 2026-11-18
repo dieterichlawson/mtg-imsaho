@@ -1,6 +1,14 @@
 //! The creatures whose power and toughness count something (CR 604.3,
 //! 208.2a, 613.4a, 613.4c), and the abilities printed beside the count.
 //!
+//! Scope: proved here is what each card declares (its abilities, costs,
+//! targets, triggers and static effects) and what its own code writes to
+//! the game state (a question asked, an until-end-of-turn effect added).
+//! What a resolution does through the engine, the moves, damage, draws
+//! and destruction, is not proved here, and where the text below speaks
+//! of one it is of that part alone: each card is played end to end with
+//! the real engine by `tests/card_semantics.rs`.
+//!
 //! - Boneyard Wurm, */*: "Boneyard Wurm's power and toughness are each
 //!   equal to the number of creature cards in your graveyard."
 //! - Splinterfright, */* Trample: "Splinterfright's power and toughness are
@@ -35,11 +43,11 @@
 //! battlefield. Where the engine puts the count among the layers is
 //! `proofs::actions`'.
 
-use super::{acted, asked_for, board, card_proof, triggers, Act, Snapshot};
-use crate::cards::{AdditionalCost, CardBehavior, CardRegistry, TriggerKind, TriggerScope};
+use super::{acted, board, card_proof};
+use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{GameObject, GameState};
-use crate::types::{CardType, Color, Keyword, Zone};
+use crate::types::{CardType, Zone};
 
 use crate::cards::isd;
 
@@ -133,67 +141,6 @@ card_proof! {
         assert!(b.behavior().prints_star_pt());
         let n = b.creature_cards_in_your_graveyard();
         assert!(b.behavior().dynamic_pt(&b.state, b.me, &b.registry) == Some((n, n)));
-        std::mem::forget(b);
-    }
-}
-
-card_proof! {
-    /// Splinterfright: */*, each the creature cards in its controller's
-    /// graveyard; at the beginning of its controller's upkeep, they mill
-    /// two cards.
-    fn splinterfright_counts_your_creature_cards_and_mills_two() {
-        let fright = isd::splinterfright::Splinterfright;
-        assert!(triggers(&fright) == [(TriggerKind::Upkeep, None)]);
-        assert!(fright.step_trigger_scope(&TriggerKind::Upkeep, false) == TriggerScope::Your);
-        let mut b = counted(Box::new(fright));
-        assert!(b.behavior().prints_star_pt());
-        let n = b.creature_cards_in_your_graveyard();
-        assert!(b.behavior().dynamic_pt(&b.state, b.me, &b.registry) == Some((n, n)));
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_upkeep(&mut b.state, b.me, &[], &b.registry);
-        assert!(asked_for(&[Act::Mill(b.you, 2)]) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-    }
-}
-
-card_proof! {
-    /// Sturmgeist: */*, each the cards in its controller's hand; when it
-    /// deals combat damage to a player, its controller draws a card.
-    fn sturmgeist_counts_your_hand_and_draws() {
-        assert!(triggers(&isd::sturmgeist::Sturmgeist) == [(TriggerKind::CombatDamageToPlayer, None)]);
-        let mut b = counted(Box::new(isd::sturmgeist::Sturmgeist));
-        assert!(b.behavior().prints_star_pt());
-        let n = b.count(|o| o.zone == Zone::Hand && o.owner == b.you);
-        assert!(b.behavior().dynamic_pt(&b.state, b.me, &b.registry) == Some((n, n)));
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_combat_damage_to_player(&mut b.state, b.me, PlayerId(1 - b.you.0), 2, &b.registry);
-        assert!(asked_for(&[Act::Draw(b.you, 1)]) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-    }
-}
-
-card_proof! {
-    /// Geist-Honored Monk: */*, each the creatures its controller controls,
-    /// itself among them on the battlefield; as it enters, two 1/1 white
-    /// Spirit creature tokens with flying for its controller.
-    fn geist_honored_monk_counts_your_creatures_and_brings_two_spirits() {
-        let monk = isd::geist_honored_monk::GeistHonoredMonk;
-        assert!(monk.has_etb_handler() && triggers(&monk) == [(TriggerKind::EntersBattlefield, None)]);
-        let mut b = counted(Box::new(monk));
-        assert!(b.behavior().prints_star_pt());
-        let on = b.get(b.me).zone == Zone::Battlefield;
-        let n = i32::from(on) + b.count(|o| o.zone == Zone::Battlefield && o.controller == b.you && Board::creature(o));
-        assert!(b.behavior().dynamic_pt(&b.state, b.me, &b.registry) == Some((n, n)));
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_enter_battlefield(&mut b.state, b.me, &[], &b.registry);
-        assert!(asked_for(&[Act::Tokens {
-            n: 2, controller: b.you, power: 1, toughness: 1, colors: vec![Color::White],
-            types: vec![CardType::Creature], keywords: vec![Keyword::Flying], subtypes: vec!["Spirit".into()],
-        }]));
-        assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
 }
