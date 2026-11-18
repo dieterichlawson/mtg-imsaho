@@ -9285,6 +9285,91 @@ fn every_readable_werewolf_transforms_as_its_text_says_on_every_small_board() {
     });
 }
 
+/// One permanent that watches for permanents entering, placed on one
+/// board under P0, and `caster` casting the creature card `creature`: the
+/// creature enters every way its own text allows, and where the watcher's
+/// text names it the trigger resolves every way it can, its "may" with a
+/// cost paid from what floats or, `broke`, not payable; `borrowed` makes
+/// the watcher the other player's card, and `which` names the board in
+/// what is reported.
+#[allow(clippy::too_many_arguments)]
+fn check_enter_watcher_on(card: &Printed, spec: &Spec, (creature, caster, broke, borrowed): (&str, PlayerId, bool, bool), which: &str,
+    (mut state, mut world): (GameState, World), registry: &CardRegistry, cache: &BTreeMap<String, Printed>, failures: &mut Vec<String>, casts: &mut usize) {
+    let watch = spec.on_enter.as_deref().expect("a watcher of entries");
+    let (printed, creature_spec) = (&cache[creature], read_creature(&cache[creature]).expect("reads"));
+    let watcher = place_face(&mut state, &mut world, &registry, card, spec, P0);
+    if borrowed {
+        state.get_object_mut(watcher).expect("just placed").owner = P1;
+        world.permanents.get_mut(&watcher).expect("just placed").owner = P1;
+    }
+    world.refresh();
+    if world.permanents.get(&watcher).is_some_and(|m| m.is_creature() && world.pt_of(m).1.is_some_and(|t| t <= 0)) {
+        return;
+    }
+    *casts += 1;
+    let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
+        Some(o) => {
+            let at = world.hand[caster.0 as usize].iter().position(|h| h == creature).expect("in the reference's hand");
+            world.hand[caster.0 as usize].remove(at);
+            o.id
+        }
+        None => spell_in_hand(&mut state, &registry, creature, caster),
+    };
+    fund(&mut state, caster, &mana_cost(&printed.mana_cost).expect("a cost"), 0);
+    // What the trigger's "may" costs, floating, so that its payment
+    // has one way to go.
+    if broke {
+        for (id, m) in world.permanents.iter_mut().filter(|(_, m)| m.controller == P0 && !m.is_creature()) {
+            m.tapped = true;
+            state.get_object_mut(*id).expect("on the battlefield").tapped = true;
+        }
+    }
+    if let Some(cost) = watch.trigger.pay.as_ref().filter(|_| caster == P0 && !broke) {
+        fund(&mut state, P0, cost, 0);
+        for sym in &cost.symbols {
+            match sym {
+                ManaSymbol::Generic(n) => *world.pool[0].entry(ManaType::Colorless).or_insert(0) += n,
+                ManaSymbol::Colored(c) => *world.pool[0].entry(ManaType::from(*c)).or_insert(0) += 1,
+                other => panic!("no trigger read here costs {other:?}"),
+            }
+        }
+    }
+    state.active_player = caster;
+    state.priority_player = Some(caster);
+    let want: Vec<World> = creature_outcomes(&creature_spec, &world, caster, printed, spell).into_iter()
+        .flat_map(|mut w| {
+            let entered = w.permanents.get(&spell).is_some_and(|m| m.matches_from(&watch.entering, P0, spell == watcher));
+            w.source = Some(watcher);
+            if entered { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] }
+        })
+        .collect();
+    let (got, asked) = questions_asked(|| every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new()))));
+    let mut from = state.clone();
+    from.stack_puts += 1;
+    if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got))
+        .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, watcher, &asked))
+    {
+        failures.push(format!("{} as player {} casts {creature}{}{}{which}: {why}", card.name, caster.0, if broke { " with no mana left" } else { "" },
+            if borrowed { ", the watcher the other player's card" } else { "" }));
+    }
+}
+
+/// Every permanent the grammar reads that watches for permanents
+/// entering, placed on every small board ([`on_every_small_board`]) under
+/// P0, as each player casts a creature its text may or may not name
+/// ([`check_enter_watcher_on`]).
+#[test]
+fn every_enter_watcher_sees_what_its_text_says_on_every_small_board() {
+    on_every_small_board("casts beside a watcher", &|small, on, which, failures, casts| {
+        for (card, spec) in small.cards.iter().filter(|(_, s)| s.on_enter.is_some()) {
+            for case in [("Grizzly Bears", P0, false, false), ("Elite Inquisitor", P0, false, false), ("Elite Inquisitor", P1, false, false)] {
+                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+                check_enter_watcher_on(card, spec, case, which, made, small.registry, small.cache, failures, casts);
+            }
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -11126,7 +11211,6 @@ fn every_enter_watcher_sees_what_its_text_says() {
     let mut failures = Vec::new();
     let mut casts = 0;
     for (card, spec) in cards.iter().filter(|(_, s)| s.on_enter.is_some()) {
-        let watch = spec.on_enter.as_deref().expect("filtered");
         // And the Bears once more with the caster's mana sources all tapped
         // and nothing floating, so that a "may" with a cost cannot be paid;
         // and with the watcher its controller's but the other player's
@@ -11135,60 +11219,7 @@ fn every_enter_watcher_sees_what_its_text_says() {
         let cases = [("Grizzly Bears", P0, false, false), ("Elite Inquisitor", P0, false, false), ("Elite Inquisitor", P1, false, false),
             ("Grizzly Bears", P0, true, false), ("Grizzly Bears", P0, false, true), ("Elite Inquisitor", P1, false, true)];
         for (creature, caster, broke, borrowed) in cases {
-            casts += 1;
-            let (printed, creature_spec) = (&cache[creature], read_creature(&cache[creature]).expect("reads"));
-            let (mut state, mut world) = board(&registry, &cache);
-            let watcher = place_face(&mut state, &mut world, &registry, card, spec, P0);
-            if borrowed {
-                state.get_object_mut(watcher).expect("just placed").owner = P1;
-                world.permanents.get_mut(&watcher).expect("just placed").owner = P1;
-            }
-            world.refresh();
-            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
-                Some(o) => {
-                    let at = world.hand[caster.0 as usize].iter().position(|h| h == creature).expect("in the reference's hand");
-                    world.hand[caster.0 as usize].remove(at);
-                    o.id
-                }
-                None => spell_in_hand(&mut state, &registry, creature, caster),
-            };
-            fund(&mut state, caster, &mana_cost(&printed.mana_cost).expect("a cost"), 0);
-            // What the trigger's "may" costs, floating, so that its payment
-            // has one way to go.
-            if broke {
-                for (id, m) in world.permanents.iter_mut().filter(|(_, m)| m.controller == P0 && !m.is_creature()) {
-                    m.tapped = true;
-                    state.get_object_mut(*id).expect("on the battlefield").tapped = true;
-                }
-            }
-            if let Some(cost) = watch.trigger.pay.as_ref().filter(|_| caster == P0 && !broke) {
-                fund(&mut state, P0, cost, 0);
-                for sym in &cost.symbols {
-                    match sym {
-                        ManaSymbol::Generic(n) => *world.pool[0].entry(ManaType::Colorless).or_insert(0) += n,
-                        ManaSymbol::Colored(c) => *world.pool[0].entry(ManaType::from(*c)).or_insert(0) += 1,
-                        other => panic!("no trigger read here costs {other:?}"),
-                    }
-                }
-            }
-            state.active_player = caster;
-            state.priority_player = Some(caster);
-            let want: Vec<World> = creature_outcomes(&creature_spec, &world, caster, printed, spell).into_iter()
-                .flat_map(|mut w| {
-                    let entered = w.permanents.get(&spell).is_some_and(|m| m.matches_from(&watch.entering, P0, spell == watcher));
-                    w.source = Some(watcher);
-                    if entered { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] }
-                })
-                .collect();
-            let (got, asked) = questions_asked(|| every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new()))));
-            let mut from = state.clone();
-            from.stack_puts += 1;
-            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got))
-                .or_else(|| wrong_chooser(&triggers_text(spec), &[], &world, P0, watcher, &asked))
-            {
-                failures.push(format!("{} as player {} casts {creature}{}{}: {why}", card.name, caster.0, if broke { " with no mana left" } else { "" },
-                    if borrowed { ", the watcher the other player's card" } else { "" }));
-            }
+            check_enter_watcher_on(card, spec, (creature, caster, broke, borrowed), "", board(&registry, &cache), &registry, &cache, &mut failures, &mut casts);
         }
     }
     assert!(casts > 0);
