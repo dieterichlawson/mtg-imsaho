@@ -190,3 +190,65 @@ fn a_copy_grants_the_copied_cards_anthem_to_other_permanents() {
     assert_eq!(state.effective_power(human, &reg), Some(3),
         "the copy has the Mayor's anthem and p0's other Human gets +1/+1 (CR 706.2)");
 }
+
+// ── One event, several cards: Grimoire of the Dead (#1064-#1067) ──────────
+
+/// A card of `name` owned by `owner` in their graveyard.
+fn in_graveyard(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry,
+                name: &str, owner: mtg_engine::ids::PlayerId) -> mtg_engine::ids::ObjectId {
+    let card = reg.get_id_by_name(name).unwrap();
+    let data = reg.card_data(card).unwrap();
+    let id = state.create_object(card, owner, Zone::Graveyard, data.power, data.toughness);
+    state.get_object_mut(id).unwrap().name = name.into();
+    id
+}
+
+/// p0's Grimoire of the Dead with its three study counters, activated and
+/// resolved, with the first enters-as-copy question raised.
+fn resolve_grimoire(mut state: mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry)
+    -> mtg_engine::state::GameState {
+    let grimoire = named_permanent(&mut state, reg, "Grimoire of the Dead", P0);
+    state.add_counters(grimoire, CounterType::Study, 3);
+    let mut state = activate(&state, reg, grimoire, 1, vec![]);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, reg);
+    state
+}
+
+fn answer(state: &mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry,
+          copy: mtg_engine::ids::ObjectId) -> mtg_engine::state::GameState {
+    let mut state = mtg_engine::engine::submit_action(
+        state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(copy))) },
+        reg,
+    );
+    // What the game loop does next: the queue's next question, and only
+    // once it is empty the state-based actions (`run_game_loop_inner`).
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, reg);
+    if state.pending_entry_choices.is_empty() {
+        while mtg_engine::sba::check_state_based_actions(&mut state, reg) {}
+    }
+    state
+}
+
+fn asked(state: &mtg_engine::state::GameState) -> Option<mtg_engine::ids::PlayerId> {
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, .. }) => Some(*player),
+        _ => None,
+    }
+}
+
+/// CR 109.5, 614.12b: the choice belongs to the player the permanent enters
+/// under. p0's Grimoire returning p1's Twin asked p1 (#1066).
+#[test]
+fn an_opponents_twin_returned_under_your_control_asks_you() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P1);
+
+    let state = resolve_grimoire(state, &reg);
+
+    assert_eq!(asked(&state), Some(P0), "got {:?}", state.awaiting_action);
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(twin).unwrap().controller, P0);
+}

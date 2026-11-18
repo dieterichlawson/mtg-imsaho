@@ -161,8 +161,16 @@ pub fn for_entering(
 pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegistry) {
     while state.awaiting_action.is_none() {
         let Some(&object) = state.pending_entry_choices.first() else { return };
-        let Some(controller) = state.get_object(object).map(|o| o.controller) else {
+        // The choice is the controller's — the player the permanent enters
+        // under (CR 109.5, 614.12b). For a card returned "under your control"
+        // that is not the owner who still controls it in the graveyard: p0's
+        // Grimoire of the Dead returning p1's Evil Twin asked p1 what p0's
+        // permanent would be, and p1 could decline it into a 0/0 (#1066).
+        let Some(controller) = state.get_object(object).map(|o|
+            state.pending_entry_controllers.get(&object).copied().unwrap_or(o.controller))
+        else {
             state.pending_entry_choices.remove(0);
+            state.pending_entry_controllers.remove(&object);
             continue;
         };
         // "A copy of any creature on the battlefield" is a choice, not a
