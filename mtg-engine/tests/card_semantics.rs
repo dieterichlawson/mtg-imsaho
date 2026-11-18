@@ -8509,6 +8509,20 @@ fn every_readable_card_does_what_its_text_says_on_generated_boards() {
         failures.len(), generated_seeds(), cards.len(), failures.join("\n  "));
 }
 
+/// The small boards come one at a time in the order they were listed
+/// whole in, and as many as counted: a share is the same boards whichever
+/// way it is walked.
+#[test]
+fn the_small_boards_come_in_one_order() {
+    let boards: Vec<Vec<usize>> = small_boards(3, 2).collect();
+    assert_eq!(boards, [vec![], vec![0], vec![1], vec![2], vec![0, 0], vec![0, 1], vec![0, 2], vec![1, 1], vec![1, 2], vec![2, 2]]);
+    for (pieces, size) in [(0, 2), (1, 3), (3, 2), (5, 3), (808, 2)] {
+        assert_eq!(small_boards(pieces, size).count() as u128, small_boards_count(pieces, size), "{pieces} pieces, {size} at most");
+    }
+    assert_eq!(small_boards_count(808, 2), 327_645);
+    assert_eq!(small_boards_count(2170, 2), 2_357_706);
+}
+
 /// The cards the grammar reads come in the order of their names, the same
 /// in every process: a generated board is drawn from places in that list,
 /// and a small board is counted out by them ([`readable`] says what
@@ -8710,23 +8724,58 @@ fn small_board_for(spec: &Spec, pieces: &[Piece], registry: &CardRegistry, cache
 
 /// The boards of at most `size` pieces, each a list of indices into
 /// `pieces` in order (a board is a multiset of pieces: two of one
-/// permanent are a board, and no order of them is another).
-fn small_boards(pieces: usize, size: usize) -> Vec<Vec<usize>> {
-    let mut boards = vec![vec![]];
-    let mut last = vec![vec![]];
-    for _ in 0..size {
-        let mut next = Vec::new();
-        for board in &last {
-            for piece in board.last().copied().unwrap_or(0)..pieces {
-                let mut b: Vec<usize> = board.clone();
-                b.push(piece);
-                next.push(b);
+/// permanent are a board, and no order of them is another): the empty
+/// board, then those of one piece, of two and so on, each size in
+/// dictionary order. One at a time, as the boards of three pieces are 88
+/// million.
+fn small_boards(pieces: usize, size: usize) -> SmallBoards {
+    SmallBoards { pieces, size, next: Some(Vec::new()) }
+}
+
+/// [`small_boards`], as it goes.
+#[derive(Clone)]
+struct SmallBoards {
+    pieces: usize,
+    size: usize,
+    next: Option<Vec<usize>>,
+}
+
+impl Iterator for SmallBoards {
+    type Item = Vec<usize>;
+
+    fn next(&mut self) -> Option<Vec<usize>> {
+        let board = self.next.take()?;
+        // The next of its size: its last piece that is not the last piece
+        // of all moved on one, and each after it brought back to that; or,
+        // with none, the first board of one piece more.
+        let mut after = board.clone();
+        self.next = match (0..after.len()).rev().find(|&i| after[i] + 1 < self.pieces) {
+            Some(i) => {
+                let piece = after[i] + 1;
+                after[i..].fill(piece);
+                Some(after)
             }
-        }
-        boards.extend(next.iter().cloned());
-        last = next;
+            None => (board.len() < self.size && self.pieces > 0).then(|| vec![0; board.len() + 1]),
+        };
+        Some(board)
     }
-    boards
+}
+
+/// How many boards [`small_boards`] gives: the multisets of each size up
+/// to `size`.
+fn small_boards_count(pieces: usize, size: usize) -> u128 {
+    let mut total = 0;
+    for k in 0..=size {
+        // C(pieces + k - 1, k).
+        let mut c: u128 = 1;
+        for j in 0..k {
+            c = c * (pieces + k - 1 - j) as u128 / (j as u128 + 1);
+        }
+        if pieces > 0 || k == 0 {
+            total += c;
+        }
+    }
+    total
 }
 
 /// What `CARD_SEMANTICS_SMALL` asks for: the size of the boards, 0 if it
@@ -8769,28 +8818,34 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
     let worn = size <= 1 || std::env::var("CARD_SEMANTICS_SMALL_WORN").is_ok();
     let pieces = small_pieces(&vocabulary, &pool, worn);
     // One board alone, as a failure names it: `CARD_SEMANTICS_SMALL_BOARD=3,411`.
-    let boards = match std::env::var("CARD_SEMANTICS_SMALL_BOARD") {
-        Ok(v) => vec![v.split(',').filter(|i| !i.is_empty()).map(|i| i.trim().parse().expect("a piece")).collect()],
-        Err(_) => small_boards(pieces.len(), size.max(1)),
-    };
+    let one: Option<Vec<usize>> = std::env::var("CARD_SEMANTICS_SMALL_BOARD").ok()
+        .map(|v| v.split(',').filter(|i| !i.is_empty()).map(|i| i.trim().parse().expect("a piece")).collect());
+    let boards = if one.is_some() { 1 } else { small_boards_count(pieces.len(), size.max(1)) };
     let (share, shares) = std::env::var("CARD_SEMANTICS_SHARD").ok().map_or((0, 1), |v| {
         let (k, n) = v.split_once('/').expect("K/N");
         (k.parse::<usize>().expect("a share"), n.parse::<usize>().expect("a number of shares"))
     });
     // Without the variable, a sample: every hundredth board.
     let stride = if size == 0 { 100 } else { 1 };
-    let mine: Vec<&Vec<usize>> = boards.iter().enumerate()
-        .filter(|(i, _)| i % stride == 0 && i % shares == share)
-        .map(|(_, b)| b)
-        .collect();
+    // This share's boards, in the order of all of them: each worker walks
+    // them all and plays every `workers`th of the share's.
+    let mine = || -> Box<dyn Iterator<Item = Vec<usize>>> {
+        match &one {
+            Some(board) => Box::new(std::iter::once(board.clone())),
+            None => Box::new(small_boards(pieces.len(), size.max(1)).enumerate()
+                .filter(move |(i, _)| i % stride == 0 && i % shares == share)
+                .map(|(_, b)| b)),
+        }
+    };
     let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let small = Small { registry: &registry, cache: &cache, cards: &cards, vocabulary: &vocabulary, pool: &pool };
     let (small, pieces, mine) = (&small, &pieces, &mine);
-    let results: Vec<(Vec<String>, usize, usize)> = std::thread::scope(|scope| {
+    let results: Vec<(Vec<String>, usize, usize, usize)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers).map(|worker| scope.spawn(move || {
             let mut failures = Vec::new();
-            let (mut checked, mut stood) = (0, 0);
-            for board in mine.iter().skip(worker).step_by(workers) {
+            let (mut checked, mut stood, mut played) = (0, 0, 0);
+            for board in mine().skip(worker).step_by(workers) {
+                played += 1;
                 let on: Vec<Piece> = board.iter().map(|&i| pieces[i]).collect();
                 let made = small_board(&on, small.registry, small.cache, small.vocabulary, small.pool, false);
                 stood += usize::from(made.is_some());
@@ -8802,15 +8857,16 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
                     failures.push(format!("small board {board:?} is {on:?}: {world}"));
                 }
             }
-            (failures, checked, stood)
+            (failures, checked, stood, played)
         })).collect();
         handles.into_iter().map(|h| h.join().expect("a worker")).collect()
     });
-    let failures: Vec<String> = results.iter().flat_map(|(f, _, _)| f.iter().cloned()).collect();
-    let checked: usize = results.iter().map(|(_, c, _)| c).sum();
-    let stood: usize = results.iter().map(|(_, _, s)| s).sum();
-    println!("small boards: {} pieces, {} boards of at most {} of them, {} in this share, {stood} of those boards of the family, {checked} {what}",
-        pieces.len(), boards.len(), size.max(1), mine.len());
+    let failures: Vec<String> = results.iter().flat_map(|(f, _, _, _)| f.iter().cloned()).collect();
+    let checked: usize = results.iter().map(|(_, c, _, _)| c).sum();
+    let stood: usize = results.iter().map(|(_, _, s, _)| s).sum();
+    let played: usize = results.iter().map(|(_, _, _, p)| p).sum();
+    println!("small boards: {} pieces, {boards} boards of at most {} of them, {played} in this share, {stood} of those boards of the family, {checked} {what}",
+        pieces.len(), size.max(1));
     assert!(checked > 0);
     assert!(failures.is_empty(), "{} of {checked} {what} on small boards, across the {} cards read, disagree with their text:\n  {}",
         failures.len(), cards.len(), failures.join("\n  "));
