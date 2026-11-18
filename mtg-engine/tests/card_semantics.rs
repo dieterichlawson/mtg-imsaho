@@ -3300,6 +3300,10 @@ struct Model {
     transformed: bool,
     /// Dealt damage by a source with deathtouch (CR 702.2b).
     deathtouched: bool,
+    /// Came under its controller's control this turn: a creature that has
+    /// may not pay a cost with {T} (CR 302.6). A permanent a board was
+    /// made with has been there since the turn began.
+    sick: bool,
     /// Power and toughness are the number of creature cards in its
     /// controller's graveyard, counted when observed (CR 604.3).
     counts_creature_cards: bool,
@@ -3384,6 +3388,7 @@ impl Model {
             other_face: None,
             transformed: false,
             deathtouched: false,
+            sick: false,
             counts_creature_cards: false,
             counts_hand: false,
             counts_counters_on: None,
@@ -3985,6 +3990,16 @@ impl World {
                 let top = self.yard.keys().map(|id| id.0).filter(|n| (FIRST..u64::MAX / 2).contains(n)).max();
                 self.yard.insert(ObjectId(top.map_or(FIRST, |n| n + 1)), model);
             }
+        }
+    }
+
+    /// Permanent `id` has just been put onto the battlefield (not cast):
+    /// it is among what entered, for what triggers on that, and came under
+    /// its controller's control this turn (CR 302.6).
+    fn arrived(&mut self, id: ObjectId) {
+        self.entered.push(Src::Permanent(id));
+        if let Some(m) = self.permanents.get_mut(&id) {
+            m.sick = true;
         }
     }
 
@@ -5014,6 +5029,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
         named_counters: BTreeMap::new(),
         attached: None,
         deathtouched: false,
+        sick: false,
         granted: Vec::new(),
         boost: (0, 0),
         restricted: Vec::new(),
@@ -5056,6 +5072,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         other_face: None,
         transformed: false,
         deathtouched: false,
+        sick: false,
         counts_creature_cards: false,
         counts_hand: false,
         counts_counters_on: None,
@@ -5267,7 +5284,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     }
                     let m = w.entering(m);
                     w.permanents.insert(id, m);
-                    w.entered.push(Src::Permanent(id));
+                    w.arrived(id);
                 }
             }
             Effect::ShuffleIntoLibraryRevealUntilNamed => unreachable!("each place it lands played by every_shuffle_and_reveal_is_what_its_text_says"),
@@ -5281,7 +5298,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         let t = w.entering(copy);
                         let id = w.fresh_id();
                         w.permanents.insert(id, t);
-                        w.entered.push(Src::Permanent(id));
+                        w.arrived(id);
                     }
                 }
             }
@@ -5471,7 +5488,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         let m = arriving(&before, card.name.as_deref().expect("a card"), card.owner, card.owner);
                         let chooses = still_chooses_copy(card.name.as_deref().expect("a card"), &m);
                         w.permanents.insert(*id, m);
-                        w.entered.push(Src::Permanent(*id));
+                        w.arrived(*id);
                         if chooses {
                             w.choosing_copy.push(*id);
                         }
@@ -5702,7 +5719,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         let chooses = still_chooses_copy(&name, &back);
                         let id = w.fresh_id();
                         w.permanents.insert(id, back);
-                        w.entered.push(Src::Permanent(id));
+                        w.arrived(id);
                         if chooses {
                             w.choosing_copy.push(id);
                         }
@@ -5722,7 +5739,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     let id = object(*slot).expect("just read");
                     let chooses = still_chooses_copy(card.name.as_deref().expect("a card"), &m);
                     w.permanents.insert(id, m);
-                    w.entered.push(Src::Permanent(id));
+                    w.arrived(id);
                     if chooses {
                         w.choosing_copy.push(id);
                     }
@@ -6467,7 +6484,7 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
     // What its entry set off besides its own enters trigger: a death, as a
     // creature that enters with no toughness dies (CR 704.5f), and what
     // watches for one.
-    entering_outcomes(spec, world, caster, Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) }, id)
+    entering_outcomes(spec, world, caster, Model { tapped: spec.enters_tapped, sick: true, ..model_of(spec, card, caster) }, id)
         .into_iter()
         .flat_map(settle_triggers)
         .collect()
@@ -6512,7 +6529,7 @@ fn entering_outcomes(spec: &Spec, world: &World, caster: PlayerId, mut m: Model,
             w.state_based_actions();
             // A copy has what it copies' enters trigger, which triggers
             // as it enters (CR 707.2, 603.6a).
-            w.entered.push(Src::Permanent(id));
+            w.arrived(id);
             ways.extend(settle_triggers(w));
         }
         return ways;
@@ -6843,6 +6860,10 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
         if let Some(owner) = m.stolen_from.take() {
             m.controller = owner;
         }
+        // Under the player whose turn begins since it began (CR 302.6).
+        if m.controller == active {
+            m.sick = false;
+        }
         if m.controller == active && !restricted(m, Restriction::DoesntUntap) {
             m.tapped = false;
         }
@@ -6939,10 +6960,12 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
 fn ways_to_pay(world: &World, player: PlayerId, cost: &ManaCost) -> Vec<World> {
     // Its lands', artifacts' and creatures' mana abilities (CR 605.1a),
     // each with the cards it mills to be activated (Deranged Assistant's
-    // "{T}, Mill a card: Add {C}"). A creature here has been under its
-    // controller since the turn began, so may tap (302.6).
+    // "{T}, Mill a card: Add {C}"). A creature may tap for one only if it
+    // has been under its controller since the turn began (302.6): not one
+    // that arrived this turn, a Deranged Assistant returned beside the
+    // Mentor of the Meek whose trigger asks for {1}.
     let sources: Vec<(ObjectId, usize, Vec<Vec<(ManaType, u32)>>)> = world.permanents.iter()
-        .filter(|(_, m)| m.controller == player && !m.tapped)
+        .filter(|(_, m)| m.controller == player && !m.tapped && !(m.sick && m.is_creature()))
         .flat_map(|(id, m)| {
             let spec = m.name.as_ref().and_then(|n| cached_oracle().get(n)).and_then(read_permanent);
             spec.into_iter()
