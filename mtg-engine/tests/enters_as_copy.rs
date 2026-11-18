@@ -337,3 +337,71 @@ fn two_twins_in_one_batch_see_no_state_based_action_between_answers() {
     assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Graveyard,
         "once the batch is in, the 0/0 Wurm dies to SBA");
 }
+
+// ── A token copy of the card itself (#1068) ───────────────────────────────
+
+/// CR 707.2, 111.1, 614.12b: a token copy of an Evil Twin *card* (Back from
+/// the Brink exiling one) has the Twin's replacement among its copiable
+/// values, and it applies as the token is created. It was skipped: the
+/// token entered as a printed 0/0 and died (#1068).
+#[test]
+fn a_token_copy_of_an_evil_twin_card_is_asked_what_to_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let card = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(card, Zone::Exile, &reg);
+    let before = state.objects.len();
+
+    let token = state.create_token_copy(card, P0, &reg);
+
+    assert_eq!(token, mtg_engine::ids::ObjectId(0), "no token exists before the answer");
+    assert_eq!(state.objects.len(), before);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    assert_eq!(asked(&state), Some(P0), "the creator is asked: {:?}", state.awaiting_action);
+    assert_eq!(pending_choice_options(&state), vec![Target::Object(bear)]);
+
+    let state = answer(&state, &reg, bear);
+    let tokens: Vec<_> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .filter(|o| o.is_token).map(|o| o.id).collect();
+    assert_eq!(tokens.len(), 1, "the answer creates the token");
+    assert_eq!(state.name_of(tokens[0], &reg), "Grizzly Bears");
+    assert!(mtg_engine::cards::ability_granting_grantor(&state, tokens[0], &reg).is_some(),
+        "with the Twin's \"except it has\" ability (CR 706.9a)");
+    assert!(state.pending_token_copies.is_empty());
+}
+
+/// Declined, it is the printed 0/0 the rules give, and SBAs have it.
+#[test]
+fn a_declined_token_copy_of_an_evil_twin_card_is_a_0_0() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let card = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    state.create_token_copy(card, P0, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+
+    let mut state = mtg_engine::engine::submit_action(
+        &state, &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) }, &reg);
+
+    let token = state.all_objects_in_zone(Zone::Battlefield).into_iter()
+        .find(|o| o.is_token).map(|o| o.id).expect("declining still creates the token");
+    assert_eq!(state.name_of(token, &reg), "Evil Twin");
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert!(state.get_object(token).is_none_or(|o| o.zone != Zone::Battlefield));
+}
+
+/// A copy of a Twin that already copied something copies what it copied
+/// (CR 707.2), so nothing is asked.
+#[test]
+fn a_token_copy_of_a_twin_clone_is_not_asked() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(bear));
+
+    let token = state.create_token_copy(twin, P0, &reg);
+
+    assert_eq!(state.name_of(token, &reg), "Grizzly Bears");
+    assert!(state.pending_token_copies.is_empty());
+}

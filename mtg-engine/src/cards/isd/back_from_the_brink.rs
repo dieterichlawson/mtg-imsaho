@@ -126,11 +126,15 @@ impl CardBehavior for BackFromTheBrink {
         let creature_id = ObjectId(ability_index as u64);
         let name = state.get_object(creature_id).map(|o| o.name.clone()).unwrap_or_default();
 
-        state.create_token_copy(creature_id, controller, registry);
+        let token = state.create_token_copy(creature_id, controller, registry);
 
         // The exile was the cost, logged when it was paid (#760); this line
-        // says only what the effect did.
-        state.log(crate::state::LogLevel::Event,
-            format!("Back from the Brink: created a token copy of {name}"));
+        // says only what the effect did. A copy of an Evil Twin card is not
+        // created until its creator has chosen what it enters as (#1068),
+        // and the line that it is choosing has been logged instead.
+        if state.get_object(token).is_some() {
+            state.log(crate::state::LogLevel::Event,
+                format!("Back from the Brink: created a token copy of {name}"));
+        }
     }
 }

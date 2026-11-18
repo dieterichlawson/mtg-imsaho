@@ -327,6 +327,13 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
 /// What every card hook leaves behind on an object — the contract card code
 /// is held to whichever card wrote the field.
 fn contract(state: &GameState, registry: &CardRegistry, v: &mut Violations) {
+    // A token copy waiting on its copy choice copies something that exists
+    // (#1068: the answer reads its copiable values from it).
+    for t in &state.pending_token_copies {
+        if state.get_object(t.of).is_none() {
+            v.push(format!("a token copy waits on #{}, which does not exist", t.of.0));
+        }
+    }
     // A held batch waits on at least one answer; one with none outstanding
     // would never enter (`replacement::record_entry_choice` releases it).
     for batch in &state.pending_entry_batches {

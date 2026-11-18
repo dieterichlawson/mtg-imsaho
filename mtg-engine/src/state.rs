@@ -385,6 +385,11 @@ pub struct GameState {
     #[serde(default)]
     pub pending_entry_batches: Vec<EntryBatch>,
 
+    /// Token copies waiting on their copied card's enters-as-a-copy choice
+    /// before they are created (`create_token_copy`, #1068).
+    #[serde(default)]
+    pub pending_token_copies: Vec<PendingTokenCopy>,
+
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
     /// one ends the permanent goes to whichever of the rest is latest — a
@@ -699,6 +704,7 @@ impl GameState {
             pending_entry_choices: Vec::new(),
             pending_entry_controllers: std::collections::BTreeMap::new(),
             pending_entry_batches: Vec::new(),
+            pending_token_copies: Vec::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -1082,7 +1088,10 @@ impl GameState {
             x_value: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
             chosen_mode: None,
-            entering_copy_choice: EnterAsCopyChoice::Unasked,
+            // A token copy of a card that chooses what to enter as was asked
+            // before it was created (`create_token_copy`), and enters with the
+            // answer for that card's replacement to read (#1068).
+            entering_copy_choice: face.map_or(EnterAsCopyChoice::Unasked, |f| f.entering),
             state_trigger_on_stack: false,
             attacked_on_turn: None,
             last_controller: None,
@@ -1115,10 +1124,45 @@ impl GameState {
 
     /// Create a token that copies all characteristics of a source permanent.
     /// Used by Cackling Counterpart, Evil Twin, etc.
+    ///
+    /// Returns `ObjectId(0)` when no token exists yet: the source is gone,
+    /// or the token waits on an enters-as-a-copy choice. A copy of an Evil
+    /// Twin *card* (Back from the Brink exiling one, CR 707.2) has the
+    /// Twin's "you may have this enter as a copy" among its copiable values,
+    /// and that replacement applies as the token is created (CR 111.1,
+    /// 614.12b). It used to be skipped — the token entered as a printed 0/0
+    /// and died, with the cost paid for nothing (#1068). So the creation is
+    /// queued in `pending_token_copies`, the creator is asked before anyone
+    /// receives priority (`replacement::process_pending_entry_choices`), and
+    /// the answer creates the token (`replacement::record_token_copy_choice`).
+    /// A copy of a Twin that already copied something copies what it copied
+    /// (its `card_id` is that card's), so it is not asked.
     pub fn create_token_copy(
         &mut self,
         source_id: ObjectId,
         owner: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> ObjectId {
+        let Some(source) = self.get_object(source_id) else { return ObjectId(0) };
+        if registry.get(source.card_id)
+            .is_some_and(super::cards::CardBehavior::chooses_copy_as_it_enters)
+        {
+            let name = self.name_of(source_id, registry);
+            self.log(LogLevel::Event, format!(
+                "p{}'s {name} token is choosing what to enter as", owner.0));
+            self.pending_token_copies.push(PendingTokenCopy { of: source_id, owner });
+            return ObjectId(0);
+        }
+        self.create_token_copy_entering(source_id, owner, EnterAsCopyChoice::Unasked, registry)
+    }
+
+    /// [`create_token_copy`], the token entering with `entering` as its
+    /// answer to an enters-as-a-copy choice.
+    pub(crate) fn create_token_copy_entering(
+        &mut self,
+        source_id: ObjectId,
+        owner: PlayerId,
+        entering: EnterAsCopyChoice,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let Some(source) = self.get_object(source_id) else { return ObjectId(0) };
@@ -1211,6 +1255,7 @@ impl GameState {
             subtypes.clone(),
             Some(TokenCopyFace {
                 card_id, is_legendary, is_transformed: source_transformed, copy_grantor,
+                entering,
             }),
             None,
             registry,
@@ -1362,6 +1407,15 @@ impl GameState {
             }
         }
         self.pending_entry_batches.push(batch);
+    }
+
+    /// Whether an entry is waiting on an enters-as-a-copy answer: a deferred
+    /// card or a token not yet created. The effect that started it has not
+    /// finished, so the game loop runs no state-based action or trigger pass
+    /// until it is in (CR 704.3).
+    #[must_use]
+    pub fn entry_choice_waiting(&self) -> bool {
+        !self.pending_entry_choices.is_empty() || !self.pending_token_copies.is_empty()
     }
 
     /// The batch whose entry `object` belongs to, if one is held, taken out
@@ -4423,6 +4477,19 @@ pub(crate) struct TokenCopyFace {
     /// thing `copy_grantor` means on the object, and the field the ability
     /// lookup reads.
     pub copy_grantor: Option<CardId>,
+    /// The token's answer to its copied card's enters-as-a-copy choice, if
+    /// it was asked (#1068).
+    pub entering: EnterAsCopyChoice,
+}
+
+/// A token copy waiting to be created until its creator answers the copied
+/// card's enters-as-a-copy choice (`GameState::create_token_copy`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingTokenCopy {
+    /// What the token is a copy of (the Evil Twin card).
+    pub of: ObjectId,
+    /// Who creates it, and so controls it and is asked.
+    pub owner: PlayerId,
 }
 
 /// Whether a permanent that chooses what to enter as has been asked yet, and
@@ -5223,6 +5290,10 @@ pub enum PendingEffect {
     /// wherever it is coming from), and recording the answer is what releases
     /// its deferred entry.
     EnterAsCopy { object: ObjectId },
+    /// The same question for a token copy of such a card, asked before the
+    /// token exists (`GameState::create_token_copy`, #1068). `of` is what
+    /// the token copies; the answer creates it.
+    EnterAsCopyToken { of: ObjectId },
 
 
 

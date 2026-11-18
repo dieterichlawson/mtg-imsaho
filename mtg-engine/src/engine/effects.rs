@@ -209,6 +209,18 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             };
             crate::replacement::record_entry_choice(state, *object, choice, registry);
         }
+        (Target::Object(target_id), PendingEffect::EnterAsCopyToken { of }) => {
+            // The same answer for a token copy not yet created (#1068): it
+            // is created now, entering as the chosen creature.
+            let choice = if state.get_object(*target_id)
+                .is_some_and(|o| o.zone == crate::types::Zone::Battlefield)
+            {
+                crate::state::EnterAsCopyChoice::Copy(*target_id)
+            } else {
+                crate::state::EnterAsCopyChoice::Declined
+            };
+            crate::replacement::record_token_copy_choice(state, *of, choice, registry);
+        }
         (Target::Object(keep_id), PendingEffect::LegendRuleKeep { player, legend_name }) => {
             // Keep the chosen permanent, move all other legendaries with the same name to graveyard.
             // Through `state.is_legendary`, the same question the SBA asked to

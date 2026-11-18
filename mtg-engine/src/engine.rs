@@ -1514,7 +1514,7 @@ fn run_game_loop_inner<F>(
         // is in (CR 704.3, 603.3). Running them between two answers killed
         // creatures mid-resolution and let a later copy see the deaths
         // (#1064).
-        let entry_waiting = !state.pending_entry_choices.is_empty();
+        let entry_waiting = state.entry_choice_waiting();
         while !entry_waiting {
             let mut any_work = false;
             loop {

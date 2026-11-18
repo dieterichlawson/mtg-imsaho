@@ -96,6 +96,10 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         crate::replacement::record_entry_choice(
                             &mut *state, *object, crate::state::EnterAsCopyChoice::Declined, registry);
                     }
+                    if let crate::state::PendingEffect::EnterAsCopyToken { of } = effect {
+                        crate::replacement::record_token_copy_choice(
+                            &mut *state, *of, crate::state::EnterAsCopyChoice::Declined, registry);
+                    }
                 }
                 (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, remaining, player, description, .. },
                  ResolvedChoice::ChosenCard(discard_id)) => {

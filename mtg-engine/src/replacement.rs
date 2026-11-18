@@ -160,7 +160,10 @@ pub fn for_entering(
 /// returns every creature card in every graveyard).
 pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegistry) {
     while state.awaiting_action.is_none() {
-        let Some(&object) = state.pending_entry_choices.first() else { return };
+        let Some(&object) = state.pending_entry_choices.first() else {
+            process_pending_token_copies(state, registry);
+            return;
+        };
         // The choice is the controller's — the player the permanent enters
         // under (CR 109.5, 614.12b). For a card returned "under your control"
         // that is not the owner who still controls it in the graveyard: p0's
@@ -177,15 +180,7 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
             }
             continue;
         };
-        // "A copy of any creature on the battlefield" is a choice, not a
-        // target (CR 115.1, 614.12b), so hexproof and protection do not
-        // narrow it.
-        let options: Vec<crate::actions::Target> = state
-            .all_objects_in_zone(Zone::Battlefield)
-            .iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| crate::actions::Target::Object(o.id))
-            .collect();
+        let options = copy_options(state, registry);
         if options.is_empty() {
             // Nothing to copy: the choice cannot be made, so the permanent
             // enters as its printed self.
@@ -203,6 +198,57 @@ pub fn process_pending_entry_choices(state: &mut GameState, registry: &CardRegis
             registry,
         );
     }
+}
+
+/// The same questions for token copies not yet created (#1068): the creator
+/// is asked, from the creatures on the battlefield, and the answer creates
+/// the token.
+fn process_pending_token_copies(state: &mut GameState, registry: &CardRegistry) {
+    while state.awaiting_action.is_none() {
+        let Some(&crate::state::PendingTokenCopy { of, owner }) = state.pending_token_copies.first()
+        else { return };
+        let options = copy_options(state, registry);
+        if options.is_empty() {
+            record_token_copy_choice(state, of, crate::state::EnterAsCopyChoice::Declined, registry);
+            continue;
+        }
+        let name = state.name_of(of, registry);
+        crate::cards::helpers::present_optional_target_choice(
+            state,
+            of,
+            owner,
+            options,
+            crate::state::PendingEffect::EnterAsCopyToken { of },
+            &format!("{name} token: you may have it enter as a copy of a creature on the battlefield"),
+            registry,
+        );
+    }
+}
+
+/// "A copy of any creature on the battlefield" is a choice, not a target
+/// (CR 115.1, 614.12b), so hexproof and protection do not narrow it.
+fn copy_options(state: &GameState, registry: &CardRegistry) -> Vec<crate::actions::Target> {
+    state
+        .all_objects_in_zone(Zone::Battlefield)
+        .iter()
+        .filter(|o| state.is_creature(o.id, registry))
+        .map(|o| crate::actions::Target::Object(o.id))
+        .collect()
+}
+
+/// Record the answer for the first token copy of `of` waiting on one, and
+/// create it with that answer.
+pub fn record_token_copy_choice(
+    state: &mut GameState,
+    of: ObjectId,
+    choice: crate::state::EnterAsCopyChoice,
+    registry: &CardRegistry,
+) {
+    let Some(i) = state.pending_token_copies.iter().position(|t| t.of == of) else { return };
+    let crate::state::PendingTokenCopy { owner, .. } = state.pending_token_copies.remove(i);
+    // `create_tokens_inner` logs the token that entered, at the size and
+    // name it entered as.
+    state.create_token_copy_entering(of, owner, choice, registry);
 }
 
 /// Record the answer to an enters-as-a-copy choice and finish that object's
