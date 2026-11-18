@@ -48,9 +48,13 @@ jobs:
   # proofs-full.yml, twice a month. RED means a harness that proved does
   # not now (the log's NOT PROVED lines name it); one of
   # scripts/kani/expected-open.txt is not counted.
+  #
+  # The tier takes about 25 minutes. The timeout is a cap on a slow runner,
+  # not the budget: at 30 it left a run four minutes from failing with
+  # nothing wrong.
   kani:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
