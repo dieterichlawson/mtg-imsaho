@@ -55,12 +55,13 @@ is out of reach for CBMC, with the scalars alone left open. So Kani cannot
 hold the engine under a card except on boards that are essentially concrete,
 which is a test, not a proof. The pilot's harnesses are not kept.
 
-That settles the split:
-
-- **The engine in the loop is the reference's job**, on boards and in
-  situations drawn at scale rather than written by hand (part A).
-- **The Kani card proofs stay compositional**, and are made sound about the
-  engine instead of merely consistent with themselves (part B).
+That settled the split as first planned: the engine in the loop as the
+reference's job (part A), and the Kani card proofs kept compositional and
+made sound about the engine by stand-ins that model each action (the
+first part B). The second half did not stand. A card proof that does not
+run the engine is not a proof that the card works, whatever its stand-ins
+model, and on 2026-11-18 the recorder harnesses were removed and part B
+rewritten: a card's proof runs the engine itself.
 
 ## Part A: the reference on generated boards
 
@@ -284,27 +285,67 @@ in about six minutes (`CARD_SEMANTICS_BOARDS=1024 cargo test --release
 -p mtg-engine --test card_semantics -- generated_boards`), sharded with
 `CARD_SEMANTICS_FIRST_BOARD`.
 
-## Part B: Kani card proofs that are sound about the engine
+## Part B: card proofs that run the engine
 
-1. **Stand-ins that do what the action does.** Each recorder becomes a
-   model of its action's specification: it changes the state as the
-   action's proof says the action does, and where the action may fail or
-   choose, it does each nondeterministically. Code after the call then
-   reads the state the call left, and every branch on its result is taken.
-2. **Each action proved to refine its stand-in**, on the same bounded
-   boards: the action proofs in `proofs/actions/` restated as "the real
-   function leaves what the stand-in may leave". Then a card proof with
-   the stand-in holds of the card with the real action, within the bounds.
-3. **Outcomes, not calls.** Each card's assertion is restated as the state
-   its resolution leaves, written from its Oracle text: the destroyed
-   permanent in its owner's graveyard, not a `Destroy` in the record.
+Decided 2026-11-18: no card proof stands in for the engine. What that
+leaves, in the order it is being done:
 
-This is a rewrite of the 990 harnesses and the 51 stand-ins, and is done
-after A2, family by family, the families with the most cards first.
+### B0. The recorder harnesses, removed (done)
+
+715 of the 990 Kani card harnesses asserted a record of calls: 11 went
+with master's simultaneous entries (#1064-#1068), whose function their
+stand-in had replaced, and 704 on 2026-11-18. What is kept in
+`proofs/cards/`, 285 harnesses, is what a card declares (abilities,
+costs, targets, triggers, statics, replacements) and what its own code
+writes to the state (a question, an until-end-of-turn effect), each read
+by an engine function with a proof of its own. No stand-in is between
+those assertions and the code they are of.
+
+### B1. Every small board (next)
+
+The generated boards are a sample. A proof by exhaustion is the same
+check over every board of a stated size: every card of the pool cast,
+with the real engine, at every target set and every answer and every
+order its triggers may take, on every board of at most N other objects,
+each any permanent of the vocabulary on either side in each state of wear
+(tapped, damaged, a counter of either kind, a shield, borrowed), a
+creature token of each kind, or any card of the pool in either graveyard;
+and the games the engine ends in held to the games the text allows. That
+is a statement about every board in a bound, as a Kani proof is, with the
+engine itself under the card and the reference as its specification.
+
+Scale, from what the generated boards measure (about 1,600 casts a second
+on four cores in release): one other object is some 800 boards and a
+quarter of a million casts, minutes; two is some 350,000 boards and 94
+million casts, 16 hours on four cores and an hour on 64; three is beyond
+one machine of any size offered so far without cutting the family (the
+permanents alone, or one state of wear), which is said where it is cut.
+
+### B2. Kani with the engine under a card: what fits
+
+The pilot above says what did not fit at 12 GB. What is not yet measured
+is where between "everything fixed but one flag" (proves in 60 s) and
+"the scalars open" (out of memory) the line runs, card by card and
+freedom by freedom, and how far more memory moves it. That is measured
+before more is claimed or a larger machine asked for: each freedom opened
+alone (which of two creatures is the target, who controls it, its damage,
+its toughness, a shield, a counter), then in pairs, with the peak memory
+and time of each.
+
+### B3. The engine's own proofs
+
+Each engine proof still stands in for the functions its function calls.
+Those stand-ins are not between a card and the game, but the objection
+is the same in kind: nothing proves a function behaves as its recorder
+says. Closing it is a proof, for each recorder, that the real function's
+effect is what the recorder is assumed to have (or, where the recorder
+only records, that every proof using it asserts nothing about state the
+real function would have changed).
 
 ## What is reported
 
-`reports/kani-card-ledger.md` lists the Kani harnesses. A ledger of the
+`reports/kani-card-ledger.md` lists the Kani card harnesses that are
+kept. A ledger of the
 reference's coverage follows A2: for each card and each of its abilities,
 the tests that run it with the engine, on how many boards, and what of its
 text the reference does not yet read.

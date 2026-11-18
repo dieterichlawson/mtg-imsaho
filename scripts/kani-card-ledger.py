@@ -8,8 +8,12 @@ ended. A harness is a card's when its name starts with the card's module
 name or with the name of the card's back face (`homicidal_brute_...` is
 Civilized Scholar's); the harnesses that walk a table of cards
 (`the_static_curses_print_what_their_text_says`) are listed on their own.
-A card with no harness of its own is one whose code is its printed data
-alone, which `tests/card_characteristics.rs` holds to its Oracle record.
+
+The harnesses are of what a card declares and of what its own code writes
+to the state (`mtg-engine/src/proofs/cards/mod.rs`). A card with none has
+nothing of either kind that is not printed data, which
+`tests/card_characteristics.rs` holds to its Oracle record; what any card
+does through the engine is `tests/card_semantics.rs`'s, not a harness's.
 """
 import collections, glob, importlib.util, os, re, sys
 
@@ -81,7 +85,7 @@ def main():
     count = collections.Counter(status(h)[0] for h in every)
     out = [f'# Card proofs at {commit}', '',
            f'{len(every)} harnesses over {len(per)} cards and {len(tables)} tables of cards; '
-           f'{len(known) - len(per)} cards are their printed data alone.', '']
+           f'{len(known) - len(per)} cards have none.', '']
     out += [f'- {k}: {v}' for k, v in sorted(count.items())] + ['']
     out += ['| card | harnesses | proved | not proved |', '|---|---|---|---|']
     for m in sorted(per):
@@ -93,7 +97,8 @@ def main():
     for h in tables:
         r, t = status(h)
         out.append(f'| `{h.split("::", 2)[2]}` | {r} | {t} |')
-    out += ['', '## Cards that are their printed data alone', '',
+    out += ['', '## Cards with no harness', '',
+            'What these do is the engine\'s, played with it by `tests/card_semantics.rs`, or printed data alone.', '',
             ', '.join(sorted(m for m in known if m not in per)), '']
     print('\n'.join(out))
 

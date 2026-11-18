@@ -344,16 +344,18 @@ every legal target and every answer to every question rather than
 proved. See
 [cards against their Oracle text](#cards-against-their-oracle-text).
 
-What the Kani card proofs show is narrower than their name: each card's own
-code, with the engine actions it calls replaced by recorders, asks for the
-calls its text implies. They say nothing of the state the engine leaves, and
-nothing ties a recorder to the action it stands for. Running the real engine
-under a card instead does not fit in CBMC, even for Doom Blade with only its
-target's numbers left open. So the engine in the loop is the reference's
-job, on generated boards rather than boards written for each test, and the
-card proofs are to be made compositional properly (stand-ins that do what
-the action does, each action proved to refine its stand-in, and outcomes
-asserted rather than calls): `docs/plans/cards-in-the-loop.md`.
+What the Kani card proofs showed was narrower than their name: each card's
+own code, with the engine actions it calls replaced by recorders, asked for
+the calls its text implies. They said nothing of the state the engine
+leaves, and nothing tied a recorder to the action it stood for. Running the
+real engine under a card instead does not fit in CBMC, even for Doom Blade
+with only its target's numbers left open. So the 715 harnesses that asserted
+a record of calls are removed (2026-11-18), and a card's proof is to run the
+engine itself: the engine in the loop is the reference's job, on generated
+boards and on every board of a stated small size rather than boards written
+for each test (`docs/plans/cards-in-the-loop.md`). The 285 card harnesses
+kept are of what a card declares and of what its own code writes to the
+state, each of which the engine's own proofs read.
 
 ### Tier 4: whole-game properties
 
@@ -1180,18 +1182,45 @@ both.
 
 ### Cards proved with Kani
 
-`mtg-engine/src/proofs/cards/` and `proofs/actions/`. A card proof runs
-the card's own code, unchanged, on a board Kani leaves open (which
-target, who owns and controls what, which zone each object is in, what
-died this turn), with each engine action the card can ask for (destroy,
-move, deal damage, draw, add counters, choose at random and some forty
-others) replaced by a recorder. It asserts the exact list of actions the
-card's text asks for, under the conditions it states, and by snapshot
-that nothing else changed. What each action does is the other half,
-proved once per action in `proofs::actions`: what the targeting
+**Removed, 2026-11-18: the card harnesses that asserted a record of
+calls.** Until then a card proof ran the card's own code on a board Kani
+left open, with each engine action the card can ask for (destroy, move,
+deal damage, draw, add counters, choose at random and some forty others)
+replaced by a recorder, and asserted the exact list of actions the card's
+text asks for. 715 of the 990 card harnesses were of that kind (11 went
+with master's simultaneous entries, 704 here). They
+showed what a card asks for, against a statement close to its own code,
+and nothing of the game that results; nothing tied a recorder to the
+action it stood in for. They were not evidence that a card works, and
+they are deleted, with the eight modules that held nothing else
+(`combat_triggers`, `damage_spells`, `death_watchers`, `destroy_spells`,
+`looking`, `simple_spells`, `targeted_spells`, `werewolves`). Where this
+section below speaks of a card's resolution being proved, or counts 989
+or 990 card harnesses, it describes those, and is kept as the record of
+what was measured and why each technique was needed: the engine's
+proofs still use every one.
+
+What `mtg-engine/src/proofs/cards/` holds now, 285 harnesses over 21
+modules (the 275 kept, and ten of each Equipment's own check of its equip
+target, which its attachment harness had held): what each card declares (its activated abilities and their
+costs, its target requirements and its own check of a target, its
+triggers and their scopes, its mana abilities, its static and
+replacement effects, each pinned to its Oracle text), and what a card's
+own code writes to the game state (a question asked of a player, an
+until-end-of-turn effect added, a name chosen). The engine reading each
+of those is proved once in `proofs::actions`: what the targeting
 predicates answer, which targets a requirement offers, what a pending
 effect does, which creature an Aura's or Equipment's effect reaches.
-Every card with a hook of its own has a proof that calls it.
+What a card does through the engine as it resolves is not proved by
+Kani: it is checked with the real engine in the loop
+([cards against their Oracle text](#cards-against-their-oracle-text),
+`docs/plans/cards-in-the-loop.md`).
+
+`proofs/actions/` is the engine's side, 1,063 harnesses. Each proves one
+engine function with the functions it calls standing aside as recorders,
+each of which has its own proof; that composition is still open to the
+objection above (no proof yet ties a function to its recorder), and
+closing it is in `docs/plans/cards-in-the-loop.md`.
 
 Kani proves these by bounded model checking through CBMC, and on this
 engine's data CBMC's cost is set less by the code than by how the data
