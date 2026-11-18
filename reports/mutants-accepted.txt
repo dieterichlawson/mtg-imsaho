@@ -708,3 +708,5 @@ mtg-engine/src/triggers/collect/mod.rs: replace Collector::list -> Vec<PendingTr
 mtg-engine/src/triggers/collect/mod.rs: replace Collector::list -> Vec<PendingTrigger> with vec![]
 mtg-engine/src/vec_map.rs: replace VecMap<K, V>::reserve with ()
 mtg-engine/src/vec_map.rs: replace VecSet<K>::reserve with ()
+
+mtg-engine/src/engine/cards_flow.rs: replace > with >= in card_list

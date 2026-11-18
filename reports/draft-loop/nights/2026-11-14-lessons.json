@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-14",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "0-3-0",
+   "lessons": [
+    "Contrary to the guide's 56% WR, my WR went 0-6 in games: 6 Mountains were too few for Brimstone Volley, Traitorous Blood and Curse of the Pierced Heart, so count red pips.",
+    "My WR had only three fliers (Abbey Griffin, Chapel Geist, Spectral Rider) and lost all six games in 17-29 turns; take a fourth flier over Silverchase Fox or a second Thraben Purebloods.",
+    "The guide says take cheap threats over filler, yet my Unruly Mob and two Thraben Purebloods were ground filler in an 0-3 WR; prefer Claustrophobia-style removal or a flier."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 10922,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4238,
+    "output_tokens_details": {
+     "thinking_tokens": 3999
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 10922
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4238,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 10922,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 10922,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't take a slow self-mill shell without enough fast pressure: my UB deck won 1-2 with Victim of Night, Dead Weight and Corpse Lunge, but games ran 16 to 22 turns, so draft more cheap threats than Snapcaster Mage.",
+    "Draft instant-speed answers to fliers early: Round 2's UR and Round 3's WU both pressured me in the air with Stitched Drake, Midnight Haunting and Invisible Stalker, and I had too few answers to them.",
+    "Don't wait on a sideboard swap: I brought in six cards before game 2 against UR and lost anyway, so settle the 23 in the main deck by Pack 3 instead."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3324,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1062,
+    "output_tokens_details": {
+     "thinking_tokens": 821
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3324
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1062,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3324,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3324,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Fliers held up: Midnight Haunting tokens and two Invisible Stalkers closed both 2-0 wins, matching the guide's fliers-win advice, and Moorland Haunt worked as a 17th land.",
+    "The 1-2 loss to UR dragged to 17-24 turns, so prize cheap early attackers and Blazing Torch over slow filler to close games faster.",
+    "The guide calls Delver of Secrets weak, and I cut both Delvers, yet I took them over playables; pass them for removal or two-drop creatures."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4939,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2792,
+    "output_tokens_details": {
+     "thinking_tokens": 2602
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4939
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2792,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4939,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4939,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "3-0-0",
+   "lessons": [
+    "Draft red aggression early: the 3-0 deck was built on two Geistflame (the second came in pack 3), Rage Thrower and red creatures, with burn clearing blockers for pressure.",
+    "Expect grindy games: they ran 17\u201324 turns, so prioritise evasive finishers like Stitched Drake and Battleground Geist over marginal ground creatures.",
+    "Blue worked as a light second colour: five blue cards ran on six Islands plus Sulfur Falls, so commit to red and take blue only when it's open."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3322,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2187,
+    "output_tokens_details": {
+     "thinking_tokens": 2002
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3322
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2187,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3322,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3322,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Sensory Deprivation was my first pick in pack 1 and again in pack 3, yet my BR never played blue; the guide's advice to take it early cost two picks, so commit by pick 5.",
+    "Furor of the Bitten is a pump, not removal as my notes said; my 1-2 loss to RG had only Harvest Pyre and Corpse Lunge as real removal, so take removal over ground creatures.",
+    "Two of tonight's BR wins ended in 9 and 17 turns, contradicting the guide's claim that ground BR stalls; fast starts beat slow boards, so keep early drops."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 10986,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4321,
+    "output_tokens_details": {
+     "thinking_tokens": 4112
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 10986
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4321,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 10986,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 10986,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "RG",
+   "record": "2-1-0",
+   "lessons": [
+    "Settle colours earlier: my pack 2 black picks (Victim of Night, Abattoir Ghoul, Diregraf Ghoul) all got cut, while red top end like Into the Maw of Hell carried RG.",
+    "Prioritise cheap blockers and reach over extra top end: RG's expensive threats stalled in the 24- and 25-turn games against WB's fliers in round 2.",
+    "Draft more answers to fliers early: WB's Chapel Geist pair and Screeching Bat decided the grindy games I lost in round 2."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3336,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2649,
+    "output_tokens_details": {
+     "thinking_tokens": 2458
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3336
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2649,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3336,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3336,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "Cobbled Wings, which the guide says to skip, made my main deck and I sided it out for Sharpened Pitchfork before game 2 of round 1, so take a real body over it at pick 13.",
+    "I spent picks 13 and 14 of pack 3 on Think Twice, which never made my deck, while Walking Corpse, filler by the guide, was my 23rd card, so take playable creatures over card-draw spells late.",
+    "The guide's flier plan only partly held: my Chapel Geist and Bloodline Keeper deck went 5-4 in games and lost 1-2 to UR's two Geistflame and Harvest Pyre, so keep a burn-resistant plan."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4992,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2924,
+    "output_tokens_details": {
+     "thinking_tokens": 2690
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4992
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2924,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4992,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4992,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "0-3-0",
+   "lessons": [
+    "Draft a lower curve with more early plays: my BG deck, top-heavy with Boneyard Wurm, Lumberknot and two Prey Upon, stalled and lost 1-2, 0-2 and 0-2 in games lasting 15 to 26 turns.",
+    "Prioritize flying defense over white fliers you won't play: my Angel of Flight Alabaster and Abbey Griffin picks went unused, while opponents' Chapel Geist, Falkenrath Noble and Vampire Interloper flyers went unanswered in my BG deck.",
+    "Cut the marginal Make a Wish copy I had flagged for cutting: I kept it in a 23-spell deck that never closed games quickly, so filler slots should yield to proactive creatures."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3368,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2456,
+    "output_tokens_details": {
+     "thinking_tokens": 2196
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3368
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2456,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3368,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3368,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

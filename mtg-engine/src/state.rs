@@ -189,6 +189,7 @@ pub struct GameState {
     /// matched (issue #199). Same reason `ManaPool` is a `BTreeMap`. Also
     /// makes every iteration over the objects deterministic rather than
     /// merely usually-consistent.
+    #[serde(deserialize_with = "objects_from_save")]
     pub objects: ObjectMap,
     /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
@@ -1161,11 +1162,23 @@ impl GameState {
         // was announced as a "0/0 Ooze token" when the slime counter was
         // already on, so it was a 1/1 from the instant it existed and never a
         // 0/0 at any point a player or a rule could observe (issue #505).
-        let (power, toughness) = self.get_object(id)
-            .and_then(|o| self.token_defined_pt(o, registry))
+        //
+        // The same holds for counters a replacement put on it as it entered
+        // (CR 614.1c): Back from the Brink's copy of a morbid Festerhide Boar
+        // was announced as a "3/3 Festerhide Boar token" one line after it
+        // "enters with 2 +1/+1 counters", a 5/5 from the instant it existed
+        // (issue #1021). So the line reads the size the board shows, every
+        // layer and counter applied, and the printed size only when the
+        // token has none to show.
+        let (power, toughness) = self.effective_power(id, registry)
+            .zip(self.effective_toughness(id, registry))
             .unwrap_or((power, toughness));
+        // The name the same object has, so size and name are of one thing:
+        // a token made a copy of something else as it entered would read
+        // with its own size beside the name it was asked for (#1021's review).
         // "2 1/1 Spirit tokens", not "Spirit Token tokens".
-        let described = format!("{power}/{toughness} {}", name.strip_suffix(" Token").unwrap_or(name));
+        let entered_name = self.get_object(id).map_or_else(|| name.to_string(), |o| o.name.clone());
+        let described = format!("{power}/{toughness} {}", entered_name.strip_suffix(" Token").unwrap_or(&entered_name));
 
         // The count a player reads is the count that entered, and it is
         // counted here rather than claimed by each caller. Seventeen cards
@@ -1353,11 +1366,35 @@ impl GameState {
         let copy_grantor = crate::cards::ability_granting_grantor(self, source_id, registry);
 
         let name = self.name_of(source_id, registry);
-        let (power, toughness) = self.printed_pt_of(source_id, registry);
-        let colors = self.printed_colors_of(source_id, registry);
-        let keywords = self.printed_keywords_of(source_id, registry);
-        let card_types = self.printed_card_types_of(source_id, registry);
-        let subtypes = self.printed_subtypes_of(source_id, registry);
+        // `obj.power` on anything with a card face is the FRONT face's, and
+        // `effective_power` reads the back face's while it is transformed —
+        // the same contract a card keeps. A copy of a transformed permanent
+        // used to stamp the back face's P/T here, which was the right number
+        // only while the token could never turn front face up (#1060).
+        let (power, toughness) = match registry.card_data(card_id) {
+            Some(front) if self.face_data(source_id, registry).is_some() => (front.power, front.toughness),
+            _ => self.printed_pt_of(source_id, registry),
+        };
+        // A copy of something with a card face reads its colors, types and
+        // keywords from that face (`face_data`: the token carries the same
+        // `card_id` and the same face up), so the object-level vectors — the
+        // *granted* half every `*_of` accessor unions in — start empty. They
+        // used to hold the copied face's printed values, which was harmless
+        // until a token copy could transform (CR 707.8a, #1060): flipped, it
+        // kept its front face's types and colors on top of the back's, so a
+        // transformed token of Villagers of Estwald was still a Human, and
+        // Moonmist flipped it straight back. A copy of a token of no card
+        // has no face to read and keeps the values here.
+        let (colors, keywords, card_types, subtypes) = if self.face_data(source_id, registry).is_some() {
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+        } else {
+            (
+                self.printed_colors_of(source_id, registry),
+                self.printed_keywords_of(source_id, registry),
+                self.printed_card_types_of(source_id, registry),
+                self.printed_subtypes_of(source_id, registry),
+            )
+        };
 
         // The copied card travels WITH the creation, so every token (the
         // Parallel Lives extras included) is built carrying it: same
@@ -4584,9 +4621,10 @@ pub struct GameObject {
     /// snapshot some effect took of whoever held it at the time.
     ///
     /// A save written before this field existed has no answer for it; those
-    /// load as p0, which is only wrong for a permanent p1 put onto the
-    /// battlefield while a control effect on it was live.
-    #[serde(default = "first_player")]
+    /// load as the object's owner (see [`objects_from_save`]), which is only
+    /// wrong for a permanent put onto the battlefield under someone else's
+    /// control.
+    #[serde(default = "unrecorded_controller")]
     pub base_controller: PlayerId,
     pub zone: Zone,
 
@@ -4827,9 +4865,29 @@ pub enum EnterAsCopyChoice {
 }
 
 /// Serde fallback for `GameObject::base_controller` in saves written before
-/// the field existed.
-fn first_player() -> PlayerId {
-    PlayerId(0)
+/// the field existed (or whose key was misspelled): a placeholder no player
+/// has, which [`objects_from_save`] replaces with the object's owner.
+fn unrecorded_controller() -> PlayerId {
+    PlayerId(u8::MAX)
+}
+
+/// Deserialize `GameState::objects`, giving an object whose save recorded no
+/// `base_controller` its owner (CR 110.2a: by default a permanent is
+/// controlled by whoever put it onto the battlefield, which is nearly always
+/// its owner). The fallback used to be p0 for every object, so p1's own
+/// permanents loaded as p0's by default, and a creature p0 stole from p1
+/// stayed p0's when the control effect ended (#1047).
+fn objects_from_save<'de, D>(d: D) -> Result<ObjectMap, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let mut objects = ObjectMap::deserialize(d)?;
+    for o in objects.values_mut() {
+        if o.base_controller == unrecorded_controller() {
+            o.base_controller = o.owner;
+        }
+    }
+    Ok(objects)
 }
 
 /// A player's state.

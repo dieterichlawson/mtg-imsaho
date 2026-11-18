@@ -213,6 +213,44 @@ async function main() {
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }
+      // #995's review: six kinds floating are written in letters, so the
+      // side panel draws every kind rather than "Pool: 2 White, 2 Blue, …".
+      {
+        const six = { ...options, pool: { White: 2, Blue: 2, Black: 2, Red: 3, Green: 2, Colorless: 2 }, max_x: 15 };
+        if (await stage("choose-x-pool", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options: six, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
+          const drawn = await page.evaluate(() => {
+            const orig = CanvasRenderingContext2D.prototype.fillText;
+            const out = [];
+            try {
+              CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+              window.mtgDebug.render();
+            } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+            return out;
+          });
+          if (!drawn.includes("Pool: 2W 2U 2B 3R 2G 2C")) fail(`choose-x-pool: ${JSON.stringify(drawn.filter(s => s.startsWith("Pool")))}`);
+          else ok("choose-x-pool → every kind drawn");
+        }
+      }
+      // #979: under a cost reduction on X the sources sum to less than the
+      // largest X, and the modal says why, and the plan says what it pays.
+      const reduced = { pool: {}, groups: [{ name: "Island", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Blue" }], max_x: 2, x_discount: 2 };
+      if (await stage("choose-x-reduced", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Mikaeus, the Lunarch", options: reduced, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
+        await page.keyboard.type("2");
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        if (!drawn.some(t => t.includes("A cost reduction pays the first 2 of X"))) fail(`choose-x-reduced: the reduction is not said: ${JSON.stringify(drawn.filter(s => /X|reduction/.test(s)))}`);
+        else if (!drawn.some(t => t.includes("X = 2: nothing for X (the cost reduction pays 2)"))) fail(`choose-x-reduced: the plan does not say what the reduction pays: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
+        else ok("choose-x-reduced → the reduction's share of X is said");
+        await page.keyboard.press("Enter");
+        await expectSent("choose-x-reduced", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && !f.taps.Island; });
+      }
       // #938: a long plan was one clipped line, and the cut fell on the
       // creatures the allocator spends last. It wraps, whole, in the modal
       // and in the panel beside it.
@@ -844,6 +882,189 @@ async function main() {
         fail(`two-triggers-inspect: both chips resolved to ${JSON.stringify(triggers)}`);
       else ok(`two-triggers-inspect → ${JSON.stringify(triggers)}`);
 
+      // (b2) #991: a deep stack's chips stop short of the turn line, a "+N"
+      // chip counts the rest, and it opens every entry as a chip would be.
+      const deep = await page.evaluate(() => {
+        const m = window.mtg;
+        const out = [];
+        for (const n of [5, 6, 12, 60]) {
+          m.view.stack = Array.from({ length: n }, (_, i) => ({ object_id: 0, card_id: 0, name: `Trigger ${i}`,
+            controller: i % 2, targets: [], x_value: null }));
+          m.overlay = null;
+          window.mtgDebug.render();
+          const chips = m.hits.filter(h => h.kind === "stack");
+          const more = m.hits.find(h => h.kind === "zone" && h.zone === "stack");
+          const right = Math.max(...chips.map(h => h.x + h.w), more ? more.x + more.w : 0);
+          let listed = null, pages = null;
+          if (more) {
+            more.onClick(); window.mtgDebug.render();
+            const seen = new Set();
+            for (let p = 0; p < 10; p++) {
+              m.overlay.page = p; window.mtgDebug.render();
+              m.hits.filter(h => h.kind === "stack").forEach(h => seen.add(h.stackIndex));
+            }
+            listed = seen.size;
+            m.overlay = null;
+          }
+          out.push({ n, chips: chips.length, more: !!more, right, listed });
+        }
+        m.view.stack = [];
+        window.mtgDebug.render();
+        return out;
+      });
+      const bandX = 330;
+      const bad = deep.filter(d => d.right > bandX - 2 || (d.n <= 5 ? d.chips !== d.n || d.more : !d.more || d.chips + 1 > 5 || d.listed !== d.n));
+      if (bad.length) fail(`deep-stack: ${JSON.stringify(bad)}`);
+      else ok(`deep-stack → ${JSON.stringify(deep.map(d => [d.n, d.chips, d.listed]))}`);
+
+      // (b3) #991's review: a target behind the "+N" chip is brought to the
+      // person — the stack opens for it — and is answered from there; `k`
+      // opens and closes the stack as `g` does a graveyard.
+      await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = Array.from({ length: 9 }, (_, i) => ({ object_id: 950 + i, card_id: 1, name: `Brimstone Volley ${i}`,
+          controller: 1 - m.view.you, targets: [], x_value: null, cost: null, card_types: ["Instant"] }));
+        m.overlay = null;
+      });
+      const buried = { Object: 958 };
+      if (await stage("hidden-stack-target", legal({ actions: [rc({ ChosenTarget: buried }), rc({ ChosenTarget: null })],
+        resolution_prompt: { ChooseTarget: { description: "Counter target spell", options: [buried], optional: true, effect: "Counter" } } }), null, "pick")) {
+        const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, chip: m.hits.some(h => h.kind === "stack" && h.key === "o958") }; });
+        if (opened.zone !== "stack" || !opened.chip) fail(`hidden-stack-target: the buried target is not shown: ${JSON.stringify(opened)}`);
+        else {
+          await clickHit("(h) => h.kind === 'stack' && h.key === 'o958'");
+          await expectSent("hidden-stack-target", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenTarget && a.ResolveChoice.choice.ChosenTarget.Object === 958);
+        }
+      }
+      if (await stage("stack-key", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
+        await page.evaluate(() => { window.mtg.overlay = null; });
+        await page.keyboard.press("k");
+        const a = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
+        await page.keyboard.press("k");
+        const b = await page.evaluate(() => window.mtg.overlay);
+        if (a !== "stack" || b !== null) fail(`stack-key: k opened ${a} and left ${JSON.stringify(b)}`);
+        else ok("stack-key: k opens and closes the whole stack");
+      }
+      // A stack option past the overlay's first page opens at its page.
+      await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = Array.from({ length: 60 }, (_, i) => ({ object_id: 950 + i, card_id: 1, name: `Brimstone Volley ${i}`,
+          controller: 1 - m.view.you, targets: [], x_value: null, cost: null, card_types: ["Instant"] }));
+      });
+      const deepTarget = { Object: 1005 };
+      if (await stage("deep-stack-page", legal({ actions: [rc({ ChosenTarget: deepTarget }), rc({ ChosenTarget: null })],
+        resolution_prompt: { ChooseTarget: { description: "Counter target spell", options: [deepTarget], optional: true, effect: "Counter" } } }), null, "pick")) {
+        const o = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, page: m.overlay && m.overlay.page, chip: m.hits.some(h => h.kind === "stack" && h.key === "o1005") }; });
+        if (o.zone !== "stack" || o.page !== 1 || !o.chip) fail(`deep-stack-page: entry 56 is not shown: ${JSON.stringify(o)}`);
+        else ok("deep-stack-page: the stack opens at the page holding its option");
+      }
+      await page.evaluate(() => { window.mtg.view.stack = []; window.mtg.overlay = null; window.mtgDebug.render(); });
+
+      // (b4) #994: the hand row has the battlefield's fit contract. From 42
+      // cards the row ran under the side panel at x=480, where cards could
+      // not be seen and still answered clicks. What fits is drawn; a "+N"
+      // slot counts the rest and opens the whole hand, and a question whose
+      // option is behind it opens the hand for it.
+      const savedHand = await page.evaluate(() => JSON.stringify(window.mtg.view.your_hand));
+      const handFit = await page.evaluate(() => {
+        const m = window.mtg; const base = JSON.parse(JSON.stringify(m.view.your_hand));
+        const out = [];
+        for (const n of [7, 40, 42, 45, 60]) {
+          m.view.your_hand = Array.from({ length: n }, (_, i) => ({ ...base[i % base.length], object_id: 9000 + i }));
+          window.mtgDebug.stage(window.mtg.decision);
+          const hs = m.hits.filter(h => h.kind === "hand");
+          const more = m.hits.find(h => h.kind === "zone" && h.zone === "hand" && h.more);
+          const right = Math.max(...hs.map(h => h.x + h.w), more ? more.x + more.w : 0);
+          out.push({ n, drawn: hs.length, more: !!more, right });
+        }
+        return out;
+      });
+      const badFit = handFit.filter(d => d.right > 480 || (d.n <= 40 ? d.drawn !== d.n || d.more : !d.more || d.drawn >= d.n));
+      if (badFit.length) fail(`hand-fit: ${JSON.stringify(badFit)}`);
+      else ok(`hand-fit → ${JSON.stringify(handFit.map(d => [d.n, d.drawn, d.more]))}`);
+      await page.evaluate(() => { window.mtg.overlay = null; });
+      try {
+        await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && h.more");
+        const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, cards: m.hits.filter(h => h.kind === "card").length }; });
+        if (opened.zone !== "hand" || opened.cards !== 50) fail(`hand-more: the "+N" slot opened ${JSON.stringify(opened)}`);
+        else ok("hand-more: the \"+N\" slot opens the whole hand");
+      } catch (e) { fail(`hand-more: ${e.message}`); }
+      const hiddenCard = { Object: 9055 };
+      if (await stage("hidden-hand-option", legal({ actions: [rc({ ChosenTarget: hiddenCard }), rc({ ChosenTarget: null })],
+        resolution_prompt: { ChooseTarget: { description: "Choose a card in your hand", options: [hiddenCard], optional: true, effect: "Discard" } } }), null, "pick")) {
+        const opened = await page.evaluate(() => { window.mtgDebug.render(); const m = window.mtg;
+          return { zone: m.overlay && m.overlay.zone, page: m.overlay && m.overlay.page };
+        });
+        // Card 55 is on the overlay's second page, which is the one opened.
+        if (opened.zone !== "hand" || opened.page !== 1) fail(`hidden-hand-option: the hand did not open at it: ${JSON.stringify(opened)}`);
+        else {
+          await clickHit("(h) => h.kind === 'card' && h.key === 'o9055'");
+          await expectSent("hidden-hand-option", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenTarget && a.ResolveChoice.choice.ChosenTarget.Object === 9055);
+        }
+      }
+      if (await stage("hand-key", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
+        await page.keyboard.press("h");
+        const a = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
+        await page.keyboard.press("h");
+        const b = await page.evaluate(() => window.mtg.overlay);
+        if (a !== "hand" || b !== null) fail(`hand-key: h opened ${a} and left ${JSON.stringify(b)}`);
+        else ok("hand-key: h opens and closes the whole hand");
+        // Your strip's hand count opens it too, as GY and Lib open theirs.
+        try {
+          await clickHit("(h) => h.kind === 'zone' && h.zone === 'hand' && !h.more");
+          const c = await page.evaluate(() => window.mtg.overlay && window.mtg.overlay.zone);
+          if (c !== "hand") fail(`hand-count: the strip's Hand count opened ${c}`);
+          else ok("hand-count: the strip's Hand count opens the whole hand");
+        } catch (e) { fail(`hand-count: ${e.message}`); }
+        await page.evaluate(() => { window.mtg.overlay = null; });
+      }
+      // A stack target behind the "+N" slot is drawn to from the slot, not
+      // to your strip's "Hand N" that opens the same zone (#994's review).
+      const arrow = await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = [{ object_id: 990, card_id: 1, name: "Brimstone Volley", controller: 1 - m.view.you,
+          targets: [{ Object: 9055 }], x_value: null, cost: null, card_types: ["Instant"] }];
+        const orig = CanvasRenderingContext2D.prototype.lineTo; const pts = [];
+        try {
+          CanvasRenderingContext2D.prototype.lineTo = function (x, y) { pts.push([x, y]); return orig.apply(this, arguments); };
+          window.mtgDebug.render();
+        } finally { CanvasRenderingContext2D.prototype.lineTo = orig; }
+        const slot = m.hits.find(h => h.kind === "zone" && h.zone === "hand" && h.more);
+        m.view.stack = []; window.mtgDebug.render();
+        return { slot, hit: !!slot && pts.some(([x, y]) => x >= slot.x && x <= slot.x + slot.w && y >= slot.y && y <= slot.y + slot.h) };
+      });
+      if (!arrow.hit) fail(`hand-arrow: no arrow ends in the "+N" slot ${JSON.stringify(arrow.slot)}`);
+      else ok("hand-arrow: a target behind the slot is drawn to the slot");
+      await page.evaluate((h) => { window.mtg.view.your_hand = JSON.parse(h); window.mtg.overlay = null; window.mtgDebug.stage(window.mtg.lastDecision); }, savedHand);
+
+      // (b5) #995: the opponent's strip with six kinds floating beside
+      // double-digit zones kept "Pool 2W 2U 2B 3R 2…", in the real font.
+      const strip = await page.evaluate(() => {
+        const m = window.mtg; const v = m.view; const opp = v.opponents[0];
+        const saved = JSON.stringify({ pool: opp.mana_pool, hand: opp.hand_size, cast: v.spells_cast_this_turn, gys: v.graveyards, exile: v.exile });
+        opp.mana_pool = { mana: { White: 2, Blue: 2, Black: 2, Red: 3, Green: 2, Colorless: 2 } };
+        opp.hand_size = 9; v.spells_cast_this_turn = [[opp.id, 4]];
+        v.graveyards = v.graveyards.map(([p]) => [p, Array.from({ length: 22 }, (_, i) => ({ ...v.your_hand[0], object_id: 9000 + i + 100 * p, owner: p }))]);
+        v.exile = Array.from({ length: 12 }, (_, i) => ({ ...v.your_hand[0], object_id: 9500 + i, owner: opp.id }));
+        const ctx = document.querySelector("canvas").getContext("2d");
+        const orig = ctx.fillText; const drawn = [];
+        ctx.fillText = function (s, x, y, ...rest) { if (y < 14 && x >= 150 && x < 480) drawn.push({ s, x, w: this.measureText(s).width }); return orig.call(this, s, x, y, ...rest); };
+        window.mtgDebug.render();
+        // An own property would shadow the prototype that later tests wrap.
+        delete ctx.fillText;
+        const r = JSON.parse(saved);
+        Object.assign(opp, { mana_pool: r.pool, hand_size: r.hand }); Object.assign(v, { spells_cast_this_turn: r.cast, graveyards: r.gys, exile: r.exile });
+        window.mtgDebug.stage(window.mtg.lastDecision);
+        return drawn;
+      });
+      const stripText = strip.map(d => d.s).join(" ");
+      const stripRight = Math.max(...strip.map(d => d.x + d.w));
+      if (!/2W ?2U ?2B ?3R ?2G ?2C/.test(stripText) || stripText.includes("…") || stripRight > 480) fail(`strip-pool: drew ${JSON.stringify(stripText)} to x=${stripRight}`);
+      else ok(`strip-pool → ${JSON.stringify(stripText)}`);
+
       // (c) the facts the CLI's detail page carries and the panel dropped.
       const facts = await page.evaluate((perm) => {
         const m = window.mtg;
@@ -1286,7 +1507,8 @@ async function main() {
       }
     }
     // 24c. An effect in force for the rest of the turn is named in the band
-    // by its source, beside "creature died" and short of the stack (#953).
+    // by its source, beside "creature died" and short of the stack (#953),
+    // with "first strike" on too: both flags left it no room at all (#993).
     {
       const drawn = await page.evaluate(() => {
         const m = window.mtg;
@@ -1301,7 +1523,7 @@ async function main() {
             return orig.apply(this, arguments);
           };
           m.view.creature_died_this_turn = true;
-          m.view.first_strike_damage_step = false;
+          m.view.first_strike_damage_step = true;
           m.view.turn_effects = ["Moonmist: combat damage that would be dealt this turn by creatures other than Wolves or Werewolves is prevented"];
           window.mtgDebug.render();
         } finally {
@@ -1311,7 +1533,7 @@ async function main() {
         }
         return out;
       });
-      const died = drawn.find(d => d.s === "creature died");
+      const died = drawn.find(d => d.left >= 40 && d.left < 180 && /died$/.test(d.s));
       const moon = drawn.find(d => d.s.startsWith("Moon"));
       if (!moon) fail(`turn-effects: the band does not name Moonmist: ${JSON.stringify(drawn.filter(d => d.left < 180 && d.left >= 40).slice(0, 6))}`);
       else if (moon.right > 180) fail(`turn-effects: it runs into the stack: ${JSON.stringify(moon)}`);
@@ -1353,16 +1575,23 @@ async function main() {
         }
         return out;
       });
-      const died = drawn.find(d => d.s === "creature died");
+      // With first strike and an effect in force beside it, the flags may be
+      // shortened ("1st str", "died") so the effect keeps its name (#993).
+      const died = drawn.find(d => d.left >= 40 && d.left < 180 && (d.s === "creature died" || d.s === "died"));
+      const fs = d => d.s === "first strike" || d.s === "1st str";
       if (!died) fail("turn-facts: no \"creature died\" in the band");
       else if (died.right > 180) fail(`turn-facts: "creature died" runs into the stack: ${JSON.stringify(died)}`);
-      else if (drawn.some(d => d.s === "first strike" && d.right > died.left))
-        fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => d.s === "first strike" || d === died))}`);
-      else ok("turn-facts: the band says a creature died");
+      else if (drawn.some(d => fs(d) && d.right > died.left))
+        fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => fs(d) || d === died))}`);
+      else if (!drawn.some(fs)) fail("turn-facts: first strike is not said");
+      else if (!drawn.some(d => d.s.startsWith("Moonmist") && d.left >= died.right && d.right <= 180))
+        fail(`turn-facts: both flags on, the effect in force is not named (#993): ${JSON.stringify(drawn.filter(d => d.left >= 40 && d.left < 180 && d.s.length > 1))}`);
+      else ok("turn-facts: the band says a creature died, and names the effect beside both flags");
       // Where the band has no readable room left, the effect is not drawn
       // as a letter and an ellipsis over the stack (#953).
       if (drawn.some(d => d.s.startsWith("Moon") && d.right > 180)) fail(`turn-facts: the effect runs into the stack: ${JSON.stringify(drawn.filter(d => d.s.startsWith("Moon")))}`);
-      const casts = drawn.filter(d => d.s === "Cast 2" || d.s === "Cast 1");
+      // A strip too full for its labels shortens them before it clips (#995).
+      const casts = drawn.filter(d => /^Cast ?[12]$/.test(d.s));
       if (casts.length !== 2) fail(`turn-facts: each strip says its spells cast, got ${JSON.stringify(casts)}`);
       else if (casts.some(d => d.right > 480)) fail(`turn-facts: a strip's cast count leaves the board: ${JSON.stringify(casts)}`);
       else ok("turn-facts: both strips carry their cast counts");
@@ -1370,6 +1599,8 @@ async function main() {
       if (!pool.length) fail("turn-facts: the pool is not drawn at all");
       else if (!pool[0].s.includes("19U") || !pool[0].s.includes("19B"))
         fail(`turn-facts: blue and black are written apart in the pool (#808): ${pool[0].s}`);
+      else if (!["W", "U", "B", "R", "G", "C"].every(k => pool[0].s.includes(`19${k}`)) || pool[0].s.includes("…"))
+        fail(`turn-facts: the pool is cut, not every kind is drawn (#995): ${pool[0].s}`);
       else if (pool.some(d => d.right > 480)) fail(`turn-facts: a strip runs past the board: ${JSON.stringify(pool)}`);
       else ok("turn-facts: a full pool after the cast count stays on the board");
     }
@@ -1691,6 +1922,29 @@ async function main() {
         }
         if (reached.length === 3) ok(`keys-${want}: l, g and s reach the page again`);
       }
+    }
+    // #1035: the table's line for an opponent's closed page, with a long
+    // name, is drawn whole: three lines cut "again" off a 7-letter name.
+    {
+      const fit = await page.evaluate(() => {
+        const f = window.mtgDebug.fit;
+        const line = "Bartholomew Fitzgerald (seat 7)'s game page is closed: the game waits for them to open it again";
+        return { lines: f.wrap(line, f.promptW, "8px Silkscreen").length, cap: f.waitingLines };
+      });
+      if (fit.lines > fit.cap) fail(`waiting line: ${fit.lines} lines, drawn ${fit.cap} (#1035)`);
+      else ok(`waiting line: ${fit.lines} lines of ${fit.cap}`);
+    }
+    // #1034: once the table is closed no question is drawn: the mulligan
+    // modal and its buttons stayed up beside "The table is closed".
+    if (await stage("closed-modal", legal({ actions: ["MulliganKeep", "MulliganMull"], context: "MULLIGAN DECISION (mulligans taken: 0)" }), null, "list")) {
+      const after = await page.evaluate(() => {
+        window.mtgDebug.message({ type: "closed", reason: "the host quit" });
+        window.mtgDebug.render();
+        const m = window.mtg;
+        return { decision: m.decision, ui: m.ui, rowHits: m.hits.filter(h => h.kind === "row" || h.kind === "button" || h.kind === "modal").length };
+      });
+      if (after.decision || after.ui || after.rowHits) fail(`closed table still draws its question: ${JSON.stringify(after)} (#1034)`);
+      else ok("closed table: no question drawn");
     }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {

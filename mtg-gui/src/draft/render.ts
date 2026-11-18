@@ -184,7 +184,7 @@ export function tiebreakText(s: { omw?: number; gw?: number; ogw?: number }): st
   return `${pct(s.omw)} /${NBSP}${pct(s.gw)} /${NBSP}${pct(s.ogw)}`;
 }
 
-function matchRow(view: DraftView, m: Match): HTMLElement {
+function matchRow(view: DraftView, m: Match, closed = false): HTMLElement {
   // A forfeit is not a game played and won, and an abandoned game is not a
   // draw (#743, #744).
   const who = (s: number) => s === view.seat ? "you" : seatName(view, s);
@@ -196,7 +196,10 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
   // A match its games have decided is "playing" until its result is
   // recorded; it is not on a next game (#916).
   const playing = m.next_game === null ? "decided" : "playing now";
-  const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? playing : "waiting to start";
+  // The table is closed: a match not finished is not "playing now", and
+  // its game link leads to a server that is gone (#1038).
+  const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}`
+    : closed ? "not finished" : m.status === "playing" ? playing : "waiting to start";
   // The link is this seat's own page. It is null until the match's pages
   // are open (a beat after the pairing), and stays null for a match the
   // table settled without one (a forfeit). A decided match has no game
@@ -204,7 +207,7 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
   // Through the lobby's port it is a path, on the host this page was
   // opened on (a tunnel's, a tailnet name), and is shown resolved (#969).
   let link: HTMLElement | null = null;
-  if (m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
+  if (!closed && m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
     const url = m.url ? gameLink(m.url) : null;
     link = url
       ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: url, target: "_blank", rel: "noopener" }, ...urlPieces(url)))
@@ -292,7 +295,7 @@ function drafting(view: DraftView, state: PageState, actions: Actions): HTMLElem
         detail.append(h("button", { class: "primary", id: "pick-button", type: "button", onclick: () => actions.pick(shown.index) }, `Pick ${shown.name}`));
       }
     } else {
-      detail.append(h("p", { class: "muted", text: "Click a card to read it; click it again or press Enter to pick it. Digits and arrows move the selection." }));
+      detail.append(h("p", { class: "muted", text: "Click a card to read it; click it again or press Enter to pick it. Digits (0 is the tenth card) and arrows move the selection." }));
     }
     side.append(detail);
   } else {
@@ -549,7 +552,10 @@ function playing(view: DraftView, done: boolean, state: PageState, actions: Acti
   const me = view.seats.find(s => s.seat === view.seat);
   const byes = ownByes(view);
   const sections: HTMLElement[] = [h("h2", { text: done ? "Draft over" : "Playing" })];
-  if (!done) {
+  // Nothing is on once the table is closed: "Your match is on." and the
+  // sideboarding panel stayed under the closed banner (#1038).
+  const closed = state.closed !== null;
+  if (!done && !closed) {
     // The round in progress is the latest one paired; a bye in it is why
     // this seat has nothing to play.
     const latest = Math.max(0, ...(view.pairings || []).map(p => p.round));
@@ -564,7 +570,7 @@ function playing(view: DraftView, done: boolean, state: PageState, actions: Acti
     if (m && m.between) sections.push(betweenPanel(view, m, m.between, state, actions));
   }
   const rows: { round: number; el: HTMLElement }[] = [
-    ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m) })),
+    ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m, closed) })),
     ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" },
       h("div", { class: "match-head", text: `Round ${round}: a bye${dashed("counted as a match won")}` })) })),
   ].sort((a, b) => a.round - b.round);
@@ -613,6 +619,11 @@ export function render(root: HTMLElement, state: PageState, actions: Actions): v
       case "done": parts.push(playing(view, true, state, actions)); break;
       default: parts.push(h("section", { class: "phase" }, h("p", { text: `Unknown phase ${String((view as DraftView).phase)}; here is what the server sent.` }), h("pre", { text: JSON.stringify(view, null, 1) })));
     }
+    // The table is closed: the last view stays for reference, but nothing
+    // in it answers. Pick tiles, Ready and the land steppers stayed live,
+    // their sends going nowhere (#1038's review).
+    const section = parts[parts.length - 1];
+    if (state.closed !== null && section instanceof HTMLElement) { section.inert = true; section.classList.add("closed"); }
   }
   root.replaceChildren(...parts.filter((p): p is HTMLElement => !!p));
 }

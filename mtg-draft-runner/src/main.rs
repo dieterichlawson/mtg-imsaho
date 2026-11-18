@@ -860,6 +860,22 @@ length its matches were played at", args.best_of);
         save
     });
     if let Some(save) = &resumed {
+        // The record is every seat's or none (none: a snapshot from before
+        // it existed, which the note below names). A short one left the
+        // seats it missed out of the guide check in silence (#1048), the
+        // hybrid draft #579 exists to announce.
+        if !save.seats.is_empty() && save.seats.len() != save.players {
+            die(&format!("draft save '{}' cannot be replayed: it records {} for {} players",
+                args.resume.as_deref().unwrap_or_default(),
+                mtg_draft_runner::count(save.seats.len(), "seat", "seats"), save.players));
+        }
+        // The same for the seats' notes: a short list started the seats it
+        // missed on their first live pick with no plan, a long one was cut
+        // (#1048's review).
+        if !save.notes.is_empty() && save.notes.len() != save.players {
+            die(&format!("draft save '{}' cannot be replayed: it holds notes for {} of {} players",
+                args.resume.as_deref().unwrap_or_default(), save.notes.len(), save.players));
+        }
         args.seed = save.seed;
         args.set.clone_from(&save.set);
         if let Some(best_of) = save.best_of {

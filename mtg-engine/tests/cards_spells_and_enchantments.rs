@@ -975,7 +975,10 @@ fn cackling_counterpart_copies_the_face_that_is_up() {
         .find(|o| o.is_token && o.zone == Zone::Battlefield)
         .expect("a token copy");
     assert_eq!(token.name, "Ironfang", "the copy is of the face that is up");
-    assert_eq!((token.power, token.toughness), (Some(3), Some(1)),
+    // Through the accessors: the stamped `power` is the front face's, as on
+    // a card, so the token can transform back (CR 707.8a, #1060).
+    let id = token.id;
+    assert_eq!((state.effective_power(id, &reg), state.effective_toughness(id, &reg)), (Some(3), Some(1)),
         "with the back face's printed 3/1, not Village Ironsmith's 1/1");
 }
 

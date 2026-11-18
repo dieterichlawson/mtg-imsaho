@@ -1,10 +1,11 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X, WAITING_LINES, PROMPT_TEXT_W } from "./render.js";
 import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State, Ui } from "./state.js";
+import { noticeAtNewDecision } from "./state.js";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
@@ -52,6 +53,8 @@ interface DebugHook {
     badges(perm: unknown): { t: string; c: string }[];
     badgeStrip(badges: { t: string; c: string }[], maxW: number): { t: string; c: string; x: number; w: number }[];
     badgeRoom: number;
+    waitingLines: number;
+    promptW: number;
   };
   sent: { seq: number; action: Action }[];
   /** One line per decision received: what it was and how it was handled. */
@@ -81,7 +84,7 @@ function connect(): void {
   where.protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(where.href);
   state.ws = ws;
-  ws.onopen = () => { state.connected = true; sendRaw({ type: "hello" }); draw(); };
+  ws.onopen = () => { state.connected = true; settingsKnown = false; echoesDue = 0; sendRaw({ type: "hello" }); draw(); };
   // A table the host has closed has nothing to reconnect to (#824).
   ws.onclose = () => { state.connected = false; draw(); if (!state.closed) setTimeout(connect, 1000); };
   ws.onerror = () => { ws.close(); };
@@ -139,6 +142,8 @@ function onMessage(msg: ServerMessage): void {
       // A new question starts at the top of its list (issue #529).
       state.rowScroll = 0;
       state.popover = null; state.overlay = null;
+      state.notice = noticeAtNewDecision(state.notice, state.noticeWaiting);
+      state.noticeWaiting = null;
       const actions = msg.legal.actions || [];
       // Only Pass and Concede on offer: nothing to decide, as in the CLI.
       const onlyPass = !msg.combat && !msg.legal.resolution_prompt && !msg.legal.set_prompt
@@ -172,13 +177,30 @@ function onMessage(msg: ServerMessage): void {
       if (state.decision && state.decision.seq === msg.seq) {
         const ours = !!(state.lastSent && state.lastSent.seq === msg.seq);
         state.decision = null; state.ui = null; state.popover = null;
-        if (!ours) state.notice = "Answered in another tab.";
+        if (!ours) {
+          state.notice = "Answered in another tab.";
+          state.noticeWaiting = { text: state.notice, after: "Your last question was answered in another tab." };
+        }
         hideField();
       }
       break;
     case "settings":
       // The seat's settings, not this page's. Applied without echoing them
       // back, or two tabs would bounce the message between them.
+      // A change made in another tab (this page's own echo changes
+      // nothing) is said: the notice this page last showed — "Auto-pass on
+      // — …", "Stopping at every priority." — may say the opposite, and was
+      // carried onto the next question as though it were still true
+      // (#1012's review).
+      const fromHere = echoesDue > 0;
+      if (fromHere) echoesDue--;
+      const announce = settingsKnown && !fromHere;
+      settingsKnown = true;
+      const autoWas = state.autoPass !== null, autoNow = msg.auto_pass_since_turn !== null;
+      if (!announce) { /* the seat's standing state, or this page's own echo */ }
+      else if (autoWas !== autoNow) state.notice = autoNow ? "Auto-pass was turned on in another tab." : "Auto-pass was turned off in another tab.";
+      else if (!!state.stopAtPass !== msg.stop_at_pass) state.notice = msg.stop_at_pass
+        ? "Another tab: stopping at every priority." : "Another tab: passing automatically when there is nothing to do.";
       state.stopAtPass = msg.stop_at_pass;
       // The echo of this page's own `f` carries no count of what engaging
       // declined; keep the one this page made, or the stop could never say
@@ -194,6 +216,10 @@ function onMessage(msg: ServerMessage): void {
       if (!state.decision && state.lastSent && state.lastSent.seq === msg.seq && state.lastDecision && state.view) {
         state.decision = state.lastDecision;
         beginDecision(state as LiveState, send);
+      } else if (!state.decision) {
+        // About no question this page holds: drawn while waiting, and not
+        // carried onto the next one (#1012's review).
+        state.noticeWaiting = { text: msg.text, after: null };
       }
       break;
     case "game_over":
@@ -208,6 +234,13 @@ function onMessage(msg: ServerMessage): void {
       break;
     case "closed":
       state.closed = msg.reason;
+      // Nothing can be answered now: the question's modal and its buttons
+      // stayed drawn over the board beside "The table is closed" (#1034).
+      state.decision = null; state.ui = null; state.popover = null;
+      hideField();
+      // The tab's title said the last match line ("Before game 1: ...")
+      // under a closed table (#1034's review).
+      document.title = "The table is closed — mtg-imsaho";
       break;
     default:
       console.warn("unknown message", msg);
@@ -260,6 +293,13 @@ function toggleAutoPass(): void {
   const v = state.view; const ui = state.ui;
   if (state.autoPass) { state.autoPass = null; state.notice = "Auto-pass off."; pushSettings(); return; }
   if (!v) return;
+  // With no question up there is nothing to pass yet; the refusal is
+  // about now, and goes when the next question comes (#1012).
+  if (!state.decision) {
+    state.notice = "No question is up: press f at your next priority to auto-pass.";
+    state.noticeWaiting = { text: state.notice, after: null };
+    return;
+  }
   if (!ui || ui.mode !== "menu" || !ui.canPass) { state.notice = "Auto-pass passes priority, and this is not a pass."; return; }
   const actions = (state.decision && state.decision.legal.actions) || [];
   // Engaging here would pass over the land drop it promises to stop for:
@@ -300,7 +340,16 @@ function toggleAutoPass(): void {
  * The seat holds the setting and echoes it to every page, including this
  * one, which is also what a page joining later is handed on `hello`.
  */
+/** Whether this connection has been told the seat's settings yet: the
+ *  first `settings` after a hello is the seat's standing state, not a
+ *  change another tab made (#1012's review). */
+let settingsKnown = false;
+/** This page's own settings sent and not yet echoed back: the echo is not
+ *  another tab's change, however fast the key was pressed twice. */
+let echoesDue = 0;
+
 function pushSettings(): void {
+  echoesDue++;
   sendRaw({ type: "settings", stop_at_pass: !!state.stopAtPass,
     auto_pass_since_turn: state.autoPass ? state.autoPass.sinceTurn : null });
 }
@@ -372,7 +421,9 @@ canvas.addEventListener("click", (ev) => {
   // instant in hand) that was never on screen to be read (#806). A second
   // click on a decision that arrived after the first is dropped, once.
   const seq = state.decision ? state.decision.seq : null;
-  const straddles = ev.detail >= 2 && seq !== state.clickSeq;
+  // Only a question that arrived: one that went away (another tab answered
+  // it) is no new question, and the line said one had (#1012's review).
+  const straddles = ev.detail >= 2 && seq !== state.clickSeq && seq !== null;
   state.clickSeq = seq;
   state.doubleDropped = straddles;
   if (straddles && h && h.onClick) {
@@ -484,8 +535,8 @@ function noAnswerHere(ui: Ui, key: string): string {
 window.addEventListener("keydown", (ev) => {
   if (ev.target === field) {
     // The box owns the typing — it has to, for a filter — but not the two
-    // keys that answer a prompt and not the seven that open the log and the
-    // zone overlays. It used to own all of them: `l g G e d s f` were typed
+    // keys that answer a prompt and not the ones that open the log and the
+    // zone overlays (`k`, the stack, since #991; `h`, the hand, since #994). It used to own all of them: `l g G e d s f` were typed
     // into the box at exactly the two prompts that ask you about cards, so a
     // `ChooseCardName` was the one decision you could not look anything up
     // to answer, and the box ended up filtered to nothing with no on-screen
@@ -530,6 +581,10 @@ window.addEventListener("keydown", (ev) => {
     case "G": if (v && v.opponents[0]) toggleZone("graveyard", v.opponents[0].id); break;
     case "e": if (v) toggleZone("exile", v.you); break;
     case "d": if (v) toggleZone("library", v.you); break;
+    // The whole stack, which the band shows only five of (#991).
+    case "k": if (v) toggleZone("stack", v.you); break;
+    // The whole hand, which the hand row shows only what fits of (#994).
+    case "h": if (v) toggleZone("hand", v.you); break;
     case "s":
       // A toggle is one press: a held key flipped it per repeat, ending
       // where the parity left it (#852's review).
@@ -545,7 +600,7 @@ window.addEventListener("keydown", (ev) => {
   draw();
 });
 
-function toggleZone(zone: "graveyard" | "exile" | "library", pid: number): void {
+function toggleZone(zone: "graveyard" | "exile" | "library" | "stack" | "hand", pid: number): void {
   state.overlay = state.overlay && state.overlay.zone === zone && state.overlay.pid === pid ? null : { zone, pid };
 }
 
@@ -604,7 +659,7 @@ function releaseField(): void {
   field.value = "";
   releasedFor = ui;
   field.blur();
-  state.notice = "Box cleared — the board keys (l g G e d s f) work again; click the box to type.";
+  state.notice = "Box cleared — the board keys (l g G e d k h s f) work again; click the box to type.";
 }
 /**
  * The widget whose typing box Escape handed back: while it is on screen, the
@@ -710,6 +765,8 @@ window.mtgDebug = {
     badges: (perm) => permBadges(perm as never, state),
     badgeStrip: (badges, maxW) => badgeStrip(ctx, badges, maxW),
     badgeRoom: BADGE_ROOM,
+    waitingLines: WAITING_LINES,
+    promptW: PROMPT_TEXT_W,
   },
   sent: [],
   trace: [],

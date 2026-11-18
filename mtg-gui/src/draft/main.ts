@@ -124,7 +124,12 @@ function send(message: ClientMessage): boolean {
 function onMessage(msg: ServerMessage): void {
   if (msg.type === "view") onView(msg);
   else if (msg.type === "refused") onRefused(msg);
-  else if (msg.type === "closed") state.closed = msg.reason;
+  else if (msg.type === "closed") {
+    state.closed = msg.reason;
+    // Nothing more is timed or on its way: the countdown ticked on under
+    // the closed banner (#1038's review).
+    state.deadlineAt = null; state.pendingPick = null;
+  }
   else if (msg.type === "review") state.review = msg.picks;
   else console.warn("unknown message", msg);
   draw();
@@ -376,6 +381,8 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  // A closed table takes no pick or edit from the keyboard either (#1038's review).
+  if (state.closed !== null) return;
   // A held Enter repeats about every 30 ms, and on a focused row or tile
   // the browser clicked it once per repeat: a pool card went in and out of
   // the deck by the parity of the repeat count, one deck message each, and
@@ -517,6 +524,8 @@ function draw(): void {
     const again = root.querySelector<HTMLElement>(refocus);
     if (again && !(again as HTMLButtonElement).disabled) again.focus({ preventScroll: true });
   }
+  // The name box is outside the view: a closed table takes no name either (#1038's review).
+  nameField.disabled = state.closed !== null;
   const v = state.view;
   seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");
   connEl.textContent = state.closed !== null ? "the table is closed"

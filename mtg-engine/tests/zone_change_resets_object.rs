@@ -74,11 +74,11 @@ fn a_curse_detaches_from_its_player_on_leaving_the_battlefield() {
          re-attach it to that player with no targeting and no consent");
 }
 
-/// A token copy of a double-faced card is not itself double-faced, so it
-/// cannot transform — even though it carries the DFC's card_id and would
-/// otherwise pick up its upkeep trigger.
+/// A token copy of a double-faced card is a transforming token (CR 707.8a),
+/// so it transforms at upkeep exactly as the card does, and the log says so
+/// once for each (#1060; it used to refuse every token).
 #[test]
-fn a_token_copy_of_a_werewolf_cannot_transform() {
+fn a_token_copy_of_a_werewolf_transforms_with_it() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
@@ -91,18 +91,16 @@ fn a_token_copy_of_a_werewolf_cannot_transform() {
 
     assert!(state.get_object(waif).unwrap().is_transformed,
         "test precondition: the real card transforms under these conditions");
-    assert!(!state.get_object(token).unwrap().is_transformed,
-        "a token copy has only the copied face and cannot transform");
+    assert!(state.get_object(token).unwrap().is_transformed,
+        "a token copy is a transforming token and flips too (CR 707.8a)");
 
-    // And it must not say it did. Each werewolf used to log the flip itself,
-    // around the call that refuses one for a token — so the log announced two
-    // transforms where only the real card flipped. The announcement now lives
-    // inside `apply_transform`, on the path that actually flips.
+    // The announcement lives inside `apply_transform`, on the path that
+    // actually flips, so each flip is reported once — no more, no fewer.
     let announced = state.game_log.iter()
         .filter(|e| e.message.contains("transforms into"))
         .count();
-    assert_eq!(announced, 1,
-        "exactly one transform happened, so the log must report exactly one; \
+    assert_eq!(announced, 2,
+        "exactly two transforms happened, so the log must report exactly two; \
          got: {:?}",
         state.game_log.iter()
             .filter(|e| e.message.contains("transforms into"))

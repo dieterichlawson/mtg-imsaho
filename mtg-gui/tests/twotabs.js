@@ -59,6 +59,24 @@ async function main() {
     const bStops = await B.evaluate(() => !!window.mtg.stopAtPass);
     if (!bStops) fail("stop-at-pass: a tab joining a seat that is stopping at every priority did not learn it");
     else ok("stop-at-pass: the second tab joined a seat that is stopping, and knows it");
+    // #1012's review: a setting changed in one tab is said in the other,
+    // whose own last line may say the opposite. Flipped twice, so the
+    // seat is stopping again for what follows.
+    for (const [want, what] of [[/^Another tab: passing automatically/, "off"], [/^Another tab: stopping at every priority/, "on"]]) {
+      await A.keyboard.press("s");
+      await B.waitForTimeout(400);
+      const said = await B.evaluate(() => window.mtg.notice);
+      if (!want.test(said || "")) fail(`settings: s turned ${what} in one tab, and the other said ${JSON.stringify(said)}`);
+      else ok(`settings: the other tab says "${said}"`);
+    }
+    // A tab that opens on a seat already stopping is told the seat's
+    // settings on hello; that is no change made in another tab.
+    const C = await openTab(browser, url);
+    await C.waitForTimeout(600);
+    const cSaid = await C.evaluate(() => window.mtg.notice);
+    if (cSaid && /another tab/i.test(cSaid)) fail(`settings: a tab just opened was told "${cSaid}"`);
+    else ok(`settings: a tab just opened says ${JSON.stringify(cSaid)}`);
+    await C.close();
 
     // Keep, then pass the main phase. Every priority after that is one the
     // engine offers only Pass/Concede at — the ones `s` exists to stop at.
@@ -98,6 +116,14 @@ async function main() {
     if (!b2.notice || !/another tab/i.test(b2.notice))
       fail(`stale-prompt: the other tab said ${JSON.stringify(b2.notice)}, not that it was answered elsewhere`);
     else ok(`stale-prompt: the other tab says "${b2.notice}"`);
+    // #1012: once the next question is up at the other tab, the notice is
+    // about the last one, and says so — not "Answered in another tab."
+    // under a question nobody has answered.
+    await B.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
+    const b3 = await snap(B);
+    if (b3.notice === "Answered in another tab.")
+      fail(`stale-prompt: decision ${b3.seq}, a new question, is drawn with "${b3.notice}"`);
+    else ok(`stale-prompt: the next question at the other tab says ${JSON.stringify(b3.notice)}`);
 
     // And the tab that DID answer is not told its own answer happened
     // somewhere else.

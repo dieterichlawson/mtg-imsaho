@@ -114,10 +114,15 @@ fn a_token_copy_of_a_transformed_permanent_shows_the_back_face() {
         "the copy has the back face's subtypes only, got {subtypes:?}");
     assert!(state.get_object(token).unwrap().is_transformed);
 
-    // CR 701.28c: the token is not a double-faced card, so it never
-    // transforms back.
-    mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg);
-    assert_eq!(state.name_of(token, &reg), "Ironfang");
+    // CR 707.8a: it is a transforming token, back face up, so it transforms
+    // back to the front face's copiable values (#1060) — and is then the
+    // front face only: Ironfang's color indicator (red) and no more.
+    assert!(mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg).transformed());
+    assert_eq!(state.name_of(token, &reg), "Village Ironsmith");
+    let front = state.face_data(token, &reg).unwrap();
+    assert_eq!(state.subtypes_of(token, &reg), front.subtypes,
+        "the front face's subtypes only");
+    assert_eq!(state.effective_power(token, &reg), front.power, "and its power");
 }
 
 /// The same for Evil Twin copying a transformed permanent — and since the

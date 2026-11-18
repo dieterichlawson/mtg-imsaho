@@ -68,7 +68,8 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 - `cli` — the host's own seat, at the server's terminal (at most one).
   The server runs the terminal client (below) for it against its own
   port: every line the host types that is not one of the host's commands
-  (`start`, `kick`, `status`, `quit`, `help`) is the seat's — a pick
+  (`start`, `kick`, `status`, `quit`, `help`, and `q` / `exit`,
+  which it refuses while the table runs) is the seat's — a pick
   number, `add`, `lands`, `ready`, `review`, `play`/`draw` between games.
   The seat is at the table before the keyboard is read, and its games are
   played on the game page whose link it prints, as a person's are. Its
@@ -98,7 +99,7 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | `--log <path>` | `logs/draft-with-friends/draft.log` | the draft log; `decks/` and `games/` beside it |
 | `--save <path>` | `table.save.json` beside the log | the table's snapshot, rewritten after every change |
 | `--resume <path>` | none | carry on from a snapshot (below) |
-| `--quiet` | | no event lines on the terminal |
+| `--quiet` | | no event lines on the terminal (warnings, and answers to the host's commands, still print) |
 
 `--help` and `--version` answer and exit; an unknown flag, a bad seat
 word, an unknown provider, or a `cc` seat with no CLI is refused before
@@ -126,7 +127,9 @@ every pairing, every game and match result, the standings — and reads:
   closed", "kicked", "not answering" — and what they are doing, and each
   AI seat's model (and what a metered one bills). A person
   in a match is wherever their game page is.
-- `quit`, or Ctrl-C: stop the server. Every page and client is told the
+- `quit`, or Ctrl-C: stop the server. (`q` and `exit`, the terminal
+  client's "leave", are refused here while the table is still going:
+  only `quit` closes it.) Every page and client is told the
   table is closed and why, and stops reconnecting; the log ends with
   `NOTE the host quit` (or `NOTE the server was stopped by Ctrl-C
   (SIGINT)`) and the usage summary. It stays up after the tournament so
@@ -156,6 +159,13 @@ building opens its text under it and a second tap moves it between main
 and side. If the page is not in the checkout yet the
 server says so at start-up and the client below still works.
 
+Keys: while drafting, a digit selects a card (`1`-`9`, and `0` for the
+tenth), the arrows move the selection, Enter picks the selected card and
+Esc clears it. While building (and between the games of a match) the
+arrows move a cursor down the checklist, Enter moves the card under it
+between main and side, and Esc clears it. Esc first dismisses a refusal
+or a notice when one is up.
+
 ### In a terminal
 
 ```
@@ -165,14 +175,14 @@ mtg-draft-client ws://192.168.1.20:8800/ws?seat=0&key=7c5b0a8e... --name Lawson
 A plain line-oriented client. It prints your view when something of
 yours changes — the pack as a numbered list under one line counting your
 pool (`pool` lists it), so the pack and the question are the last thing on
-screen — and one line for the table when only other seats moved (while a pack is in
-front of you, only when your queue of packs changes), which also says how
-many more packs are waiting for you. Type a card's number
+screen — and one line for the table when only other seats moved. While a
+pack is in front of you that line is only your queue, once under each pack:
+`(2 more packs waiting for you behind this one)`. Type a card's number
 to pick it; a number typed before a new pack has been up for 300 ms (a
 pick typed twice) is not taken from it, and the client says so. While building: `add <n>` and `drop <n>` by the pool numbers
 shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
 final; `text <n>` prints a card's rules text (the pack's card while
-drafting, the pool's while building); the server's refusal (`Deck has 39 cards (need at least 40)`) is
+drafting, the pool's while building), and `text <name>` any card's by name; the server's refusal (`Deck has 39 cards (need at least 40)`) is
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
 playing (game 1)`, with the game's link on a line of its own under it, `open
 http://192.168.1.20:8800/game/8803/<key>/`: through the table's own port and
@@ -271,7 +281,8 @@ a crash, Ctrl-C, a reboot — start it again with `--resume <snapshot>`
 their join links are the ones everybody already has, every pick, deck and
 finished match is replayed onto packs dealt again from the same seed, the
 AI seats keep their notes, and the draft or the tournament carries on. A
-match that was in progress is played again from its first game. The
+match that was in progress is played again from its first game, and the
+resume's first line names the matches still to play in that round by seat. The
 snapshot's seed, set, seats and match length win over the flags, and are
 checked as the flags would be. `--guide` and the `MTG_LLM_HISTORY`,
 `MTG_CLAUDE_CODE_DRAFT_ANSWERS`, `MTG_CLAUDE_CODE_ANSWERS` and

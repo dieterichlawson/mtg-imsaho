@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-18",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "0-3-0",
+   "lessons": [
+    "Do not take Victim of Night second as I did: it went unplayed in my WR, and the guide's warning about off-colour early removal applied, so stay in colour from pick 2 onward.",
+    "Tonight contradicted the guide's WR line: my 0-6 deck with cheap creatures, Rally the Peasants and four fliers lost every game in 17 to 38 turns, so fliers alone were not enough.",
+    "Give red eight or nine Mountains: my 10 Plains/7 Mountain WR ran Geistflame, Harvest Pyre, Into the Maw of Hell and two Tormented Pariah, and the guide's warning about 6-7 Mountains applied."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12994,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2981,
+    "output_tokens_details": {
+     "thinking_tokens": 2748
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12994
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2981,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12994,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12994,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Draft a real graveyard payoff plan: I played Stitched Drake, Makeshift Mauler and Ghoulraiser but left out Ghoulcaller's Chant and Ghoulcaller's Bell, both taken late, so my self-fuel was thin.",
+    "Don't spend late picks on Think Twice and Dream Twist, since neither made my deck; take evasive finishers instead, because both of my lost matches went to three games.",
+    "My removal (2x Tribute to Hunger, Sensory Deprivation, Corpse Lunge) carried the 2-0 win over WR's Midnight Haunting and Ghostly Possession, so prioritise cheap removal over marginal creatures."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3275,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3530,
+    "output_tokens_details": {
+     "thinking_tokens": 3289
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3275
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3530,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3275,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3275,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide's aggro framing failed tonight: my WG games ran 16 to 32 turns, and with Chapel Geist as my only flier the wide ground plan stalled. Draft evasion and card advantage over extra ground bodies.",
+    "Delver of Secrets and Cobbled Wings went unplayed, as the guide predicted, and my late Spare from Evil was cut. Take playable two-drops over these late picks.",
+    "Tonight's long games, up to 32 turns, justified 17 lands. The guide's 16-land option for aggressive decks is risky when boards stall."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5050,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3032,
+    "output_tokens_details": {
+     "thinking_tokens": 2832
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5050
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3032,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5050,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5050,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Against WG in round 1, I sided in Kessig Wolf Run, Trepanation Blade and Undead Alchemist for Kessig Wolf, Traitorous Blood and Typhoid Rats, and won the match 2-1.",
+    "Round 3 fell 1-2 to WB's removal-heavy grind (Fiend Hunter, Smite the Monstrous, Rebuke) in 21-29 turn games, so prioritise recursion and card advantage like Ghoulcaller's Chant.",
+    "Expect colorless bombs to be contested: seat 2's WG deck also ran Galvanic Juggernaut, which I took first in pack 2."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3377,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3781,
+    "output_tokens_details": {
+     "thinking_tokens": 3552
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3377
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3781,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3377,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3377,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WB",
+   "record": "3-0-0",
+   "lessons": [
+    "Contradicting the guide's WB 45% warning, a white-first WB on 11 Plains/6 Swamp went 3-0 with Fiend Hunter, Rebuke, Smite the Monstrous, Voiceless Spirit and Abbey Griffin.",
+    "Six removal spells did not hurt against the guide's 'about five' cap: Doomed Traveler, Avacynian Priest and Selfless Cathar curved out, and Rally the Peasants closed the long games.",
+    "Committing by mid pack 1 worked: first picks Falkenrath Noble, Corpse Lunge and Voiceless Spirit all made the deck, while the second Woodland Sleuth and Nightbird's Clutches were wasted picks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12983,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2942,
+    "output_tokens_details": {
+     "thinking_tokens": 2688
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12983
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2942,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12983,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12983,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Blue-red lost both 0-2 matches in 19 to 24-turn games, so prioritize evasive clock like Spectral Flight and Pitchburn Devils over defensive bodies like Fortress Crab, since my removal-heavy deck never closed games.",
+    "The 2-5 game record came against a fast WB deck and a BR deck, so take early pressure over the stall pieces, and don't count on a grindy UR shell to win long games.",
+    "The 2-1 win over UG came in a 23-turn game, so blue-red's removal and fliers can beat slower green decks, but only if the board stays under control early."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3267,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1712,
+    "output_tokens_details": {
+     "thinking_tokens": 1502
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3267
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1712,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3267,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3267,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide's skip-list: my BR deck ran Wooden Stake and Sharpened Pitchfork, the filler I'd noted to cut, so cut narrow filler like these.",
+    "Black flowed, and Dead Weight went first pick in packs 2 and 3; BR won its two 2-0 rounds, so take black removal early.",
+    "My 1-2 Round 1 loss came against UG with Spider Spawning and Murder of Crows, while BR had only Vampire Interloper as a flier, so draft more evasion or answers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5003,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3217,
+    "output_tokens_details": {
+     "thinking_tokens": 3023
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5003
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3217,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5003,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5003,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UG",
+   "record": "1-2-0",
+   "lessons": [
+    "Keep the second Lost in the Mist rather than cutting it: our games ran 15 to 34 turns, and we lost to the WB and UR decks' fliers.",
+    "Three Festerhide Boar picks in pack 3 produced only two played copies, so the third was a wasted pick; prioritize playable interaction or evasive threats over a redundant common.",
+    "Sideboarding Fortress Crab, Moonmist, Naturalize and Pitchburn Devils in before game two preceded our 2-1 win over the BR deck, so plan post-board swaps before round one."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3302,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3528,
+    "output_tokens_details": {
+     "thinking_tokens": 3331
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3302
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3528,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3302,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3302,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

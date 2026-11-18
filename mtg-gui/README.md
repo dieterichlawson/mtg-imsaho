@@ -56,7 +56,10 @@ that turn is reached, or that main phase — or the first priority after
 it, if it offered nothing and went by unseen — the CLI's stops; it will not
 start where it would stop at once, and says what it passed up), `l`
 opens the log, `g`/`G` a
-graveyard, `e` exile, `d` your library, `s` stops at every priority
+graveyard, `e` exile, `d` your library, `k` the whole stack (the band
+shows five entries; past that a "+N" chip, which a click also opens),
+`h` your whole hand (the hand row shows what fits; past that a "+N"
+slot, which a click also opens), `s` stops at every priority
 instead of passing when there is nothing to do.
 
 ## The draft page
@@ -88,10 +91,14 @@ reason, and the page goes back to what the last view describes.
 - `src/draft/main.ts` — the socket, the state, the keys, and the hooks.
 
 Drafting: click a card to read it, click it again or press Enter to
-pick it; digits and arrows move the selection, Esc clears it. Building:
-click a card to move it between main and side, step the basics, and
-press Ready when the count line reaches 40 (the button says why it is
-disabled until then). Playing: the game link is a link to the game page.
+pick it; digits and arrows move the selection (`1`-`9` are the first
+nine cards, `0` the tenth), Esc clears it. Building: click a card to
+move it between main and side, or move the cursor with the arrows and
+press Enter to move the card under it (Esc clears the cursor); step the
+basics, and press Ready when the count line reaches 40 (the button says
+why it is disabled until then). The same keys build the deck between
+the games of a match. Where a pack or a pool is on screen, Esc first
+dismisses a refusal or a notice, when one is up. Playing: the game link is a link to the game page.
 
 `window.mtgDraft` holds the state, the last view and every message the
 page sent (`.sent`); `window.mtgDraftDebug.stage(view)` renders a view

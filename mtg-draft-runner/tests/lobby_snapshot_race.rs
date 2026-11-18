@@ -60,7 +60,7 @@ fn threads_writing_the_snapshot_at_once_neither_fail_nor_leave_an_older_one() {
         std::thread::spawn(move || {
             (0..40).filter_map(|n| {
                 // A change, then its write, as a seat's thread makes them.
-                shared.lobby().set_name(seat % 2, &format!("seat{seat}-{n}"));
+                let _ = shared.lobby().set_name(seat % 2, &format!("seat{seat}-{n}"));
                 shared.write_snapshot().err()
             }).collect::<Vec<String>>()
         })

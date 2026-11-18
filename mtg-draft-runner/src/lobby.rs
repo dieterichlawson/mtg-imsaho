@@ -743,6 +743,38 @@ impl TableSave {
         Ok(())
     }
 
+    /// What a resume of this snapshot says of its matches: `None` while a
+    /// deck is still to be made, when no match was started, or once every
+    /// match is played; else the round's unrecorded matches by seat, which
+    /// are played from their first game. The note said "a match that was
+    /// in progress is played again from its first game" on every resume,
+    /// a table stopped mid-build included (#999).
+    #[must_use]
+    pub fn resumed_matches_clause(&self) -> Option<String> {
+        let every_deck = (0..self.seats.len()).all(|seat| self.decks.iter().any(|d| d.seat == seat && d.ready));
+        if !every_deck {
+            return None;
+        }
+        let records: Vec<(usize, &mtg_draft::tournament::MatchResult)> =
+            self.matches.iter().map(|m| (m.round, &m.result)).collect();
+        let left = crate::game::unrecorded_matches(&records, self.seats.len(), self.best_of);
+        let (round, ..) = *left.first()?;
+        // A match with a kicked or given-up seat in it is a forfeit, not a
+        // game played again; the seats are told nothing of it either
+        // (#1029's review).
+        let gone = |s: usize| self.seats.get(s).is_some_and(|x| x.kicked || x.gave_up);
+        let left: Vec<_> = left.into_iter().filter(|&(_, a, b)| !gone(a) && !gone(b)).collect();
+        if left.is_empty() {
+            return None;
+        }
+        let names: Vec<String> = left.iter().map(|&(_, a, b)| format!("seat {a} v seat {b}")).collect();
+        Some(if names.len() == 1 {
+            format!("round {round}'s match still to play, {}, is played from its first game", names[0])
+        } else {
+            format!("round {round}'s matches still to play, {}, are played from their first game", names.join(", "))
+        })
+    }
+
     /// The seats as `--seats` would name them.
     ///
     /// # Errors
@@ -800,6 +832,8 @@ struct SeatState {
     /// Whether this match's game page has been open at all: one not opened
     /// yet is not "closed", and its first open is not "open again" (#926).
     game_page_opened: bool,
+    /// The host has been told the seat went away, and is owed a "back".
+    said_away: bool,
     deck: Option<DraftDeck>,
     deck_problem: Option<String>,
     ready: bool,
@@ -949,6 +983,7 @@ impl Lobby {
             gave_up: false,
             game_pages: None,
             game_page_opened: false,
+            said_away: false,
             deck: None,
             deck_problem: None,
             ready: false,
@@ -1106,20 +1141,39 @@ the order they happened, not in seat order", "");
             self.seats[seat].auto = false;
             self.event(format!("{} is here; it picks for itself from now on", self.who(seat)));
             self.arm_deadlines();
-        } else if was_away && !self.seats[seat].kicked {
+        } else if was_away && self.seats[seat].said_away && !self.seats[seat].kicked {
             // The host's one sign a seat that went away is here again; a
             // client's reconnect used to show only as a rename to the
             // name it already had (#856).
             self.event(format!("{} is back", self.who(seat)));
         }
+        // "Back" only after an "away": a seat in a match, or the host's
+        // own, is not said to go, and its return was a lone "is back"
+        // (#1039's review).
+        self.seats[seat].said_away = false;
         if self.phase == Phase::Lobby && self.seats.iter().all(|s| s.joined) {
             self.start();
         }
     }
 
     /// A connection for `seat` closed.
-    pub fn disconnected(&mut self, seat: usize) {
+    ///
+    /// `closing` is the table's own stop, which takes every page with it:
+    /// nobody went away then.
+    pub fn disconnected(&mut self, seat: usize, closing: bool) {
         self.seats[seat].connected = self.seats[seat].connected.saturating_sub(1);
+        // The host was told a seat "is back" and never that it had gone
+        // (#1039): the last page or client closing is said too, as a game
+        // page closing is (#822). A kicked seat's comings and goings are
+        // not news; the table plays for it.
+        // Nor while the seat is in a match: it is wherever its game page is,
+        // and `status` says "in game" (#1039's review). Nor the host's own
+        // seat, whose reconnect is said at the host's terminal already.
+        let s = &self.seats[seat];
+        if s.connected == 0 && !closing && !s.kicked && s.game_pages.is_none() && s.kind != SeatKind::Cli {
+            self.event(format!("{} is away: no draft page or client is open for the seat", self.who(seat)));
+            self.seats[seat].said_away = true;
+        }
     }
 
     /// How many pages are attached to the seat's game: `Some(0)` from the
@@ -1552,7 +1606,10 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             self.seats[seat].notice = Some(format!("The table built your deck ({why}){}.",
                 unusable.replace("; the deck it sent", "; the deck you sent")));
         }
-        self.event(format!("{}: the table built its deck ({why}){unusable}", self.who(seat)));
+        // A deck sent and not playable is a failure, said as one: --quiet
+        // keeps it, as it keeps every WARN (#1041's review).
+        let warn = if unusable.is_empty() { "" } else { "WARN " };
+        self.event(format!("{warn}{}: the table built its deck ({why}){unusable}", self.who(seat)));
         self.finish_deck(seat, &deck, &[], 0, true);
     }
 
@@ -1640,18 +1697,39 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
 
     // ── absent seats ──
 
-    /// Turn a human seat into one the table picks and builds for, from now
-    /// on. Its games are forfeit.
+    /// Why a kick of `seat` would be refused, if it would: asked before the
+    /// host's own seat is asked to confirm, so the question is not put for a
+    /// kick that cannot take (#1042's review).
     ///
     /// # Errors
-    /// Not a human seat.
-    pub fn kick(&mut self, seat: usize) -> Result<(), String> {
-        let Some(s) = self.seats.get_mut(seat) else {
+    /// No such seat, not a person's, already kicked, or the tournament is over.
+    pub fn kick_refusal(&self, seat: usize) -> Result<(), String> {
+        let Some(s) = self.seats.get(seat) else {
             return Err(format!("there is no seat {seat}"));
         };
         if !s.is_human() {
             return Err(format!("seat {seat} is an {} seat", s.kind.word()));
         }
+        // A second kick did nothing and was announced and logged as one
+        // anyway, as was a kick once the tournament was over (#1042).
+        if s.kicked {
+            return Err(format!("seat {seat} is already kicked: the table picks, builds and forfeits for it"));
+        }
+        if self.phase == Phase::Done {
+            return Err("the tournament is over: there is nothing left to forfeit".to_string());
+        }
+        Ok(())
+    }
+
+    /// Turn a human seat into one the table picks and builds for, from now
+    /// on. Its games are forfeit.
+    ///
+    /// # Errors
+    /// As [`Lobby::kick_refusal`]: no such seat, not a person's, already
+    /// kicked, or the tournament is over.
+    pub fn kick(&mut self, seat: usize) -> Result<(), String> {
+        self.kick_refusal(seat)?;
+        let s = &mut self.seats[seat];
         s.auto = true;
         s.kicked = true;
         s.joined = true;
@@ -1683,6 +1761,12 @@ for the seat from here, and its games are forfeit"), ""));
         self.run_auto_seats();
     }
 
+    /// Whether the host has kicked this seat.
+    #[must_use]
+    pub fn is_kicked(&self, seat: usize) -> bool {
+        self.seats.get(seat).is_some_and(|s| s.kicked)
+    }
+
     /// Whether the table plays for this seat (its games are forfeit).
     #[must_use]
     pub fn is_auto(&self, seat: usize) -> bool {
@@ -1692,16 +1776,19 @@ for the seat from here, and its games are forfeit"), ""));
     /// Why the table plays for a seat, in the words its picks, its deck
     /// and its forfeits are recorded with. Every one of them said "the
     /// seat is away", which for a kicked seat contradicted the page beside
-    /// it showing the person still there (#825).
+    /// it showing the person still there (#825). A kick names the seat,
+    /// as the match it ended in says it: one kick read "the host kicked
+    /// Bo (seat 1)" there and "the host kicked the seat" in every later
+    /// match (#1036).
     #[must_use]
-    pub fn away_reason(&self, seat: usize) -> &'static str {
+    pub fn away_reason(&self, seat: usize) -> String {
         let s = &self.seats[seat];
         if s.kicked {
-            "the host kicked the seat"
+            format!("the host kicked {}", self.who(seat))
         } else if s.gave_up {
-            "the seat stopped answering"
+            "the seat stopped answering".to_string()
         } else {
-            "the seat is away"
+            "the seat is away".to_string()
         }
     }
 
@@ -1712,13 +1799,15 @@ for the seat from here, and its games are forfeit"), ""));
             self.picks_at_once(s) && self.phase == Phase::Drafting
                 && self.table.in_front(s).is_some()
         }) {
-            let _ = self.auto_pick(seat, self.away_reason(seat));
+            let why = self.away_reason(seat);
+            let _ = self.auto_pick(seat, &why);
         }
         for seat in 0..self.seats.len() {
             if self.builds_at_once(seat) && !self.seats[seat].ready
                 && self.table.seat_done(seat)
             {
-                self.auto_build(seat, self.away_reason(seat));
+                let why = self.away_reason(seat);
+                self.auto_build(seat, &why);
             }
         }
         self.arm_deadlines();
@@ -1729,17 +1818,17 @@ for the seat from here, and its games are forfeit"), ""));
     pub fn tick(&mut self, now: Instant) -> bool {
         let mut changed = false;
         for seat in 0..self.seats.len() {
-            let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the pick timer ran out" };
+            let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the pick timer ran out".to_string() };
             if self.seats[seat].pick_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].pick_deadline = None;
-                if self.auto_pick(seat, why).is_ok() {
+                if self.auto_pick(seat, &why).is_ok() {
                     changed = true;
                 }
             }
             if self.seats[seat].build_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].build_deadline = None;
-                let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the build timer ran out" };
-                self.auto_build(seat, why);
+                let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the build timer ran out".to_string() };
+                self.auto_build(seat, &why);
                 changed = true;
             }
         }
@@ -2086,8 +2175,8 @@ for the seat from here, and its games are forfeit"), ""));
     #[must_use]
     pub fn forfeit_result(&self, a: usize, b: usize) -> MatchResult {
         match (self.is_auto(a), self.is_auto(b)) {
-            (true, false) => self.forfeit_by(a, b, a, self.away_reason(a)),
-            (false, true) => self.forfeit_by(a, b, b, self.away_reason(b)),
+            (true, false) => self.forfeit_by(a, b, a, &self.away_reason(a)),
+            (false, true) => self.forfeit_by(a, b, b, &self.away_reason(b)),
             _ => MatchResult { player_a: a, player_b: b, wins_a: 0, wins_b: 0, games: Vec::new() },
         }
     }
@@ -2327,6 +2416,29 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
         }
         self.run_auto_seats();
         self.events.clear();
+        // The host's terminal names the matches played again (#999); the
+        // people playing them were told nothing, and a 1-0 restarted from
+        // game 1 on their page or client with no word why (#1029).
+        //
+        // Worded as the host's line is since #999: the snapshot keeps only
+        // finished matches, so whether this one had begun is not known,
+        // and "played again" would be false of a round that never started.
+        // A match with a kicked or given-up seat in it is a forfeit, not a
+        // game to play, and says nothing (as every other notice leaves a
+        // kicked seat alone).
+        for &(_, a, b) in &to_play {
+            if [a, b].iter().any(|&s| self.seats[s].kicked || self.seats[s].gave_up) {
+                continue;
+            }
+            for (me, them) in [(a, b), (b, a)] {
+                if self.seats[me].is_human() && self.seats[me].notice.is_none() {
+                    self.seats[me].notice = Some(format!(
+                        "The host restarted the table: your match against {} starts from its first game; \
+                         a game of it played before the restart does not count.",
+                        self.who(them)));
+                }
+            }
+        }
         Ok(to_play)
     }
 
@@ -2341,15 +2453,26 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
     // ── names ──
 
     /// A seat's cosmetic name.
-    pub fn set_name(&mut self, seat: usize, name: &str) {
+    ///
+    /// # Errors
+    /// A kicked seat asking for another name: it keeps the one it was
+    /// kicked under, and is told so rather than met with silence.
+    pub fn set_name(&mut self, seat: usize, name: &str) -> Result<(), String> {
         let clean = clean_name(name);
         // A client sends its name on every connect: the same name again is
         // no rename (#856).
         if clean.is_empty() || clean == self.seats[seat].name {
-            return;
+            return Ok(());
+        }
+        // A kicked seat keeps the name it was kicked under: its later
+        // forfeits name it, and a rename on reconnect split one kick into
+        // two reasons again (#1036's review).
+        if self.seats[seat].kicked {
+            return Err(format!("the seat was kicked as {}, and keeps that name", self.who(seat)));
         }
         self.event(format!("{} is now called {clean}", self.who(seat)));
         self.seats[seat].name = clean;
+        Ok(())
     }
 
     // ── the view ──

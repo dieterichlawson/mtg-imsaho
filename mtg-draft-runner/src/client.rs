@@ -123,6 +123,8 @@ pub fn run(
     let mut built_for_phase = String::new();
     // The pack on screen (id and pick) and when it was printed.
     let mut pack_shown: Option<(Value, Instant)> = None;
+    // The pack whose queued count has been said under it (#1040).
+    let mut queue_said: Option<Value> = None;
     loop {
         while let Ok((typed_at, line)) = rx.try_recv() {
             if line == "\u{0}eof" {
@@ -170,8 +172,16 @@ pub fn run(
                             shown = mine;
                             shown_key = key;
                         } else if table != shown_table && key != shown_key {
+                            // The seat's own new name is the table's line, as
+                            // before; only the queue count is said short.
+                            let me = |k: &str| k.split_once(" me ").map(|(_, n)| n.to_string());
+                            let renamed = me(&key) != me(&shown_key);
                             shown_key = key;
-                            out(&table_line(&msg));
+                            if renamed {
+                                out(&table_line(&msg));
+                            } else if let Some(line) = change_line(&msg, &mut queue_said) {
+                                out(&line);
+                            }
                         }
                         shown_table = table;
                         let pack = serde_json::json!([msg["pack"]["id"], msg["pack"]["pick"]]);
@@ -362,7 +372,8 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         return Command::Print(if phase == "lobby" {
             "the draft has not started: the deck is built once your last pick is made".into()
         } else {
-            format!("you are still drafting: {first} builds the deck once your last pick is made")
+            // Not "{first} builds the deck": "drop builds the deck" (#1044's review).
+            "you are still drafting: the deck is built once your last pick is made".into()
         });
     }
     // Once the deck is final, outside a match's between-games window, the
@@ -376,18 +387,32 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         } else {
             // True at every match length: a best-of-1 has no next game
             // to sideboard for (#907's review).
-            format!("your deck is final for this game: in a match of more than one game, {first} sideboards before the next")
+            // The command word was pasted in as the subject: "ready
+            // sideboards", "lands sideboards" (#1044).
+            "your deck is final for this game: in a match of more than one game, add, drop and lands \
+sideboard between games, and ready starts the next".to_string()
         });
     }
     match *first {
         "help" | "?" => Command::Print(USAGE.to_string()),
         "quit" | "q" | "exit" => Command::Quit,
+        // The server ignores an empty name, so nothing at all was said (#1043).
+        "name" if words.len() == 1 => Command::Print("name takes the name to go by: name <name>".into()),
         "name" => Command::Send(vec![serde_json::json!({"type": "name", "name": words[1..].join(" ")})]),
         "show" => view.map_or(Command::Nothing, |v| Command::Print({ let (t, m) = render(v, build); format!("{t}{m}") })),
         "pool" => view.map_or(Command::Print("no view yet".into()), |v| Command::Print(pool_listing(v))),
         "ready" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             if let Some((_, b)) = between(v) {
+                // The server takes a second ready and says nothing (#1043).
+                if b["ready"] == true {
+                    // As the between-games screen says it (#1043's review).
+                    return Command::Print(if b["opponent_ready"] == true {
+                        format!("you are ready: game {} is starting", b["game"])
+                    } else {
+                        format!("you are ready for game {}: it starts once your opponent is", b["game"])
+                    });
+                }
                 let mut msgs = Vec::new();
                 if b["sideboarding"] == true {
                     match send_edit(v, build) {
@@ -434,15 +459,31 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
                 let Some((land, n)) = word.split_once('=') else {
                     return Command::Print("lands takes plains=7 island=10 ...".into());
                 };
-                let Ok(n) = n.parse::<u32>() else { return Command::Print(format!("'{n}' is not a count")) };
+                let Ok(n) = n.parse::<u32>() else {
+                    // A count too long to read is a count over the server's
+                    // bound, as the page says it, not "not a count" (#1017).
+                    if all_digits(n) {
+                        return Command::Print(format!("'{n}' is more than the server allows: at most {} of one basic",
+                            mtg_draft::deckbuilding::MAX_CARD_COUNT));
+                    }
+                    return Command::Print(format!("'{n}' is not a count"));
+                };
                 let mut land = land.to_lowercase();
                 if let Some(c) = land.get_mut(0..1) { c.make_ascii_uppercase(); }
                 if n == 0 { build.lands.remove(&land); } else { build.lands.insert(land, n); }
             }
             send_edit(v, build)
         }
-        word => match (word.parse::<usize>(), view) {
-            (Ok(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
+        // A number too long to read takes the number arms, as 9 does, not
+        // "'999…'? type help" (#1017): past the end of the pack, said here
+        // since the server never sees it; no pack; not drafting.
+        word => match (read_number(word), view) {
+            (Some(usize::MAX), Some(v)) if phase == "drafting" && word.parse::<usize>().is_err()
+                && v["pack"]["cards"].is_array() => {
+                let n = v["pack"]["cards"].as_array().map_or(0, Vec::len);
+                Command::Print(format!("card '{word}' is past the end of the pack ({})", crate::count(n, "card", "cards")))
+            }
+            (Some(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
                 Some(_) if early.is_some() => Command::Print(format!(
                     "{index} was not picked: it was typed {} this pack came up; type it again to pick from this pack",
                     match early.map(|e| PICK_GRACE.saturating_sub(e)) {
@@ -452,7 +493,7 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
                 Some(id) => Command::Send(vec![serde_json::json!({"type": "pick", "pack_id": id, "index": index})]),
                 None => Command::Print("no pack in front of you right now".into()),
             },
-            (Ok(_), _) => Command::Print(format!("a number picks a card while drafting (phase: {phase})")),
+            (Some(_), _) => Command::Print(format!("a number picks a card while drafting (phase: {phase})")),
             _ => Command::Print(format!("'{word}'? type help")),
         },
     }
@@ -486,6 +527,25 @@ pub fn table_line(v: &Value) -> String {
         n => format!(" {n} more packs waiting for you"),
     };
     format!("[{}]{queued}", parts.join("; "))
+}
+
+/// The line printed when only the table moved. While a pack is in front of
+/// the seat that is its queue, said once per pack in a line of its own and
+/// not as the whole table's line: at four seats that line was wider than
+/// 80 columns, the terminal wrapped it, and three of them scrolled the
+/// pack's heading off an 80x24 screen at pick 1 (#1040). Later counts are
+/// in the next pack's block. Otherwise the table's line.
+fn change_line(v: &Value, said_for: &mut Option<Value>) -> Option<String> {
+    if v["phase"] != "drafting" || !v["pack"].is_object() {
+        return Some(table_line(v));
+    }
+    let waiting = v["pack"]["waiting"].as_u64().unwrap_or(0);
+    let pack = v["pack"]["id"].clone();
+    if waiting == 0 || said_for.as_ref() == Some(&pack) {
+        return None;
+    }
+    *said_for = Some(pack);
+    Some(format!("({} waiting for you behind this one)", crate::count(waiting as usize, "more pack", "more packs")))
 }
 
 /// What decides whether the table's one line is printed again: the line
@@ -792,7 +852,7 @@ mod tests {
             "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}], "pack": null});
         for line in ["ready", "add 0", "drop 0", "lands plains=17"] {
             let Command::Print(t) = command(line, Some(&v), &mut Build::default(), None) else { panic!("{line} sent") };
-            assert!(t.starts_with("you are still drafting"), "{line}: {t}");
+            assert_eq!(t, "you are still drafting: the deck is built once your last pick is made", "{line}");
         }
         v["phase"] = "lobby".into();
         let Command::Print(t) = command("ready", Some(&v), &mut Build::default(), None) else { panic!() };
@@ -803,7 +863,55 @@ mod tests {
         v["phase"] = "playing".into();
         v["matches"] = serde_json::json!([]);
         let Command::Print(t) = command("add 0", Some(&v), &mut Build::default(), None) else { panic!("sent") };
-        assert!(t.contains("sideboards before the next"), "{t}");
+        assert_eq!(t, "your deck is final for this game: in a match of more than one game, add, drop and lands \
+sideboard between games, and ready starts the next", "#1044");
+    }
+
+    /// #1043: `name` alone was sent, and the server drops an empty name, so
+    /// nothing was said; `text` alone named only the number it takes.
+    #[test]
+    fn a_command_missing_its_word_says_what_it_takes() {
+        let v = serde_json::json!({"type": "view", "phase": "building", "seat": 0, "set": "isd",
+            "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}], "pack": null});
+        for view in [None, Some(&v)] {
+            let Command::Print(t) = command("name", view, &mut Build::default(), None) else { panic!("name alone was sent") };
+            assert_eq!(t, "name takes the name to go by: name <name>");
+        }
+        let Command::Print(t) = command("text", Some(&v), &mut Build::default(), None) else { panic!() };
+        assert_eq!(t, "text takes a pool number or a card's name");
+    }
+
+    /// #1017: a number too long to read is out of range, as 9 in a pack of
+    /// two is: past the end of the pack, over the server's bound on a
+    /// basic, no card of that number — not "'999…'? type help", "not a
+    /// count" or a card named "999…". A word keeps its own answers.
+    #[test]
+    fn a_number_too_long_to_read_is_out_of_range() {
+        const BIG: &str = "99999999999999999999";
+        let mut v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd",
+            "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}],
+            "pack": {"id": 1, "round": 1, "pick": 13, "size": 2, "waiting": 0, "deadline_ms": null, "cards": [
+                {"index": 0, "name": "Brain Weevil", "line": "Brain Weevil", "text": ""},
+                {"index": 1, "name": "Moan of the Unhallowed", "line": "Moan of the Unhallowed", "text": ""}]}});
+        let print = |line: &str, v: &Value| match command(line, Some(v), &mut Build::default(), None) {
+            Command::Print(t) => t,
+            _ => panic!("{line} was not answered here"),
+        };
+        assert_eq!(print(BIG, &v), format!("card '{BIG}' is past the end of the pack (2 cards)"));
+        assert!(matches!(command("9", Some(&v), &mut Build::default(), None), Command::Send(_)),
+            "a number it can read is the server's to judge");
+        assert!(print("zz", &v).ends_with("type help"));
+        assert_eq!(print(&format!("text {BIG}"), &v), format!("no card '{BIG}': text takes a card number from the pack"));
+        v["phase"] = "building".into();
+        assert_eq!(print(&format!("text {BIG}"), &v), format!("no card '{BIG}': text takes a pool number"));
+        assert_eq!(print(&format!("lands plains={BIG}"), &v),
+            format!("'{BIG}' is more than the server allows: at most 200 of one basic"));
+        assert_eq!(print("lands plains=x", &v), "'x' is not a count");
+        // Every other number arm takes it too (#1017's review).
+        assert_eq!(print(BIG, &v), "a number picks a card while drafting (phase: building)");
+        v["phase"] = "drafting".into();
+        v["pack"] = Value::Null;
+        assert_eq!(print(BIG, &v), "no pack in front of you right now");
     }
 
     #[test]
@@ -1121,6 +1229,11 @@ mod tests {
         ready["matches"][0]["between"]["ready"] = true.into();
         ready["matches"][0]["between"]["play_first"] = true.into();
         assert!(printed(command("draw", Some(&ready), &mut build, None)).contains("settled when you said ready"));
+        // A second ready is answered, not sent for the server to drop (#1043).
+        assert_eq!(printed(command("ready", Some(&ready), &mut build, None)),
+            "you are ready for game 2: it starts once your opponent is");
+        ready["matches"][0]["between"]["opponent_ready"] = true.into();
+        assert_eq!(printed(command("ready", Some(&ready), &mut build, None)), "you are ready: game 2 is starting");
         let (_, text) = render(&ready, &build);
         assert!(text.contains("you lost game 1: you play first\n") && !text.contains("type play or draw") && !text.contains("to change it"), "{text}");
         v["matches"][0]["between"]["you_choose"] = false.into();
@@ -1194,6 +1307,16 @@ mod tests {
         assert_eq!(table_line_key(&v), key);
         v["seats"][0]["name"] = "Host".into();
         assert_ne!(table_line_key(&v), key, "this seat's own new name is a line");
+        // #1040: the queue under a pack is one short line, once per pack,
+        // not the table's line (84 columns at four seats) per new count.
+        let mut said = None;
+        let first = change_line(&v, &mut said).expect("the first count under this pack is said");
+        assert_eq!(first, "(2 more packs waiting for you behind this one)");
+        assert!(first.chars().count() <= 80);
+        v["pack"]["waiting"] = 3.into();
+        assert_eq!(change_line(&v, &mut said), None, "said once under this pack");
+        v["pack"]["id"] = 8.into();
+        assert!(change_line(&v, &mut said).is_some(), "and once under the next");
         let key = table_line_key(&v);
         v["pack"]["waiting"] = 1.into();
         assert_ne!(table_line_key(&v), key);
@@ -1327,8 +1450,23 @@ fn pool_listing(v: &Value) -> String {
 /// pool's. A name instead of a number reads the card by name from the
 /// pack, the pool or the last review, whose cards passed over could not be
 /// read at all (#889).
+/// Whether `s` is a number as typed: one or more ASCII digits, whether or
+/// not it fits a `usize`.
+pub(crate) fn all_digits(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// A typed number: `str::parse` reads it, and a run of digits too long for
+/// a `usize` is `usize::MAX`, a number out of range rather than a word
+/// (#1017). A word is `None`.
+pub(crate) fn read_number(s: &str) -> Option<usize> {
+    s.parse::<usize>().ok().or_else(|| all_digits(s).then_some(usize::MAX))
+}
+
 fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
-    if let Some(name) = arg.filter(|a| a.parse::<usize>().is_err()) {
+    // A run of digits is a number, however long: "text 99999999999999999999"
+    // looked for a card of that name (#1017).
+    if let Some(name) = arg.filter(|a| !all_digits(a)) {
         return card_by_name(v, review, name);
     }
     // While drafting the pool is listed by counts, not numbers, so the only
@@ -1343,8 +1481,10 @@ fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
         v["pool"].as_array().into_iter().flatten().collect()
     };
     let what = if drafting { "a card number from the pack" } else { "a pool number" };
-    let Some(n) = arg.and_then(|a| a.parse::<usize>().ok()) else {
-        return format!("text takes {what}");
+    // A name is taken too (#1043).
+    let Some(typed) = arg else { return format!("text takes {what} or a card's name") };
+    let Ok(n) = typed.parse::<usize>() else {
+        return format!("no card '{typed}': text takes {what}");
     };
     let card = if drafting {
         cards.iter().find(|c| c["index"].as_u64() == Some(n as u64)).copied()

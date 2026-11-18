@@ -22,7 +22,10 @@ export interface Hit {
   /** For a stack chip: which slot of `view.stack` it was drawn for. */
   stackIndex?: number;
   pid?: PlayerId;
-  zone?: "graveyard" | "exile" | "library";
+  zone?: "graveyard" | "exile" | "library" | "stack" | "hand";
+  /** A row's "+N" slot standing for the cards it has no room for (#994),
+   *  as against a strip's count that opens the same zone. */
+  more?: boolean;
   label?: string;
   group?: ObjectId[] | null;
   cardName?: string | null;
@@ -96,8 +99,8 @@ export interface Ui {
   submit?: () => void;
 }
 
-export interface Popover { id: ObjectId; items: Verb[]; x: number; y: number }
-export interface Overlay { zone: "graveyard" | "exile" | "library"; pid: PlayerId; page?: number }
+export interface Popover { id: ObjectId; items: Verb[]; x: number; y: number; /** The clicked card's height, which the menu clears. */ h?: number }
+export interface Overlay { zone: "graveyard" | "exile" | "library" | "stack" | "hand"; pid: PlayerId; page?: number }
 
 export interface State {
   ws: WebSocket | null;
@@ -128,6 +131,11 @@ export interface State {
   overlay: Overlay | null;
   selected: ObjectId | null;
   notice: string | null;
+  /** A notice said while no question was up, about that moment: what the
+   *  next question turns it into (`after`; null drops it). Without it the
+   *  line was drawn in red under the next question, which it was not about
+   *  ("Answered in another tab." on a fresh Main Phase 1, #1012). */
+  noticeWaiting?: { text: string; after: string | null } | null;
   /** A hosted table's line on the match around this game (#855). */
   matchLine?: string | null;
   /** What the opponent is doing when it is not deciding: its page is
@@ -159,3 +167,15 @@ export interface State {
 
 /** A state with a view: what every renderer and prompt works on. */
 export type LiveState = State & { view: GameView };
+
+/**
+ * The notice a new question opens with. A notice said while no question
+ * was up, and still the one on screen, was about that moment: it becomes
+ * its `after` form, or goes. Any other notice — "Last game: …", what
+ * auto-pass declined — was said for the question that comes next and
+ * stays (#1012).
+ */
+export function noticeAtNewDecision(notice: string | null, waiting: { text: string; after: string | null } | null | undefined): string | null {
+  if (waiting && notice === waiting.text) return waiting.after;
+  return notice;
+}

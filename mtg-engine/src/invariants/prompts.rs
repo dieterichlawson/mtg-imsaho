@@ -210,6 +210,12 @@ fn mulligan_shape(state: &GameState, v: &mut Violations) {
 fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::PlayerId, source: ObjectId,
                 choice: &ResolutionChoiceKind, v: &mut Violations) {
     use ResolutionChoiceKind as K;
+    // The answer resumes the effect from this source (a card's
+    // `resolve_card_effect`, an entry, a search), so it is an object the
+    // allocator handed out — the prompt half of #1062.
+    if source.0 >= state.next_object_id {
+        v.push(format!("prompt from #{} which is at or past next_object_id {}", source.0, state.next_object_id));
+    }
     // CR 608.2: the answer is routed back through two copies of the source
     // id (the prompt's and the choice's); they name the same object.
     let inner = match choice {

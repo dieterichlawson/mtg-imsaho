@@ -990,6 +990,13 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   and compare the runner's FINAL STANDINGS, the page's standings column,
   `mtg-draft-client`'s line and `/api/view`'s `omw`/`gw`/`ogw`. Before
   round 1 counts no surface may show a tiebreaker at all
+  — **re-run 2026-11-15: the arithmetic holds; the comparison does not
+  (#1032).** A hand check of one tournament is not enough to find this,
+  because a small field rarely ties. Drive `Tournament` from a scratch
+  crate (`generate_pairings`/`record_round` with random 2-0/2-1 results,
+  tens of thousands of events) and look for adjacent seats level on
+  points whose tiebreakers differ by less than 1e-9. Floats summed in a
+  different order are not equal, so check every float a sort compares
 - D46 [proposed 2026-10-21, from the hosted table's snapshot (`lobby.rs`
   `snapshot`/`restore`, `--resume`)] stop and carry on: stop a hosted
   table with Ctrl-C mid-draft, mid-build (one deck ready, one not),
@@ -1005,7 +1012,13 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   guide every game call's argv carries (a `CLAUDE_CODE_BIN` wrapper
   around `scripts/llm-prompt-stub.py`). Then check what the resume note
   and the log header say was used. The games are asked under the guide
-  as well as the picks, and the note said otherwise
+  as well as the picks, and the note said otherwise. [2026-11-12 R1: holds
+  after the fix; the resume warns per seat "only the games still to play are
+  asked", in the phrase `ledger.py` counts.] The wrapper must exec the stub
+  by an **absolute** path: the draft seat runs `claude` in a temp directory
+  (`/tmp/mtg-draft-claude-code-…`), so a relative one fails every pick and
+  the run dies at pack 1 pick 1 after ~9 minutes of retries (#1015's own
+  repro now does this; #540 is the same lesson)
 - D47 [proposed 2026-10-21, from #822-#825] where everybody is: with a
   person in a match, close their game page, then their draft page, then
   reopen each; kick them mid-game; Ctrl-C the server. At every step read
@@ -1015,6 +1028,13 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   page says whose page is closed instead of "Opponent is thinking", and
   every page and client says the table is closed and why, and stops
   reconnecting
+  — **re-run 2026-11-15: presence agrees everywhere; the close does not
+  reach a finished match's game page (#1033).** It retries for ever, so
+  leave the round-1 pages open when round 2 starts before you Ctrl-C.
+  Log every socket with `page.on('websocket')`: a page that was told
+  nothing shows no symptom except its reconnects. After the close, look
+  at what the rest of each page still offers: the modal (#1034) and the
+  game link (#1038)
 - D48 [proposed 2026-10-21, from `scripts/draft-loop/`] the nightly loop's
   own numbers: run `DRAFT_LOOP_OUT=<scratch> DRAFT_LOOP_PLAYERS=4
   DRAFT_LOOP_BEST_OF=3 CLAUDE_CODE_BIN=$PWD/scripts/llm-prompt-stub.py
@@ -1068,6 +1088,12 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `mtg-draft-client` and the cli seat: sit one seat each way at the same
   table and compare the two screens phase by phase — a line one shows and
   the other drops is the split gone wrong
+  — **re-run 2026-11-15: the split holds (the screens agree line for
+  line).** What breaks is the terminal itself. Run one pane at 80x24:
+  the queue's table lines push the pack off at pick 1 (#1040). Try
+  `--quiet` against everything the game seat prints for itself (#1041).
+  Try every alias of a host command, not only the documented word (`q`,
+  `exit`, #1045)
 - D51 [proposed 2026-10-21, from the pick review (`lobby.rs` `review`,
   `ReviewPick`; `client.rs` `review_listing`; b3e426d)] what a seat took
   and passed: at a hosted table with one person on the page and one on

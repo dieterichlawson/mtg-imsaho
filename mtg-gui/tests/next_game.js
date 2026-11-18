@@ -134,6 +134,22 @@ async function main() {
       return m.gameOver;
     });
     check(again === "Game over! p0 (Seat 0) wins!", `the next game's own end puts the box back up`);
+    // #1034's review: a table closed before the first game was drawn said
+    // "Waiting for the game…" and the before-game-1 line, never that it
+    // was closed. Last: nothing reopens a closed page.
+    const closedFirst = await page.evaluate(() => {
+      const said = [];
+      const fill = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { said.push(String(t)); return fill.call(this, t, ...rest); };
+      window.mtg.view = null;
+      window.mtgDebug.message({ type: "closed", reason: "the server was stopped by Ctrl-C (SIGINT)" });
+      window.mtgDebug.render();
+      CanvasRenderingContext2D.prototype.fillText = fill;
+      return said.join(" ") + " | title: " + document.title;
+    });
+    check(squash(closedFirst).includes("The table is closed: the server was stopped by Ctrl-C (SIGINT).") && !closedFirst.includes("Waiting for the game")
+      && closedFirst.includes("title: The table is closed"),
+      `closed before the first game, the page says so (${JSON.stringify(closedFirst.slice(0, 200))})`);
     if (errors.length) fail(`page errors:\n  ${errors.join("\n  ")}`); else ok("no page errors");
     await page.close();
   } finally {

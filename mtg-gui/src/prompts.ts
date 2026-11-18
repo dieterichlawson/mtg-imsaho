@@ -439,6 +439,44 @@ export function withoutIds(s: string): string {
     .replace(/ \[#\d+\]/g, "").replace(/\[#\d+, /g, "[");
 }
 
+/**
+ * A stack chip's key. A spell is keyed `o<id>` — it is its own object, and
+ * a click on it targets it. An activated ability carries its source's id,
+ * so its chip used to be keyed `o<source>`: a click on it targeted the
+ * creature, and in the menu it opened the creature's verbs (#807). An
+ * ability's chip is keyed by its slot, `s<i>`, which names no object.
+ */
+export function stackChipKey(item: { object_id: ObjectId; card_types?: unknown[] | null }, i: number): string {
+  return item.card_types && item.card_types.length ? `o${item.object_id}` : `s${i}`;
+}
+
+/** How many of `n` stack entries the band draws as chips (#991): five fit
+ *  between "STACK →" and the turn line at BAND_X (180 + 28i, 26 wide, short
+ *  of 326); past five, four and a "+N" chip that opens the rest. */
+export function stackChipsShown(n: number): number {
+  return n > 5 ? 4 : n;
+}
+
+/** Cards a graveyard, exile, library or hand overlay shows a page. */
+export const ZONE_OVERLAY_PAGE = 50;
+
+/** The hand row's geometry: a card is 66 wide, the row runs from x=4 to 4
+ *  short of the side panel at x=480, and cards overlap down to a 10px
+ *  stride. */
+export const HAND_ROW = { cardW: 66, x0: 4, width: 480 - 8, gap: 2 };
+
+/** How many of `n` hand cards the row draws (#994). Past what fits at the
+ *  narrowest stride, the last place is a "+N" slot that opens the whole
+ *  hand, as the battlefield rows do (#513): a card drawn past x=480 was
+ *  painted over by the side panel and still answered clicks there. */
+export function handCardsShown(n: number): number {
+  const { cardW, width, gap } = HAND_ROW;
+  if (n === 0) return 0;
+  const stride = Math.max(10, Math.min(cardW + gap, Math.floor((width - cardW) / Math.max(1, n - 1))));
+  const fits = Math.floor((width - cardW) / stride) + 1;
+  return n > fits ? fits - 1 : n;
+}
+
 /** A widget over a set of targets or object ids. */
 function withOptions(ui: Ui, list: readonly (Target | ObjectId)[]): Ui {
   const options = new Map<string, Target | ObjectId>();
@@ -459,22 +497,55 @@ const ON_BOARD = new Set(["battlefield", "hand", "stack"]);
  * a looked-at card, a library card. A graveyard or exile that holds an
  * option is also opened, so the card can be clicked where it lives.
  */
-function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void): Row[] {
+function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void, lent?: ReadonlySet<string>): Row[] {
   const rows: Row[] = [];
   // The zones the off-board options are in. One overlay can show one of
   // them, so it opens only when there is one: it used to open the first
   // option's owner's graveyard, so a target in the opponent's was offered
   // under a panel titled "You: graveyard" (#690).
-  const zones = new Map<string, { zone: "graveyard" | "exile"; pid: PlayerId }>();
+  const zones = new Map<string, { zone: "graveyard" | "exile" | "library"; pid: PlayerId }>();
+  // A stack entry behind the band's "+N" chip is not drawn either: it gets
+  // a row, so it can be answered whichever overlay opens (#991's review).
+  const shown = stackChipsShown(state.view.stack.length);
+  const hiddenKeys = new Set(state.view.stack.map((it, i) => stackChipKey(it, i)).filter((_, i) => i >= shown));
+  // So is a hand card behind the hand row's "+N" slot (#994).
+  const hand = state.view.your_hand;
+  const hiddenHand = new Set(hand.slice(handCardsShown(hand.length)).map(c => `o${c.object_id}`));
   for (const [key, t] of ui.options ?? []) {
     const id = objectOfKey(key);
     const e = id === null ? null : state.index.get(id);
-    if (key[0] === "p" || (e && ON_BOARD.has(e.zone))) continue;
+    if (key[0] === "p" || (e && ON_BOARD.has(e.zone) && !hiddenKeys.has(key) && !hiddenHand.has(key))) continue;
+    // A copy lent an offered card's answer is one more place to click it,
+    // not one more answer: seventeen Forests in a search were one row.
+    if (lent?.has(key)) continue;
     if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null) zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });
+    // Your library's cards are drawn by the `d` overlay, so an option there
+    // opens it as one in a graveyard opens that (#994's review).
+    else if (e && e.zone === "library" && state.view.your_library_cards.some(c => c.object_id === id)) zones.set("library", { zone: "library", pid: state.view.you });
     const label = id === null ? targetLabel(state, t as Target) : nameWithZone(state, id);
     rows.push({ label, run: () => run(key), key, cardName: e ? e.obj.name : null });
   }
-  if (zones.size === 1) state.overlay = [...zones.values()][0];
+  // Opened at the page that holds the first option there: a zone overlay
+  // shows 50 cards a page, and the 51st card's option was on a page the
+  // person was not shown (#994's review).
+  const pageOf = (cards: { object_id: ObjectId }[]) => {
+    const i = cards.findIndex(c => ui.options?.has(`o${c.object_id}`) && !lent?.has(`o${c.object_id}`));
+    return i < 0 ? 0 : Math.floor(i / ZONE_OVERLAY_PAGE);
+  };
+  if (zones.size === 1) {
+    const z = [...zones.values()][0];
+    const cards = z.zone === "graveyard" ? (state.view.graveyards.find(([p]) => p === z.pid)?.[1] ?? [])
+      : z.zone === "library" ? state.view.your_library_cards
+      : state.view.exile.filter(c => c.owner === z.pid);
+    state.overlay = { ...z, page: pageOf(cards) };
+  }
+  // An option behind the band's "+N" chip is not clickable where the band
+  // draws: the stack is opened for it, as a graveyard is (#991's review).
+  else if (zones.size === 0 && [...hiddenKeys].some(k => ui.options?.has(k))) {
+    const i = state.view.stack.findIndex((it, j) => ui.options?.has(stackChipKey(it, j)));
+    state.overlay = { zone: "stack", pid: state.view.you, page: i < 0 ? 0 : Math.floor(i / ZONE_OVERLAY_PAGE) };
+  }
+  else if (zones.size === 0 && [...hiddenHand].some(k => ui.options?.has(k))) state.overlay = { zone: "hand", pid: state.view.you, page: pageOf(hand) };
   return rows;
 }
 
@@ -632,9 +703,14 @@ function beginResolution(state: LiveState, ui: Ui, legal: LegalActions, actions:
       return beginOrder(state, ui, rp, desc, send);
     case "ChooseTarget":
     case "ChooseCardFromHand":
-    case "ChooseFromLookedAt":
     case "ChooseFromLibrary":
-      return beginPickFromActions(state, ui, actions, desc, send);
+      return beginPickFromActions(state, ui, actions, desc, send, true);
+    // The looked-at cards are a few of the library's: a copy further down
+    // was never looked at, and is lent nothing (#1004's review). The engine
+    // offers one of each card among them, and the prompt carries all of
+    // them: a second looked-at Forest is the same answer as the first.
+    case "ChooseFromLookedAt":
+      return beginPickFromActions(state, ui, actions, desc, send, false, rp.looked_at ?? []);
     case "ChooseCardName": {
       // Every nonland name in the pool, most of them cards in no zone: each
       // row names its card, which the view carries for this question, so
@@ -676,7 +752,13 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
     verbs.get(id)!.push({ label, run });
   };
   const hasPass = actions.includes("PassPriority");
-  for (const a of actions) {
+  // The engine offers one "Tap Forest" for five untapped Forests (the CLI's
+  // menu and the LLM's schema want one row per card) and lists the other
+  // four in `mana_ability_copies`, which it accepts like the offer. Each
+  // copy taps itself, so a Forest drawn apart from the offered one is not a
+  // verb-less stack, and a tapped Forest — never in the list — offers
+  // nothing (#1003).
+  for (const a of [...actions, ...(legal.mana_ability_copies || [])]) {
     if (!isObj(a)) continue;
     if ("PlayLand" in a) add(a.PlayLand.object_id, "Play land", () => send(a));
     else if ("ActivateManaAbility" in a) add(a.ActivateManaAbility.object_id, describeAction(state, a).split(": ")[1] || "Tap for mana", () => send(a));
@@ -816,10 +898,13 @@ interface PickArgs {
   onCancel?: () => void;
   onDecline?: (() => void) | null;
   declineLabel?: string;
+  /** Options that are another copy of an offered card, clickable where
+   *  they are drawn and given no row of their own (#1004). */
+  lent?: ReadonlySet<string>;
 }
 
 /** Pick one thing on the board. `options` are targets or object ids. */
-export function beginPick(state: LiveState, { title, options, onPick, onCancel, declineLabel, onDecline }: PickArgs): Ui {
+export function beginPick(state: LiveState, { title, options, onPick, onCancel, declineLabel, onDecline, lent }: PickArgs): Ui {
   const ui = newUi("pick", title);
   ui.hint = "Click a highlighted card or player.";
   withOptions(ui, options);
@@ -827,7 +912,7 @@ export function beginPick(state: LiveState, { title, options, onPick, onCancel, 
   if (onDecline) ui.buttons.push({ label: declineLabel || "Decline", run: onDecline });
   if (onCancel) ui.buttons.push({ label: "Cancel", run: onCancel });
   ui.onCancel = onCancel;
-  ui.rows = offBoardRows(state, ui, (key) => ui.onPick!(key));
+  ui.rows = offBoardRows(state, ui, (key) => ui.onPick!(key), lent);
   state.ui = ui;
   state.selected = null;
   return ui;
@@ -914,27 +999,56 @@ function beginMark(state: LiveState, ui: Ui, { title, options, min, max, onConfi
 /** Actions that are each one choice of a card or target: pick on the board. */
 /** The other copies, in your hand, of the card `id` is, if `id` is in your hand. */
 export function copiesInHand(state: LiveState, id: ObjectId): ObjectId[] {
-  const hand = state.view.your_hand || [];
-  const card = hand.find(c => c.object_id === id);
-  if (!card) return [];
-  return hand.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
+  return copiesAmong(state.view.your_hand || [], id);
 }
 
-function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title: string, send: Send): Ui {
+/** The other copies of `id`'s card in the zone the engine collapses copies
+ *  in: your hand (#739) and your library as the `d` overlay shows it,
+ *  where every search offers one copy of each card (`one_of_each_card`,
+ *  #1004). A copy elsewhere — a graveyard, the battlefield — is not the
+ *  same answer to the rules, so none is lent there. */
+export function copiesInZone(state: LiveState, id: ObjectId): ObjectId[] {
+  const hand = copiesInHand(state, id);
+  return hand.length ? hand : copiesAmong(state.view.your_library_cards || [], id);
+}
+
+function copiesAmong(cards: { object_id: ObjectId; card_id: unknown }[], id: ObjectId): ObjectId[] {
+  const card = cards.find(c => c.object_id === id);
+  if (!card) return [];
+  return cards.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
+}
+
+/** `lendLibrary`: the question's offers stand for every copy of their card
+ *  in your library, as a search's do (`one_of_each_card`). `lookedAt`: they
+ *  stand for every copy among these library cards only (#1004). */
+function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title: string, send: Send, lendLibrary = false,
+                              lookedAt: ObjectId[] | null = null): Ui {
   const options: (Target | ObjectId)[] = []; const byKey = new Map<string, Action>(); let decline: Action | null = null; const rows: Row[] = [];
+  const lent = new Set<string>();
   for (const a of actions) {
     const c = isObj(a) && "ResolveChoice" in a ? a.ResolveChoice.choice : null;
     if (!c || typeof c === "string") { rows.push({ label: describeAction(state, a), run: () => send(a) }); continue; }
     if ("ChosenTarget" in c) {
       if (c.ChosenTarget === null) { decline = a; continue; }
       const k = targetKey(c.ChosenTarget); if (k) { options.push(c.ChosenTarget); byKey.set(k, a); }
+      // A library search offers one copy of each card (#1004), as a hand
+      // choice does: any copy in the library overlay is the same answer.
+      const t = c.ChosenTarget;
+      if (typeof t === "object" && "Object" in t) {
+        for (const id of lendLibrary ? copiesAmong(state.view.your_library_cards || [], t.Object) : []) {
+          if (!byKey.has(`o${id}`)) { options.push({ Object: id }); byKey.set(`o${id}`, a); lent.add(`o${id}`); }
+        }
+      }
     } else if ("ChosenCard" in c) {
       options.push(c.ChosenCard); byKey.set(`o${c.ChosenCard}`, a);
-      // The engine offers one copy of each card in a hand (#739): a click
-      // on any other copy of it is the same answer, or four of five
-      // Scholars in the hand would not respond.
-      for (const id of copiesInHand(state, c.ChosenCard)) {
-        if (!byKey.has(`o${id}`)) { options.push(id); byKey.set(`o${id}`, a); }
+      // The engine offers one copy of each card in a hand (#739) and in a
+      // library search (#1004): a click on any other copy of it is the same
+      // answer, or four of five Scholars in the hand would not respond.
+      const copies = lookedAt
+        ? copiesAmong((state.view.your_library_cards || []).filter(x => lookedAt.includes(x.object_id)), c.ChosenCard)
+        : lendLibrary ? copiesInZone(state, c.ChosenCard) : copiesInHand(state, c.ChosenCard);
+      for (const id of copies) {
+        if (!byKey.has(`o${id}`)) { options.push(id); byKey.set(`o${id}`, a); lent.add(`o${id}`); }
       }
     } else {
       rows.push({ label: describeAction(state, a), run: () => send(a) });
@@ -942,8 +1056,15 @@ function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title
   }
   if (options.length === 0) return beginList(state, ui, actions, title, send, false);
   const declined = decline;
+  // An offer the engine named later can also be a copy lent earlier: it
+  // is an answer of its own, with its own row.
+  for (const a of actions) {
+    const c = isObj(a) && "ResolveChoice" in a ? a.ResolveChoice.choice : null;
+    if (c && typeof c === "object" && "ChosenCard" in c) lent.delete(`o${c.ChosenCard}`);
+    if (c && typeof c === "object" && "ChosenTarget" in c && c.ChosenTarget && typeof c.ChosenTarget === "object" && "Object" in c.ChosenTarget) lent.delete(`o${c.ChosenTarget.Object}`);
+  }
   const pick = beginPick(state, { title, options, onPick: (key) => send(byKey.get(key)!),
-    onDecline: declined ? () => send(declined) : null });
+    onDecline: declined ? () => send(declined) : null, lent });
   pick.rows!.push(...rows);
   return pick;
 }
@@ -1157,7 +1278,10 @@ export function describeXPlan(opts: FundingOptions, x: number): string | null {
     taps.push(count > 1 ? `${count}x ${g.name}` : g.name);
   }
   if (taps.length > 0) parts.push(`tap ${taps.join(", ")}`);
-  return parts.length === 0 ? `X = ${x}: nothing for X` : `X = ${x}: for X, ${parts.join(", ")}`;
+  // What a cost reduction pays of X, said as the engine says it (#979).
+  const reducedBy = Math.min(x, opts.x_discount || 0);
+  const reduced = reducedBy > 0 ? ` (the cost reduction pays ${reducedBy})` : "";
+  return parts.length === 0 ? `X = ${x}: nothing for X${reduced}` : `X = ${x}: for X, ${parts.join(", ")}${reduced}`;
 }
 
 /** The payable set as one line, runs collapsed, capped, both ends kept —
@@ -1195,7 +1319,13 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
   ui.value = "";
   const summary: string[] = [];
   ui.summary = summary;
-  const pool = Object.entries(opts.pool || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n} ${k}`).join(", ");
+  // Why the sources sum to less than the largest X: the engine's
+  // `funding::describe_x_discount` (#979).
+  if ((opts.x_discount || 0) > 0) summary.push(`A cost reduction pays the first ${opts.x_discount} of X`);
+  // In letters, as the strip writes it: "Pool: 2 White, 2 Blue, …" was
+  // cut in the 152px side panel with nothing counting what went (#995's
+  // review).
+  const pool = Object.entries(opts.pool || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`).join(" ");
   if (pool) summary.push(`Pool: ${pool}`);
   for (const g of opts.groups || []) summary.push(`${g.name} x${g.source_ids.length} (${g.mana_per_tap}/tap)`);
   // Which values of X the sources can actually pay. The page used to state
@@ -1297,8 +1427,12 @@ export function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayloa
     if (typed === "") { choose(min); return; }
     const a = /^\+?[0-9]+$/.test(typed) ? Number(typed) : NaN;
     if (!Number.isInteger(a)) { refuse(`'${clipToken(typed)}' is not a number — enter an amount from ${min} to ${max}.`); return; }
-    if (a < min) { refuse(`${a} is less than lethal — at least ${min} must go to this blocker (CR 510.1c).`); return; }
-    if (a > max) { refuse(`${a} is more than is left — at most ${max}.`); return; }
+    // Named as typed when the number read is not what was typed: 21 or
+    // more digits read as "1e+21", a number the player never typed, and
+    // `+3` or `03` as 3 (#1017; the terminal quotes the token too).
+    const said = String(a) === typed ? `${a}` : `'${clipToken(typed)}'`;
+    if (a < min) { refuse(`${said} is less than lethal — at least ${min} must go to this blocker (CR 510.1c).`); return; }
+    if (a > max) { refuse(`${said} is more than is left — at most ${max}.`); return; }
     choose(a);
   };
   ui.buttons.push({ label: "Confirm", primary: true, run: ui.submit });

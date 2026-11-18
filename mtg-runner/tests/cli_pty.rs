@@ -446,6 +446,35 @@ fn a_bracketed_paste_never_submits_a_decision() {
     assert_clean_exit(&mut g);
 }
 
+/// Issue #1051: `rr` is the hot-reload chord, and its second key matched
+/// any modifiers. `r` then Ctrl-R (a readline reverse-search reflex) or
+/// Alt-r abandoned the game at once and ran `cargo build` wherever the game
+/// was started. Both are unbound chords, and are separators like any other.
+#[test]
+fn r_then_a_ctrl_or_alt_r_is_no_hot_reload() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    // One write each, so the second key lands inside the chord's window.
+    g.send("r\x12"); // r, Ctrl-R
+    g.expect_absent("Hot reload", Duration::from_secs(1));
+    g.send("\x15r\x1br"); // Ctrl-U; r, Alt-r
+    g.expect_absent("Hot reload", Duration::from_secs(1));
+
+    g.send("\x15"); // Ctrl-U
+    g.answer("0\r");
+    g.expect("keeps (0 mulligans)", T);
+
+    // The chord's answer typed out as a word is junk, not a way to abandon
+    // the game.
+    g.expect("Pass priority", T);
+    g.answer("__hot_reload__\r");
+    g.expect("Invalid input", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
 /// The concede confirmation declines safely: 'n' followed by Enter returns
 /// to the same priority window without the trailing Enter passing priority
 /// (#127), and junk keys re-prompt without ending the game (#42/#125).
@@ -1424,4 +1453,49 @@ fn a_resize_in_the_deck_browser_repaints_it() {
 
     g.send("\x03");
     assert_clean_exit(&mut g);
+}
+
+/// Issue #1053: a failed hot reload hands the person its snapshot ("Resume
+/// manually with ..."), and the next `mtg-runner` of any kind deleted it as
+/// a dead run's leftover, since its pid was gone. The kept file survives the
+/// next run's sweep, and the command printed resumes it.
+#[test]
+fn a_failed_hot_reload_keeps_the_save_it_names() {
+    let dir = stub_dir("1053");
+    // A `cargo` that fails, so the rebuild fails wherever the test runs.
+    let cargo = dir.join("cargo");
+    std::fs::write(&cargo, "#!/bin/sh\nexit 101\n").unwrap();
+    std::fs::set_permissions(&cargo, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", dir.display(), std::env::var("PATH").unwrap_or_default());
+    let env = [("PATH", std::ffi::OsStr::new(&path)), ("TMPDIR", dir.as_os_str())];
+    let mut g = PtyGame::spawn_with_env(150, 40, &[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ], &env);
+    g.expect("Keep opening hand", T);
+    g.send("rr");
+    g.expect("Resume manually with: ", T);
+    let status = g.wait_exit(T);
+    assert_eq!(status.code(), Some(0), "{status:?}");
+    let line = g.seen.split("Resume manually with: ").nth(1).unwrap();
+    let line = line.split(['\r', '\n']).next().unwrap().trim().to_string();
+    let kept = line.rsplit(' ').next().unwrap().to_string();
+    assert!(std::path::Path::new(&kept).exists(), "the save named is there: {kept}");
+
+    // Another run, of any kind, sweeps the dead runs' snapshots...
+    let out = Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("TMPDIR", &dir)
+        .args(["--p1", "random", "--p2", "random", "--seed", "1", "--stop-after", "1", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    // ...and leaves the one a person was told to resume.
+    assert!(std::path::Path::new(&kept).exists(), "the next run deleted the save it named: {kept}");
+    assert!(line.contains("--resume") && line.contains("--p1 cli"), "the command keeps the seats: {line}");
+    assert!(!line.contains("--deck1") && !line.contains("--on-the-play"),
+        "and drops the flags the save wins over, each of which would print a note: {line}");
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

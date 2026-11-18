@@ -15,6 +15,7 @@ This is the distinction to get right before typing anything else.
 | Seat spec | Backend | Needs first | Billed to |
 | --- | --- | --- | --- |
 | `cli` | you, at the keyboard | an interactive terminal | nothing |
+| `gui[:port]` | you, in a browser page the runner serves | a browser | nothing |
 | `random` | uniform random legal action | nothing | nothing |
 | `claude[:model]` (aliases `ai`, `llm`) | Anthropic Messages API | `ANTHROPIC_API_KEY` | **a metered API bill, per token** |
 | `gemini[:model]` | Gemini Interactions API | `GEMINI_API_KEY` | **a metered API bill, per token** |
@@ -363,8 +364,10 @@ header rows are the ones starting with a timestamp digit.
   JSON (`DEBUG`), and the option that was taken. Every backend records a
   `THOUGHT`: the Messages API reads it from the extended-thinking block,
   while Gemini and the `claude -p` seat — whose result object carries no
-  thinking block — ask for it in the JSON as a `thoughts` field and take it
-  out of the payload once captured.
+  thinking block — ask for it in the JSON as a `thoughts` field. The
+  `claude -p` seat takes it out of the payload once captured; the game's
+  Gemini seat leaves it in, so its `RESPONSE` and a `REASK` quote it too
+  (the night record takes it out again, #1024).
 - `FORMAT` — the lines a text-answering `claude -p` seat puts under the
   prompt ("Answer with only this JSON object: ..." and its fields), which
   the `PROMPT` record does not hold; one per call, so a retried call
@@ -427,8 +430,8 @@ resume needs `--save`. (A hot-reload snapshot is always written to a
 per-process file in the temp directory for the CLI's own reload key; it is not
 a substitute for `--save`.)
 
-On `--resume`, the save's decks, RNG and seats win over the flags: `--deck1`
-and `--deck2` are ignored and the runner says so. `--seed` does not change the
+On `--resume`, the save's decks, RNG and seats win over the flags: `--deck1`,
+`--deck2` and `--on-the-play` are ignored and the runner says so. `--seed` does not change the
 saved game: a random seat continues from where the save says its draws had
 got to, so a resume plays on the game it was saved from (#844); `--seed`
 seeds only a random seat a save written before that holds no position for. The seats are stored in the save, so a
@@ -449,6 +452,10 @@ last also moves every priority menu's engine actions down a row), and a
 resume under others says on
 stderr that its system prompt is not the live one; `replay.py` keeps that
 in the row as `unlike_live` and counts it in a WARN at the end of the run.
+A position the runner stopped on (a save it refused, a panic, an invariant
+break) has `exit` non-zero and the runner's reason in `error`, is said in a
+WARN as it happens and counted at the end, and `compare.py` counts the
+positions of a config with no answer (#1009).
 
 `--stop-after <N>` ends the run after the Nth decision either seat makes and
 prints `DECISION <n> p<seat> <action as JSON>`. With `--resume` it replays one
@@ -608,7 +615,9 @@ reference and rarities), and is asked again under that guide;
 A position whose system prompt the replay cannot make as it was live (kept
 before guides were recorded, or replayed under another history, answer
 format or set file) is said on stderr, and `draft-replay.py` keeps it in the row as
-`unlike_live` and counts it in a WARN at the end of the run (#920). The positions and reference
+`unlike_live` and counts it in a WARN at the end of the run (#920). A pick the
+replay stopped on has the binary's own "mtg-draft-replay: " line in `error`
+(#1009). The positions and reference
 behind phase 4 are kept in `reports/decision-eval/2026-10-20-draft/`.
 
 To draft *with* people — a hosted table where humans join from a browser

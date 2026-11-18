@@ -8,6 +8,10 @@
 //!   read a deliberate stop as a dropped network and retried for ever.
 //! - #825: a kick was never written to the log, and the forfeits it
 //!   caused said "the seat is away".
+//! - #1045: `q` or `exit` at the host's terminal, the terminal client's
+//!   "leave", closed the table for everybody with no question asked.
+//! - #1033: a game page whose match was over was not told the table had
+//!   closed, and retried its socket for ever.
 #![cfg(unix)]
 
 mod lobby_support;
@@ -91,6 +95,56 @@ fn a_closed_game_page_is_said_on_both_sides_and_quit_closes_every_page() {
 }
 
 #[test]
+fn a_finished_matchs_game_pages_are_closed_with_the_table() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut server = Server::start("stop-finished", "human,human", &["--pick-seconds", "1", "--build-seconds", "2"]);
+    let mut c0 = server.client(0);
+    let mut c1 = server.client(1);
+    let url = |v: &Value| v["matches"].as_array()
+        .and_then(|m| m.iter().find(|m| m["status"] == "playing"))
+        .and_then(|m| m["url"].as_str()).map(str::to_string);
+    let v0 = c0.view_until("seat 0's match is on", Duration::from_secs(240), |v| url(v).is_some());
+    let v1 = c1.view_until("seat 1's match is on", Duration::from_secs(30), |v| url(v).is_some());
+    let mut g0 = game_page(&server.link(&url(&v0).unwrap()));
+    let mut g1 = game_page(&server.link(&url(&v1).unwrap()));
+    message_until(&mut g1, "table", Duration::from_secs(10), |m| m["match_line"].is_string());
+    // The kick forfeits the match; both pages stay open on its end.
+    server.type_line("kick 0");
+    server.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
+    c1.view_until("the table is done", Duration::from_secs(30), |v| v["phase"] == "done");
+    let pid = server.child.id().to_string();
+    let killed = std::process::Command::new("kill").args(["-INT", &pid]).status().expect("kill runs");
+    assert!(killed.success());
+    let why = "the server was stopped by Ctrl-C (SIGINT)";
+    message_until(&mut g1, "closed", Duration::from_secs(10), |m| m["reason"] == why);
+    message_until(&mut g0, "closed", Duration::from_secs(10), |m| m["reason"] == why);
+    server.child.wait().expect("the server exits");
+}
+
+#[test]
+fn q_at_the_hosts_terminal_does_not_close_a_running_table() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut server = Server::start("stop-q", "human,ai", &["--pick-seconds", "30"]);
+    let mut c0 = server.client(0);
+    c0.view_until("the draft has begun", Duration::from_secs(30), |v| v["phase"] == "drafting");
+    server.type_line("q");
+    server.wait_for_stderr("'q' does not close the table here: `quit` closes it for everybody", Duration::from_secs(5));
+    server.type_line("exit");
+    server.wait_for_stderr("'exit' does not close the table here", Duration::from_secs(5));
+    assert!(server.child.try_wait().expect("the server's status").is_none(), "the table is still up");
+    server.type_line("quit");
+    let closed = message_until(&mut c0, "closed", Duration::from_secs(10), |_| true);
+    assert_eq!(closed["reason"], "the host quit");
+    server.child.wait().expect("the server exits");
+}
+
+#[test]
 fn a_ctrl_c_ends_the_table_the_way_quit_does() {
     if !lobby_support::python3_available() {
         eprintln!("skipping: no python3 to run the stub seat with");
@@ -126,7 +180,7 @@ fn a_kick_is_on_the_record_and_its_forfeits_say_so() {
     server.type_line("kick 0");
     let log = server.wait_for_log("FINAL STANDINGS", Duration::from_secs(240));
     assert!(log.contains("[Seat 0] KICKED by the host while the table was drafting"), "{log}");
-    assert!(log.contains("forfeit: the host kicked the seat") && !log.contains("the seat is away"),
+    assert!(log.contains("forfeit: the host kicked seat 0") && !log.contains("the seat is away"),
         "the forfeits give the kick as the reason:\n{log}");
     let v = c0.view_until("the table is done", Duration::from_secs(30), |v| v["phase"] == "done");
     assert_eq!(presence_of(&v, 0), "kicked", "{}", v["seats"]);
@@ -172,6 +226,10 @@ fn a_stopped_table_carries_on_from_its_snapshot() {
     second.type_line("kick 0");
     let log = second.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
     assert!(log.contains("NOTE the table carries on from the snapshot"), "{log}");
+    // Stopped while drafting: no match had started, and the note says none
+    // is played again (#999).
+    let note = log.lines().find(|l| l.contains("NOTE the table carries on from the snapshot")).unwrap();
+    assert!(!note.contains("match that was") && !note.contains("first game"), "{note}");
     assert_eq!(log.matches("DRAFT POOLS").count() + log.matches("BOOSTER PACKS").count(), 0,
         "the replay wrote nothing the first log already had:\n{log}");
     let _ = std::fs::remove_file(&kept);

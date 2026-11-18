@@ -53,6 +53,11 @@ fn an_unknown_player_type_is_refused_not_substituted() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("unknown player type 'wizard'"),
         "the message names the bad value.\nstderr: {stderr}");
+    // Every seat `--help` names is in the list it is refused against: `gui`
+    // was missing, so `--p1 gu` read as there being no page seat (#1050).
+    for seat in ["cli", "gui[:port]", "random", "claude[:model]", "gemini[:model]", "claude-code[:model]"] {
+        assert!(stderr.contains(seat), "the refusal lists {seat}.\nstderr: {stderr}");
+    }
 }
 
 // ── issue #69: unwritable --log / --save paths ──────────────────────
@@ -361,6 +366,24 @@ fn resume_ignores_a_bad_deck_path_it_just_called_ignored() {
         "and still says the flag is ignored.\nstderr: {stderr}");
     assert!(!stderr.contains("could not be read as a deck file"),
         "an ignored flag is not loaded, so it cannot fail.\nstderr: {stderr}");
+}
+
+/// `--on-the-play` only shapes a new game: who took the first turn is in the
+/// save. It was dropped in silence where `--deck1`/`--deck2` get a note
+/// (#1049).
+#[test]
+fn resume_says_on_the_play_is_ignored() {
+    let save = a_save_file("otp");
+    let output = runner_at_root()
+        .args(["--p1", "random", "--p2", "random",
+               "--resume", &save.to_string_lossy(),
+               "--on-the-play", "2", "--stop-after", "1", "--quiet"])
+        .output()
+        .expect("failed to run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let _ = std::fs::remove_file(&save);
+    assert!(stderr.contains("note: --on-the-play is ignored with --resume"),
+        "the flag the resume drops is named.\nstderr: {stderr}");
 }
 
 /// The `--seed` note under `--resume` says what actually happens. It used to

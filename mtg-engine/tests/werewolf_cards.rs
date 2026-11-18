@@ -130,7 +130,7 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
     // Through the engine's own transform, so the object ends up in the state a
     // real flip leaves it in rather than one the test invented — setting
     // `is_transformed` and `name` by hand walks straight past everything
-    // `apply_transform` decides, including its CR 111.7 refusal for tokens.
+    // `apply_transform` decides, including its CR 701.28c refusal for a single-faced clone.
     mtg_engine::cards::helpers::apply_transform(&mut state, waif, &reg);
     assert_eq!(state.get_object(waif).unwrap().name, "Merciless Predator", "test setup");
 
@@ -1362,10 +1362,11 @@ fn colors_read_in_wubrg_order() {
 /// last turn", and nothing else belongs in the gate.
 ///
 /// `werewolf_should_trigger` also refused a token, on the grounds that a token
-/// copy cannot transform. That is true (CR 111.7, CR 701.28c) and it is a fact
-/// about *resolution*, which `apply_transform` enforces where it belongs — so
-/// the refusal here only cost the trigger its stack entry and the opponent the
-/// priority window CR 603.3b gives them.
+/// copy cannot transform. Whether a permanent can transform is a fact about
+/// *resolution*, which `apply_transform` answers where it belongs — so the
+/// refusal here only cost the trigger its stack entry and the opponent the
+/// priority window CR 603.3b gives them. (And a token copy can: CR 707.8a,
+/// #1060.)
 ///
 /// The inconsistency that gives it away is below: Evil Twin copying a werewolf
 /// is a non-token that equally cannot transform, and it triggers correctly.
@@ -1397,13 +1398,13 @@ fn a_token_copy_of_a_werewolf_still_triggers_at_upkeep() {
     assert!(announced.iter().any(|m| m.contains(&format!("(#{})", token.0))),
         "including the token's; the log announced {announced:#?}");
 
-    // And the resolution half is unchanged: the card flips back, the token
-    // cannot transform and stays as it is.
+    // And both resolve the same way: the card flips back, and so does the
+    // token, a transforming token with both faces (CR 707.8a, #1060).
     assert!(!state.get_object(shepherd).unwrap().is_transformed,
         "the double-faced card transforms back");
-    assert!(state.get_object(token).unwrap().is_transformed,
-        "a token copy cannot transform (CR 111.7) — its ability did nothing, \
-         which is not the same as never triggering");
+    assert!(!state.get_object(token).unwrap().is_transformed,
+        "the token copy transforms back too (CR 707.8a)");
+    assert_eq!(state.name_of(token, &reg), "Gatstaf Shepherd");
 }
 
 /// The other half of the inconsistency, pinned so the gate cannot grow back

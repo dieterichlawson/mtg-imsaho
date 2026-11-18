@@ -328,6 +328,12 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     fixtures.insert("done", v);
     let events = lobby.take_events();
     assert!(events.iter().any(|e| e.contains("the tournament is over")), "{events:?}");
+    // Nothing is left to forfeit: a kick now is refused, and neither
+    // announced nor logged (#1042).
+    let late = lobby.kick(0).unwrap_err();
+    assert!(late.contains("the tournament is over"), "{late}");
+    assert!(lobby.take_events().is_empty());
+    assert!(!lobby.is_auto(0));
 
     // The fixture: one view per phase, plus a refusal, for the page's test.
     let mut doc = serde_json::Map::new();
@@ -458,6 +464,9 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
             None => {
                 assert!(notice.contains("The table built your deck"), "{notice}");
                 assert_eq!(notice.contains("the deck you sent could not be played"), sent.is_some(), "{notice}");
+                // A deck sent and not playable is a WARN, kept under --quiet (#1041's review).
+                let events = lobby.take_events().join("\n");
+                assert_eq!(events.contains("WARN seat 0: the table built its deck"), sent.is_some(), "{events}");
             }
         }
     }
@@ -582,7 +591,7 @@ fn odd_table_round_one() -> (Lobby, usize, usize, usize) {
 fn the_hosts_lines_name_a_seat_as_the_page_does() {
     let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
     lobby.connected(0);
-    lobby.set_name(0, "Lea");
+    lobby.set_name(0, "Lea").unwrap();
     lobby.start();
     draft_to_the_end(&mut lobby, None);
     let registry = CardRegistry::with_all_cards();
@@ -614,23 +623,39 @@ fn the_hosts_lines_name_a_seat_as_the_page_does() {
 fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
     lobby.connected(0);
-    lobby.set_name(0, "Cli");
+    lobby.set_name(0, "Cli").unwrap();
     lobby.start();
     let events = lobby.take_events().join("\n");
     assert!(events.contains("seat 0 is now called Cli"), "{events}");
-    lobby.disconnected(0);
+    lobby.disconnected(0, false);
+    // Said when it goes, not only when it is back (#1039).
+    assert_eq!(lobby.take_events().join("\n"), "Cli (seat 0) is away: no draft page or client is open for the seat");
     lobby.connected(0);
-    lobby.set_name(0, "Cli");
+    lobby.set_name(0, "Cli").unwrap();
     let events = lobby.take_events().join("\n");
     assert_eq!(events, "Cli (seat 0) is back");
+    // The table's own stop takes every page: nobody went away.
+    lobby.disconnected(0, true);
+    assert!(lobby.take_events().is_empty());
+    lobby.connected(0);
+    lobby.take_events();
+    // In a match the seat is where its game page is: its draft page
+    // closing is not "away" (#1039's review).
+    let _ = lobby.set_game_pages(0, Some(1));
+    lobby.disconnected(0, false);
+    assert!(!lobby.take_events().join("\n").contains("is away"));
+    // Nor, then, back: a "back" with no "away" before it was the asymmetry.
+    lobby.connected(0);
+    assert!(!lobby.take_events().join("\n").contains("is back"));
+    let _ = lobby.set_game_pages(0, None);
     // A second tab while the first is open is not a return.
     lobby.connected(0);
     assert!(lobby.take_events().is_empty());
     // Nor is a kicked seat's page connecting again: the table still plays
     // for it.
     lobby.kick(0).unwrap();
-    lobby.disconnected(0);
-    lobby.disconnected(0);
+    lobby.disconnected(0, false);
+    lobby.disconnected(0, false);
     lobby.take_events();
     lobby.connected(0);
     let events = lobby.take_events().join("\n");
@@ -716,7 +741,7 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     l.connected(0);
     l.connected(1);
     assert_eq!(presence(&l, 0), "here");
-    l.disconnected(0);
+    l.disconnected(0, false);
     assert_eq!(presence(&l, 0), "away");
 
     // In a match: the game page decides, whatever the draft page does.
@@ -729,7 +754,7 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert!(l.set_game_pages(0, Some(1)));
     assert_eq!(l.take_events(), vec!["seat 0's game page is open".to_string()]);
     assert_eq!(presence(&l, 0), "in game");
-    l.disconnected(0);
+    l.disconnected(0, false);
     assert_eq!(presence(&l, 0), "in game", "playing with the draft page closed is not away");
     l.take_events();
     assert!(l.set_game_pages(0, Some(0)));
@@ -752,13 +777,23 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     // gives for everything it does for the seat.
     l.kick(1).unwrap();
     assert_eq!(presence(&l, 1), "kicked", "with its draft page still open");
-    assert_eq!(l.away_reason(1), "the host kicked the seat");
+    // Naming the seat, as the match the kick ended says it (#1036).
+    let kicked = format!("the host kicked {}", l.who(1));
+    // Once is the kick: a second is refused, not announced again (#1042).
+    let again = l.kick(1).unwrap_err();
+    assert!(again.contains("already kicked"), "{again}");
+    // A client sends its name on every connect: a kicked seat keeps the
+    // name its kick gave, or one kick reads two ways again.
+    let renamed = l.set_name(1, "Bo").unwrap_err();
+    assert!(renamed.contains("keeps that name"), "a kicked seat's rename is answered: {renamed}");
+    assert_eq!(l.away_reason(1), kicked);
+    assert_eq!(l.away_reason(1), kicked);
     assert_eq!(l.away_reason(0), "the seat is away");
     l.seat_gave_up(2, "no answer");
     assert_eq!(presence(&l, 2), "not answering");
     assert_eq!(l.away_reason(2), "the seat stopped answering");
     let forfeit = l.forfeit_result(1, 0);
-    assert_eq!(forfeit.games[0].game_log, vec!["forfeit: the host kicked the seat".to_string()]);
+    assert_eq!(forfeit.games[0].game_log, vec![format!("forfeit: {kicked}")]);
 }
 
 /// #924: a snapshot is refused by a lobby dealt other packs, even where
@@ -823,7 +858,7 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     let (mut a, _) = lobby(seats());
     a.connected(0);
     a.connected(1);
-    a.set_name(0, "Ann");
+    a.set_name(0, "Ann").unwrap();
     draft_to_the_end(&mut a, Some(20));
     a.set_ai_notes(2, Some("taking blue".into()));
     let (mut b, _) = lobby(seats());
@@ -834,6 +869,7 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     assert_eq!(b.ai_notes(2).as_deref(), Some("taking blue"));
     assert_eq!(b.phase(), Phase::Drafting);
     assert!(b.take_events().is_empty(), "the replay says nothing on the terminal");
+    assert!((0..POD).all(|seat| jv(&b, seat)["notice"].is_null()), "mid-draft, no match is played again");
 
     // Both carry on alike: to the end of the draft, the decks, round 1 and
     // half of round 2.
@@ -880,6 +916,19 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     let to_play = c.restore(&through_json(a.snapshot())).unwrap();
     assert_eq!(c.phase(), Phase::Playing);
     assert_eq!(to_play, vec![(2, 1, 2)], "the match that was in progress");
+    // #1029: the person whose match is played again is told so on their
+    // page and client, not only the host; the one whose match is over is
+    // told nothing.
+    let told = jv(&c, 1)["notice"].as_str().unwrap_or_default().to_string();
+    assert!(told.contains("starts from its first game") && told.contains("does not count") && told.contains("seat 2"), "{told:?}");
+    assert!(jv(&c, 0)["notice"].is_null(), "seat 0's match is finished: {}", jv(&c, 0)["notice"]);
+    // A match with a kicked seat in it is a forfeit, not a game to play:
+    // neither side is told it starts over (#1029's review).
+    let mut kicked = through_json(a.snapshot());
+    kicked.seats[1].kicked = true;
+    let (mut e, _) = lobby(seats());
+    e.restore(&kicked).unwrap();
+    assert!(jv(&e, 1)["notice"].as_str().is_none_or(|n| !n.contains("first game")), "{}", jv(&e, 1)["notice"]);
     assert_eq!(c.begin_tournament(), vec![(2, 1, 2)], "and what the tournament thread is handed");
     for seat in 0..POD {
         let (va, vc) = (jv(&a, seat), jv(&c, seat));

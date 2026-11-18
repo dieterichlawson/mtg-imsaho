@@ -440,6 +440,13 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                 let Some(items) = value.as_array() else {
                     return Some(format!("`{path}` is {value}, not a list"));
                 };
+                // "Exactly" where the list takes one length — the mulligan's
+                // bottom, a fixed set of targets — as the CLI's set screen
+                // says it (#1016's review): "at most 1" read as "0 will do".
+                let exact = count("minItems").filter(|min| count("maxItems") == Some(*min));
+                if let Some(n) = exact.filter(|n| items.len() != *n) {
+                    return Some(format!("`{path}` has {} entries; it takes exactly {n}", items.len()));
+                }
                 if let Some(min) = count("minItems").filter(|min| items.len() < *min) {
                     return Some(format!("`{path}` has {} entries; it needs at least {min}", items.len()));
                 }
@@ -1611,8 +1618,12 @@ match is yours, lose it and it is theirs.\n");
                     }
                     s.push('\n');
                 } else {
+                    // Neither result ends the match, so the next game is
+                    // played; the rest may not be. "2 more games follow it"
+                    // in game 1 of a best-of-3 promised a game 3 that a 2-0
+                    // never plays (#1022).
                     let more = if left == 1 { "1 more game follows it" }
-                        else { &format!("{left} more games follow it") };
+                        else { &format!("at least 1 more game follows it, and at most {left}") };
                     writeln!(s, "Neither of you can win the match with this game; {more}.").unwrap();
                 }
                 if !(already_won || already_lost) {
@@ -7818,6 +7829,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -7945,6 +7957,7 @@ pub(crate) mod tests {
                 options: options.clone(), first_strike_only: false,
             }),
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let (mut player, prompts) = scripted_player(vec![serde_json::json!({"amount": 4})]);
@@ -8025,6 +8038,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -8082,6 +8096,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 2".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
         let (_, rows) = LlmPlayer::build_action_rows(&view, &legal);
         let text: Vec<String> = rows.iter().map(|r| match r {
@@ -8189,6 +8204,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -8286,6 +8302,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let view = empty_view();
@@ -8386,6 +8403,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let view = empty_view();
@@ -8458,6 +8476,7 @@ pub(crate) mod tests {
             context: Some("MAIN PHASE 1".to_string()),
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
 
         let view = empty_view();
@@ -8844,6 +8863,7 @@ pub(crate) mod tests {
                 is_ability: false,
             }),
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 

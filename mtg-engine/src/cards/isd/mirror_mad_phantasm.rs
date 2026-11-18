@@ -105,6 +105,11 @@ impl CardBehavior for MirrorMadPhantasm {
             }
         }
 
+        // Named, as every mill is (#1001): the graveyard is public.
+        let names: Vec<String> = milled.iter()
+            .map(|&id| state.get_object(id).map(|o| o.name.clone()).unwrap_or_default())
+            .collect();
+        let named = if names.is_empty() { String::new() } else { format!(": {}", crate::engine::card_list(&names)) };
         for card_id in &milled {
             state.move_object(*card_id, Zone::Graveyard, registry);
         }
@@ -115,10 +120,10 @@ impl CardBehavior for MirrorMadPhantasm {
                 obj.controller = owner;
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Mirror-Mad Phantasm: found after milling {} cards, enters the battlefield", milled.len()));
+                format!("Mirror-Mad Phantasm: found after milling {} cards, enters the battlefield{named}", milled.len()));
         } else {
             state.log(crate::state::LogLevel::Event,
-                format!("Mirror-Mad Phantasm: milled {} cards, not found (entire library milled!)", milled.len()));
+                format!("Mirror-Mad Phantasm: milled {} cards, not found (entire library milled!){named}", milled.len()));
         }
     }
 }

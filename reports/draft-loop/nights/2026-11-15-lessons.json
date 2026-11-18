@@ -1,0 +1,371 @@
+{
+ "night": "2026-11-15",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "Into the Maw of Hell (pick 3) and Furor of the Bitten (pick 7) were never played, so I wasted two early picks hedging into red; commit to a pair by mid pack 1.",
+    "My WB ran BB cards Morkrut Banshee and Abattoir Ghoul on 10 Plains and 7 Swamps and went 2-4 in games; give double pips 8+ sources or cut them.",
+    "Tonight contradicted the guide's 3-0 WB anecdote: my WB with Ghoulraiser and Abattoir Ghoul went 1-2, losing 0-2 to BG and WB in 17 to 40 turns, so treat WB as unproven."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12120,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4695,
+    "output_tokens_details": {
+     "thinking_tokens": 4458
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12120
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4695,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12120,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12120,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "3-0-0",
+   "lessons": [
+    "Commit to green early and prioritise Kindercatch and Moldgraf Monstrosity; a green-based deck with black for Dead Weight, Curse of Death's Hold and Walking Corpse went 3-0 in matches.",
+    "Stitched Drake, Battleground Geist and Moon Heron were early pack 2 picks that never made the deck; decide on green sooner.",
+    "Keep the curve low: two Ambush Vipers, two Lumberknots and Dead Weight filled my early turns, so take efficient 2-drops and cheap removal over expensive blue fliers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3278,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2613,
+    "output_tokens_details": {
+     "thinking_tokens": 2411
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3278
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2613,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3278,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3278,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "The guide's fliers-win advice misled me: I took Stitched Drake, then cut blue, leaving WB with only Chapel Geist, Voiceless Spirit and Vampire Interloper as evasion, and lost 0-2 to WR's humans in 14-15 turns.",
+    "My only real finisher was Bloodline Keeper, and I lost 0-2 to UB's Dead Weight and Grasp of Phantoms deck in 16-21 turn games, so take a second threat or flier over a fourth removal spell."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4977,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2759,
+    "output_tokens_details": {
+     "thinking_tokens": 2575
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4977
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2759,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4977,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4977,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "My 10 Island/7 Swamp split risked stranding black removal like Dead Weight, Night Terrors and Victim of Night; build 9/8 or cut speculative blue picks for black removal.",
+    "Both losses came to fast green and red boards, and Fortress Crab was cut for Snapcaster Mage and Dissipate; take cheap blockers over counterspells in UB.",
+    "Murder of Crows and Falkenrath Noble carried the 2-0 win over WB in 16 and 21 turns, so take evasive finishers early for grindy matchups."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3302,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2050,
+    "output_tokens_details": {
+     "thinking_tokens": 1854
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3302
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2050,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3302,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3302,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Two fliers, Voiceless Spirit and Spectral Rider, were not enough in WR's 27-turn loss to UG, so take a third flier over Thraben Purebloods or Unruly Mob.",
+    "Tonight contradicted the guide's 'UG is weak' line: the UG deck with Claustrophobia, Moon Heron and two Orchard Spirits took a 2-1 match from my WR in 20-, 27- and 22-turn games.",
+    "My 2-0 wins over BR and WB ended in 14 and 15 turns with cheap creatures like Thraben Sentry and Avacynian Priest, so keep the early curve."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12085,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2956,
+    "output_tokens_details": {
+     "thinking_tokens": 2732
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12085
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2956,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12085,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12085,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "0-3-0",
+   "lessons": [
+    "My 17-land red-black deck of ground creatures like Walking Corpse and Manor Skeleton stalled into 20- and 31-turn games, so prioritize evasive threats and card advantage over a fourth burn spell.",
+    "Seat 7 drafted the same red-black colours and also took Geistflame, Brimstone Volley, Feral Ridgewolf and Stromkirk Patrol, so contest cheap red removal early rather than assuming the lane stays open.",
+    "My pack 3 first pick, Heartless Summoning, was cut at deck-building, so take playables in your two colours over speculative picks once you have settled into a pair."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3341,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2271,
+    "output_tokens_details": {
+     "thinking_tokens": 2050
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3341
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2271,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3341,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3341,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UG",
+   "record": "2-1-0",
+   "lessons": [
+    "Armored Skaab, Skaab Goliath, Boneyard Wurm and three Forbidden Alchemy need Spider Spawning, which I never took, so the self-mill plan lacked its payoff. Take the payoff before the enablers.",
+    "Victim of Night and Dead Weight were early pack 3 picks that I never played in UG, and that deck lost 0-2 to BG with few removal spells. Commit to a removal colour sooner."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4939,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3204,
+    "output_tokens_details": {
+     "thinking_tokens": 3046
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4939
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3204,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4939,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4939,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Play Sensory Deprivation, which I took at pack two pick four and benched: my BR deck had only three removal spells, and I took two Ancient Grudges that never made it.",
+    "Plan for long, grindy games against UG: my 0-2 loss ran 25 and 22 turns, and my only flying answer, Geistcatcher's Rig, had to face Moon Heron and two Orchard Spirits."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3281,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3947,
+    "output_tokens_details": {
+     "thinking_tokens": 3803
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3281
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3947,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3281,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3281,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

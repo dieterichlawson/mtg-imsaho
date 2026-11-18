@@ -106,9 +106,11 @@ Options:
                          final position. It holds both hands and both library
                          orders, so it is written readable by its owner only
   --resume <path>        Resume from a save file. The saved decks and seats
-                         win over the flags; an explicit --p1/--p2 overrides
-                         the saved seat and says so, and a metered API seat
-                         the file asks for needs that flag to confirm it.
+                         win over the flags, as does who is on the play
+                         (--on-the-play is ignored); an explicit --p1/--p2
+                         overrides the saved seat and says so, and a metered
+                         API seat the file asks for needs that flag to
+                         confirm it.
                          --seed does not change the saved game: a random
                          seat continues the draws the save recorded, and
                          --seed seeds only a seat a save from before that
@@ -351,6 +353,71 @@ fn sweep_stale_hot_reload_saves() {
     }
 }
 
+/// Move a hot-reload snapshot whose rebuild failed out of the sweep's reach,
+/// returning where it now is.
+///
+/// A failed rebuild hands the snapshot to the person as their way back into
+/// the game ("Resume manually with ..."), and then this process exits, so by
+/// the sweep's rule — a `mtg-hot-reload-<pid>.json` whose pid is gone — the
+/// next `mtg-runner` of any kind deleted it (#1053). Renamed, it is the
+/// person's file, kept until they remove it. If the rename fails the
+/// snapshot stays where it is, and that path is the one to name.
+fn keep_failed_reload_save(path: &str) -> String {
+    let kept = std::env::temp_dir()
+        .join(format!("mtg-failed-reload-{}.json", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
+    match fs::rename(path, &kept) {
+        Ok(()) => kept,
+        Err(e) => {
+            mtg_player::stderr_line!("note: could not keep the save out of the next run's cleanup ({e}): \
+resume it before starting another mtg-runner");
+            path.to_string()
+        }
+    }
+}
+
+/// This run's arguments with `--resume <path>` in place of any `--resume`
+/// they had: what a hot reload re-executes with. The flags that only shape
+/// a new game are dropped too, since the save wins over them and each would
+/// print a note saying it was ignored.
+fn resume_args(args: impl Iterator<Item = String>, path: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut args = args.peekable();
+    while let Some(a) = args.next() {
+        if matches!(a.as_str(), "--resume" | "--deck1" | "--deck2" | "--on-the-play") {
+            args.next();
+            continue;
+        }
+        out.push(a);
+    }
+    out.push("--resume".into());
+    out.push(path.into());
+    out
+}
+
+/// The command line that resumes `path` with this run's seats and flags, as
+/// one a shell can run from anywhere: this binary, not `cargo run`, which
+/// works only inside a checkout — and a failed rebuild is mostly a run
+/// outside one.
+fn resume_command(path: &str) -> String {
+    let exe = env::current_exe().map_or_else(|_| "mtg-runner".into(), |p| p.to_string_lossy().into_owned());
+    std::iter::once(exe)
+        .chain(resume_args(env::args().skip(1), path))
+        .map(|a| shell_quote(&a))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `a` as one shell word.
+fn shell_quote(a: &str) -> String {
+    if !a.is_empty() && a.chars().all(|c| c.is_ascii_alphanumeric() || "_./:=,+-@%".contains(c)) {
+        a.to_string()
+    } else {
+        format!("'{}'", a.replace('\'', "'\\''"))
+    }
+}
+
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
 /// lookup in `main` is by exact name, so an unrecognized or
 /// misspelled flag used to be silently dropped and its default silently used —
@@ -525,7 +592,8 @@ fn main() {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
         // repro provenance (issues #52/#55) — so say so.
-        for flag in ["--deck1", "--deck2"] {
+        // Who took the first turn is in the save too (#1049).
+        for flag in ["--deck1", "--deck2", "--on-the-play"] {
             if args.iter().any(|a| a == flag) {
                 mtg_player::stderr_line!("note: {flag} is ignored with --resume; the save file's game wins");
             }
@@ -1246,6 +1314,12 @@ use --save if you need a resumable file.");
 
     // Check for hot reload request.
     if mtg_player::cli::HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+        // Off the frame first, so the build's output and the resume command
+        // a person has to copy are not printed into the board (#1053's
+        // review; the game-over path below does the same, #47).
+        if has_human {
+            mtg_player::cli::reset_terminal_for_exit();
+        }
         mtg_player::stderr_line!("\nHot reload requested. Rebuilding and relaunching...");
         // Build the project.
         let build_status = std::process::Command::new("cargo")
@@ -1257,29 +1331,23 @@ use --save if you need a resumable file.");
 
                 // Re-exec with --resume pointing to the hot-reload save.
                 let exe = env::current_exe().expect("Failed to get current exe path");
-                let mut new_args: Vec<String> = env::args().collect();
-                // Remove any existing --resume args.
-                while let Some(pos) = new_args.iter().position(|a| a == "--resume") {
-                    new_args.remove(pos); // --resume
-                    if pos < new_args.len() { new_args.remove(pos); } // its value
-                }
-                // Add --resume with hot-reload path.
-                new_args.push("--resume".into());
-                new_args.push(hot_reload_path.clone());
+                let new_args = resume_args(env::args().skip(1), &hot_reload_path);
                 // Exec replaces the current process.
                 let err = std::process::Command::new(&exe)
-                    .args(&new_args[1..]) // skip argv[0]
+                    .args(&new_args)
                     .exec();
                 mtg_player::stderr_line!("Failed to exec: {err}");
                 std::process::exit(1);
             }
             Ok(s) => {
-                mtg_player::stderr_line!("Build failed (exit code {:?}). Continuing with save at {}",
-                    s.code(), hot_reload_path);
-                mtg_player::stderr_line!("Resume manually with: cargo run --release -- --resume {hot_reload_path}");
+                let kept = keep_failed_reload_save(&hot_reload_path);
+                mtg_player::stderr_line!("Build failed (exit code {:?}). The game is saved at {kept}", s.code());
+                mtg_player::stderr_line!("Resume manually with: {}", resume_command(&kept));
             }
             Err(e) => {
-                mtg_player::stderr_line!("Failed to run cargo build: {e}. Save at {hot_reload_path}");
+                let kept = keep_failed_reload_save(&hot_reload_path);
+                mtg_player::stderr_line!("Failed to run cargo build: {e}. The game is saved at {kept}");
+                mtg_player::stderr_line!("Resume manually with: {}", resume_command(&kept));
             }
         }
         return;
@@ -1575,7 +1643,7 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
         // different game than the one requested, printed a winner, and
         // exited 0 — indistinguishable from a legitimate run.
         other => die(&format!(
-            "{origin} names unknown player type '{other}' (expected cli, random, \
+            "{origin} names unknown player type '{other}' (expected cli, gui[:port], random, \
              claude[:model], gemini[:model], or claude-code[:model]; ai and llm are \
              accepted for claude, cc for claude-code)")),
     }

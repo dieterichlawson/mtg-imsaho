@@ -229,14 +229,115 @@ def log_health(path):
     # structured object`, the game seat's `UNREADABLE`; and a call whose
     # result gave no thinking figure says `thinking n/a`. Each was missed,
     # so the night said "0 calls" beside the runner's 1274 (#900).
+    reasons = {}
+    # A re-ask whose content ran to several lines (a pick's raw reply,
+    # pretty-printed) is logged as a header with no content and the text on
+    # the lines under it, up to the next timestamped header (#992's review).
+    pending = None
+    # A game seat's `thoughts` are taken out of its answer and logged as the
+    # `THOUGHT` line before the `REASK`, which quoted the answer without
+    # them: a re-ask over `{"ask_again": true}` could not say whether the
+    # seat slipped or read the question as inviting it (#1024). The seat's
+    # last THOUGHT since its last PROMPT goes with its re-ask.
+    thoughts = {}
+    # A seat's last between-games answer, for the line that says it could
+    # not be played (#1024's review).
+    sideboard = {}
+
+    def note(who, text, thought=None, settled=None):
+        why, answer = split_reask(text, cap=None)
+        # An answer that carries its own `thoughts` (a pick, a deck, a
+        # Gemini game seat's) has them taken out into `thought`, as a game
+        # seat's are: inside the answer they shared its cap and cut off the
+        # very field the re-ask was about (#1024's review).
+        try:
+            obj = json.loads(answer)
+        except ValueError:
+            obj = None
+        if isinstance(obj, dict) and isinstance(obj.get("thoughts"), str):
+            thought = thought or obj.pop("thoughts")
+            obj.pop("thoughts", None)
+            answer = json.dumps(obj, separators=(",", ":"))
+        why, answer = clip(why), clip(answer)
+        # Settled or not is part of the kind: a deck refused ten times for
+        # one reason is nine re-asks and one deck the table built.
+        key = (who, why, settled)
+        if key not in reasons:
+            reasons[key] = {"who": who, "reason": why, "count": 0, "answer": answer}
+            if thought:
+                reasons[key]["thought"] = clip(thought)
+            # Recorded with the re-asks, but not asked again: what the
+            # table did instead, so the list adds up to the count above it.
+            if settled:
+                reasons[key]["settled"] = settled
+        reasons[key]["count"] += 1
+
+    def settle(p):
+        kind, who, bracket, lines = p
+        text = " ".join(l.strip() for l in lines).strip()
+        if kind == "THOUGHT":
+            thoughts[bracket] = text
+        elif kind == "SIDEBOARD_RESPONSE":
+            sideboard[bracket] = text
+        elif kind == "DECK":
+            # `who` carries the reason the deck was refused, and
+            # `bracket` whether it was the last attempt.
+            note("deck", f"{who}: {text}" if text else who,
+                 settled="not asked again: the table built the deck" if bracket == "last" else None)
+        else:
+            note(who, text, thoughts.get(bracket))
+
+    header = re.compile(r"^\d{4}-\d\d-\d\d \d")
     usage = re.compile(r"\tUSAGE \[.*out (\d+) thinking (\d+|n/a) cache_read (\d+) cache_write (\d+)")
     for line in open(path, encoding="utf-8", errors="replace"):
+        if pending is not None:
+            if not header.match(line):
+                pending[3].append(line.rstrip("\n"))
+                continue
+            settle(pending)
+            pending = None
+        # A deck answer the validator refused: the seat is asked again with
+        # the error, or, at its last attempt, the table builds the deck. Not
+        # a `REASK` line, so the record had neither (#1024's review).
+        if (m := re.search(r"\[Seat (\d+)\] DECK_RESPONSE attempt (\d+)/(\d+) \(invalid: (.*)\)\t(.*)", line)):
+            # The last attempt's deck is the fallback, which the seat's
+            # `fallback_deck` already counts as a deck substituted.
+            if m.group(2) != m.group(3):
+                h["reasks"] += 1
+            pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(1), [m.group(5)])
+            continue
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE [^\t]*\t(.*)", line)):
+            pending = ("SIDEBOARD_RESPONSE", None, m.group(1), [m.group(2)])
+            continue
+        # A between-games answer that could not be played: the deck is kept
+        # in the seat's place, and why is the record's to keep.
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD before game \d+: kept the deck \(the answer's could not be played: (.*)\)", line)):
+            # Its reason, not a count: "the harness chose" counts game
+            # answers, and this is the deck kept between games.
+            note("sideboard", f"{m.group(2)}: {sideboard.get(m.group(1), '')}".rstrip(": "),
+                 settled="not asked again: the deck was kept")
+            continue
+        if (m := re.search(r"\t(PROMPT|THOUGHT)( \[[^\]]*\])?(\t|$)(.*)", line)):
+            if m.group(1) == "PROMPT":
+                thoughts.pop(m.group(2), None)
+            else:
+                # Thinking runs to several lines: up to the next header.
+                pending = ("THOUGHT", None, m.group(2), [m.group(4)])
+            continue
         # A resume under another guide, setting or set file: picks or
         # matches of one night made under two system prompts (#948, #949).
         if "its system prompt is not the live one" in line or "those picks were made under" in line:
             h["prompt_unlike"] += 1
-        elif re.search(r"\tREASK(\t| \[|$)", line):
+        elif (m := re.search(r"\tREASK( \[[^\]]*\])?(\t|$)(.*)", line)):
             h["reasks"] += 1
+            # Why, and what was answered: a count alone cannot tell a
+            # model's slip from a question that invited the wrong answer,
+            # and the log that had the reasons is not kept (#992).
+            who = "game" if m.group(1) else "pick"
+            if m.group(3).strip():
+                note(who, m.group(3).strip(), thoughts.get(m.group(1)))
+            else:
+                pending = ("REASK", who, m.group(1), [])
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
         # A worker's panic reaches the log as its `FATAL` line (the panic
@@ -251,7 +352,37 @@ def log_health(path):
             h["game_calls"] += 1
             for k, v in zip(("out", "thinking", "cache_read", "cache_write"), m.groups()):
                 h[k] += int(v) if v != "n/a" else 0
+    if pending is not None:
+        settle(pending)
+    h["reask_reasons"] = sorted(reasons.values(), key=lambda r: (-r["count"], r["who"], r["reason"]))
     return h
+
+
+def split_reask(text, cap=240):
+    """A `REASK` line's content is `<why>: <the answer>`, or the why alone.
+    The answer is JSON (or a reply's text), and the why can quote a
+    string with `: {` in it, so the split is at the first `: ` after which
+    the rest parses as JSON; failing that, the first one a JSON value could
+    follow. Both are capped: the record is kept in the repository every
+    night."""
+    cuts = [m for m in re.finditer(r": (?=[\[{\"])", text)]
+
+    def parses(t):
+        try:
+            json.loads(t)
+            return True
+        except ValueError:
+            return False
+    m = next((c for c in cuts if parses(text[c.end():])), cuts[0] if cuts else None)
+    why, answer = (text[:m.start()], text[m.end():]) if m else (text, "")
+    if cap is None:
+        return why, answer
+    return clip(why, cap), clip(answer, cap)
+
+
+def clip(t, cap=240):
+    """A record field, capped: the record is kept in the repository."""
+    return t if len(t) <= cap else t[:cap - 1] + "\u2026"
 
 
 def usage_lines(path):

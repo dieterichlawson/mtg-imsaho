@@ -1,0 +1,372 @@
+{
+ "night": "2026-11-17",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "0-3-0",
+   "lessons": [
+    "Stranded picks: Tribute to Hunger and Typhoid Rats at picks 2-3 never reached my WR deck, so commit to a pair by mid pack 1 as the guide says.",
+    "Tonight contradicted the guide's 55% WR figure: my 0-3 WR with Voiceless Spirit, Spectral Rider, Falkenrath Marauders and Scourge of Geier Reach lost in 13-24 turn games, so fliers alone still failed.",
+    "Keep a second removal spell over a second Unruly Mob, as the guide advises, because my WR lost to WU and BR games where ground filler could not close."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12756,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3656,
+    "output_tokens_details": {
+     "thinking_tokens": 3437
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12756
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3656,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12756,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12756,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "WU",
+   "record": "3-0-0",
+   "lessons": [
+    "Draft white-based fliers and humans with removal like Claustrophobia and Smite the Monstrous; this WU list went 3-0 and never dropped a game, with Galvanic Juggernaut as colourless top end.",
+    "Cut weak one-drops like Delver of Secrets and the weak auras, then run 17 lands with a Plains-heavy split (9 Plains, 8 Island) to match white's depth; this build went 6-0 in games.",
+    "Take colourless playables like Galvanic Juggernaut early as a hedge, since it was second pick of pack one and stayed in the final deck while off-colour cards were cut."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3262,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1725,
+    "output_tokens_details": {
+     "thinking_tokens": 1509
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3262
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1725,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3262,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3262,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Keep Moonmist over an extra filler body: our BG deck lost 0-2 to WU fliers (Stitched Drake, Abbey Griffin) with few answers, confirming the guide that fliers win.",
+    "Black-green held up: Dead Weight, Corpse Lunge, Moan of the Unhallowed and Morkrut Banshee backed a 2-1 match record, so black is a safe anchor when blue and red are thin."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4935,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2352,
+    "output_tokens_details": {
+     "thinking_tokens": 2196
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4935
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2352,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4935,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4935,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UG",
+   "record": "2-1-0",
+   "lessons": [
+    "Sideboarding Maw of the Mire and Mulch in for Moldgraf Monstrosity and Moon Heron preceded my 2-1 win over white-red, so keep cheap interaction flexible against Brimstone Volley and Unruly Mob.",
+    "Lost 0-2 to black-green in a 34-turn grind, so favour evasive threats like Murder of Crows over extra ground blockers when the board stalls.",
+    "My first pick Sever the Bloodline and Trepanation Blade went unplayed; green-blue creatures like Lumberknot and Makeshift Mauler were the cards that made the deck, so commit to that lane sooner."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3334,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2003,
+    "output_tokens_details": {
+     "thinking_tokens": 1776
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3334
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2003,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3334,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3334,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Where tonight contradicted the guide: WU, called average and slow, was the table's only 3-0 deck and beat my WR 2-0 in 13 and 26 turns, so do not dismiss it.",
+    "The three-flier rule held: my WR had only two Chapel Geist, Midnight Haunting and Spectral Rider in the air and lost a 26-turn game, so take a third flier over ground filler.",
+    "The guide's WR core worked: cheap white creatures plus Rebuke, Smite the Monstrous and Brimstone Volley took a 2-1 over RG, and Chapel Geist and Midnight Haunting beat Silverchase Fox."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12560,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3010,
+    "output_tokens_details": {
+     "thinking_tokens": 2782
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12560
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3010,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12560,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12560,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Self-mill UB with Death's Hold and Lost in the Mist as top end was too slow: both 1-2 losses ran 17\u201323 turns, so prioritise cheap early pressure like Falkenrath Noble.",
+    "Delver of Secrets // Insectile Aberration was taken twice (pack 1 pick 9, pack 3 pick 14) and never played; late picks should go to two-drops and playable Skaab bodies instead.",
+    "I took the second Curse of the Bloody Tome and cut it anyway; a cheap creature from that slot would have helped the curve in both 1-2 losses."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3294,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2373,
+    "output_tokens_details": {
+     "thinking_tokens": 2164
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3294
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2373,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3294,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3294,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "RG",
+   "record": "1-2-0",
+   "lessons": [
+    "Fliers win this format, as the guide says: my RG deck had only two Orchard Spirits for evasion and lost 1-2 to UG's Moon Heron and Murder of Crows; take fliers over ground fatties.",
+    "Tricks mattered more than the guide implies: I ran one Ranger's Guile and no Moment of Heroism, so WR's two Rebukes and Smite the Monstrous left my ground werewolves unprotected.",
+    "I spent three picks on Gatstaf Shepherd and took Festerhide Boar, which the guide calls filler; take a flier or cheap removal over those late picks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4970,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3199,
+    "output_tokens_details": {
+     "thinking_tokens": 2986
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4970
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3199,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4970,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4970,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Draft enough removal and evasive top-end before filler: my BR deck's Dead Weight, Geistflame, Harvest Pyre and Corpse Lunge could not stop 19-24 turn stalls against RG and UB, losing 0-2 each.",
+    "Don't spend mid-pack picks on off-colour cards like Curiosity or Spare from Evil; my BR deck's cheap creatures carried a 2-1 win over WR, so commit to a two-colour creature curve sooner."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3324,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2095,
+    "output_tokens_details": {
+     "thinking_tokens": 1921
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3324
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2095,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3324,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3324,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

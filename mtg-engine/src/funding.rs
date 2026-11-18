@@ -333,10 +333,24 @@ pub fn describe_x_plan(options: &FundingOptions, x: u32) -> Option<String> {
     if !taps.is_empty() {
         parts.push(format!("tap {}", taps.join(", ")));
     }
+    // The part of X a cost reduction pays (CR 601.2f) is said, or a board
+    // whose sources sum to 4 read "Max X = 6" and "X = 2: nothing for X"
+    // with nothing accounting for the 2 (#979).
+    let reduced = x.min(options.x_discount);
+    let reduced = if reduced > 0 { format!(" (the cost reduction pays {reduced})") } else { String::new() };
     if parts.is_empty() {
-        return Some(format!("X = {x}: nothing for X"));
+        return Some(format!("X = {x}: nothing for X{reduced}"));
     }
-    Some(format!("X = {x}: for X, {}", parts.join(", ")))
+    Some(format!("X = {x}: for X, {}{reduced}", parts.join(", ")))
+}
+
+/// The line under "Max X" when a cost reduction pays part of X: the listed
+/// sources sum to less than the largest X, and this says why (#979). None
+/// when nothing is reduced.
+#[must_use]
+pub fn describe_x_discount(options: &FundingOptions) -> Option<String> {
+    (options.x_discount > 0)
+        .then(|| format!("A cost reduction pays the first {} of X", options.x_discount))
 }
 
 /// Error returned when a [`FundingResponse`] is inconsistent with its
@@ -1222,5 +1236,32 @@ mod tests {
         };
         assert_eq!(describe_x_plan(&rock, 1), None);
         assert_eq!(describe_x_plan(&rock, 2).as_deref(), Some("X = 2: for X, tap Sol Ring"));
+    }
+
+    /// #979: under Heartless Summoning the first 2 of X cost nothing, and the
+    /// plan says so — "X = 2: nothing for X" over four 1-mana lands and a
+    /// "Max X = 6" read as X free for no reason.
+    #[test]
+    fn the_plan_says_what_a_cost_reduction_pays() {
+        let options = FundingOptions {
+            pool: BTreeMap::new(),
+            groups: vec![
+                group("Mountain", FundingCategory::Lands, 1, 1),
+                group("Island", FundingCategory::Lands, 1, 3),
+            ],
+            max_x: 4,
+            x_discount: 2,
+            pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
+        };
+        assert_eq!(describe_x_plan(&options, 0).as_deref(), Some("X = 0: nothing for X"));
+        assert_eq!(describe_x_plan(&options, 1).as_deref(),
+            Some("X = 1: nothing for X (the cost reduction pays 1)"));
+        assert_eq!(describe_x_plan(&options, 2).as_deref(),
+            Some("X = 2: nothing for X (the cost reduction pays 2)"));
+        assert_eq!(describe_x_plan(&options, 3).as_deref(),
+            Some("X = 3: for X, tap Mountain (the cost reduction pays 2)"));
+        assert_eq!(describe_x_discount(&options).as_deref(), Some("A cost reduction pays the first 2 of X"));
+        assert_eq!(describe_x_discount(&FundingOptions { x_discount: 0, ..options }), None);
     }
 }

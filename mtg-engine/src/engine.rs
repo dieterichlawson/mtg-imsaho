@@ -25,6 +25,7 @@ pub use cards_flow::{discard_cards, draw_cards, mill_cards, mill_one};
 /// reads (`proofs::actions::until_end_of_turn`).
 #[cfg(kani)]
 pub(crate) use legal::casting::{granted_flashback_costs, graveyard_cast_costs};
+pub(crate) use cards_flow::card_list;
 pub use effects::apply_pending_effect;
 pub use costs::{
     AdditionalCostPlan, CastMethod, SpellCost, additional_cost_plan, alternative_costs,
@@ -114,6 +115,16 @@ pub struct LegalActions {
     /// discard. `actions` is empty; the player marks what it wants out of
     /// `options` and answers with `SetPrompt::answer`.
     pub set_prompt: Option<crate::actions::SetPrompt>,
+    /// The mana abilities `actions` folded away: one `ActivateManaAbility`
+    /// per other permanent that could activate the same ability of the
+    /// same card as an offered one. With five untapped Forests `actions`
+    /// offers one "Tap Forest" (the CLI's menu and the LLM's schema want
+    /// one row per card); these are the other four, which a surface that
+    /// hangs verbs off each permanent — the page — offers on the Forest
+    /// itself, and which [`Self::permits`] accepts like the offered one
+    /// (issue #1003). Only permanents that could activate now are here: a
+    /// tapped Forest or a summoning-sick Elves is not.
+    pub mana_ability_copies: Vec<Action>,
 }
 
 impl LegalActions {
@@ -132,6 +143,7 @@ impl LegalActions {
             context: None,
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -149,6 +161,7 @@ impl LegalActions {
             && self.activatable_abilities.is_empty()
             && self.resolution_prompt.is_none()
             && self.set_prompt.is_none()
+            && self.mana_ability_copies.is_empty()
     }
 
     /// Whether this offers the acting player nothing at all — no menu and
@@ -227,7 +240,7 @@ impl LegalActions {
             Action::BottomCards { cards } => matches!(&self.set_prompt,
                 Some(p) if p.kind == SetPromptKind::BottomAfterMulligan && p.accepts(cards)),
             Action::ResolveChoice { .. } => self.resolution_prompt.is_some(),
-            row => self.actions.iter().any(|a| a == row),
+            row => self.actions.iter().chain(&self.mana_ability_copies).any(|a| a == row),
         }
     }
 }
@@ -334,7 +347,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None, mana_ability_copies: vec![] };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard),
@@ -344,7 +357,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     let Some(player) = state.priority_player else {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None, set_prompt: None, mana_ability_copies: vec![] };
     };
 
     let mut actions = Vec::new();
@@ -371,7 +384,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
     // Mana abilities: can activate anytime you have priority.
     // Deduplicate by card_id — if you have 5 untapped Forests, only show one "Tap Forest".
+    // The copies folded away are kept beside the offer (issue #1003).
     let mut seen_mana_abilities: Vec<(CardId, usize)> = Vec::new();
+    let mut mana_ability_copies: Vec<Action> = Vec::new();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         // Stony Silence: skip mana abilities from artifacts.
         if prevent_artifact_abilities {
@@ -379,12 +394,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
         for ma in activatable_mana_abilities(state, obj.id, registry) {
             let key = (obj.card_id, ma.ability_index);
-            if !seen_mana_abilities.contains(&key) {
+            let action = Action::ActivateManaAbility {
+                object_id: obj.id,
+                ability_index: ma.ability_index,
+            };
+            if seen_mana_abilities.contains(&key) {
+                mana_ability_copies.push(action);
+            } else {
                 seen_mana_abilities.push(key);
-                actions.push(Action::ActivateManaAbility {
-                    object_id: obj.id,
-                    ability_index: ma.ability_index,
-                });
+                actions.push(action);
             }
         }
     }
@@ -526,7 +544,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         })
         .collect();
 
-    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None, set_prompt: None }
+    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None, set_prompt: None, mana_ability_copies }
 }
 
 

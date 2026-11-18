@@ -22,6 +22,13 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         "    {\"pick\": 99}".to_string(),
         String::new(),
         format!("{at}REASK [Seat1]\tthat action is not offered"),
+        // A why that quotes a string with ": {" in it, and a pick's reply
+        // that ran to several lines, logged under a bare header (#992's review).
+        format!("{at}REASK [Seat0]\t`then` is \"Plan: {{G}}\"; it must be one of the listed: {{\"then\": \"Plan: {{G}}\"}}"),
+        format!("{at}REASK"),
+        "`pick` is 20; it must be 0 to 13: {".to_string(),
+        "  \"pick\": 20".to_string(),
+        "}".to_string(),
         format!("{at}API_WARN\tclaude -p returned no structured object (attempt 1): I pick the {{G}} card."),
         format!("{at}UNREADABLE [Seat0]\tno JSON object"),
         format!("{at}USAGE [Seat0]\tin 10 out 5 thinking n/a cache_read 7 cache_write 0"),
@@ -42,7 +49,7 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         .output().expect("python3 runs");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(h["reasks"], 2, "{h}");
+    assert_eq!(h["reasks"], 4, "{h}");
     assert_eq!(h["unreadable"], 2, "{h}");
     assert_eq!(h["game_calls"], 2, "{h}");
     assert_eq!(h["out"], 11, "{h}");
@@ -53,6 +60,16 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     assert_eq!(h["panics"], 1, "{h}");
     assert_eq!(h["harness_chose"], 2, "{h}");
     assert_eq!(h["prompt_unlike"], 2, "{h}");
+    // #992: each re-ask keeps its reason and the answer it quoted, by
+    // kind, so a question that invited the wrong answer can be told from
+    // a model's slip after the log is gone.
+    assert_eq!(h["reask_reasons"], serde_json::json!([
+        {"who": "game", "reason": "`then` is \"Plan: {G}\"; it must be one of the listed", "count": 1,
+         "answer": "{\"then\": \"Plan: {G}\"}"},
+        {"who": "game", "reason": "that action is not offered", "count": 1, "answer": ""},
+        {"who": "pick", "reason": "`pick` is 20; it must be 0 to 13", "count": 1, "answer": "{ \"pick\": 20 }"},
+        {"who": "pick", "reason": "`pick` is 99; it must be 0 to 13", "count": 1, "answer": "{\"pick\": 99}"},
+    ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -70,7 +87,9 @@ fn the_night_report_says_one_call_in_the_singular() {
         "seed": 1, "players": 2, "best_of": 3, "guide_hash": "x",
         "seats": [seat(0, true, 1), seat(1, false, 0)],
         "health": {"reasks": 1, "unreadable": 1, "panics": 0, "harness_chose": 1, "game_calls": 1,
-                   "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0},
+                   "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0,
+                   "reask_reasons": [{"who": "game", "reason": "`indices` has 0 entries; it needs at least 1",
+                                      "count": 1, "answer": "{\"indices\": []}", "thought": "I would rather wait"}]},
     }).to_string()).unwrap();
     std::fs::write(dir.join("nights/2099-01-01-lessons.json"), serde_json::json!({
         "seats": [{"seat": 0, "colors": "G", "record": "1-0", "lessons": [], "usage": {"output_tokens": 5}}],
@@ -85,7 +104,9 @@ fn the_night_report_says_one_call_in_the_singular() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let report = std::fs::read_to_string(dir.join("nights/2099-01-01.md")).unwrap();
     for said in ["debriefs: 1 call,", "curator: 1 call,", "1 re-ask,", "1 reply no answer", "1 game answer the harness",
-                 "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |"] {
+                 "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |",
+                 // #992: what the re-ask was for.
+                 "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}` It thought: \"I would rather wait\""] {
         assert!(report.contains(said), "{said:?} in:\n{report}");
     }
     assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");
@@ -624,5 +645,69 @@ fn a_resumed_night_names_the_guide_its_picks_were_made_under() {
     assert_eq!(sent.len(), 2, "one debrief a seat");
     assert_eq!(sent.iter().filter(|m| m.contains("The guide the picks saw")).count(), 1, "{sent:#?}");
     assert!(sent.iter().all(|m| !m.contains("An edit after the stop")), "the guided seat is shown the guide it drafted with: {sent:#?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1024: a game seat's re-ask keeps what the seat thought when it gave the
+/// answer. Its `thoughts` are taken out of the answer and logged as the
+/// `THOUGHT` before the `REASK`, so a re-ask over `{"ask_again": true}`
+/// could not be told slip from invited once the log was gone. A thought
+/// from an earlier call (before the seat's last `PROMPT`) is not this
+/// answer's; a pick's re-ask quotes its own `thoughts` in the answer.
+#[test]
+fn a_game_reask_keeps_what_the_seat_thought() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-thought-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("draft.log");
+    let at = "2026-11-13 10:00:00.000\tINFO\tseat-0\tllm.rs:1\t";
+    std::fs::write(&log, [
+        format!("{at}PROMPT [Seat0]\tMAIN PHASE 1"),
+        "  0: Pass".to_string(),
+        format!("{at}THOUGHT [Seat0]\tI want to see the next card first,"),
+        "so I will be asked again.".to_string(),
+        format!("{at}THOUGHT [Seat1]\tthe other seat's thinking"),
+        format!("{at}RESPONSE [Seat0]\t{{\"ask_again\":true,\"then\":[]}}"),
+        format!("{at}REASK [Seat0]\t`action` is missing: {{\"ask_again\":true,\"then\":[]}}"),
+        format!("{at}PROMPT [Seat1]\tDECLARE BLOCKERS"),
+        format!("{at}REASK [Seat1]\tthat block is not offered: {{\"blocks\":[]}}"),
+        // #1024's review: a pick quotes its `thoughts` inside its answer,
+        // where a long one cut off `pick`; a refused deck and a sideboard
+        // answer that could not be played are no `REASK` lines at all.
+        format!("{at}REASK\t`pick` is 20; it must be 0 to 13: {{\"thoughts\": \"{}\", \"pick\": 20}}", "x".repeat(300)),
+        format!("{at}[Seat 2] DECK_RESPONSE attempt 1/3 (invalid: Deck has 39 cards)\t{{\"thoughts\": \"two colours\","),
+        "  \"lands\": {\"Forest\": 16}}".to_string(),
+        format!("{at}[Seat 2] DECK_RESPONSE attempt 2/3 (accepted)\t{{}}"),
+        format!("{at}[Seat 4] DECK_RESPONSE attempt 1/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
+        format!("{at}[Seat 4] DECK_RESPONSE attempt 2/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
+        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2\t{{\"thoughts\": \"bring in removal\", \"swap_in\": [\"Dead Weight\"]}}"),
+        format!("{at}[Seat 3] SIDEBOARD before game 2: kept the deck (the answer's could not be played: Dead Weight is not in your pool)\t"),
+    ].join("\n") + "\n").unwrap();
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop");
+    let out = Command::new("python3")
+        .args(["-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import ledger; print(json.dumps(ledger.log_health(sys.argv[2])))"])
+        .arg(script).arg(&log)
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(h["reasks"], 5, "{h}");
+    // Neither a refused deck nor an unplayable sideboard answer is a game
+    // answer the harness chose (#1024's second review).
+    assert_eq!(h["harness_chose"], 0, "{h}");
+    let long = format!("{}\u{2026}", "x".repeat(239));
+    assert_eq!(h["reask_reasons"], serde_json::json!([
+        {"who": "deck", "reason": "Deck has 39 cards", "count": 2, "answer": "{\"lands\":{\"Forest\":16}}", "thought": "two colours"},
+        // Seat 4's last refusal, for the same reason: the table's deck, its
+        // own entry, so the list adds up to the count of re-asks.
+        {"who": "deck", "reason": "Deck has 39 cards", "count": 1, "answer": "{\"lands\": {\"Forest\": 16}}",
+         "settled": "not asked again: the table built the deck"},
+        {"who": "game", "reason": "`action` is missing", "count": 1, "answer": "{\"ask_again\":true,\"then\":[]}",
+         "thought": "I want to see the next card first, so I will be asked again."},
+        {"who": "game", "reason": "that block is not offered", "count": 1, "answer": "{\"blocks\":[]}"},
+        {"who": "pick", "reason": "`pick` is 20; it must be 0 to 13", "count": 1, "answer": "{\"pick\":20}", "thought": long},
+        {"who": "sideboard", "reason": "Dead Weight is not in your pool", "count": 1,
+         "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal",
+         "settled": "not asked again: the deck was kept"},
+    ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }

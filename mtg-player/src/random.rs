@@ -839,6 +839,7 @@ mod rolls {
             context: None,
             resolution_prompt: Some(kind),
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -1186,6 +1187,7 @@ mod rolls {
             context: None,
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
         let mut p = RandomPlayer::with_seed("r", 7);
         let v = view();
@@ -1230,6 +1232,7 @@ mod rolls {
                 min: 1,
                 max: 1,
             }),
+            mana_ability_copies: vec![],
         };
         let mut seen = std::collections::HashSet::new();
         for a in answers(&legal, 400) {
@@ -1310,6 +1313,7 @@ mod decisions {
             context: None,
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -1398,6 +1402,7 @@ mod decisions {
             context: None,
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
         let v = view();
 
@@ -1441,6 +1446,7 @@ mod decisions {
             context: None,
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         };
         let v = view();
 

@@ -610,19 +610,22 @@ pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
 
 /// What came of asking a permanent to transform.
 ///
-/// Four of the five are refusals, and they are different refusals: a token
-/// copy of a double-faced card, a single-faced card wearing a double-faced
-/// creature's face, nothing there to transform at all, and an ability of the
-/// permanent's own that it has transformed since. A caller that
-/// cannot tell them apart cannot say which happened, and neither can a
-/// reader of the log (issue #500).
+/// The others are refusals, and they are different refusals: a single-faced
+/// card wearing a double-faced creature's face, nothing there to transform
+/// at all, and a permanent its own ability finds already transformed. A
+/// caller that cannot tell them apart cannot say which happened, and neither
+/// can a reader of the log (issue #500).
+///
+/// There is no refusal for a token. A token copy of a transforming
+/// permanent, or of a double-faced card off the battlefield, is a
+/// transforming token with both faces (CR 707.8a), and CR 701.28c refuses a
+/// transform only to a permanent that "isn't represented by a transforming
+/// token or a transforming double-faced card". The engine used to refuse
+/// every token, on the pre-Innistrad: Midnight Hunt rule (#1060).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransformResult {
     /// The permanent flipped; it is now showing its other face.
     Transformed,
-    /// CR 111.7: a token that is a copy of a double-faced card is not itself
-    /// a double-faced card, so it cannot transform.
-    Token,
     /// CR 701.28c: the card under the permanent has no other face. A
     /// single-faced clone (Evil Twin) copying a werewolf, or any of the
     /// single-faced Humans "transform all Humans" sweeps up.
@@ -655,8 +658,6 @@ impl TransformResult {
 pub fn transform_line(name: &str, result: TransformResult, new_name: &str) -> String {
     match result {
         TransformResult::Transformed => format!("{name} transforms into {new_name}"),
-        TransformResult::Token =>
-            format!("{name} does not transform — a token copy of a double-faced card is not itself double-faced (CR 111.7)"),
         TransformResult::SingleFaced =>
             format!("{name} does not transform — the card under it has only one face (CR 701.28c)"),
         TransformResult::NotAPermanent =>
@@ -720,12 +721,14 @@ pub fn transform_quietly(
     registry: &CardRegistry,
 ) -> TransformResult {
     let card_id = match state.get_object(object_id) {
-        // A token copy of a double-faced card has only the copied face — it is
-        // not itself a double-faced card, so it cannot transform (CR 111.7,
-        // and the Back from the Brink ruling says so explicitly). A token
-        // stamped with a DFC's `card_id` would otherwise pick up that card's
-        // upkeep trigger and flip.
-        Some(o) if o.zone == Zone::Battlefield && o.is_token => return TransformResult::Token,
+        // A token is not refused for being a token. A token copy carries the
+        // copied card's `card_id` and face (`create_token_copy`), which is
+        // CR 707.8a's transforming token: both faces, each the copiable
+        // values of the same face of what it copied. Whether that is a
+        // double-faced card is the printed-card test below, the same one an
+        // Evil Twin answers — a token copy of an Evil Twin copying a
+        // werewolf carries the Twin as its `copy_grantor` and is refused
+        // there (CR 701.28c), because the Twin is single-faced (#1060).
         // CR 400.7: the ability's own source back on the battlefield since
         // it went on the stack is a new object, not the permanent it names.
         Some(o) if o.zone == Zone::Battlefield && !state.is_new_source(object_id) =>
@@ -1048,15 +1051,13 @@ pub fn werewolf_should_trigger(
         // were cast last turn" / "if a player cast two or more spells last
         // turn". Nothing else belongs in this gate.
         //
-        // That a token copy cannot transform (CR 111.7, CR 701.28c) is a fact
-        // about *resolution*, and `apply_transform` already refuses it there.
-        // Refusing a second time here kept the trigger off the stack
-        // altogether, so a token copy of a werewolf never announced itself and
-        // the opponent never got the priority window CR 603.3b gives them —
-        // while a non-token single-faced clone of the same werewolf (Evil
-        // Twin), which `apply_transform` refuses for the same reason, did
-        // trigger correctly. The two permanents differed in nothing the gate
-        // claimed to care about (issue #469).
+        // Whether the permanent can transform (CR 701.28c) is a fact about
+        // *resolution*, and `apply_transform` answers it there. Refusing a
+        // token here as well kept the trigger off the stack altogether, so a
+        // token copy of a werewolf never announced itself and the opponent
+        // never got the priority window CR 603.3b gives them (issue #469) —
+        // and a token copy can transform anyway (CR 707.8a, #1060). An Evil
+        // Twin copying a werewolf, which cannot, triggers too.
         return behavior.should_transform(state, self_id, registry);
     }
     true

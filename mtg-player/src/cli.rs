@@ -709,6 +709,32 @@ fn describe_fundable_x(values: &[u32]) -> String {
     format!("{}, \u{2026} {last}", kept.join(", "))
 }
 
+thread_local! {
+    /// Set while a reader is handling a typed `concede` itself, and until it
+    /// hands the screen its next line: the screen's last refusal is about
+    /// the input before, which the concede question replaced (#1019).
+    static NOTICE_HELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// A screen's notice as its redraw paints it: none while a reader holds it
+/// (#1019). "Invalid input 'zz'" was drawn above "Are you sure you want to
+/// concede?", which read as though `concede` was the invalid input, and on
+/// the X prompt it was drawn again after the "no" had been accepted.
+fn unheld(notice: Option<&str>) -> Option<&str> {
+    notice.filter(|_| !NOTICE_HELD.with(std::cell::Cell::get))
+}
+
+/// A typed index, read as `str::parse::<usize>` reads it, except that a run
+/// of digits too long for a `usize` is `usize::MAX`: a number out of
+/// range, which the prompt answers with its range, not a syntax error
+/// (#1017). The mark, order and amount screens already said so; the attack
+/// and block screens called "99999999999999999999" invalid input. A word
+/// is still `None`.
+fn read_index(tok: &str) -> Option<usize> {
+    tok.parse::<usize>().ok()
+        .or_else(|| (!tok.is_empty() && tok.bytes().all(|b| b.is_ascii_digit())).then_some(usize::MAX))
+}
+
 /// How a refusal names the number it is refusing: what was typed, and what
 /// the parser made of it when the two differ.
 ///
@@ -724,6 +750,12 @@ fn describe_fundable_x(values: &[u32]) -> String {
 /// Ordinary input reads exactly as it did — `7` is `7` — so every message
 /// keeps its shape and only the odd forms grow the gloss.
 fn refused_number(typed: &str, parsed: usize) -> String {
+    // A number too long to read, which `read_index` reads as usize::MAX,
+    // is named as typed: "(read as 18446744073709551615)" is a number the
+    // player never typed (#1017).
+    if parsed == usize::MAX && typed != parsed.to_string() {
+        return format!("'{}'", quote_input(typed));
+    }
     if typed == parsed.to_string() {
         parsed.to_string()
     } else {
@@ -837,6 +869,15 @@ fn repaint_input_line(out: &mut io::Stdout, col: u16, row: u16, buf: &str, cap: 
 ///   keystrokes read `0 1`, which every numeric prompt refuses out loud, and
 ///   which a multi-select prompt reads as the two indices they are.
 ///
+/// Whether `ev` is the key `c` pressed alone: no Ctrl and no Alt (Shift is
+/// part of the character, so `R` is not `r`). The key chords this reader
+/// binds (`rr`) are made of plain keys; a Ctrl or Alt chord on the same
+/// letter is unbound, and goes to [`edit_line`] as a separator (#1051).
+fn is_plain_char(ev: &Event, c: char) -> bool {
+    matches!(ev, Event::Key(KeyEvent { code: KeyCode::Char(k), modifiers, .. })
+        if *k == c && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT))
+}
+
 /// Returns whether the buffer changed, so the caller knows to repaint.
 fn edit_line(buf: &mut String, code: KeyCode, modifiers: KeyModifiers) -> bool {
     match code {
@@ -1512,7 +1553,7 @@ impl CliPlayer {
     /// one-word orphan — "damage" and "on" on rows of their own (#705).
     fn wrap_log_entry(entry: &str, width: usize) -> Vec<String> {
         const INDENT: &str = "  ";
-        if entry.chars().count() <= width {
+        if str_cols(entry) <= width { // columns, as word_wrap measures (#1027)
             return vec![entry.to_string()];
         }
         let mut rows = Self::word_wrap(entry, width);
@@ -1524,28 +1565,42 @@ impl CliPlayer {
         out
     }
 
+    /// Wrap `text` to rows of at most `width` display COLUMNS, at spaces
+    /// where it can. It counted characters, so a quoted run of wide
+    /// characters — 20 x 一 typed at the mulligan — made a row of 96
+    /// columns in a 57-column pane, printed over the border into the CARDS
+    /// pane; every caller (the prompt block, notices, rule titles) took it
+    /// on trust (#1027, the root of #1020's escape).
     fn word_wrap(text: &str, width: usize) -> Vec<String> {
         if width == 0 { return vec![text.to_string()]; }
+        // The byte end of the longest prefix of `s` at most `cols` wide,
+        // and never empty: one character wider than the row is cut alone
+        // rather than looped on.
+        let prefix_end = |s: &str, cols: usize| -> usize {
+            let mut used = 0;
+            for (i, ch) in s.char_indices() {
+                used += col_width(ch);
+                if used > cols {
+                    return if i == 0 { ch.len_utf8() } else { i };
+                }
+            }
+            s.len()
+        };
         let mut lines = Vec::new();
         let mut remaining = text;
         while !remaining.is_empty() {
-            let char_count = remaining.chars().count();
-            if char_count <= width {
+            if str_cols(remaining) <= width {
                 lines.push(remaining.to_string());
                 break;
             }
-            // Find the byte index at `width` chars.
-            let hard_end = remaining.char_indices()
-                .nth(width)
-                .map_or(remaining.len(), |(i, _)| i);
+            let hard_end = prefix_end(remaining, width);
             // Look for the last space within the width — including a space
             // just past it, which ends a row of exactly `width`. Without it
             // "… on Olivia Voldaren (#101)" at 39 columns broke before
             // "Voldaren", which fitted (#705).
-            let probe_end = remaining.char_indices()
-                .nth(width + 1)
-                .map_or(remaining.len(), |(i, _)| i);
+            let probe_end = prefix_end(remaining, width + 1);
             let break_at = remaining[..probe_end].rfind(' ')
+                .filter(|&at| str_cols(&remaining[..at]) <= width)
                 .unwrap_or(hard_end); // no space — hard break
             if break_at == 0 {
                 // Edge case: space at position 0 or single huge word.
@@ -2040,10 +2095,9 @@ impl CliPlayer {
 
         // `Ncast`: the spells each side has cast this turn, which a werewolf
         // transforms on at the next upkeep and no zone shows (#832).
-        let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
-            your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
+        let your_line = |gap: &str| format!("{your_caret}You: {}hp{gap}{}lib{gap}{}gy{gap}{}ex{gap}{}hand{gap}{}cast",
+            view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
             Self::spells_cast_this_turn(view, true));
-        let opp_stats = Self::opponent_stats(view);
 
         // The prompt block's least height, measured before the board is
         // drawn: the block is anchored at `h - min_block` when the board
@@ -2086,8 +2140,13 @@ impl CliPlayer {
         };
         // A side given no row at all, not even its marker's, is counted on
         // its status line: it vanished unmarked on a short pane (#960).
-        let opp_stats = Self::with_unshown(&opp_stats, Self::board_cut(&opp_bf, limits[0]).1, limits[0]);
-        let your_stats = Self::with_unshown(&your_stats, Self::board_cut(&your_bf, limits[1]).1, limits[1]);
+        // Each line's form is chosen for the room the note leaves: chosen
+        // for the whole panel, the note then pushed the hand and cast
+        // counts past the clip (#995's review).
+        let (opp_hidden, your_hidden) = (Self::board_cut(&opp_bf, limits[0]).1, Self::board_cut(&your_bf, limits[1]).1);
+        let opp_stats = Self::status_with_unshown(|room| Self::opponent_stats(view, room), opp_hidden, limits[0], mid_w);
+        let your_stats = Self::status_with_unshown(|room| [your_line("  "), your_line(" ")].into_iter()
+            .find(|l| str_cols(l) <= room).unwrap_or_else(|| your_line(" ")), your_hidden, limits[1], mid_w);
 
         // Opponent status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -2187,12 +2246,8 @@ impl CliPlayer {
 
         // Mana pool at bottom of hand area
         if mana_shown {
-            let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
-                .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{t:?}:{v}"))
-                .collect();
             Self::mid_print(&mut out, mid_col, &mut row, mid_w,
-                &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
+                &Self::your_mana_row(&view.your_mana_pool, mid_w), Some(Color::Yellow), false);
         }
 
         // The prompt block — the separator that carries the notice, the menu,
@@ -2885,6 +2940,30 @@ impl CliPlayer {
             Some((who, rest)) => format!("{who} (+{hidden} {noun} unshown): {rest}"),
             None => format!("{stats}  (+{hidden} {noun} unshown)"),
         }
+    }
+
+    /// A status line with [`Self::with_unshown`]'s note, its form chosen by
+    /// `line(room)` for the room the note leaves in `width`. Chosen for the
+    /// whole panel, the note then pushed the hand and cast counts past the
+    /// clip (#995's review). Where the note's words leave too little room
+    /// it is "(+N unshown)", which still counts them.
+    fn status_with_unshown(line: impl Fn(usize) -> String, hidden: usize, limit: usize, width: usize) -> String {
+        let long = |stats: &str| Self::with_unshown(stats, hidden, limit);
+        let short = |stats: &str| if limit > 0 || hidden == 0 { stats.to_string() } else {
+            match stats.split_once(": ") {
+                Some((who, rest)) => format!("{who} (+{hidden} unshown): {rest}"),
+                None => format!("{stats}  (+{hidden} unshown)"),
+            }
+        };
+        let mut last = String::new();
+        for note in [&long as &dyn Fn(&str) -> String, &short] {
+            let room = width.saturating_sub(str_cols(&note("a: b")) - str_cols("a: b"));
+            last = note(&line(room));
+            if str_cols(&last) <= width {
+                return last;
+            }
+        }
+        last
     }
 
     /// The row that stands in for the part of a side the pane cannot hold.
@@ -4005,8 +4084,9 @@ impl CliPlayer {
             // draws is the one m/p then turn: paging by the page measured
             // before the resize skipped rows or did nothing (#780).
             let input = Self::read_line_redrawing("", &|| {
+                let title = if unheld(Some("")).is_some() { title.as_str() } else { label };
                 *page.borrow_mut() = Self::render_paged(
-                    view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
+                    view, Some(&labels), Some(title), &view.display_log, "", None, menu_offset);
             });
             let page = page.take();
             match Self::parse_target_input(&input, options.len(), rows) {
@@ -4850,6 +4930,34 @@ impl CliPlayer {
         terminal::size().unwrap_or((100, 30)).0 as usize
     }
 
+    /// A refusal in at most `rows` rows of `width` columns: wrapped where it
+    /// fits; else on one row, shortened deliberately — the "(CR …)"
+    /// citation dropped first, then the part before " — " cut in its
+    /// middle so the instruction after it is kept whole (#1020).
+    fn notice_rows(msg: &str, width: usize, rows: usize) -> Vec<String> {
+        // Every row keeps the message's indent, and is measured in columns:
+        // word_wrap counted characters (#1027 made it columns), and a typed wide character in a
+        // quoted input would run a row past the border (#1020's review).
+        let wrapped = Self::wrap_indented(msg, width);
+        if wrapped.len() <= rows.max(1) && wrapped.iter().all(|l| str_cols(l) <= width && !l.trim().is_empty()) {
+            return wrapped;
+        }
+        let mut short = msg.to_string();
+        while let Some(at) = short.find(" (CR ") {
+            match short[at..].find(')') {
+                Some(end) => short.replace_range(at..at + end + 1, ""),
+                None => break,
+            }
+        }
+        if str_cols(&short) <= width {
+            return vec![short];
+        }
+        match short.rfind(" — ") {
+            Some(at) => vec![Self::elide_middle("", &short[..at], &short[at..], width)],
+            None => vec![Self::clip_closed_or_cut(&short, width)],
+        }
+    }
+
     fn term_height() -> usize {
         terminal::size().unwrap_or((100, 30)).1 as usize
     }
@@ -5032,9 +5140,14 @@ impl CliPlayer {
     /// The spells your side (`mine`) or the other has cast this turn.
     /// The opponent's status line: life, the mana floating in its pool,
     /// which the board's tapped lands do not say (#865), zones and spells
-    /// cast this turn. The caller clips it to the panel, so the mana comes
-    /// right after life, where a narrow panel cuts the counts instead.
-    fn opponent_stats(view: &GameView) -> String {
+    /// cast this turn, in the widest form that fits `width` columns. The
+    /// mana comes right after life. Six kinds floating ran the line to
+    /// about 98 columns, and the panel's clip cut the counts with nothing
+    /// saying so (#995's review): before anything is cut, the mana is
+    /// written in letters ("2W 1U") and the gaps are narrowed, keeping
+    /// every count and every kind. The caller clips only a line that fits
+    /// in no form.
+    fn opponent_stats(view: &GameView, width: usize) -> String {
         let opp_gy: usize = view.graveyards.iter()
             .filter(|(pid, _)| *pid != view.you)
             .map(|(_, cards)| cards.len()).sum();
@@ -5042,15 +5155,41 @@ impl CliPlayer {
             .filter(|c| c.owner != view.you).count();
         let opp_caret = if view.active_player == view.you { "  " } else { "▸ " };
         view.opponents.first().map(|opp| {
-            let pool: Vec<String> = opp.mana_pool.mana.iter()
-                .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{t:?}:{v}"))
-                .collect();
-            let floating = if pool.is_empty() { String::new() } else { format!("  mana {}", pool.join(" ")) };
-            format!("{}Opp: {}hp{floating}  {}lib  {}gy  {}ex  {}hand  {}cast",
-                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
-                Self::spells_cast_this_turn(view, false))
+            let form = |letters: bool, gap: &str| {
+                let pool = Self::pool_text(&opp.mana_pool, letters);
+                let floating = if pool.is_empty() { String::new() } else { format!("{gap}mana {pool}") };
+                format!("{}Opp: {}hp{floating}{gap}{}lib{gap}{}gy{gap}{}ex{gap}{}hand{gap}{}cast",
+                    opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
+                    Self::spells_cast_this_turn(view, false))
+            };
+            let forms = [form(false, "  "), form(true, "  "), form(true, " ")];
+            forms.iter().find(|f| str_cols(f) <= width).unwrap_or(&forms[2]).clone()
         }).unwrap_or_default()
+    }
+
+    /// A mana pool's floating kinds: "Blue:2 Black:1", or in `letters`
+    /// "2U 1B", the narrower form a status line falls back to (#995's review).
+    fn pool_text(pool: &mtg_engine::types::ManaPool, letters: bool) -> String {
+        pool.mana.iter()
+            .filter(|(_, &v)| v > 0)
+            .map(|(t, v)| if letters { format!("{v}{}", Self::mana_type_letter(*t)) } else { format!("{t:?}:{v}") })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn mana_type_letter(t: mtg_engine::types::ManaType) -> char {
+        use mtg_engine::types::ManaType;
+        match t {
+            ManaType::White => 'W', ManaType::Blue => 'U', ManaType::Black => 'B',
+            ManaType::Red => 'R', ManaType::Green => 'G', ManaType::Colorless => 'C',
+        }
+    }
+
+    /// Your "Mana:" row under the hand, in the widest form that fits
+    /// `width` columns: the names, then the letters (#995's review).
+    fn your_mana_row(pool: &mtg_engine::types::ManaPool, width: usize) -> String {
+        let long = format!("  Mana: {}", Self::pool_text(pool, false));
+        if str_cols(&long) <= width { long } else { format!("  Mana: {}", Self::pool_text(pool, true)) }
     }
 
     fn spells_cast_this_turn(view: &GameView, mine: bool) -> u32 {
@@ -5068,22 +5207,33 @@ impl CliPlayer {
     /// here too, by its source's name — Moonmist's prevention was one LOG
     /// line that scrolled away (#953); the card is in its graveyard to read.
     fn battlefield_rule(view: &GameView, width: usize) -> String {
-        // The effects first: a 58-column pane cuts the end of the label,
-        // and the death is also in the LOG pane's history of the turn.
-        let mut facts: Vec<String> = view.turn_effects.iter()
-            .map(|e| format!("{} in force", e.split_once(':').map_or(e.as_str(), |(source, _)| source)))
+        // Fitted as a whole, as the page's band is (#993): cut from the end,
+        // a second effect lost its tail with no count and the death after
+        // it went entirely. The words shorten first, then every effect after
+        // the first is counted, then they are only counted.
+        let sources: Vec<&str> = view.turn_effects.iter()
+            .map(|e| e.split_once(':').map_or(e.as_str(), |(source, _)| source))
             .collect();
-        if view.creature_died_this_turn {
-            facts.push("a creature died".into());
-        }
-        if let Some(last) = facts.last_mut() {
-            last.push_str(" this turn");
-        }
-        let label = if facts.is_empty() {
-            "─── BATTLEFIELD ".to_string()
-        } else {
-            format!("─── BATTLEFIELD ({}) ", facts.join("; "))
+        let died = view.creature_died_this_turn;
+        let n = sources.len();
+        let shape = |effects: Option<String>, death: &str| -> String {
+            let facts: Vec<String> = effects.into_iter().chain(died.then(|| death.to_string())).collect();
+            if facts.is_empty() { "─── BATTLEFIELD ".to_string() } else { format!("─── BATTLEFIELD ({}) ", facts.join("; ")) }
         };
+        let full = {
+            let mut facts: Vec<String> = sources.iter().map(|s| format!("{s} in force")).collect();
+            if died { facts.push("a creature died".into()); }
+            if let Some(last) = facts.last_mut() { last.push_str(" this turn"); }
+            if facts.is_empty() { "─── BATTLEFIELD ".to_string() } else { format!("─── BATTLEFIELD ({}) ", facts.join("; ")) }
+        };
+        let tries = [
+            full,
+            shape((n > 0).then(|| format!("{} in force", sources.join(", "))), "a creature died"),
+            shape((n > 1).then(|| format!("{} +{} in force", sources[0], n - 1))
+                .or_else(|| (n == 1).then(|| format!("{} in force", sources[0]))), "died"),
+            shape((n > 0).then(|| format!("{n} in force")), "died"),
+        ];
+        let label = tries.iter().find(|l| l.chars().count() <= width).unwrap_or(&tries[3]).clone();
         let line = format!("{label}{}", "─".repeat(width.saturating_sub(label.chars().count())));
         // Closed when the pane is narrower than the label (#781's review).
         Self::clip_closed_or_cut(&line, width)
@@ -5171,8 +5321,14 @@ impl CliPlayer {
         loop {
             let line = Self::read_line_redrawing_raw(prompt, redraw, on_edit);
             if !is_concede_word(&line) {
+                NOTICE_HELD.with(|h| h.set(false));
                 return line;
             }
+            // The screen's last refusal is not about this word: it is
+            // repainted without it before the question, and stays away
+            // after a "no" until the screen reads its next line (#1019).
+            NOTICE_HELD.with(|h| h.set(true));
+            redraw();
             // Declined: the screen asks its question again, as it was.
             Self::concede_if_confirmed(Some(redraw));
             redraw();
@@ -5328,7 +5484,7 @@ impl CliPlayer {
         // with no Enter, while they were still typing (issue #249). The
         // answer is short, but "the keystroke that ends the game" cannot be
         // one the player has not finished choosing.
-        let mut echo_col = px + u16::try_from(first.chars().count()).unwrap_or(0);
+        let mut echo_col = px + u16::try_from(str_cols(&first)).unwrap_or(0);
         // The panel's border, like the other two readers — this was the
         // terminal's width, so everything typed past column 118 of a 150-column
         // terminal printed straight through the frame and over the CARDS pane,
@@ -5355,7 +5511,7 @@ impl CliPlayer {
                         Self::prompt_room(Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)), YN_ECHO_ROOM));
                     Self::clear_panel_row(&mut out, px, py);
                     let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
-                    echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
+                    echo_col = px + u16::try_from(str_cols(&shown)).unwrap_or(0);
                 } else {
                     // A screen with no redraw to give (the card browser):
                     // the question alone, at the top of a cleared screen,
@@ -5366,7 +5522,7 @@ impl CliPlayer {
                         Self::prompt_room((w as usize).saturating_sub(1), YN_ECHO_ROOM));
                     (px, py) = (0, 0);
                     let _ = execute!(out, cursor::MoveTo(0, 0), Print(&shown));
-                    echo_col = u16::try_from(shown.chars().count()).unwrap_or(0);
+                    echo_col = u16::try_from(str_cols(&shown)).unwrap_or(0);
                 }
                 echo_cap = Self::echo_cap_at(w as usize, echo_col);
                 repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
@@ -5413,7 +5569,7 @@ impl CliPlayer {
                             // hint, not after the shorter question it
                             // replaced: from there the echo's erase wiped
                             // "… (y/n)> " at the first key (#963's review).
-                            echo_col = px + u16::try_from(clipped.chars().count()).unwrap_or(0);
+                            echo_col = px + u16::try_from(str_cols(&clipped)).unwrap_or(0);
                             echo_cap = Self::echo_cap_at(Self::term_width(), echo_col);
                             buf.clear();
                         }
@@ -5438,10 +5594,14 @@ impl CliPlayer {
         loop {
             let line = Self::read_line_with_search_redrawing_raw(col, redraw);
             if !line.as_deref().is_some_and(is_concede_word) {
+                NOTICE_HELD.with(|h| h.set(false));
                 return line;
             }
             // The same word as at every other prompt (#676); declined, the
-            // menu is drawn again and asks again.
+            // menu is drawn again and asks again. Its last refusal is
+            // repainted away first (#1019).
+            NOTICE_HELD.with(|h| h.set(true));
+            redraw();
             Self::concede_if_confirmed(Some(redraw));
             redraw();
         }
@@ -5506,13 +5666,17 @@ impl CliPlayer {
                     KeyCode::Char('/') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
                         break None; // trigger card search
                     }
-                    KeyCode::Char('r') if buf.is_empty() && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                    KeyCode::Char('r') if buf.is_empty() && is_plain_char(&ev, 'r') => {
                         // Wait briefly for a second 'r' to trigger hot reload.
                         // Anything else that arrives in the window is put
                         // back for the next turn of the loop, not eaten.
                         if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
                             match read_event_guarded() {
-                                Some(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) => {
+                                // The second key is held to the first's
+                                // guard: `r` then Ctrl-R or Alt-r, an
+                                // unbound chord everywhere else, ended the
+                                // game as a hot reload (#1051).
+                                Some(second) if is_plain_char(&second, 'r') => {
                                     HOT_RELOAD_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
                                     tui_raw_off();
                                     break Some("__hot_reload__".into());
@@ -6051,7 +6215,7 @@ impl CliPlayer {
             } else {
                 " INSPECT BATTLEFIELD".to_string()
             };
-            let footer = Self::viewer_footer(notice.borrow().clone(),
+            let footer = Self::viewer_footer(unheld(notice.borrow().as_deref()).map(str::to_string),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer, w);
@@ -6103,9 +6267,9 @@ impl CliPlayer {
         match notice {
             Some(n) => {
                 let room = w.saturating_sub(3);
-                let n = if str_cols(&n) > room {
-                    format!("{}\u{2026}", clip_cols(&n, room.saturating_sub(1)))
-                } else { n };
+                // Cut keeping what it says to do, as the prompts' refusals
+                // are (#1020's review).
+                let n = Self::notice_rows(&n, room, 1).concat();
                 format!("  {n}\n{hint}")
             }
             None => format!("\n{hint}"),
@@ -6798,7 +6962,7 @@ return",
             } else {
                 format!(" YOUR DECK ({total_cards} cards)")
             };
-            let footer = Self::viewer_footer(notice.borrow().clone(),
+            let footer = Self::viewer_footer(unheld(notice.borrow().as_deref()).map(str::to_string),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer, w);
@@ -6919,7 +7083,7 @@ return",
         if parts.len() != 2 {
             return Err(SYNTAX.into());
         }
-        let (Ok(b), Ok(a)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) else {
+        let (Some(b), Some(a)) = (read_index(parts[0]), read_index(parts[1])) else {
             return Err(SYNTAX.into());
         };
         if b >= n_blockers {
@@ -7093,10 +7257,18 @@ return",
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + 1);
+            // A refusal's end is what it says to do, and a bare clip lost it
+            // ("— add" of "add blockers or drop the block", #1020): it
+            // takes the row under it too where that row is on the screen.
+            let room = if (r as usize) + 2 < Self::term_height() { 2 } else { 1 };
+            for k in 1..=room as u16 {
+                Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + k);
+            }
             if let Some(msg) = msg {
-                let _ = execute!(stdout(), SetForegroundColor(Color::Red),
-                    Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
+                for (k, line) in Self::notice_rows(msg, Self::middle_panel_width_at(Self::term_width()), room).iter().enumerate() {
+                    let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1 + k as u16),
+                        SetForegroundColor(Color::Red), Print(line), ResetColor);
+                }
             }
             // Back to the prompt row: `read_line` prints its prompt at the
             // cursor, so leaving it here put the prompt on the end of the
@@ -7177,11 +7349,11 @@ return",
             let mut parsed = 0usize;
             for t in &tokens {
                 if let Some((a_tok, w_tok)) = t.split_once(">pw") {
-                    if let (Ok(a), Ok(w)) = (a_tok.parse::<usize>(), w_tok.parse::<usize>()) {
+                    if let (Some(a), Some(w)) = (read_index(a_tok), read_index(w_tok)) {
                         walker_attacks.push(((a, a_tok), (w, w_tok)));
                         parsed += 1;
                     }
-                } else if let Ok(i) = t.parse::<usize>() {
+                } else if let Some(i) = read_index(t) {
                     indices.push((i, t));
                     parsed += 1;
                 }
@@ -7389,10 +7561,18 @@ return",
         // prevent, on a timer (issue #291). Everywhere else in this CLI a
         // notice is a render input that survives until the next keystroke.
         let paint_notice = |msg: Option<&str>, r: u16| {
-            Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + 1);
+            // A refusal's end is what it says to do, and a bare clip lost it
+            // ("— add" of "add blockers or drop the block", #1020): it
+            // takes the row under it too where that row is on the screen.
+            let room = if (r as usize) + 2 < Self::term_height() { 2 } else { 1 };
+            for k in 1..=room as u16 {
+                Self::clear_panel_row(&mut stdout(), Self::middle_panel_col(), r + k);
+            }
             if let Some(msg) = msg {
-                let _ = execute!(stdout(), SetForegroundColor(Color::Red),
-                    Print(clip_cols(msg, Self::middle_panel_width_at(Self::term_width()))), ResetColor);
+                for (k, line) in Self::notice_rows(msg, Self::middle_panel_width_at(Self::term_width()), room).iter().enumerate() {
+                    let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), r + 1 + k as u16),
+                        SetForegroundColor(Color::Red), Print(line), ResetColor);
+                }
             }
             // Back to the prompt row: `read_line` prints its prompt at the
             // cursor, so leaving it here put the prompt on the end of the
@@ -7610,6 +7790,8 @@ impl CliPlayer {
         // the rest like any other input it will not honour.
         let fundable = mtg_engine::funding::fundable_x_values(options);
         let contiguous = fundable.len() as u32 == options.max_announceable_x() + 1;
+        // Under the Max X line: why the sources sum to less than it (#979).
+        let discount_line = mtg_engine::funding::describe_x_discount(options);
         // The frame and the funding lines, painted for the terminal as it is
         // now; returns the reader's row. A resize at this prompt used to
         // leave the frame drawn for the old width, hard-wrapped by the
@@ -7637,7 +7819,7 @@ impl CliPlayer {
                 &Self::x_plan_row(options, &options.max_announceable_x().to_string()), mid_w, usize::from(X_PLAN_ROWS)).len().max(1);
             let pool_rows = usize::from(options.pool.values().any(|n| *n > 0));
             Self::render_reserving(view, Some(description), &view.display_log,
-                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 2 + plan_rows);
+                1 + usize::from(discount_line.is_some()) + pool_rows + options.groups.len() + usize::from(!contiguous) + 2 + plan_rows);
             let clip = |s: &str| -> String { Self::clip_closed_or_cut(s, mid_w) };
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
@@ -7647,6 +7829,11 @@ impl CliPlayer {
                 Print(clip(&format!("  Max X = {}", options.max_announceable_x()))),
                 SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
+            if let Some(line) = &discount_line {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    Print(clip(&format!("  {line}"))));
+                r += 1;
+            }
             let pool_summary: Vec<String> = [
                 ManaType::White, ManaType::Blue, ManaType::Black,
                 ManaType::Red, ManaType::Green, ManaType::Colorless,
@@ -7655,8 +7842,19 @@ impl CliPlayer {
                 if n > 0 { Some(format!("{n} {mt:?}")) } else { None }
             }).collect();
             if !pool_summary.is_empty() {
-                let _ = execute!(out, cursor::MoveTo(col, r),
-                    Print(clip(&format!("  Pool: {}", pool_summary.join(", ")))));
+                // In letters where the names do not fit, so no kind is cut
+                // (#995's review).
+                let long = format!("  Pool: {}", pool_summary.join(", "));
+                let line = if str_cols(&long) <= mid_w { long } else {
+                    format!("  Pool: {}", [
+                        ManaType::White, ManaType::Blue, ManaType::Black,
+                        ManaType::Red, ManaType::Green, ManaType::Colorless,
+                    ].iter().filter_map(|mt| {
+                        let n = options.pool.get(mt).copied().unwrap_or(0);
+                        (n > 0).then(|| format!("{n}{}", Self::mana_type_letter(*mt)))
+                    }).collect::<Vec<_>>().join(" "))
+                };
+                let _ = execute!(out, cursor::MoveTo(col, r), Print(clip(&line)));
                 r += 1;
             }
             for g in &options.groups {
@@ -7695,7 +7893,10 @@ impl CliPlayer {
                 Self::clear_panel_row(&mut stdout(), col, row);
             }
             if let Some(msg) = notice {
-                let msg: String = msg.chars().take(mid_w).collect();
+                // Cut by columns and deliberately, keeping what it says to
+                // do (#1020's review): a character count with no marker
+                // cut "payable X: …" off the end.
+                let msg = Self::notice_rows(&msg, mid_w, 1).concat();
                 let _ = execute!(stdout(), cursor::MoveTo(col, r + 1 + room),
                     SetForegroundColor(Color::Red), Print(msg), ResetColor);
             }
@@ -7726,7 +7927,7 @@ impl CliPlayer {
         let mut notice: Option<String> = None;
         let x: u32 = loop {
             paint(notice.as_deref());
-            let input = Self::read_line_live(&hint, &|| paint(notice.as_deref()), Some(&plan));
+            let input = Self::read_line_live(&hint, &|| paint(unheld(notice.as_deref())), Some(&plan));
             let input = input.trim();
             // Cancelling a spell's X prompt backs out of the whole cast —
             // the engine un-stashes it with nothing spent (issue #123).
@@ -8071,7 +8272,7 @@ impl CliPlayer {
                 let mut out = stdout();
                 Self::clear_mid_from(&mut out, r);
                 if let Some(msg) = notice {
-                    let shown: String = msg.chars().take(Self::middle_panel_width_at(w)).collect();
+                    let shown = Self::notice_rows(msg, Self::middle_panel_width_at(w), 1).concat();
                     let _ = execute!(out, cursor::MoveTo(col, r + 1),
                         SetForegroundColor(Color::Red), Print(shown), ResetColor);
                 }
@@ -8080,7 +8281,7 @@ impl CliPlayer {
             };
             let shown = notice.take();
             draw(shown.as_deref());
-            let input = Self::read_line_redrawing(&hint, &|| draw(shown.as_deref()));
+            let input = Self::read_line_redrawing(&hint, &|| draw(unheld(shown.as_deref())));
             match Self::parse_amount_input(&input, min, max) {
                 AmountInput::Amount(a) => {
                     let index = (a - min) as usize;
@@ -8120,6 +8321,10 @@ impl CliPlayer {
                 refused_number(t, a as usize))),
             Ok(a) => AmountInput::Invalid(format!(
                 "  {} is more than is left — at most {max}", refused_number(t, a as usize))),
+            // Digits too many to read are more than is left, as the page
+            // reads them (#1017's review).
+            Err(_) if t.bytes().all(|b| b.is_ascii_digit()) => AmountInput::Invalid(format!(
+                "  '{}' is more than is left — at most {max}", quote_input(t))),
             Err(_) => AmountInput::Invalid(format!(
                 "  '{}' is not a number — enter an amount from {min} to {max}", quote_input(t))),
         }
@@ -8145,6 +8350,11 @@ impl CliPlayer {
         let mut order = Vec::with_capacity(n);
         for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
             let Ok(k) = tok.parse::<usize>() else {
+                // Out of range, not "not a number" (#1017's review).
+                if tok.bytes().all(|b| b.is_ascii_digit()) {
+                    return OrderInput::Invalid(format!("'{}' is out of range — the entries are numbered 0-{}",
+                        quote_input(tok), n.saturating_sub(1)));
+                }
                 return OrderInput::Invalid(format!(
                     "'{}' is not a number — type the indices in order, e.g. \"2 0 1\"", quote_input(tok)));
             };
@@ -8345,9 +8555,7 @@ impl CliPlayer {
                 }
                 // Only where every row is an answer the screen can take: on
                 // "discard 1 of 8" `a` could lead only to a refusal (#997).
-                SetInput::All if !Self::set_takes_all(pick) => notice = Some(format!(
-                    "a marks all {} — this takes at most {}; mark the ones you want",
-                    pick.rows.len(), pick.max)),
+                SetInput::All if !Self::set_takes_all(pick) => notice = Some(Self::all_refused(pick.rows.len(), pick.min, pick.max)),
                 SetInput::All => { touched = true; marked.iter_mut().for_each(|m| *m = true); }
                 SetInput::None => { touched = true; marked.iter_mut().for_each(|m| *m = false); }
                 SetInput::Cancel => return None,
@@ -8425,6 +8633,17 @@ impl CliPlayer {
 
     /// Why a confirmed selection was refused, in the terms the screen asks
     /// in: an exact count, a ceiling, or a range.
+    /// Why `a` is refused on a screen that takes fewer than all its rows
+    /// (#997), in the count the screen asks for: "at most 3" read wrong on
+    /// a screen that takes exactly 3, the mulligan's bottom among them
+    /// (CR 103.5), whose heading and Confirm both say "exactly" (#1016).
+    fn all_refused(rows: usize, min: usize, max: usize) -> String {
+        let takes = if min == max { format!("exactly {max}") }
+            else if min == 0 { format!("at most {max}") }
+            else { format!("between {min} and {max}") };
+        format!("a marks all {rows} — this takes {takes}; mark the ones you want")
+    }
+
     fn set_count_error(have: usize, min: usize, max: usize) -> String {
         let card = |n: usize| if n == 1 { "card" } else { "cards" };
         if min == max {
@@ -8561,6 +8780,12 @@ impl CliPlayer {
         let mut ks = Vec::new();
         for tok in t.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
             let Ok(k) = tok.parse::<usize>() else {
+                // A number too long to read is a number out of range, as
+                // the other prompts say, not "not a number" (#1017).
+                if tok.bytes().all(|b| b.is_ascii_digit()) {
+                    return SetInput::Invalid(format!("'{}' is out of range — the cards are numbered 0-{}",
+                        quote_input(tok), n.saturating_sub(1)));
+                }
                 return SetInput::Invalid(format!(
                     "'{}' is not a number — type the number of a card to mark or unmark it", quote_input(tok)));
             };
@@ -8751,7 +8976,7 @@ impl CliPlayer {
         for (s, l) in &footer { put(&mut out, &mut row, *s, l); }
         if let Some(msg) = notice {
             let _ = execute!(out, cursor::MoveTo(0, row), SetForegroundColor(Color::Red),
-                Print(clip_cols(&format!("  {msg}"), w)), ResetColor);
+                Print(Self::notice_rows(&format!("  {msg}"), w, 1).concat()), ResetColor);
         }
         row += 1;
         let _ = execute!(out, cursor::MoveTo(0, row));
@@ -9526,7 +9751,10 @@ impl CliPlayer {
                     }
                     continue;
                 }
-                "__hot_reload__" => {
+                // Only the chord's own answer: the line reader hands back
+                // what was typed, so a person who typed this word ended the
+                // game with no rebuild ever asked for (#1051's review).
+                "__hot_reload__" if HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) => {
                     // Hot reload triggered by rapid 'rr' in raw mode. This is
                     // the PROCESS stopping, not a seat quitting: it used to be
                     // spelled `Concede`, which the engine recorded, so asking
@@ -9585,6 +9813,12 @@ impl CliPlayer {
                         DisplayEntry::Direct(action_idx) => {
                             let action = &legal_actions[*action_idx];
                             if matches!(action, Action::Concede) {
+                                // The menu as its reader redraws it, without
+                                // the last refusal: the question is not about
+                                // that input (#1019's review — the row, as
+                                // the typed word already was).
+                                Self::render_paged(view, Some(&display_labels), legal.context.as_deref(),
+                                    &view.display_log, &self.card_filter, pass_label, menu_offset);
                                 let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
                                 if !Self::confirm_yn("  Are you sure you want to concede? (y/n)> ", Some(&|| {
                                     Self::render_paged(view, Some(&display_labels), legal.context.as_deref(),
@@ -9752,6 +9986,21 @@ pub(crate) mod tests {
     use mtg_engine::engine::LegalActions;
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
+
+    /// The `rr` hot-reload chord is two plain `r`s. `r` then Ctrl-R (a
+    /// readline reverse-search reflex) or Alt-r completed it, abandoned the
+    /// game and ran `cargo build` in whatever directory the game was in
+    /// (#1051); Shift-R never did.
+    #[test]
+    fn only_a_plain_r_completes_the_hot_reload_chord() {
+        let key = |m: KeyModifiers| Event::Key(KeyEvent::new(KeyCode::Char('r'), m));
+        assert!(is_plain_char(&key(KeyModifiers::NONE), 'r'));
+        assert!(!is_plain_char(&key(KeyModifiers::CONTROL), 'r'));
+        assert!(!is_plain_char(&key(KeyModifiers::ALT), 'r'));
+        assert!(!is_plain_char(&key(KeyModifiers::CONTROL | KeyModifiers::SHIFT), 'r'));
+        assert!(!is_plain_char(&Event::Key(KeyEvent::new(KeyCode::Char('R'), KeyModifiers::SHIFT)), 'r'));
+        assert!(!is_plain_char(&Event::FocusGained, 'r'));
+    }
 
     /// The payable-X line has to fit the panel and name both ends of the
     /// set, whatever shape the board gives it (#595, #318).
@@ -10232,6 +10481,18 @@ any target (tap Mountain (your))", 92),
         assert!(matches!(CliPlayer::parse_card_set_input("a", 7, false), All));
         assert!(matches!(CliPlayer::parse_card_set_input("none", 7, false), None));
         assert!(matches!(CliPlayer::parse_card_set_input("g", 7, false), Pane('g')));
+        // #1017: a number past usize is out of range, as 7 is, not "not a
+        // number"; a word still is not a number.
+        assert!(matches!(CliPlayer::parse_card_set_input("99999999999999999999", 7, false),
+            Invalid(ref m) if m.contains("out of range") && m.contains("0-6")));
+        assert!(matches!(CliPlayer::parse_card_set_input("7", 7, false), Invalid(ref m) if m.contains("out of range")));
+        assert!(matches!(CliPlayer::parse_card_set_input("x", 7, false), Invalid(ref m) if m.contains("not a number")));
+        // The same for the damage-division amount and the ordering screen.
+        assert!(matches!(CliPlayer::parse_amount_input("99999999999", 1, 4),
+            AmountInput::Invalid(ref m) if m.contains("more than is left") && m.contains("at most 4")));
+        assert!(matches!(CliPlayer::parse_amount_input("x", 1, 4), AmountInput::Invalid(ref m) if m.contains("not a number")));
+        assert!(matches!(CliPlayer::parse_order_input("99999999999999999999", 3),
+            OrderInput::Invalid(ref m) if m.contains("out of range") && m.contains("0-2")));
         assert!(matches!(CliPlayer::parse_card_set_input("m", 7, false), NextPage));
         assert!(matches!(CliPlayer::parse_card_set_input("p", 7, false), PrevPage));
         match CliPlayer::parse_card_set_input("7", 7, false) {
@@ -10435,6 +10696,30 @@ Wolves or Werewolves is prevented".into()];
         for width in [90, 58, 30, 12] {
             let rule = CliPlayer::battlefield_rule(&v, width);
             assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
+        }
+    }
+
+    /// #993's review: cut from the end, a second effect lost its tail with
+    /// no count and the death after it went entirely. Fitted as a whole,
+    /// every effect is named or counted and the death is always said.
+    #[test]
+    fn the_battlefield_rule_names_or_counts_every_effect_and_keeps_the_death() {
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.creature_died_this_turn = true;
+        v.turn_effects = vec!["Moonmist: prevented".into(), "Rally the Peasants: +2/+0".into(), "Spare from Evil: protection".into()];
+        let full = CliPlayer::battlefield_rule(&v, 140);
+        assert!(full.contains("(Moonmist in force; Rally the Peasants in force; Spare from Evil in force; a creature died this turn)"), "{full}");
+        for width in [90, 58, 40] {
+            let rule = CliPlayer::battlefield_rule(&v, width);
+            assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
+            assert!(rule.contains("died"), "the death is dropped at {width}: {rule:?}");
+            let named = ["Moonmist", "Rally the Peasants", "Spare from Evil"].iter().filter(|s| rule.contains(*s)).count();
+            // "Moonmist +2 in force" or "3 in force": the number before "in force".
+            let lead = |t: &str| t.chars().take_while(char::is_ascii_digit).collect::<String>().parse::<usize>().ok();
+            let counted = rule.split_once('+').and_then(|(_, t)| lead(t))
+                .or_else(|| rule.split_once('(').and_then(|(_, t)| lead(t)))
+                .unwrap_or(0);
+            assert_eq!(named + counted, 3, "every effect named or counted at {width}: {rule:?}");
         }
     }
 
@@ -11406,6 +11691,31 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(CliPlayer::set_count_error(1, 2, 2), "1 marked — mark exactly 2 cards");
         assert_eq!(CliPlayer::set_count_error(4, 0, 3), "4 marked — mark at most 3 cards");
         assert_eq!(CliPlayer::set_count_error(1, 2, 5), "1 marked — mark between 2 and 5 cards");
+        // #1020: a combat refusal wider than the pane is wrapped onto the
+        // row under it, or, given one row, shortened with its instruction
+        // kept: a bare clip ended the menace refusal at "— add".
+        let menace = "Terror of Kruin Pass 4/3 (opp) can't be blocked by fewer than 2 creatures (CR 509.1b) \
+— add blockers or drop the block.";
+        let two = CliPlayer::notice_rows(menace, 94, 2);
+        assert!(two.len() == 2 && two.iter().all(|l| str_cols(l) <= 94) && two[1].ends_with("drop the block."), "{two:?}");
+        for w in [94, 70, 63] {
+            let one = CliPlayer::notice_rows(menace, w, 1);
+            assert!(one.len() == 1 && str_cols(&one[0]) <= w && one[0].ends_with("— add blockers or drop the block."),
+                "{one:?} in {w}");
+        }
+        assert_eq!(CliPlayer::notice_rows("short", 94, 1), vec!["short".to_string()]);
+        // Wrapped rows keep the indent, and a wide-character input is
+        // measured in columns, not characters.
+        let indented = CliPlayer::notice_rows(&format!("  {menace}"), 94, 2);
+        assert!(indented.iter().all(|l| l.starts_with("  ") && str_cols(l) <= 94), "{indented:?}");
+        let wide = CliPlayer::notice_rows("'\u{4e00}\u{4e00}\u{4e00}\u{4e00}\u{4e00}\u{4e00}' is not a number — type a number", 20, 2);
+        assert!(wide.iter().all(|l| str_cols(l) <= 20), "{wide:?}");
+        // #1016: `a`'s refusal says the count the screen takes, as the
+        // heading and Confirm do: "exactly" on a discard or mulligan bottom.
+        assert_eq!(CliPlayer::all_refused(10, 3, 3), "a marks all 10 — this takes exactly 3; mark the ones you want");
+        assert_eq!(CliPlayer::all_refused(7, 1, 1), "a marks all 7 — this takes exactly 1; mark the ones you want");
+        assert_eq!(CliPlayer::all_refused(8, 0, 2), "a marks all 8 — this takes at most 2; mark the ones you want");
+        assert_eq!(CliPlayer::all_refused(8, 1, 3), "a marks all 8 — this takes between 1 and 3; mark the ones you want");
     }
 
     /// Issue #288: a bare Enter meant three different things at the three
@@ -11674,6 +11984,59 @@ Wolves or Werewolves is prevented".into()];
             "There are no attackers.");
     }
 
+    /// #1027: rows are measured in display columns, so a quoted run of wide
+    /// characters wraps inside its pane instead of printing over the
+    /// border; ASCII wraps exactly as before, at spaces.
+    #[test]
+    fn word_wrap_measures_rows_in_columns() {
+        let wide = format!("Invalid input '{}' \u{2014} enter a number 0-1", "\u{4e00}".repeat(20));
+        let rows = CliPlayer::word_wrap(&wide, 57);
+        assert!(rows.iter().all(|r| str_cols(r) <= 57), "{rows:?}");
+        assert_eq!(rows.concat().replace(' ', ""), wide.replace(' ', ""), "nothing lost: {rows:?}");
+        // A run of wide characters with no space is cut between characters,
+        // never mid-character, and a character wider than the row is cut alone.
+        let run = "\u{4e00}".repeat(10);
+        assert_eq!(CliPlayer::word_wrap(&run, 5), vec!["\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}", "\u{4e00}\u{4e00}"]);
+        assert_eq!(CliPlayer::word_wrap("\u{4e00}a", 1), vec!["\u{4e00}", "a"]);
+        assert_eq!(CliPlayer::word_wrap("the quick brown fox", 9), vec!["the quick", "brown fox"]);
+        // The LOG pane's early return measured characters too: 20 wide
+        // characters are 20 characters and 40 columns (#1027's review).
+        let entry = "\u{4e00}".repeat(20);
+        let rows = CliPlayer::wrap_log_entry(&entry, 30);
+        assert!(rows.len() > 1 && rows.iter().all(|r| str_cols(r) <= 30), "{rows:?}");
+    }
+
+    /// #1019: while a reader holds the screen's notice — a typed `concede`
+    /// being asked about, or declined and not yet followed by a line the
+    /// screen reads — a redraw paints none.
+    #[test]
+    fn a_held_notice_is_not_repainted() {
+        assert_eq!(unheld(Some("Invalid input 'zz'")), Some("Invalid input 'zz'"));
+        NOTICE_HELD.with(|h| h.set(true));
+        assert_eq!(unheld(Some("Invalid input 'zz'")), None);
+        NOTICE_HELD.with(|h| h.set(false));
+        assert_eq!(unheld(None), None);
+    }
+
+    /// #1017: a number too long to read is out of range on the attack and
+    /// block screens too, named as typed, as 9 is — not a syntax lecture,
+    /// and not "(read as 18446744073709551615)". A word is still invalid.
+    #[test]
+    fn a_number_too_long_to_read_is_out_of_range_on_the_combat_screens() {
+        const BIG: &str = "99999999999999999999";
+        assert_eq!(read_index(BIG), Some(usize::MAX));
+        assert_eq!((read_index("7"), read_index("x"), read_index(""), read_index("-1")), (Some(7), None, None, None));
+        assert_eq!(CliPlayer::parse_block_pair(&format!("0:{BIG}"), 2, 1).unwrap_err(),
+            format!("No attacker '{BIG}'. Attackers are 0-0."));
+        assert_eq!(CliPlayer::parse_block_pair(&format!("{BIG}:0"), 2, 1).unwrap_err(),
+            format!("No blocker '{BIG}'. Your blockers are 0-1."));
+        assert!(CliPlayer::parse_block_pair("0:x", 2, 1).unwrap_err().starts_with("Invalid. Use"));
+        assert_eq!(CliPlayer::attack_index_error(&[(read_index(BIG).unwrap(), BIG)], &[], 2, 1).as_deref(),
+            Some(format!("Invalid attacker(s): '{BIG}'. Valid range is 0-1.").as_str()));
+        let walker = CliPlayer::attack_index_error(&[], &[((0, "0"), (read_index(BIG).unwrap(), BIG))], 2, 1).unwrap();
+        assert!(walker.contains(&format!("pw'{BIG}'")) && !walker.contains("18446744073709551615"), "{walker}");
+    }
+
     /// The CARDS panel prints its own keyword line and its own flashback
     /// line; the oracle text must not repeat either of them.
     ///
@@ -11732,18 +12095,73 @@ Wolves or Werewolves is prevented".into()];
             id: PlayerId(1), life: 20, hand_size: 7, library_size: 53,
             mana_pool: ManaPool::new(), mulligan_count: 0,
         }];
-        assert!(!CliPlayer::opponent_stats(&v).contains("mana"), "{}", CliPlayer::opponent_stats(&v));
+        assert!(!CliPlayer::opponent_stats(&v, 200).contains("mana"), "{}", CliPlayer::opponent_stats(&v, 200));
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Black, 1);
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Blue, 2);
-        let stats = CliPlayer::opponent_stats(&v);
+        let stats = CliPlayer::opponent_stats(&v, 200);
         assert!(stats.starts_with("▸ Opp: 20hp  mana Blue:2 Black:1  53lib"), "{stats}");
-        // An 80-column terminal's panel cuts the counts, not the mana.
+        // An 80-column terminal's panel shortens the line before it cuts
+        // anything: every kind and every count stays (#995's review).
         let narrow = CliPlayer::middle_panel_width_at(80);
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Green, 1);
-        let stats = CliPlayer::opponent_stats(&v);
-        assert!(str_cols(&stats) > narrow, "test precondition: {stats:?} is wider than {narrow}");
-        let cut = clip_cols(&stats, narrow);
-        assert!(str_cols(&cut) <= narrow && cut.contains("Black:1"), "{cut:?} in {narrow} columns");
+        let stats = CliPlayer::opponent_stats(&v, narrow);
+        assert!(str_cols(&stats) <= narrow, "{stats:?} in {narrow} columns");
+        assert!(stats.contains("2U") && stats.contains("1B") && stats.contains("1G") && stats.contains("53lib")
+            && stats.contains("7hand") && stats.contains("0cast"), "{stats:?}");
+    }
+
+    /// #995's review: the "(+N permanents unshown)" note was added after the
+    /// line's form was chosen for the whole panel, and pushed the hand and
+    /// cast counts past the clip. The form is chosen for the room the note
+    /// leaves.
+    #[test]
+    fn the_unshown_note_leaves_the_counts_their_room() {
+        let w = CliPlayer::middle_panel_width_at(80);
+        let mut v = view(Step::Draw, 32, false);
+        v.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1), life: 20, hand_size: 9, library_size: 40,
+            mana_pool: ManaPool::new(), mulligan_count: 0,
+        }];
+        v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Green, 2);
+        let line = CliPlayer::status_with_unshown(|room| CliPlayer::opponent_stats(&v, room), 12, 0, w);
+        assert!(str_cols(&line) <= w && line.contains("9hand") && line.contains("cast") && line.contains("+12"),
+            "{line:?} in {w} columns");
+        // Room for the note's words: they are kept.
+        let wide = CliPlayer::status_with_unshown(|room| CliPlayer::opponent_stats(&v, room), 12, 0, 120);
+        assert!(wide.contains("+12 permanents unshown") && wide.contains("9hand"), "{wide:?}");
+        // Nothing hidden: the line as it was.
+        assert_eq!(CliPlayer::status_with_unshown(|room| CliPlayer::opponent_stats(&v, room), 0, 0, w),
+            CliPlayer::opponent_stats(&v, w));
+    }
+
+    /// #995's review: six kinds floating beside double-digit zones ran the
+    /// opponent's line to about 98 columns, and the panel's clip cut every
+    /// count after the mana with nothing saying so. It fits in letters.
+    #[test]
+    fn six_kinds_floating_keep_every_count_on_the_opponents_line() {
+        use mtg_engine::types::ManaType;
+        let mut v = view(Step::Draw, 32, false);
+        v.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1), life: 20, hand_size: 9, library_size: 40,
+            mana_pool: ManaPool::new(), mulligan_count: 0,
+        }];
+        for (t, n) in [(ManaType::White, 2), (ManaType::Blue, 2), (ManaType::Black, 2),
+            (ManaType::Red, 3), (ManaType::Green, 2), (ManaType::Colorless, 2)] {
+            v.opponents[0].mana_pool.add(t, n);
+        }
+        // Your own row falls back to letters only where the names do not fit.
+        let tight = CliPlayer::your_mana_row(&v.opponents[0].mana_pool, 40);
+        assert!(str_cols(&tight) <= 40 && tight.contains("2C"), "{tight:?} in 40 columns");
+        for cols in [80, 120] {
+            let w = CliPlayer::middle_panel_width_at(cols);
+            let stats = CliPlayer::opponent_stats(&v, w);
+            assert!(str_cols(&stats) <= w, "{stats:?} in {w} columns");
+            for part in ["2W", "2U", "2B", "3R", "2G", "2C", "40lib", "9hand", "cast"] {
+                assert!(stats.contains(part), "{part} is gone from {stats:?} in {w} columns");
+            }
+            let mine = CliPlayer::your_mana_row(&v.opponents[0].mana_pool, w);
+            assert!(str_cols(&mine) <= w && (mine.contains("Colorless:2") || mine.contains("2C")), "{mine:?} in {w} columns");
+        }
     }
 
     pub(crate) fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
@@ -11868,6 +12286,7 @@ Wolves or Werewolves is prevented".into()];
             context: None,
             resolution_prompt: None,
             set_prompt: None,
+            mana_ability_copies: vec![],
         }
     }
 
@@ -12776,7 +13195,8 @@ Wolves or Werewolves is prevented".into()];
                     — enter a number 0-6, or press enter to return".to_string();
         let clipped = CliPlayer::viewer_footer(Some(long), hint, 80);
         let first = clipped.lines().next().unwrap();
-        assert!(str_cols(first) <= 79 && first.ends_with('\u{2026}'), "{first:?}");
+        // Cut in its middle, keeping what it says to do (#1020's review).
+        assert!(str_cols(first) <= 79 && first.contains('\u{2026}') && first.ends_with("or press enter to return"), "{first:?}");
         assert_eq!(clipped.lines().count(), plain.lines().count());
     }
 

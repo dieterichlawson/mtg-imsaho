@@ -73,6 +73,14 @@ pub struct Shared {
     /// The game pages of the people in a match now, by seat: what a kick
     /// reaches into a running match with (#821).
     in_game: Mutex<Vec<InGame>>,
+    /// The game pages of matches that are over, still attached: a finished
+    /// match's page sits on its game-over screen in its own tab, and is told
+    /// the table is closed with the rest, or it retried for ever (#1033).
+    finished_pages: Mutex<Vec<PageHandle>>,
+    /// The game links of matches that are over, by port and key, and the
+    /// seat each was: what an old link is answered with depends on whose
+    /// it was (#1037).
+    ended_links: Mutex<Vec<(u16, String, usize)>>,
     /// Where the next game page's port search starts: past the last one
     /// handed out, so a finished match's port, let go when its seat is
     /// dropped (#853), is not the next match's while the range has others.
@@ -105,6 +113,8 @@ struct InGame {
     /// port is passed to, and nothing else is; the page itself answers
     /// only under its key (#872).
     addr: std::net::SocketAddr,
+    /// The key in the page's link (`/game/<port>/<key>/`).
+    key: String,
 }
 
 struct Client {
@@ -136,6 +146,8 @@ impl Shared {
             snapshot_write: Mutex::new(()),
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
+            finished_pages: Mutex::new(Vec::new()),
+            ended_links: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
             cli_lines: Mutex::new(None),
         })
@@ -160,8 +172,8 @@ impl Shared {
         if !self.lobby().is_auto(seat) {
             return;
         }
-        let who = self.lobby().who(seat);
-        let why = format!("the host kicked {who}");
+        // In the words every later forfeit of the seat's is given (#1036).
+        let why = self.lobby().away_reason(seat);
         let in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut withdrawn = false;
         for page in in_game.iter().filter(|p| p.seat == seat) {
@@ -184,10 +196,19 @@ impl Shared {
 
     fn set_in_game(&self, seat: usize, page: Option<InGame>) {
         let mut in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        in_game.retain(|p| p.seat != seat);
+        let (gone, kept): (Vec<InGame>, Vec<InGame>) = in_game.drain(..).partition(|p| p.seat == seat);
+        *in_game = kept;
         if let Some(page) = page {
             in_game.push(page);
         }
+        drop(in_game);
+        self.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(gone.iter().map(|p| (p.addr.port(), p.key.clone(), p.seat)));
+        let mut finished = self.finished_pages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A page no longer attached cannot come back: its seat's listener
+        // closed with the match.
+        finished.retain(|p| p.connected() > 0);
+        finished.extend(gone.into_iter().map(|p| p.page).filter(|p| p.connected() > 0));
     }
 
     /// The lobby, poisoned or not: a panic in one worker must not take the
@@ -207,9 +228,11 @@ impl Shared {
         }
     }
 
-    /// The answer to something the host typed: printed under `--quiet` as
-    /// well, which quiets the table's own lines, not the host's commands
-    /// (`status` printed nothing at all under it).
+    /// The answer to something the host typed, or a warning: printed under
+    /// `--quiet` as well, which quiets the table's own lines, not the
+    /// host's commands (`status` printed nothing at all under it) nor what
+    /// went wrong (a WARN went through `say` in some places and not in
+    /// others, #1041's review).
     pub fn reply(&self, line: &str) {
         mtg_player::stderr_line!("{line}");
     }
@@ -256,7 +279,10 @@ impl Shared {
         };
         let _ = views;
         for line in events {
-            self.say(&line);
+            // The lobby's own warnings (an unusable pick answer, no valid
+            // deck, a seat that stopped answering) print under --quiet as
+            // the server's do (#1041's review).
+            if is_warning(&line) { self.reply(&line) } else { self.say(&line) }
         }
         self.keep_snapshot();
         self.changed.notify_all();
@@ -384,6 +410,9 @@ impl Shared {
         let reason = self.stop_reason().unwrap_or_else(|| "the table is over".to_string());
         for page in self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
             page.page.close(&reason);
+        }
+        for page in self.finished_pages.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
+            page.close(&reason);
         }
         let until = Instant::now() + Duration::from_millis(1500);
         while Instant::now() < until && !self.clients().is_empty() {
@@ -594,6 +623,12 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     Ok(())
 }
 
+/// A table line that says something went wrong, which `--quiet` does not
+/// silence: the event lines it does are what happened, not what failed.
+fn is_warning(line: &str) -> bool {
+    line.starts_with("WARN ")
+}
+
 /// A stop signal as a host knows it; the runners say it the same way.
 pub use mtg_player::llm::signal_name;
 
@@ -638,12 +673,14 @@ fn host_loop(shared: &Arc<Shared>) {
                 }
             }
             Some("kick") => {
-                let result = words.get(1).and_then(|n| n.parse::<usize>().ok())
-                    .ok_or_else(|| "kick takes a seat number".to_string())
+                let result = kick_seat(words.get(1).copied())
                     .and_then(|seat| {
                         // The host's own seat is at this keyboard, and a kick
                         // is for good: a mistyped seat number ended the
                         // host's tournament with no question asked (#909).
+                        // Refused first, so a kick that cannot take is not
+                        // put as a question (#1042's review).
+                        shared.lobby().kick_refusal(seat)?;
                         let own = shared.lobby().kind(seat) == Some(&SeatKind::Cli);
                         if own && words.get(2) != Some(&"yes") {
                             return Err(format!("seat {seat} is yours, at this terminal: `kick {seat} yes` \
@@ -677,6 +714,15 @@ hands it to the table for good, and its games are forfeit"));
                     shared.reply(&format!("  seat {seat} {kind} {} — {}, {} ({} pick{})",
                         s.name, s.presence, s.status, s.picks, if s.picks == 1 { "" } else { "s" }));
                 }
+            }
+            // `q` and `exit` are the terminal client's "leave this table",
+            // and the host's own seat is at this keyboard: while the table
+            // is still going they would close it for everybody on a reflex,
+            // so only `quit`, the word help and the manual name, does
+            // (#1045).
+            Some(word @ ("q" | "exit")) if shared.lobby().phase() != Phase::Done => {
+                shared.reply(&format!("'{word}' does not close the table here: `quit` closes it for everybody{}",
+                    if cli.is_some() { ", and your seat cannot leave a table it hosts" } else { "" }));
             }
             Some("quit" | "q" | "exit") => {
                 shared.quit();
@@ -755,7 +801,7 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
                 // as in the runner.
                 if let Err(e) = shared.lobby().ai_pick(seat, job.pack_id, 0, "", "", false) {
                     let who = shared.lobby().who(seat);
-                    shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
+                    shared.reply(&format!("WARN {who}: a pick could not be applied: {e}"));
                 }
                 shared.notify();
             }
@@ -786,7 +832,7 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
                 };
                 if let Err(e) = applied {
                     let who = shared.lobby().who(seat);
-                    shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
+                    shared.reply(&format!("WARN {who}: a pick could not be applied: {e}"));
                 }
                 shared.notify();
             }
@@ -838,6 +884,11 @@ fn tournament_thread(shared: &Arc<Shared>) {
 /// Play one match, or forfeit it for a seat the table plays for. Returns
 /// the next round's matches when this one ended the round.
 fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usize, usize, usize)> {
+    // The table is closing: no match is set up, and no game page served
+    // for it, whose seat then asked the host to open it (#1041's review).
+    if shared.quitting() {
+        return Vec::new();
+    }
     let (kind_a, kind_b, forfeit, deck_a, deck_b, best_of, seed) = {
         let lobby = shared.lobby();
         let forfeit = (lobby.is_auto(a) || lobby.is_auto(b)).then(|| lobby.forfeit_result(a, b));
@@ -856,7 +907,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
     }
     let (Some(deck_a), Some(deck_b)) = (deck_a, deck_b) else {
         let (wa, wb) = { let l = shared.lobby(); (l.who(a), l.who(b)) };
-        shared.say(&format!("WARN round {round}: {wa} vs {wb} has no decks to play with"));
+        shared.reply(&format!("WARN round {round}: {wa} vs {wb} has no decks to play with"));
         return Vec::new();
     };
 
@@ -878,13 +929,14 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                         seat, opponent: if seat == a { b } else { a },
                         withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
                         page: gui.page_handle(), addr: gui.local_addr(),
+                        key: gui.url.trim_end_matches('/').rsplit('/').next().unwrap_or_default().to_string(),
                     }));
                     shared.lobby().set_game_pages(seat, Some(0));
                     seats.push(GameSeat::Gui(gui));
                 }
                 Err(e) => {
                     let who = shared.lobby().who(seat);
-                    shared.say(&format!("WARN round {round}: no game page for {who}: {e}; \
+                    shared.reply(&format!("WARN round {round}: no game page for {who}: {e}; \
 {who} forfeits the match"));
                     let result = shared.lobby().forfeit_by(a, b, seat,
                         &format!("no game page for {who}: {e}"));
@@ -1097,6 +1149,7 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
                     format!("http://{}:{}{}", shared.config.advertise, shared.config.port, lobby_game_path(port, &key))
                 };
                 gui.notice_name = label.to_string();
+                gui.quiet = shared.config.quiet;
                 *next = port.checked_add(1);
                 return Ok(gui);
             }
@@ -1186,11 +1239,23 @@ fn redirect(stream: &mut TcpStream, to: &str) {
 /// do.
 fn proxy_game_page(mut client: TcpStream, head: &RequestHead, shared: &Shared, port: u16, rest: &str) {
     let head = &head.bytes;
+    // A finished match's link is answered as one even when its port now
+    // serves a later match, which would refuse the old key with a bare "not
+    // found" (#1037's review).
+    let key = rest.trim_start_matches('/').split('/').next().unwrap_or_default();
+    let ended = shared.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter().find(|(p, k, _)| *p == port && k == key).map(|&(_, _, seat)| seat);
     let addr = shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter().map(|g| g.addr).find(|a| a.port() == port);
+        .iter().filter(|_| ended.is_none()).map(|g| g.addr).find(|a| a.port() == port);
     let Some(mut addr) = addr else {
-        http_response(&mut client, "404 Not Found", "text/plain",
-            b"no game is being played on this link now: the match is over, or has not started; the draft page has the link to your game");
+        // A kicked seat's draft page has no game link to send it to (#1037).
+        let seat = ended;
+        let body: &[u8] = if seat.is_some_and(|s| shared.lobby().is_kicked(s)) {
+            b"no game is being played on this link now: the host has handed your seat to the table, which plays its games no more; the draft page says where the table stands"
+        } else {
+            b"no game is being played on this link now: the match is over, or has not started; the draft page has the link to your game"
+        };
+        http_response(&mut client, "404 Not Found", "text/plain", body);
         return;
     };
     if addr.ip().is_unspecified() {
@@ -1323,7 +1388,8 @@ fn serve_websocket(stream: TcpStream, head: &RequestHead, shared: &Arc<Shared>, 
     shared.notify();
     pump(&mut ws, &rx, shared, id, seat);
     shared.drop_client(id);
-    shared.lobby().disconnected(seat);
+    let closing = shared.stop_reason().is_some();
+    shared.lobby().disconnected(seat, closing);
     shared.notify();
 }
 
@@ -1370,7 +1436,7 @@ fn pump(
                     Ok(Request::Deck { main, lands, sideboard }) =>
                         shared.lobby().submit_deck(seat, &main, &lands, &sideboard),
                     Ok(Request::Ready) => shared.lobby().ready(seat),
-                    Ok(Request::Name { name }) => { shared.lobby().set_name(seat, &name); Ok(()) }
+                    Ok(Request::Name { name }) => shared.lobby().set_name(seat, &name),
                     Ok(Request::Sideboard { main, lands }) => shared.lobby().sideboard(seat, &main, &lands),
                     Ok(Request::PlayDraw { play }) => shared.lobby().play_draw(seat, play),
                     Ok(Request::SideboardReady) => shared.lobby().sideboard_ready(seat),
@@ -1399,9 +1465,37 @@ fn pump(
     }
 }
 
+/// The seat a console `kick` names. A seat number too long to read is no
+/// seat, as 9 is at a table of two, not "kick takes a seat number" (#1017).
+fn kick_seat(word: Option<&str>) -> Result<usize, String> {
+    match word.map(|n| (n, crate::client::read_number(n))) {
+        Some((n, Some(usize::MAX))) if n.parse::<usize>().is_err() => Err(format!("there is no seat '{n}'")),
+        Some((_, Some(seat))) => Ok(seat),
+        _ => Err("kick takes a seat number".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    /// #1017: a seat number too long to read is no seat, said as typed.
+    #[test]
+    fn kick_names_a_seat_number_too_long_to_read_as_no_seat() {
+        assert_eq!(super::kick_seat(Some("1")), Ok(1));
+        assert_eq!(super::kick_seat(Some("99999999999999999999")), Err("there is no seat '99999999999999999999'".to_string()));
+        assert_eq!(super::kick_seat(Some("bo")), Err("kick takes a seat number".to_string()));
+        assert_eq!(super::kick_seat(None), Err("kick takes a seat number".to_string()));
+    }
+
     use super::*;
+
+    /// #1041's review: the lobby's WARN events went through `say`, which
+    /// --quiet silences, while the server's own WARNs printed.
+    #[test]
+    fn a_lobby_warning_is_not_an_event_line() {
+        assert!(is_warning("WARN seat 1 stopped answering (no answer); the table picks and builds for it"));
+        assert!(!is_warning("seat 1 picked Brain Weevil (1.1)"));
+        assert!(!is_warning("seat 0 is away: no draft page or client is open for the seat"));
+    }
 
     /// #895: after `closed` no view goes out. A view sent while the sockets
     /// closed told the page still open that a seat whose page had closed was
@@ -1437,7 +1531,7 @@ mod tests {
         let kind = |m: String| serde_json::from_str::<serde_json::Value>(&m).unwrap()["type"].as_str().unwrap_or("").to_string();
         assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["view"], "a view goes out while the table is open");
         shared.quit_because("the server was stopped by Ctrl-C (SIGINT)");
-        shared.lobby().set_name(1, "Bo");
+        shared.lobby().set_name(1, "Bo").unwrap();
         shared.notify();
         assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["closed"], "nothing after closed");
         // Nor a reply to something asked in the moment of the close; and a

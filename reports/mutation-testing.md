@@ -1587,3 +1587,12 @@ before it was activated, and Rakish Heir's trigger a Vampire that did
 and both mutants are caught. The `if self.is_new_source(id) { return }`
 guards of `tap`, `untap` and `remove_counters` give cargo-mutants nothing
 to mutate but the whole function, which the tests of those already catch.
+
+## 2026-11-14 run 43607055092, shard 4 (issue #1031)
+
+Accepted:
+
+- `card_list` `>` -> `>=`: every name in a milled / revealed / returned
+  list gains " x1" ("Forest x1, Island x2" for "Forest, Island x2"). The
+  same cards are named in the same order with the same counts; only the
+  phrasing of a log line changes. Display wording (bucket 5).

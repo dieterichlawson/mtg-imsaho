@@ -47,7 +47,22 @@ const bears = { object_id: 26, name: "Grizzly Bears", controller: 0, owner: 0, c
 const qv = view(["older"].concat(quiet), []);
 qv.battlefield = [tusker, bears];
 const q = R.bandLogLines({ view: qv, index: P.indexView(qv), logSince: 1 });
-if (q[0] !== "── Turn 8 (p1) ──") fail(`no removal: the opponent's turn leads, not your tap: ${JSON.stringify(q)}`);
+// The opponent's cast, not the turn banner before it or their land (#1026).
+if (q[0] !== "p1 cast Kalonian Tusker (#31)") fail(`no removal: the opponent's cast leads, not your tap: ${JSON.stringify(q)}`);
+
+// #1026's two intervals: a line with no author (a turn banner, your own
+// spell resolving) is not the opponent's news, and led over their spell.
+for (const [log, want] of [
+  [["── Turn 5 (p1) ──", "p1 drew a card", "p1 cast Doom Blade (#76) targeting Savannah Lions (#63)", "Doom Blade (#76) resolved",
+    "Savannah Lions (#63) died", "── Turn 6 (p0) ──", "p0 drew a card"], "p1 cast Doom Blade (#76) targeting Savannah Lions (#63)"],
+  [["p0 cast Coral Merfolk (#21)", "Coral Merfolk (#21) resolved", "── Turn 5 (p1) ──", "p1 drew a card", "p1 cast Diregraf Ghoul (#57)",
+    "Diregraf Ghoul (#57) resolved", "── Turn 6 (p0) ──", "p0 drew a card"], "p1 cast Diregraf Ghoul (#57)"],
+  // Only banners and your own doing: the banner, as before.
+  [["p0 cast Coral Merfolk (#21)", "── Turn 5 (p1) ──", "── Turn 6 (p0) ──", "p0 drew a card"], "── Turn 5 (p1) ──"],
+]) {
+  const got = R.bandLogLines({ view: { you: 0, display_log: log }, logSince: 0, index: new Map() });
+  if (got[0] !== want) fail(`#1026: ${JSON.stringify(got)}, want ${JSON.stringify(want)} first`);
+}
 
 // An interval of nothing but your own doing still leads with its first line.
 const own = band(["p0 tapped Forest (#12) for mana", "p0 cast Grizzly Bears (#26)", "p0 drew a card"], 1);

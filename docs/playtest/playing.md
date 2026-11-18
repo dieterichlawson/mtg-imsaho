@@ -30,10 +30,19 @@ every pass. Two edits keep the position legal and the invariants checked:
   untouched, so `--resume` accepts it.
 - **Place a board on turn 1, main phase 1:** move objects out of
   `players[*].library_order` into the battlefield, the hand, the graveyard
-  or the library top. The validator then wants `state.events` cleared and
-  `trigger_event_index` set to 0. A planeswalker placed this way needs
-  `is_legendary` and its loyalty counters set by hand. Permanents cannot be
-  placed during the mulligan.
+  or the library top. The validator then wants `state.events` cleared,
+  `trigger_event_index` set to 0 and `sba_check_starts` emptied. A
+  planeswalker placed this way needs `is_legendary` and its loyalty counters
+  set by hand. A double-faced card placed back face up needs
+  `is_transformed: true`, `transforms: 1`, and the back face's `name`
+  written on the object (2026-11-12, Terror of Kruin Pass). Leave `power`
+  and `toughness` at the front face's: `effective_power` reads the back face
+  from the card while it is transformed and `obj.power` once it flips back,
+  so a back face's P/T written there leaves the front wrong after it flips
+  (2026-11-17, a Mayor of Avabruck that flipped back at 3/3 base). `--stop-after 5` on two random seats usually lands
+  in a main phase in turn 1-3 with the stack empty; check `state.step` and
+  `state.active_player`, since `--stop-after 1` is still the mulligan.
+  Permanents cannot be placed during the mulligan.
 
 A repro built this way lists the board it built, or ships the edit script,
 so a fresh reader gets the same position.
@@ -84,6 +93,10 @@ contradict the CR.
   Stalked Prey held] Next: Curse of Oblivion with exactly 1 or 2 cards (no
   prompt), and curses on a player whose opponent controls the curse's source.
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
+  [tried 2026-11-17 → #1063; one spell from each player flips nothing, a turn
+  with no spells flips a front face, Geistflame and its flashback (two from one
+  player) flip both back faces, APNAP order held] Next: a spell cast during the
+  cleanup step's priority, and a copy of a spell (not cast) counting as none
 - C9 aristocrats/sacrifice value vs go-wide tokens: trade into sac outlets
   for value, race a token swarm on the other side of the table
 - C10 mulligan-to-five resource grind: both seats mulligan to the
@@ -440,17 +453,44 @@ illegal or dubious resolutions do.
 
 - L1 stack battles: respond to everything; 3+ deep stacks; order triggers
   differently each time a ChooseTriggerOrder prompt appears
+  [tried 2026-11-12; APNAP with a Falkenrath Noble on each side, three
+  triggers ordered by the non-active player, a Noble that dies with its own
+  trigger on the stack: all held] Next: the *active* player ordering two of
+  its own triggers while the opponent also has one, and a trigger whose
+  target dies before it resolves (CR 608.2b)
 - L2 targeting edges: target own permanents with removal, retarget-bait
   with hexproof/protection, fizzle spells deliberately
 - L3 optional everything: decline every "may"; verify nothing forces
 - L4 combat rules: menace/multi-block, first-strike ordering, trample
   assignment, mid-combat removal of blockers/attackers/walkers
+  [tried 2026-11-12 → #1020; deathtouch+trample (Typhoid Rats under Kessig
+  Wolf Run), a trampler with every blocker gone (702.19e), double strike with
+  lethal recomputed from marked damage, and a regenerated blocker leaving
+  combat all held] Next: a blocker removed by bounce or exile rather than
+  death or regeneration; damage to an attacking planeswalker's controller
+  when the walker leaves mid-combat; and a creature that gains first strike
+  between the two damage steps (CR 702.7c: it still deals regular damage),
+  once a card in the pool can grant it at instant speed (Vampiric Fury, to a
+  Vampire)
 - L5 cost edges: flashback from graveyard, X=0 and X=max, additional
   costs (sacrifice/exile), Snapcaster-granted flashback
 - L6 copy/DFC: Evil Twin copies of transformed werewolves, token copies,
   legend-rule keep choices
+  [tried 2026-11-17 → #1060, #1061; Evil Twin and Cackling Counterpart copying
+  Howlpack Alpha and Lord of Lineage, the Twin's same-name kill, a copy
+  activating Bloodline Keeper's transform (does nothing, CR 701.28c), anthems
+  across the copies all held. A token copy of a DFC never transformed, which
+  CR 707.8a says it should (#1060; fixed: it is a transforming token now)]
+  Next: legend-rule keep choices (Olivia Voldaren copied by an Evil Twin on
+  the same side), and Back from the Brink on a werewolf card (enters front
+  face up, then transforms like the card)
 - L7 zone identity: reanimate, bounce, and re-cast the same card;
   verify new-object rules (counters/attachments/damage gone)
+  [tried 2026-11-12 → #1021; Back from the Brink's token copy and Unburial
+  Rites both apply Festerhide Boar's morbid "enters with"] Next: a card that
+  dies with counters, an aura and damage and comes back the same turn (none
+  of the three may follow it), and a log line for every way a token enters
+  read against the board
 - L8 SBA order: simultaneous deaths, Angelic-Overseer-style dependency,
   both players to 0 life. [tried 2026-11-07 → #1000] The SBA loop runs
   several checks in one action, and they are separate events (CR 704.3). A
@@ -1302,6 +1342,9 @@ illegal or dubious resolutions do.
   set is added, grep the new mana costs for these shapes, rerun the brute force
   over them, and file the miss the day such a card exists (Dark Ascension's
   Stromkirk Captain and Diregraf Captain are the first to watch)
+  [tried 2026-11-17: still no card. The only such cost in
+  `data/oracle_cache.json` is Omnath, Locus of Creation `{R}{G}{W}{U}`, which
+  the registry does not implement. Rerun when a set lands]
 - L58 [tried 2026-10-10 → #765, #766; #675 holds for every ending inside the
   rules (Maniac from a spell, an ability, a trigger and the draw step,
   first-strike, SBA drain, decking): clean `check_core`, the #316 refusal, nothing
@@ -1457,3 +1500,22 @@ illegal or dubious resolutions do.
   part still happens after the flip. Then hover the item on the page: the
   stack item's text is always the front face's (#989). To place a flipped
   face, set `is_transformed`, `name` and `transforms` on the object
+- L68 [proposed 2026-11-17, from #1061] a permanent that chooses what to enter
+  as (Evil Twin, CR 614.12b) waits *somewhere* while it is asked, and the
+  resolving spell waits in its owner's graveyard. Bring an Evil Twin in every
+  way the pool allows: cast it, return it with Unburial Rites or Grimoire of
+  the Dead, put it in with Back from the Brink's copy, and reanimate several
+  at once. At each copy prompt, read the zone counts, `g`, the save's `zone`
+  and `state.events`, and the P/T of Boneyard Wurm or Splinterfright on the
+  board. Verify that no zone shows the card and no event moves it anywhere
+  but the battlefield
+  — **played 2026-11-18: five rules bugs, all in the gap between deferred
+  entries.** Grimoire returning two Twins asks them one at a time with SBAs
+  run between (#1064: a Boar copy got morbid), offers co-entering creatures
+  (#1065), asks the owner not the new controller (#1066) and drops the black
+  Zombie addition (#1067); Back from the Brink's Twin token is never asked
+  (#1068). The lesson generalises: any resolution that moves several objects
+  "at once" and defers one is a sequence the engine runs one by one. Put a
+  state-dependent card beside it (Boneyard Wurm, morbid, an anthem) and a
+  second deferred choice after it. Unburial Rites on a Twin is still
+  unchecked

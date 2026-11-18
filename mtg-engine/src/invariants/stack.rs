@@ -34,6 +34,17 @@ fn check_trigger(state: &GameState, registry: &CardRegistry, where_: &str, t: &P
     if !player_ok(state, src.controller) {
         v.push(format!("{what} is controlled by p{} who is not a player", src.controller.0));
     }
+    // A triggered ability is an object's (CR 113.3c, 603.2), and every
+    // source the engine stamps on one — the engine's own delayed exile
+    // included, which records the permanent that set it up — is an object
+    // the allocator handed out. The source may have left play since (CR
+    // 113.7a; the trigger carries its card and its description for that),
+    // but an id at or past `next_object_id` is no source at all: a resumed
+    // save holding such a trigger resolved it from "?" (#1062, the trigger
+    // half of #1046).
+    if src.id.0 >= state.next_object_id {
+        v.push(format!("{what} has a source at or past next_object_id {}", state.next_object_id));
+    }
     check_targets(state, &what, &src.chosen_targets, v);
     // A trigger is given at most one target, and only when the ability that
     // triggered declares a requirement (CR 603.3d).
@@ -149,6 +160,29 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                     v.push(format!("{what} has no behavior in the registry (card {})", behavior_card_id.0));
                 }
             }
+        }
+    }
+
+    // The ability resolving now, held across its question (#833), came off
+    // the stack and is shown and finished from this copy: its source is an
+    // id the allocator handed out, as the stack's are (#1062). Only the id:
+    // the rest of the entry is a resolution-time copy (its targets may carry
+    // CR 608.2b's `Illegal` marker), which the stack's checks do not fit.
+    match &state.resolving_ability {
+        Some(StackEntry::Trigger(t)) if t.source.id.0 >= state.next_object_id =>
+            v.push(format!("resolving trigger of {} has a source #{} at or past next_object_id {}",
+                t.source.description, t.source.id.0, state.next_object_id)),
+        Some(StackEntry::Ability { source_id, .. }) if source_id.0 >= state.next_object_id =>
+            v.push(format!("resolving ability has a source #{} at or past next_object_id {}",
+                source_id.0, state.next_object_id)),
+        _ => {}
+    }
+    // A delayed exile becomes a trigger with this source at end of combat
+    // (CR 603.7d), so the same holds for it before it fires.
+    for e in &state.end_of_combat_exiles {
+        if e.source_id.0 >= state.next_object_id {
+            v.push(format!("delayed exile of #{} has a source #{} at or past next_object_id {}",
+                e.target_id.0, e.source_id.0, state.next_object_id));
         }
     }
 

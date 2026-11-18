@@ -884,9 +884,10 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put creature cards in graveyard.
-    for _ in 0..3 {
+    for name in ["Ashmouth Hound", "Ashmouth Hound", "Darkthicket Wolf"] {
         let c = ready_creature(&mut state, P0, 2, 2);
         state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
+        state.get_object_mut(c).unwrap().name = name.into();
         state.move_object(c, Zone::Graveyard, &reg);
     }
 
@@ -909,6 +910,15 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
         .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.power.is_some())
         .count();
     assert_eq!(hand_creatures, 3, "Should return all creature cards from graveyard to hand");
+    // #1028: the cards left a public zone, and the line names them.
+    let names: Vec<String> = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.power.is_some())
+        .map(|o| o.name.clone()).collect();
+    let line = state.game_log.iter().map(|e| e.message.as_str())
+        .find(|m| m.starts_with("Creeping Renaissance: chose"))
+        .expect("the spell's line");
+    assert_eq!(names.len(), 3);
+    assert!(line.ends_with("returned 3 cards to hand: Ashmouth Hound x2, Darkthicket Wolf"), "{line}");
 }
 
 #[test]
@@ -1525,7 +1535,7 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
 /// you'll pay the mana cost of the front face. The token will be a copy of the
 /// front face and it won't be able to transform."
 #[test]
-fn back_from_the_brink_copies_a_dfcs_front_face_only() {
+fn back_from_the_brinks_token_of_a_dfc_enters_front_up_and_transforms() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -1551,12 +1561,17 @@ fn back_from_the_brink_copies_a_dfcs_front_face_only() {
     assert_eq!(state.get_object(token).unwrap().name, "Villagers of Estwald",
         "a copy of the front face");
 
-    // "it won't be able to transform" — CR 111.7, a token copy of a DFC has
-    // only the copied face.
-    mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg);
-    assert!(!state.get_object(token).unwrap().is_transformed,
-        "the token has only the face it was copied from");
-    assert_eq!(state.get_object(token).unwrap().name, "Villagers of Estwald");
+    // CR 707.8a: a token copy of a transforming double-faced card not on the
+    // battlefield is a transforming token with both faces, front face up. The
+    // 2011 ruling "it won't be able to transform" predates the rule (#1060).
+    let result = mtg_engine::cards::helpers::apply_transform(&mut state, token, &reg);
+    assert!(result.transformed(), "the token transforms: {result:?}");
+    assert!(state.get_object(token).unwrap().is_transformed);
+    assert_eq!(state.name_of(token, &reg), "Howlpack of Estwald",
+        "the copied card's back face");
+    assert_eq!(state.effective_power(token, &reg), Some(4),
+        "with the back face's characteristics");
+    assert!(state.get_object(token).unwrap().is_token, "and still a token");
 }
 
 /// Ruling 2011-09-22: "Any 'enters' abilities of the creature will trigger when
@@ -4069,4 +4084,27 @@ fn an_evil_twin_entering_under_essence_of_the_wild_is_an_essence_whatever_it_cho
     let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(heron));
     assert_eq!(state.name_of(twin, &reg), "Essence of the Wild");
     assert_eq!((state.effective_power(twin, &reg), state.effective_toughness(twin, &reg)), (Some(6), Some(6)));
+}
+
+/// CR 614.1c: a token copy of Festerhide Boar made while morbid is on
+/// enters with two +1/+1 counters, so it is a 5/5 from the instant it
+/// exists. The creation line said "created 1 3/3 Festerhide Boar token"
+/// one line after "enters with 2 +1/+1 counters" — #505's shape, reached
+/// through counters rather than a P/T-defining ability (issue #1021).
+#[test]
+fn a_token_that_enters_with_counters_is_announced_at_the_size_it_entered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let boar = named_card_in_graveyard(&mut state, &reg, "Festerhide Boar", P0);
+    state.creature_died_this_turn = true;
+    state.game_log.clear();
+
+    state.create_token_copy(boar, P0, &reg);
+
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert!(lines.iter().any(|l| l.contains("created 1 5/5 Festerhide Boar token")),
+        "the size that entered, counters included: {lines:?}");
+    assert!(!lines.iter().any(|l| l.contains("3/3 Festerhide Boar")), "{lines:?}");
+    let token = find_token_named(&state, "Festerhide Boar").expect("the copy is there");
+    assert_eq!(state.effective_power(token, &reg), Some(5), "and it really is a 5/5");
 }

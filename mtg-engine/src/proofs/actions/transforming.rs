@@ -31,11 +31,12 @@ impl CardBehavior for TwoFaced {
 /// "Transform it" (CR 701.28a): a permanent represented by a
 /// double-faced card is turned over, so its other face is up and named
 /// so, and it has transformed once more; and the answer says it did.
-/// Anything else is left as it was, and the answer says why: a card not on
-/// the battlefield is no permanent (400.7); a token, even one copying a
-/// double-faced card, is no double-faced card and cannot transform
-/// (701.28c); nor can a permanent whose card has one face, or one that is
-/// a copy by way of a card with one (Evil Twin copying a werewolf); nor
+/// A token is judged as a card is: a token copy of a double-faced card is
+/// a transforming token (CR 707.8a) and transforms. Anything else is left
+/// as it was, and the answer says why: a card not on the battlefield is no
+/// permanent (400.7); a permanent whose card has one face cannot transform
+/// (701.28c), nor can one that is a copy by way of a card with one (Evil
+/// Twin copying a werewolf); nor
 /// one that has transformed since its own ability resolving now was put on
 /// the stack (701.28f); nor one that has left the battlefield and come
 /// back since then, which is a new object the ability does not act on and
@@ -76,8 +77,6 @@ fn transforming_turns_over_exactly_a_double_faced_permanent() {
 
     let expected = if !on {
         TransformResult::NotAPermanent
-    } else if token {
-        TransformResult::Token
     } else if new {
         TransformResult::NotAPermanent
     } else if !double || copy {

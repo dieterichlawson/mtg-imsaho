@@ -83,6 +83,17 @@ def main():
                       if h.get("prompt_unlike") else "") + ". "
                    f"The games made {count(h['game_calls'], 'call')}: {count(h['out'], 'output token')} ({h['thinking']} thinking), "
                    f"{h['cache_read']} read from the cache, {h['cache_write']} written to it.")
+        # What each re-ask was for, so a question that invited the wrong
+        # answer can be told from a model's slip (#992).
+        reasons = h.get("reask_reasons") or []
+        if reasons:
+            out.append("\nThe re-asks, by reason:\n")
+            for r in reasons:
+                seen = f" First answer: `{r['answer']}`" if r.get("answer") else ""
+                # What the seat thought when it gave it (#1024).
+                seen += f" It thought: \"{r['thought']}\"" if r.get("thought") else ""
+                settled = f" ({r['settled']})" if r.get("settled") else ""
+                out.append(f"- {r['count']} \u00d7 {r['who']}{settled}: {r['reason']}.{seen}")
     out += ["", "## Lessons", ""]
     for s in lessons["seats"]:
         for l in s["lessons"]:

@@ -35,16 +35,8 @@ pub fn check_legal(state: &GameState, acting: PlayerId, legal: &LegalActions, re
                 cast(state, acting, *object_id, targets, *sacrifice, alternative_cost.is_some(), exile_ids, sorcery, registry, &mut v);
                 tap_plan_ok(state, acting, tap_plan, Some(*object_id), stony, registry, &mut v);
             }
-            Action::ActivateManaAbility { object_id, ability_index } => {
-                let ok = state.get_object(*object_id).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == acting)
-                    && crate::engine::available_mana_abilities(state, *object_id, registry).iter().any(|m| m.ability_index == *ability_index);
-                if !ok {
-                    v.push(format!("mana ability {} of #{} offered but not available to p{} (CR 605.3a)", ability_index, object_id.0, acting.0));
-                }
-                if stony && state.has_card_type(*object_id, CardType::Artifact, registry) {
-                    v.push(format!("mana ability of artifact #{} offered under Stony Silence", object_id.0));
-                }
-            }
+            Action::ActivateManaAbility { object_id, ability_index } =>
+                mana_offer(state, acting, *object_id, *ability_index, stony, registry, &mut v),
             Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, x_value, source_card_id } => {
                 activate(state, acting, *object_id, *ability_index, targets, *sacrifice, *source_card_id, sorcery, stony, registry, &mut v);
                 tap_plan_ok(state, acting, tap_plan, Some(*object_id), stony, registry, &mut v);
@@ -68,12 +60,50 @@ pub fn check_legal(state: &GameState, acting: PlayerId, legal: &LegalActions, re
     for a in &legal.activatable_abilities {
         tap_plan_ok(state, acting, &a.tap_plan, Some(a.object_id), stony, registry, &mut v);
     }
+    mana_copies(state, acting, legal, stony, registry, &mut v);
     collapsed_views(legal, &mut v);
     if let Some(p) = &legal.combat_prompt {
         combat_prompt(state, acting, p, registry, &mut v);
     }
     prompt_offers(state, acting, legal, registry, &mut v);
     v
+}
+
+/// CR 605.3a: an offered mana ability is one `acting` could activate.
+fn mana_offer(state: &GameState, acting: PlayerId, object_id: ObjectId, ability_index: usize, stony: bool,
+              registry: &CardRegistry, v: &mut Violations) {
+    let ok = state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && o.controller == acting)
+        && crate::engine::available_mana_abilities(state, object_id, registry).iter().any(|m| m.ability_index == ability_index);
+    if !ok {
+        v.push(format!("mana ability {} of #{} offered but not available to p{} (CR 605.3a)", ability_index, object_id.0, acting.0));
+    }
+    if stony && state.has_card_type(object_id, CardType::Artifact, registry) {
+        v.push(format!("mana ability of artifact #{} offered under Stony Silence", object_id.0));
+    }
+}
+
+/// The copies a menu's mana row folded away (#1003) are admitted like the
+/// row, and no seat the fuzzer plays ever sends one, so this is the only
+/// place a wrong one shows: each is a mana ability `acting` could activate,
+/// of the same card and ability as a row the menu offers, on another
+/// permanent. (`distinct_offers` sees them beside the rows.)
+fn mana_copies(state: &GameState, acting: PlayerId, legal: &LegalActions, stony: bool,
+               registry: &CardRegistry, v: &mut Violations) {
+    let rows: Vec<(crate::ids::CardId, usize)> = legal.actions.iter().filter_map(|a| match a {
+        Action::ActivateManaAbility { object_id, ability_index } =>
+            state.get_object(*object_id).map(|o| (o.card_id, *ability_index)),
+        _ => None,
+    }).collect();
+    for a in &legal.mana_ability_copies {
+        let Action::ActivateManaAbility { object_id, ability_index } = a else {
+            v.push(format!("mana ability copies list {a:?}"));
+            continue;
+        };
+        mana_offer(state, acting, *object_id, *ability_index, stony, registry, v);
+        if !state.get_object(*object_id).is_some_and(|o| rows.contains(&(o.card_id, *ability_index))) {
+            v.push(format!("mana ability {} of #{} is listed as a copy of no row the menu offers", ability_index, object_id.0));
+        }
+    }
 }
 
 /// CR 117.1/117.3: exactly one way to act, matching the prompt in the state.
@@ -106,6 +136,9 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
     let no_views = |v: &mut Violations, w: &str| {
         if !legal.castable_spells.is_empty() || !legal.activatable_abilities.is_empty() {
             v.push(format!("{w} lists castable spells or activatable abilities"));
+        }
+        if !legal.mana_ability_copies.is_empty() {
+            v.push(format!("{w} lists copies of mana abilities"));
         }
     };
     match &state.awaiting_action {
@@ -211,7 +244,7 @@ fn shape(state: &GameState, acting: PlayerId, legal: &LegalActions, v: &mut Viol
 /// A menu, not a multiset.
 fn distinct_offers(legal: &LegalActions, v: &mut Violations) {
     let mut seen = HashSet::new();
-    for a in &legal.actions {
+    for a in legal.actions.iter().chain(&legal.mana_ability_copies) {
         if !seen.insert(format!("{a:?}")) {
             v.push(format!("offered twice: {a:?}"));
         }

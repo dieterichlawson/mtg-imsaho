@@ -316,6 +316,10 @@ pub struct GuiPlayer {
     /// the seat's name unless the caller says otherwise, as a hosted table
     /// does with "Lawson (seat 0)" (#850).
     pub notice_name: String,
+    /// Say nothing on the terminal about the page: a hosted table run
+    /// `--quiet` prints no event lines, and "no browser at" was one, with
+    /// the seat's game key in it (#1041).
+    pub quiet: bool,
     said_waiting: bool,
     withdrawn: Withdraw,
     /// Set when the game is being ended for the OTHER seat's reason (its
@@ -415,6 +419,7 @@ impl GuiPlayer {
                 None => format!("http://{bound}/"),
             },
             notice_name: name.to_string(),
+            quiet: false,
             said_waiting: false,
             withdrawn: Withdraw::default(),
             woken: Withdraw::default(),
@@ -467,6 +472,19 @@ impl GuiPlayer {
         thread::sleep(Duration::from_millis(300));
     }
 
+    /// Tell the operator where the page is when nobody is at it, and return
+    /// what was printed. Not under `--quiet` (#1041), and not once the
+    /// table is closing: the stop closes every page, and the seat whose page
+    /// had been open asked the host to open it again (#1041's review).
+    fn say_browser_notice(&mut self) -> Option<String> {
+        let line = browser_notice(&self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting)?;
+        if self.quiet || self.shared.closing().is_some() {
+            return None;
+        }
+        crate::stderr_line!("{line}");
+        Some(line)
+    }
+
     /// Ask the page and wait for its answer.
     fn ask(&mut self, view: &GameView, legal: &LegalActions, combat: Option<&CombatPrompt>) -> Action {
         if self.withdrawn.why().is_some() {
@@ -482,9 +500,7 @@ impl GuiPlayer {
         }).expect("a decision serializes");
         *self.shared.latest.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(msg.clone());
         self.shared.broadcast(&msg);
-        if let Some(line) = browser_notice(&self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting) {
-            crate::stderr_line!("{line}");
-        }
+        self.say_browser_notice();
         loop {
             // Timed, so the wait is not a black hole: a page can close while
             // the seat is blocked here, and the only way to tell the operator
@@ -507,11 +523,7 @@ impl GuiPlayer {
             let answer = match answer {
                 Ok(answer) => answer,
                 Err(_) => {
-                    if let Some(line) = browser_notice(
-                        &self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting)
-                    {
-                        crate::stderr_line!("{line}");
-                    }
+                    self.say_browser_notice();
                     continue;
                 }
             };
@@ -1238,12 +1250,27 @@ mod tests {
             seq: 1,
             url: String::new(),
             notice_name: "P1".into(),
+            quiet: false,
             said_waiting: false,
             withdrawn: Withdraw::default(),
             woken: Withdraw::default(),
             bound: ([127, 0, 0, 1], 0).into(),
             accept: None,
         }
+    }
+
+    /// #1041: the "no browser at" line is said only when it is news to act
+    /// on: not under `--quiet`, and not for a page the table's stop closed.
+    #[test]
+    fn the_browser_notice_is_kept_off_a_quiet_or_closing_table() {
+        let mut seat = test_seat();
+        assert!(seat.say_browser_notice().is_some(), "nobody at the page: said");
+        let mut quiet = test_seat();
+        quiet.quiet = true;
+        assert!(quiet.say_browser_notice().is_none(), "--quiet");
+        let mut closing = test_seat();
+        PageHandle(closing.shared.clone()).close("the host quit");
+        assert!(closing.say_browser_notice().is_none(), "the table is closing");
     }
 
     /// #821: a seat withdrawn while its page holds a decision answers it
