@@ -173,7 +173,7 @@ def list_harnesses(src):
         own = {m.group(1) for m in re.finditer(r'\bmacro_rules!\s*(\w+)\s*\{', t)
                if re.search(r'card_proof!|kani::proof', t[m.end() - 1:block(t, m.end() - 1) + 1])}
         own -= FORMS | set(SUFFIXED) | {'card_proof', 'action_proof', 'damage_proof', 'effect_proof', 'for_each_form',
-                                        'equipment', 'aura', 'resolves', 'destroys'}
+                                        'equipment', 'aura'}
         for name in TABLES | FORMS | set(SUFFIXED) | own:
             for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*[{(]', t):
                 body = t[m.end()-1:block(t, m.end()-1)+1]
@@ -184,12 +184,17 @@ def list_harnesses(src):
                         out += [path + '::' + e.group(1) + '::' + x for x in SUFFIXED[name]]
                     else:
                         out.append(path + '::' + e.group(1))
-        for name, k in [('equipment', 2), ('aura', 2), ('resolves', 1), ('destroys', 1)]:
+        # A row of the Equipment table names two harnesses (the equip
+        # ability's own target check, then what the card prints), or the
+        # second alone for "another targeted ability"; a row of the Aura
+        # table names one.
+        for name, k in [('equipment', 2), ('aura', 1)]:
             for m in re.finditer(r'(?m)^' + name + r'!\(', t):
                 body = t[m.end():block(t, m.end()-1)]
                 parts = [p.strip() for p in body.split(',')]
-                if parts[0] == 'another targeted ability': parts = parts[1:]
-                out += [path + '::' + p for p in parts[:k]]
+                n = k
+                if parts[0] == 'another targeted ability': parts, n = parts[1:], k - 1
+                out += [path + '::' + p for p in parts[:n]]
     seen, names = set(), []
     for h in out:
         if h not in seen:
