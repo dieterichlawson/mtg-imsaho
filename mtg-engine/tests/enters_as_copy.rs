@@ -331,6 +331,8 @@ fn two_twins_in_one_batch_see_no_state_based_action_between_answers() {
     assert!(pending_choice_options(&state).contains(&Target::Object(wurm)));
 
     let state = answer(&state, &reg, boar);
+    assert_eq!(state.name_of(first, &reg), "Doomed Traveler",
+        "the first answer is kept while the batch waits");
     assert_eq!(state.name_of(second, &reg), "Festerhide Boar");
     assert!(state.get_object(second).unwrap().counters.is_empty(),
         "no creature had died as it entered, so morbid adds nothing (CR 603.2)");

@@ -87,18 +87,27 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
                             behavior.on_declined_choice(&mut *state, choice_source, registry);
                         }
-                    }
-                    // "You may have this enter as a copy" declined (CR
-                    // 614.12b): record the answer and let the permanent
-                    // finish entering as its printed self. For Evil Twin
-                    // that is a 0/0, and state-based actions will have it.
-                    if let crate::state::PendingEffect::EnterAsCopy { object } = effect {
-                        crate::replacement::record_entry_choice(
-                            &mut *state, *object, crate::state::EnterAsCopyChoice::Declined, registry);
-                    }
-                    if let crate::state::PendingEffect::EnterAsCopyToken { of } = effect {
-                        crate::replacement::record_token_copy_choice(
-                            &mut *state, *of, crate::state::EnterAsCopyChoice::Declined, registry);
+                        // "You may have this enter as a copy" declined (CR
+                        // 614.12b): record the answer and let the permanent
+                        // finish entering as its printed self. For Evil Twin
+                        // that is a 0/0, and state-based actions will have it.
+                        //
+                        // Only on a decline. This sat after the branch and so
+                        // ran after a chosen copy too, overwriting the answer
+                        // with `Declined` — unseen while the answer entered
+                        // the permanent at once, but a Twin waiting on the
+                        // rest of its batch entered as a printed 0/0 (#1064
+                        // repro), and a second waiting token copy of the
+                        // same card would have been created by it.
+                        match effect {
+                            crate::state::PendingEffect::EnterAsCopy { object } =>
+                                crate::replacement::record_entry_choice(
+                                    &mut *state, *object, crate::state::EnterAsCopyChoice::Declined, registry),
+                            crate::state::PendingEffect::EnterAsCopyToken { of } =>
+                                crate::replacement::record_token_copy_choice(
+                                    &mut *state, *of, crate::state::EnterAsCopyChoice::Declined, registry),
+                            _ => {}
+                        }
                     }
                 }
                 (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, remaining, player, description, .. },
