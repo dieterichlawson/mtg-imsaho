@@ -8341,6 +8341,290 @@ fn every_readable_card_does_what_its_text_says_on_generated_boards() {
         failures.len(), generated_seeds(), cards.len(), failures.join("\n  "));
 }
 
+// ── Every small board ──────────────────────────────────────────────────
+//
+// The generated boards are a sample. These are a family counted out whole:
+// every board of at most N things beside what every board holds, each
+// thing any permanent of the vocabulary on either side in each state of
+// wear, a creature token of each kind the set makes, or any card of the
+// pool in either graveyard. Every card the grammar reads is cast on each,
+// with the real engine, at every target set and every answer, and the
+// games it ends in are held to the games the text allows. Within the
+// family that is every case, not a draw of them: the engine's card proof,
+// the engine itself under the card (`docs/plans/cards-in-the-loop.md`,
+// part B).
+
+/// One thing a small board holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Piece {
+    /// The vocabulary's `card`th permanent on `side`, worn the `wear`th way.
+    Permanent { card: usize, side: PlayerId, wear: usize },
+    /// The `kind`th creature token on `side`, worn the `wear`th way.
+    Token { kind: usize, side: PlayerId, wear: usize },
+    /// The pool's `card`th card in `side`'s graveyard.
+    Yard { card: usize, side: PlayerId },
+}
+
+/// The states of wear a small board's permanent may be in, each alone:
+/// as it entered, tapped, damaged, with a +1/+1 counter, with a -1/-1
+/// counter, with a regeneration shield, and the other player's card. The
+/// first three are a permanent's of any kind; the rest are a creature's,
+/// or, the last, a card's.
+fn small_wears() -> [Wear; 7] {
+    let fresh = Wear { tapped: false, damage: 0, plus: 0, minus: 0, shield: false, borrowed: false };
+    [
+        fresh,
+        Wear { tapped: true, ..fresh },
+        Wear { borrowed: true, ..fresh },
+        Wear { damage: 1, ..fresh },
+        Wear { plus: 1, ..fresh },
+        Wear { minus: 1, ..fresh },
+        Wear { shield: true, ..fresh },
+    ]
+}
+
+/// The creature tokens a small board may hold: those the set makes (a 1/1
+/// white Spirit with flying, a 2/2 black Zombie, a 2/2 green Wolf, a 2/2
+/// blue Homunculus, a 4/4 white Angel with flying, a 2/2 black Vampire
+/// with flying, a 5/5 black Demon with flying, a 1/2 green Spider with
+/// reach), a 1/1 white Human, and two of no colour and no subtype, a 0/1
+/// and a 3/3 with trample.
+fn small_tokens() -> Vec<((i32, i32), Vec<Color>, Vec<String>, Vec<Keyword>)> {
+    let of = |pt, color: Option<Color>, subtype: &str, keyword: Option<Keyword>| {
+        (pt, color.into_iter().collect(), if subtype.is_empty() { vec![] } else { vec![subtype.to_string()] }, keyword.into_iter().collect())
+    };
+    vec![
+        of((1, 1), Some(Color::White), "Spirit", Some(Keyword::Flying)),
+        of((2, 2), Some(Color::Black), "Zombie", None),
+        of((2, 2), Some(Color::Green), "Wolf", None),
+        of((2, 2), Some(Color::Blue), "Homunculus", None),
+        of((4, 4), Some(Color::White), "Angel", Some(Keyword::Flying)),
+        of((2, 2), Some(Color::Black), "Vampire", Some(Keyword::Flying)),
+        of((5, 5), Some(Color::Black), "Demon", Some(Keyword::Flying)),
+        of((1, 2), Some(Color::Green), "Spider", Some(Keyword::Reach)),
+        of((1, 1), Some(Color::White), "Human", None),
+        of((0, 1), None, "", None),
+        of((3, 3), None, "", Some(Keyword::Trample)),
+    ]
+}
+
+/// A creature token of those characteristics on `controller`'s side, on
+/// both sides.
+fn place_token(state: &mut GameState, world: &mut World, controller: PlayerId,
+    (power, toughness): (i32, i32), colors: &[Color], subtypes: &[String], keywords: &[Keyword]) -> ObjectId {
+    let id = state.create_object(CardId(0), controller, Zone::Battlefield, Some(power), Some(toughness));
+    {
+        let o = state.get_object_mut(id).expect("just made");
+        o.is_token = true;
+        o.summoning_sick = false;
+        // As a token is named (CR 111.4): its subtypes and the word Token.
+        o.name = if subtypes.is_empty() { "Token".to_string() } else { format!("{} Token", subtypes.join(" ")) };
+        o.colors = colors.to_vec();
+        o.card_types = vec![CardType::Creature];
+        o.subtypes = subtypes.to_vec();
+        o.keywords = keywords.to_vec();
+    }
+    world.permanents.insert(id, creature_token((power, toughness), colors, subtypes, keywords, controller));
+    id
+}
+
+/// Every piece a small board may hold, in a fixed order: each permanent of
+/// the vocabulary and each token on each side, in each state of wear that
+/// is one of its kind's when `worn` and as it entered otherwise; then each
+/// card of the pool in each graveyard.
+fn small_pieces(vocabulary: &[(Printed, Spec)], pool: &[&str], worn: bool) -> Vec<Piece> {
+    let mut pieces = Vec::new();
+    let wears = |creature: bool, card: bool| -> Vec<usize> {
+        if !worn { vec![0] } else if creature { (0..7).filter(|w| card || *w != 2).collect() } else { vec![0, 1, 2] }
+    };
+    for side in [P0, P1] {
+        for (card, (printed, _)) in vocabulary.iter().enumerate() {
+            for wear in wears(printed.has_type("Creature"), true) {
+                pieces.push(Piece::Permanent { card, side, wear });
+            }
+        }
+        for kind in 0..small_tokens().len() {
+            for wear in wears(true, false) {
+                pieces.push(Piece::Token { kind, side, wear });
+            }
+        }
+    }
+    for side in [P0, P1] {
+        for card in 0..pool.len() {
+            pieces.push(Piece::Yard { card, side });
+        }
+    }
+    pieces
+}
+
+/// The board of `pieces`, or none if it is not one of the family: a
+/// permanent that could not be worn as asked (a -1/-1 counter or a point of
+/// damage on a creature of toughness 1 is that creature dead, and the
+/// board without it is another of the family), a creature the board's
+/// statics leave with no toughness, more than one permanent whose text
+/// triggers on a death, or one at all when `watched` (the card cast is
+/// one, as on the generated boards).
+fn small_board(pieces: &[Piece], registry: &CardRegistry, cache: &BTreeMap<String, Printed>,
+    vocabulary: &[(Printed, Spec)], pool: &[&str], watched: bool) -> Option<(GameState, World)> {
+    let (mut state, mut world) = empty_board(registry);
+    let wears = small_wears();
+    let tokens = small_tokens();
+    let mut watching = usize::from(watched);
+    let mut placed = Vec::new();
+    for piece in pieces {
+        match *piece {
+            Piece::Permanent { card, side, wear } => {
+                let (printed, spec) = &vocabulary[card];
+                watching += usize::from(spec.dies.is_some() || spec.watch.is_some());
+                let id = named_permanent(&mut state, registry, &printed.name, side);
+                world.permanents.insert(id, model_of(spec, printed, side));
+                placed.push((id, wears[wear]));
+            }
+            Piece::Token { kind, side, wear } => {
+                let (pt, colors, subtypes, keywords) = &tokens[kind];
+                let id = place_token(&mut state, &mut world, side, *pt, colors, subtypes, keywords);
+                placed.push((id, wears[wear]));
+            }
+            Piece::Yard { card, side } => {
+                let name = pool[card];
+                let id = card_in_graveyard(&mut state, registry, name, side);
+                world.yard.insert(id, Model::printed(&cache[name], side));
+                world.graveyard[side.0 as usize].push(name.to_string());
+            }
+        }
+    }
+    if watching > 1 {
+        return None;
+    }
+    // Worn once all are placed, so that damage is short of the toughness
+    // the whole board gives.
+    for (id, w) in &placed {
+        put_wear(&mut state, &mut world, *id, *w);
+        let m = &world.permanents[id];
+        if m.damage != w.damage || m.counters != (w.plus, w.minus) || m.shields != u32::from(w.shield) {
+            return None;
+        }
+    }
+    world.refresh();
+    let stands = world.permanents.values()
+        .all(|m| !m.is_creature() || world.pt_of(m).1.is_some_and(|t| t > 0 && i64::from(t) > i64::from(m.damage)));
+    stands.then_some((state, world))
+}
+
+/// [`small_board`] for a card of `spec`: none on a board that triggers on
+/// deaths if the card does, and Kindercatch on the opponent's side as well
+/// for a counterspell, as [`generated_board_for`] has it.
+fn small_board_for(spec: &Spec, pieces: &[Piece], registry: &CardRegistry, cache: &BTreeMap<String, Printed>,
+    vocabulary: &[(Printed, Spec)], pool: &[&str]) -> Option<(GameState, World)> {
+    let watches = spec.dies.is_some() || spec.watch.is_some();
+    let (mut state, mut world) = small_board(pieces, registry, cache, vocabulary, pool, watches)?;
+    if spec.slots.iter().any(|s| matches!(s, Slot::Spell(_))) {
+        let id = named_permanent(&mut state, registry, "Kindercatch", P1);
+        world.permanents.insert(id, Model::printed_with_faces(&cache["Kindercatch"], P1));
+        world.refresh();
+    }
+    Some((state, world))
+}
+
+/// The boards of at most `size` pieces, each a list of indices into
+/// `pieces` in order (a board is a multiset of pieces: two of one
+/// permanent are a board, and no order of them is another).
+fn small_boards(pieces: usize, size: usize) -> Vec<Vec<usize>> {
+    let mut boards = vec![vec![]];
+    let mut last = vec![vec![]];
+    for _ in 0..size {
+        let mut next = Vec::new();
+        for board in &last {
+            for piece in board.last().copied().unwrap_or(0)..pieces {
+                let mut b: Vec<usize> = board.clone();
+                b.push(piece);
+                next.push(b);
+            }
+        }
+        boards.extend(next.iter().cloned());
+        last = next;
+    }
+    boards
+}
+
+/// What `CARD_SEMANTICS_SMALL` asks for: the size of the boards, 0 if it
+/// is not set.
+fn small_size() -> usize {
+    std::env::var("CARD_SEMANTICS_SMALL").ok().map_or(0, |v| v.parse().expect("a number of pieces"))
+}
+
+/// Every card the grammar reads, cast on every small board: every board
+/// of at most `CARD_SEMANTICS_SMALL` pieces ([`small_pieces`]), each
+/// permanent in each state of wear on boards of one piece and as it
+/// entered on larger ones (`CARD_SEMANTICS_SMALL_WORN=1` wears those
+/// too). `cargo test` alone runs every hundredth board of one piece.
+/// `CARD_SEMANTICS_SHARD=K/N` runs the Kth of N shares of the boards, and
+/// the boards of a run are shared out among the machine's cores. A
+/// failure names its board by its pieces, and
+/// `CARD_SEMANTICS_SMALL_BOARD=I,J` (with the same `CARD_SEMANTICS_SMALL`)
+/// plays that board alone.
+#[test]
+fn every_readable_card_does_what_its_text_says_on_every_small_board() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let vocabulary = board_vocabulary(&cards);
+    let pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    let size = small_size();
+    let worn = size <= 1 || std::env::var("CARD_SEMANTICS_SMALL_WORN").is_ok();
+    let pieces = small_pieces(&vocabulary, &pool, worn);
+    // One board alone, as a failure names it: `CARD_SEMANTICS_SMALL_BOARD=3,411`.
+    let boards = match std::env::var("CARD_SEMANTICS_SMALL_BOARD") {
+        Ok(v) => vec![v.split(',').filter(|i| !i.is_empty()).map(|i| i.trim().parse().expect("a piece")).collect()],
+        Err(_) => small_boards(pieces.len(), size.max(1)),
+    };
+    let (share, shares) = std::env::var("CARD_SEMANTICS_SHARD").ok().map_or((0, 1), |v| {
+        let (k, n) = v.split_once('/').expect("K/N");
+        (k.parse::<usize>().expect("a share"), n.parse::<usize>().expect("a number of shares"))
+    });
+    // Without the variable, a sample: every hundredth board.
+    let stride = if size == 0 { 100 } else { 1 };
+    let mine: Vec<&Vec<usize>> = boards.iter().enumerate()
+        .filter(|(i, _)| i % stride == 0 && i % shares == share)
+        .map(|(_, b)| b)
+        .collect();
+    let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let (registry, cache, cards, vocabulary, pool, pieces, mine) = (&registry, &cache, &cards, &vocabulary, &pool, &pieces, &mine);
+    let results: Vec<(Vec<String>, usize, usize)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers).map(|worker| scope.spawn(move || {
+            let mut failures = Vec::new();
+            let (mut casts, mut stood) = (0, 0);
+            for board in mine.iter().skip(worker).step_by(workers) {
+                let on: Vec<Piece> = board.iter().map(|&i| pieces[i]).collect();
+                if small_board(&on, registry, cache, vocabulary, pool, false).is_some() {
+                    stood += 1;
+                }
+                let before = failures.len();
+                for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
+                    let Some(made) = small_board_for(spec, &on, registry, cache, vocabulary, pool) else { continue };
+                    check_cast_on(card, spec, &format!(" on small board {board:?}"), made, registry, cache, &mut failures, &mut casts);
+                }
+                if failures.len() > before {
+                    let world = small_board(&on, registry, cache, vocabulary, pool, false)
+                        .or_else(|| small_board(&on, registry, cache, vocabulary, pool, true))
+                        .map_or_else(|| "not a board of the family".to_string(), |(_, w)| described(&w));
+                    failures.push(format!("small board {board:?} is {on:?}: {world}"));
+                }
+            }
+            (failures, casts, stood)
+        })).collect();
+        handles.into_iter().map(|h| h.join().expect("a worker")).collect()
+    });
+    let failures: Vec<String> = results.iter().flat_map(|(f, _, _)| f.iter().cloned()).collect();
+    let casts: usize = results.iter().map(|(_, c, _)| c).sum();
+    let stood: usize = results.iter().map(|(_, _, s)| s).sum();
+    println!("small boards: {} pieces, {} boards of at most {} of them, {} in this share, {stood} of those boards of the family, {casts} casts",
+        pieces.len(), boards.len(), size.max(1), mine.len());
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts on small boards, across the {} cards read, disagree with their text:\n  {}",
+        failures.len(), cards.len(), failures.join("\n  "));
+}
+
 /// Every activated ability the grammar reads, of a permanent its controller
 /// has had since the turn began: the engine offers it at exactly the
 /// targets its text allows, and activated at each of them (its costs paid,
