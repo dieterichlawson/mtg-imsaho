@@ -1,282 +1,175 @@
-# Card proofs at fda2ee3
+# Card proofs at b6d6c43
 
-Every card harness's last result, merged from: the pass over every
-harness the proofs define (three lanes at 3.5 GB, begun at 156d7ad and
-moved to 782c4ed after 896 harnesses), the solo passes of what ran out of
-memory there (alone at 7 GB, then at 12 GB), the harnesses run again at
-the fixes of defects 34 to 36 (3.5 GB, at 1e5f16b-b55a3a6), the 7 GB
-rerun of those that ran out at 3.5 GB there (180bcb7, all 52 proved), and
-what defect 40 touches at its fix (dec10e4 and 8279960), with the five
-card harnesses last out at 3.5 GB run alone at 12 GB at the fixes
-(Moldgraf Monstrosity's two, Bitterheart Witch's, Ghoulraiser's and
-Woodland Sleuth's, all proved). A later result for a harness replaces an
-earlier one.
+What these are: the Kani card harnesses that are kept, each of what a
+card declares (abilities and costs, targets, triggers, mana abilities,
+static and replacement effects) or of what its own code writes to the
+game state. They are not proofs that a card works when it resolves:
+the 715 harnesses that claimed that by asserting a record of the calls a
+card made, with recorders standing in for the engine, were removed
+(2026-11-18). What a card does through the engine is checked with the
+engine itself, on every small board, by `tests/card_semantics.rs`
+(`docs/plans/cards-in-the-loop.md`, part B).
 
-Every card harness proves. `docs/plans/formal-verification.md` says what
-each proof is over and what its bounds are.
+Each harness's last result. The 275 kept from before are as the last run
+of every harness left them (`scripts/kani/times.txt`), their own text
+unchanged by the removal; 39 of them, the two fastest of each module,
+and the ten new ones of each Equipment's check of its equip target were
+run again after it, at 5daffcf, and all 49 prove.
 
-Since this ledger was written, master made a return of several cards one
-event of the engine's (`GameState::put_onto_battlefield_together`,
-#1064-#1068), and the harnesses of the two cards that make one, written
-against the old card code, are gone: Grimoire of the Dead's nine over its
-second ability (13 left) and Moldgraf Monstrosity's two. Those returns
-are played by `tests/enters_as_copy.rs`, `tests/cards_complex_creatures.rs`
-and the generated boards of `tests/card_semantics.rs`, not proved.
 
-990 harnesses over 248 cards and 4 tables of cards; 22 cards are their printed data alone.
+285 harnesses over 147 cards and 4 tables of cards; 123 cards have none.
 
-- SUCCESSFUL: 990
+- SUCCESSFUL: 285
 
 | card | harnesses | proved | not proved |
 |---|---|---|---|
-| abattoir_ghoul | 1 | 1 |  |
-| altars_reap | 1 | 1 |  |
-| ancient_grudge | 2 | 2 |  |
-| angel_of_flight_alabaster | 1 | 1 |  |
+| ancient_grudge | 1 | 1 |  |
 | angelic_overseer | 1 | 1 |  |
-| armored_skaab | 2 | 2 |  |
-| army_of_the_damned | 1 | 1 |  |
-| ashmouth_hound | 1 | 1 |  |
-| avacynian_priest | 3 | 3 |  |
+| armored_skaab | 1 | 1 |  |
+| avacynian_priest | 2 | 2 |  |
 | avacyns_pilgrim | 1 | 1 |  |
-| back_from_the_brink | 9 | 9 |  |
-| balefire_dragon | 1 | 1 |  |
+| back_from_the_brink | 8 | 8 |  |
 | battleground_geist | 1 | 1 |  |
-| bitterheart_witch | 12 | 12 |  |
-| blasphemous_act | 1 | 1 |  |
-| blazing_torch | 3 | 3 |  |
-| bloodcrazed_neonate | 1 | 1 |  |
-| bloodgift_demon | 1 | 1 |  |
-| bloodline_keeper | 10 | 10 |  |
-| bonds_of_faith | 2 | 2 |  |
+| bitterheart_witch | 2 | 2 |  |
+| blazing_torch | 1 | 1 |  |
+| bloodline_keeper | 8 | 8 |  |
+| bonds_of_faith | 1 | 1 |  |
 | boneyard_wurm | 1 | 1 |  |
-| brain_weevil | 2 | 2 |  |
-| bramblecrush | 2 | 2 |  |
-| brimstone_volley | 2 | 2 |  |
-| bump_in_the_night | 1 | 1 |  |
-| burning_vengeance | 1 | 1 |  |
+| brain_weevil | 1 | 1 |  |
+| bramblecrush | 1 | 1 |  |
+| brimstone_volley | 1 | 1 |  |
 | butchers_cleaver | 2 | 2 |  |
-| cackling_counterpart | 1 | 1 |  |
-| caravan_vigil | 40 | 40 |  |
-| cellar_door | 10 | 10 |  |
-| champion_of_the_parish | 1 | 1 |  |
-| charmbreaker_devils | 2 | 2 |  |
-| civilized_scholar | 8 | 8 |  |
-| claustrophobia | 3 | 3 |  |
+| charmbreaker_devils | 1 | 1 |  |
+| civilized_scholar | 3 | 3 |  |
+| claustrophobia | 1 | 1 |  |
 | clifftop_retreat | 2 | 2 |  |
-| cloistered_youth | 5 | 5 |  |
+| cloistered_youth | 1 | 1 |  |
 | cobbled_wings | 2 | 2 |  |
-| corpse_lunge | 1 | 1 |  |
-| counterspell | 2 | 2 |  |
-| creeping_renaissance | 3 | 3 |  |
-| creepy_doll | 1 | 1 |  |
-| crossway_vampire | 2 | 2 |  |
-| curiosity | 3 | 3 |  |
-| curse_of_deaths_hold | 1 | 1 |  |
-| curse_of_oblivion | 25 | 25 |  |
-| curse_of_stalked_prey | 2 | 2 |  |
-| curse_of_the_bloody_tome | 2 | 2 |  |
-| curse_of_the_nightly_hunt | 1 | 1 |  |
-| curse_of_the_pierced_heart | 2 | 2 |  |
+| counterspell | 1 | 1 |  |
+| creeping_renaissance | 1 | 1 |  |
+| crossway_vampire | 1 | 1 |  |
+| curiosity | 1 | 1 |  |
 | darkthicket_wolf | 2 | 2 |  |
-| daybreak_ranger | 5 | 5 |  |
-| dead_weight | 2 | 2 |  |
+| daybreak_ranger | 3 | 3 |  |
+| dead_weight | 1 | 1 |  |
 | dearly_departed | 1 | 1 |  |
-| delver_of_secrets | 8 | 8 |  |
 | demonmail_hauberk | 2 | 2 |  |
-| deranged_assistant | 1 | 1 |  |
-| desperate_ravings | 1 | 1 |  |
-| devils_play | 2 | 2 |  |
+| devils_play | 1 | 1 |  |
 | diregraf_ghoul | 1 | 1 |  |
-| disciple_of_griselbrand | 2 | 2 |  |
-| dissipate | 2 | 2 |  |
-| divination | 1 | 1 |  |
-| divine_reckoning | 54 | 54 |  |
-| doom_blade | 3 | 3 |  |
-| doomed_traveler | 1 | 1 |  |
-| dream_twist | 1 | 1 |  |
-| elder_cathar | 1 | 1 |  |
+| disciple_of_griselbrand | 1 | 1 |  |
+| dissipate | 1 | 1 |  |
+| doom_blade | 1 | 1 |  |
 | elder_of_laurels | 2 | 2 |  |
 | elite_inquisitor | 1 | 1 |  |
-| endless_ranks_of_the_dead | 1 | 1 |  |
 | essence_of_the_wild | 1 | 1 |  |
-| evil_twin | 7 | 7 |  |
-| falkenrath_marauders | 1 | 1 |  |
-| falkenrath_noble | 1 | 1 |  |
-| feeling_of_dread | 5 | 5 |  |
+| evil_twin | 6 | 6 |  |
 | feral_ridgewolf | 2 | 2 |  |
 | festerhide_boar | 1 | 1 |  |
-| fiend_hunter | 3 | 3 |  |
-| forbidden_alchemy | 16 | 16 |  |
+| fiend_hunter | 1 | 1 |  |
 | forest | 1 | 1 |  |
-| frightful_delusion | 14 | 14 |  |
-| full_moons_rise | 10 | 10 |  |
-| furor_of_the_bitten | 2 | 2 |  |
+| frightful_delusion | 2 | 2 |  |
+| full_moons_rise | 2 | 2 |  |
+| furor_of_the_bitten | 1 | 1 |  |
 | gallows_warden | 1 | 1 |  |
-| galvanic_juggernaut | 1 | 1 |  |
-| garruk_relentless | 30 | 30 |  |
-| gatstaf_shepherd | 1 | 1 |  |
-| gavony_township | 3 | 3 |  |
-| geist_honored_monk | 1 | 1 |  |
-| geist_of_saint_traft | 1 | 1 |  |
-| geistcatchers_rig | 2 | 2 |  |
-| geistflame | 2 | 2 |  |
-| ghost_quarter | 13 | 13 |  |
-| ghostly_possession | 2 | 2 |  |
-| ghoulcallers_bell | 2 | 2 |  |
-| ghoulcallers_chant | 1 | 1 |  |
-| ghoulraiser | 2 | 2 |  |
-| giant_growth | 1 | 1 |  |
+| garruk_relentless | 2 | 2 |  |
+| gavony_township | 2 | 2 |  |
+| geistcatchers_rig | 1 | 1 |  |
+| geistflame | 1 | 1 |  |
+| ghost_quarter | 2 | 2 |  |
+| ghostly_possession | 1 | 1 |  |
+| ghoulcallers_bell | 1 | 1 |  |
+| ghoulraiser | 1 | 1 |  |
 | glorious_anthem | 1 | 1 |  |
-| gnaw_to_the_bone | 1 | 1 |  |
-| grasp_of_phantoms | 1 | 1 |  |
 | grave_bramble | 1 | 1 |  |
-| graveyard_shovel | 2 | 2 |  |
-| grimgrin_corpse_born | 4 | 4 |  |
-| grimoire_of_the_dead | 22 | 22 |  |
-| grizzled_outcasts | 1 | 1 |  |
-| gruesome_deformity | 2 | 2 |  |
-| gutter_grime | 1 | 1 |  |
+| graveyard_shovel | 1 | 1 |  |
+| grimgrin_corpse_born | 2 | 2 |  |
+| grimoire_of_the_dead | 6 | 6 |  |
+| gruesome_deformity | 1 | 1 |  |
 | hamlet_captain | 18 | 18 |  |
-| hanweir_watchkeep | 1 | 1 |  |
-| harvest_pyre | 1 | 1 |  |
 | heartless_summoning | 1 | 1 |  |
-| heretics_punishment | 27 | 27 |  |
+| heretics_punishment | 1 | 1 |  |
 | hinterland_harbor | 2 | 2 |  |
-| hollowhenge_scavenger | 2 | 2 |  |
-| holy_strength | 2 | 2 |  |
+| hollowhenge_scavenger | 1 | 1 |  |
+| holy_strength | 1 | 1 |  |
 | hysterical_blindness | 1 | 1 |  |
-| infernal_plunge | 1 | 1 |  |
 | inquisitors_flail | 2 | 2 |  |
-| instigator_gang | 1 | 1 |  |
 | intangible_virtue | 1 | 1 |  |
-| into_the_maw_of_hell | 1 | 1 |  |
 | invisible_stalker | 1 | 1 |  |
 | island | 1 | 1 |  |
 | isolated_chapel | 2 | 2 |  |
-| kessig_cagebreakers | 1 | 1 |  |
 | kessig_wolf | 2 | 2 |  |
 | kessig_wolf_run | 2 | 2 |  |
-| kruin_outlaw | 1 | 1 |  |
-| laboratory_maniac | 1 | 1 |  |
-| lantern_spirit | 2 | 2 |  |
-| lava_axe | 2 | 2 |  |
-| lightning_bolt | 2 | 2 |  |
-| liliana_of_the_veil | 116 | 116 |  |
-| lost_in_the_mist | 1 | 1 |  |
-| ludevics_test_subject | 4 | 4 |  |
-| lumberknot | 1 | 1 |  |
-| make_a_wish | 64 | 64 |  |
+| lantern_spirit | 1 | 1 |  |
+| lava_axe | 1 | 1 |  |
+| lightning_bolt | 1 | 1 |  |
+| liliana_of_the_veil | 16 | 16 |  |
+| ludevics_test_subject | 3 | 3 |  |
 | manor_gargoyle | 2 | 2 |  |
-| manor_skeleton | 2 | 2 |  |
+| manor_skeleton | 1 | 1 |  |
 | mask_of_avacyn | 2 | 2 |  |
-| mausoleum_guard | 1 | 1 |  |
-| maw_of_the_mire | 1 | 1 |  |
-| mayor_of_avabruck | 2 | 2 |  |
-| memorys_journey | 1 | 1 |  |
-| mentor_of_the_meek | 5 | 5 |  |
-| midnight_haunting | 1 | 1 |  |
-| mikaeus_the_lunarch | 3 | 3 |  |
-| mindshrieker | 5 | 5 |  |
-| mirror_mad_phantasm | 2 | 2 |  |
-| moan_of_the_unhallowed | 1 | 1 |  |
-| moldgraf_monstrosity | 2 | 2 |  |
-| moment_of_heroism | 1 | 1 |  |
-| moonmist | 16 | 16 |  |
-| moorland_haunt | 17 | 17 |  |
-| morkrut_banshee | 2 | 2 |  |
+| mentor_of_the_meek | 3 | 3 |  |
+| mikaeus_the_lunarch | 2 | 2 |  |
+| mindshrieker | 1 | 1 |  |
+| mirror_mad_phantasm | 1 | 1 |  |
+| moorland_haunt | 9 | 9 |  |
+| morkrut_banshee | 1 | 1 |  |
 | mountain | 1 | 1 |  |
-| mulch | 6 | 6 |  |
-| murder_of_crows | 8 | 8 |  |
-| naturalize | 2 | 2 |  |
-| nephalia_drownyard | 2 | 2 |  |
+| naturalize | 1 | 1 |  |
+| nephalia_drownyard | 1 | 1 |  |
 | nevermore | 6 | 6 |  |
 | night_revelers | 1 | 1 |  |
-| night_terrors | 7 | 7 |  |
 | nightbirds_clutches | 1 | 1 |  |
-| olivia_voldaren | 3 | 3 |  |
+| olivia_voldaren | 1 | 1 |  |
 | one_eyed_scarecrow | 1 | 1 |  |
 | orchard_spirit | 1 | 1 |  |
-| pacifism | 2 | 2 |  |
+| pacifism | 1 | 1 |  |
 | parallel_lives | 1 | 1 |  |
-| paraselene | 1 | 1 |  |
 | past_in_flames | 16 | 16 |  |
-| pitchburn_devils | 1 | 1 |  |
 | plains | 1 | 1 |  |
-| prey_upon | 1 | 1 |  |
-| purify_the_grave | 1 | 1 |  |
-| rage_thrower | 1 | 1 |  |
-| rakish_heir | 1 | 1 |  |
 | rally_the_peasants | 1 | 1 |  |
-| rangers_guile | 1 | 1 |  |
-| reaper_from_the_abyss | 2 | 2 |  |
-| rebuke | 2 | 2 |  |
-| reckless_waif | 1 | 1 |  |
-| rolling_temblor | 1 | 1 |  |
+| reaper_from_the_abyss | 1 | 1 |  |
+| rebuke | 1 | 1 |  |
 | rooftop_storm | 1 | 1 |  |
 | runechanters_pike | 3 | 3 |  |
-| runic_repetition | 1 | 1 |  |
 | scourge_of_geier_reach | 1 | 1 |  |
-| screeching_bat | 6 | 6 |  |
+| screeching_bat | 1 | 1 |  |
 | selfless_cathar | 2 | 2 |  |
-| selhoff_occultist | 1 | 1 |  |
-| sensory_deprivation | 2 | 2 |  |
-| sever_the_bloodline | 6 | 6 |  |
+| sensory_deprivation | 1 | 1 |  |
 | sharpened_pitchfork | 2 | 2 |  |
 | shimmering_grotto | 1 | 1 |  |
-| silent_departure | 1 | 1 |  |
 | silver_inlaid_dagger | 2 | 2 |  |
-| silverchase_fox | 2 | 2 |  |
+| silverchase_fox | 1 | 1 |  |
 | skaab_ruinator | 1 | 1 |  |
-| skeletal_grimace | 3 | 3 |  |
-| skirsdag_cultist | 2 | 2 |  |
-| skirsdag_high_priest | 3 | 3 |  |
-| slayer_of_the_wicked | 2 | 2 |  |
-| smite_the_monstrous | 2 | 2 |  |
+| skeletal_grimace | 1 | 1 |  |
+| skirsdag_cultist | 1 | 1 |  |
+| skirsdag_high_priest | 2 | 2 |  |
+| slayer_of_the_wicked | 1 | 1 |  |
+| smite_the_monstrous | 1 | 1 |  |
 | snapcaster_mage | 2 | 2 |  |
 | sol_ring | 1 | 1 |  |
 | somberwald_spider | 1 | 1 |  |
 | spare_from_evil | 1 | 1 |  |
-| spectral_flight | 2 | 2 |  |
-| spider_spawning | 1 | 1 |  |
-| spidery_grasp | 1 | 1 |  |
-| splinterfright | 1 | 1 |  |
-| stensia_bloodhall | 2 | 2 |  |
-| stitchers_apprentice | 5 | 5 |  |
+| spectral_flight | 1 | 1 |  |
+| stensia_bloodhall | 1 | 1 |  |
+| stitchers_apprentice | 1 | 1 |  |
 | stony_silence | 1 | 1 |  |
-| stromkirk_noble | 1 | 1 |  |
-| stromkirk_patrol | 1 | 1 |  |
-| sturmgeist | 1 | 1 |  |
 | sulfur_falls | 2 | 2 |  |
 | swamp | 1 | 1 |  |
-| swords_to_plowshares | 1 | 1 |  |
-| think_twice | 1 | 1 |  |
-| thraben_sentry | 5 | 5 |  |
-| tormented_pariah | 1 | 1 |  |
-| traitorous_blood | 1 | 1 |  |
-| travel_preparations | 5 | 5 |  |
-| travelers_amulet | 5 | 5 |  |
-| tree_of_redemption | 2 | 2 |  |
-| trepanation_blade | 10 | 10 |  |
-| tribute_to_hunger | 3 | 3 |  |
-| ulvenwald_mystics | 4 | 4 |  |
+| thraben_sentry | 1 | 1 |  |
+| travelers_amulet | 1 | 1 |  |
+| tree_of_redemption | 1 | 1 |  |
+| trepanation_blade | 2 | 2 |  |
 | unbreathing_horde | 1 | 1 |  |
-| unburial_rites | 1 | 1 |  |
-| undead_alchemist | 2 | 2 |  |
-| unruly_mob | 1 | 1 |  |
-| urgent_exorcism | 2 | 2 |  |
+| urgent_exorcism | 1 | 1 |  |
 | vampire_interloper | 1 | 1 |  |
 | vampiric_fury | 8 | 8 |  |
-| victim_of_night | 2 | 2 |  |
-| village_bell_ringer | 2 | 2 |  |
-| village_cannibals | 1 | 1 |  |
-| village_ironsmith | 1 | 1 |  |
-| villagers_of_estwald | 1 | 1 |  |
-| witchbane_orb | 2 | 2 |  |
-| wooden_stake | 3 | 3 |  |
+| victim_of_night | 1 | 1 |  |
+| village_bell_ringer | 1 | 1 |  |
+| witchbane_orb | 1 | 1 |  |
+| wooden_stake | 2 | 2 |  |
 | woodland_cemetery | 2 | 2 |  |
-| woodland_sleuth | 2 | 2 |  |
-| wreath_of_geists | 3 | 3 |  |
+| woodland_sleuth | 1 | 1 |  |
+| wreath_of_geists | 2 | 2 |  |
 
 ## Tables of cards
 
@@ -287,7 +180,9 @@ and the generated boards of `tests/card_semantics.rs`, not proved.
 | `curses::the_upkeep_curses_trigger_in_the_enchanted_players_upkeep` | SUCCESSFUL | 33s |
 | `targets::the_two_target_spells_accept_what_their_text_targets` | SUCCESSFUL | 31s |
 
-## Cards that are their printed data alone
+## Cards with no harness
 
-abbey_griffin, ambush_viper, chapel_geist, coral_merfolk, fortress_crab, goblin_piker, grizzly_bears, kalonian_tusker, kindercatch, makeshift_mauler, markov_patrician, moon_heron, riot_devils, rotting_fensnake, savannah_lions, skaab_goliath, spectral_rider, stitched_drake, thraben_purebloods, typhoid_rats, voiceless_spirit, walking_corpse
+What these do is the engine's, played with it by `tests/card_semantics.rs`, or printed data alone.
+
+abattoir_ghoul, abbey_griffin, altars_reap, ambush_viper, angel_of_flight_alabaster, army_of_the_damned, ashmouth_hound, balefire_dragon, blasphemous_act, bloodcrazed_neonate, bloodgift_demon, bump_in_the_night, burning_vengeance, cackling_counterpart, caravan_vigil, cellar_door, champion_of_the_parish, chapel_geist, coral_merfolk, corpse_lunge, creepy_doll, curse_of_deaths_hold, curse_of_oblivion, curse_of_stalked_prey, curse_of_the_bloody_tome, curse_of_the_nightly_hunt, curse_of_the_pierced_heart, delver_of_secrets, deranged_assistant, desperate_ravings, divination, divine_reckoning, doomed_traveler, dream_twist, elder_cathar, endless_ranks_of_the_dead, falkenrath_marauders, falkenrath_noble, feeling_of_dread, forbidden_alchemy, fortress_crab, galvanic_juggernaut, gatstaf_shepherd, geist_honored_monk, geist_of_saint_traft, ghoulcallers_chant, giant_growth, gnaw_to_the_bone, goblin_piker, grasp_of_phantoms, grizzled_outcasts, grizzly_bears, gutter_grime, hanweir_watchkeep, harvest_pyre, infernal_plunge, instigator_gang, into_the_maw_of_hell, kalonian_tusker, kessig_cagebreakers, kindercatch, kruin_outlaw, laboratory_maniac, lost_in_the_mist, lumberknot, make_a_wish, makeshift_mauler, markov_patrician, mausoleum_guard, maw_of_the_mire, mayor_of_avabruck, memorys_journey, midnight_haunting, moan_of_the_unhallowed, moldgraf_monstrosity, moment_of_heroism, moon_heron, moonmist, mulch, murder_of_crows, night_terrors, paraselene, pitchburn_devils, prey_upon, purify_the_grave, rage_thrower, rakish_heir, rangers_guile, reckless_waif, riot_devils, rolling_temblor, rotting_fensnake, runic_repetition, savannah_lions, selhoff_occultist, sever_the_bloodline, silent_departure, skaab_goliath, spectral_rider, spider_spawning, spidery_grasp, splinterfright, stitched_drake, stromkirk_noble, stromkirk_patrol, sturmgeist, swords_to_plowshares, think_twice, thraben_purebloods, tormented_pariah, traitorous_blood, travel_preparations, tribute_to_hunger, typhoid_rats, ulvenwald_mystics, unburial_rites, undead_alchemist, unruly_mob, village_cannibals, village_ironsmith, villagers_of_estwald, voiceless_spirit, walking_corpse
 
