@@ -55,6 +55,10 @@ is out of reach for CBMC, with the scalars alone left open. So Kani cannot
 hold the engine under a card except on boards that are essentially concrete,
 which is a test, not a proof. The pilot's harnesses are not kept.
 
+(That reading was wrong about a card's own hook: part B2 measures it one
+freedom at a time. The "lists fixed" rows above did not fix the list that
+mattered.)
+
 That settled the split as first planned: the engine in the loop as the
 reference's job (part A), and the Kani card proofs kept compositional and
 made sound about the engine by stand-ins that model each action (the
@@ -392,16 +396,44 @@ watchers of casts, and combat; and the cut above. Three pieces as they entered i
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 
-### B2. Kani with the engine under a card: what fits
+### B2. Kani with the engine under a card (under way)
 
-The pilot above says what did not fit at 12 GB. What is not yet measured
-is where between "everything fixed but one flag" (proves in 60 s) and
-"the scalars open" (out of memory) the line runs, card by card and
-freedom by freedom, and how far more memory moves it. That is measured
-before more is claimed or a larger machine asked for: each freedom opened
-alone (which of two creatures is the target, who controls it, its damage,
-its toughness, a shield, a counter), then in pairs, with the peak memory
-and time of each.
+The pilot above concluded that Kani cannot hold the engine under a card.
+Measured one freedom at a time (2026-11-18, `kani-bounded.py`, one harness
+at a time, the peak memory of `cbmc` sampled), that was wrong about a
+card's own hook and right about the stack:
+
+| Harness | What is open | Result |
+|---|---|---|
+| Doom Blade's `on_resolve`, the real `try_destroy` and `move_object` | nothing | proves, 58 s, 1.12 GB |
+| the same | one of: tapped, controller, damage, toughness 2 or 3, a shield, indestructible | proves, 58-68 s, 1.09-1.16 GB each |
+| the same | all six at once | proves, 65 s, 1.22 GB |
+| the same, the indestructible effect pushed only when it is there | all six | out of memory at 12 GB, 270 s |
+| Doom Blade resolved by `resolve_top_of_stack` | nothing | out of memory at 12 GB, 555 s |
+| Giant Growth's `on_resolve`, read back by `effective_power` and `effective_toughness` | controller, tapped, damage, toughness | proves, 51 s, 0.98 GB |
+| Think Twice's `on_resolve`, the real `draw_cards` | which player, a library of 0, 1 or 2 | out of memory at 12 GB, 307-396 s each |
+| the same, a harness for each player | a library of 0, 1 or 2 (a harness each) | proves, 25-60 s, 0.77-1.08 GB each |
+| Midnight Haunting's `on_resolve`, the real token making | which player | proves, 107 s, 1.90 GB |
+| Geistflame's `on_resolve`, the real damage, at a creature | controller, tapped, damage, toughness | proves, 71 s, 1.24 GB |
+| the same, at a player | which player | proves, 56 s, 1.16 GB |
+
+So a card's hook with the engine's own actions under it is about a
+minute and one to two gigabytes, scalars open, and the two things that
+put it out of reach are the two the engine's own proofs already name: a
+list whose length the solver leaves open (the pilot's "lists fixed"
+harness pushed its indestructible effect conditionally, which is what ran
+it out of memory, not the scalars), and a player it leaves open where the
+card reaches into that player's library or hand. The stack's resolution
+of a spell is out of reach whatever is open, and stays the engine's proof
+(`proofs::actions::resolving`) and the small boards' check.
+
+`proofs/engine_under_card.rs` holds these, eleven harnesses over five
+cards, all proved. What they take out is `format!`, the log, and growing
+and freeing an allocation; no engine action. Next, family by family over
+the 88 spells (the eight "destroy target", the five "deals N damage",
+the Auras and Curses attaching, the draws, the tokens, the pumps), then
+the hooks of permanents: each row a harness, each about a minute, so the
+whole of it is hours on the full tier and not on a pull request's.
 
 ### B3. The engine's own proofs
 
