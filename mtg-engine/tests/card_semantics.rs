@@ -4097,7 +4097,8 @@ impl World {
     /// State-based actions, as CR 704.5f-h state them: a creature with
     /// toughness 0 or less is put into its owner's graveyard, and one with
     /// damage at least its toughness, or any from a source with deathtouch,
-    /// is destroyed, which indestructible stops (702.12b). Repeated until
+    /// is destroyed, which indestructible stops (702.12b); and the legend
+    /// rule (704.5j). Repeated until
     /// none applies (CR 704.3), the static abilities applied afresh each
     /// time.
     fn state_based_actions(&mut self) {
@@ -4138,7 +4139,25 @@ impl World {
                 .filter(|(_, m)| m.types.iter().any(|t| t == "planeswalker") && m.named_counters.get("loyalty").copied().unwrap_or(0) == 0)
                 .map(|(id, _)| *id)
                 .collect();
-            if dying.is_empty() && !tokens_dying.contains(&true) && !falls && spent.is_empty() {
+            // Of the legendary permanents of one name a player controls,
+            // that player chooses one and the rest go to their owners'
+            // graveyards (CR 704.5j). Read where no choice tells them
+            // apart, each choice then being the same game: two of a card
+            // returned from a graveyard together.
+            let mut legends: BTreeMap<(u8, &str), Vec<ObjectId>> = BTreeMap::new();
+            for (id, m) in &self.permanents {
+                if let (true, Some(name)) = (m.types.iter().any(|t| t == "legendary"), &m.name) {
+                    legends.entry((m.controller.0, name.as_str())).or_default().push(*id);
+                }
+            }
+            let mut surplus: Vec<ObjectId> = Vec::new();
+            for ids in legends.values().filter(|ids| ids.len() > 1) {
+                let kept = format!("{:?}", self.permanents[&ids[0]]);
+                assert!(ids.iter().all(|id| format!("{:?}", self.permanents[id]) == kept),
+                    "the legend rule among permanents that differ is a choice the reference does not yet play: {kept}");
+                surplus.extend(&ids[1..]);
+            }
+            if dying.is_empty() && !tokens_dying.contains(&true) && !falls && spent.is_empty() && surplus.is_empty() {
                 if self.life.iter().all(|l| *l > 0) {
                     for (p, n) in gains {
                         self.life[p.0 as usize] += n;
@@ -4167,6 +4186,10 @@ impl World {
                 }
             }
             for id in spent {
+                self.leave(id, Dest::Graveyard);
+            }
+            for id in surplus {
+                self.a_creature_died |= self.permanents.get(&id).is_some_and(Model::is_creature);
                 self.leave(id, Dest::Graveyard);
             }
             for (victim, gainer) in &before.damaged_by_life_gainers {
