@@ -22,11 +22,12 @@
 #   combats), every creature it fights with blocked by every pair of kinds
 #   of them (about 100,000 double blocks, six minutes), every two kinds
 #   of them attacking together (about 8,000 combats), and every card the
-#   grammar reads cast, and every activated ability it reads activated,
-#   with the real engine, on every board of one piece (any permanent of
-#   the reference's vocabulary or creature token on either side in each
-#   state of wear, or any card of the pool in either graveyard: about
-#   2,000 boards, 570,000 casts and 110,000 activations, a minute).
+#   grammar reads cast, every activated ability it reads activated and
+#   every flashback it reads cast, with the real engine, on every board
+#   of one piece (any permanent of the reference's vocabulary or creature
+#   token on either side in each state of wear, or any card of the pool
+#   in either graveyard: about 2,000 boards, 570,000 casts, 110,000
+#   activations and 60,000 flashback casts, a minute and a half).
 #   CARD_SEMANTICS_SMALL=2 is every board of two pieces (about 330,000
 #   boards and 90 million casts, two hours on four cores), run by hand in
 #   shares (CARD_SEMANTICS_SHARD=K/N).

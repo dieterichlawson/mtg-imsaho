@@ -8787,6 +8787,22 @@ fn every_readable_activated_ability_does_what_its_text_says_on_every_small_board
     });
 }
 
+/// Every instant and sorcery the grammar reads with flashback, cast from
+/// its owner's graveyard for its flashback cost on every small board
+/// ([`on_every_small_board`], [`check_flashback_on`]); a board that holds
+/// the card in that graveyard already casts that one.
+#[test]
+fn every_flashback_spell_does_what_its_text_says_on_every_small_board() {
+    on_every_small_board("flashback casts", &|small, on, which, failures, casts| {
+        let flashbacks = small.cards.iter()
+            .filter(|(_, s)| s.flashback.is_some() && s.additional.is_none() && !s.slots.iter().any(|s| matches!(s, Slot::Spell(_))));
+        for (card, spec) in flashbacks {
+            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+            check_flashback_on(card, spec, spec.flashback.as_ref().expect("filtered"), which, made, small.registry, small.cache, failures, casts);
+        }
+    });
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
@@ -10663,6 +10679,88 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
     (combats, failures)
 }
 
+/// One card with flashback cast from P0's graveyard on one board for its
+/// flashback cost (CR 702.34a): offered at exactly the targets its text
+/// allows, and resolving every way a cast from a hand would, but exiled
+/// instead of put into the graveyard; `which` names the board in what it
+/// reports. Disagreements are pushed onto `failures` and casts counted.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn check_flashback_on(card: &Printed, spec: &Spec, flashback: &ManaCost, which: &str, (mut state, mut world): (GameState, World),
+    registry: &CardRegistry, cache: &BTreeMap<String, Printed>, failures: &mut Vec<String>, casts: &mut usize) {
+    // A card of that name already in the graveyard is the one cast,
+    // as the engine offers one cast for copies of an untargeted
+    // spell; the reference has it on the stack, out of the graveyard.
+    let there = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some(card.name.as_str())).map(|(id, _)| *id);
+    let spell = match there {
+        Some(id) => {
+            world.yard.remove(&id);
+            let at = world.graveyard[0].iter().position(|n| *n == card.name).expect("in the graveyard");
+            world.graveyard[0].remove(at);
+            id
+        }
+        None => card_in_graveyard(&mut state, &registry, &card.name, P0),
+    };
+    fund(&mut state, P0, flashback, 0);
+    let name = format!("{} by flashback{which}", card.name);
+    let expected = target_sets(spec, &world, P0);
+    match offered_as(&state, &registry, spell, Some(flashback)) {
+        Ok(sets) if sets == expected => {}
+        Ok(sets) => {
+            failures.push(format!("{name}: offers targets {sets:?}, the text allows {expected:?}"));
+            return;
+        }
+        Err(why) => {
+            failures.push(format!("{name}: {why}"));
+            return;
+        }
+    }
+    // With the opponent's spell on the stack, a sorcery's flashback
+    // is not offered and an instant's is (CR 307.1, 304.1).
+    let offered_now = !expected.is_empty();
+    let (mut busy, mut busy_world) = (state.clone(), world.clone());
+    if the_opponent_holds_a_spell_if_they_can(&mut busy, &mut busy_world, &registry, &cache) {
+        let offered_busy = engine::legal_actions(&busy, &registry).castable_spells.iter().any(|c| c.object_id == spell && c.is_flashback);
+        // An instant's is offered wherever it has its targets.
+        if offered_busy != (card.has_type("Instant") && offered_now) {
+            failures.push(format!("{name}: offered with a spell on the stack {offered_busy}, and it is {}an instant", if card.has_type("Instant") { "" } else { "not " }));
+        }
+    }
+    let asks = engine::legal_actions(&state, &registry).castable_spells.iter()
+        .any(|c| c.object_id == spell && c.is_flashback && matches!(c.target_spec, CastTargetSpec::ChosenAtCast));
+    for targets in expected {
+        *casts += 1;
+        // An {X} in the flashback cost: every X from nothing to what
+        // floats (CR 107.3a).
+        let xs: Vec<World> = if flashback.symbols.contains(&ManaSymbol::X) {
+            (0..=X_FLOAT).map(|x| World { x, pool: x_left(&world, x), ..world.clone() }).collect()
+        } else {
+            vec![world.clone()]
+        };
+        let want: Vec<World> = xs.iter().flat_map(|w| resolution_ways(spec, w, &targets, P0))
+            .map(|way| {
+                let mut after = resolve(spec, &way, &targets, P0, card, spell);
+                let last = after.graveyard[0].pop();
+                assert_eq!(last.as_deref(), Some(card.name.as_str()), "the spell went last into its graveyard");
+                after.exile[0].push(card.name.clone());
+                after
+            })
+            // And what its resolution set off on the board, each way.
+            .flat_map(settle_triggers)
+            .collect();
+        let first = cast_for(spell, if asks { Vec::new() } else { targets.clone() }, Some(flashback));
+        let (endings, asked) = questions_asked(|| if is_random(spec) {
+            over_seeds(&state, &registry, distinct(&want), |s| every_ending_casting(s, &registry, spell, &targets, Some(first.clone())))
+        } else {
+            every_ending_casting(&state, &registry, spell, &targets, Some(first.clone()))
+        });
+        if let Some(why) = disagreement(&want, &endings, &registry)
+            .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
+        {
+            failures.push(format!("{name} at {targets:?}: {why}"));
+        }
+    }
+}
+
 /// Every instant and sorcery the grammar reads with flashback, cast from
 /// its owner's graveyard for its flashback cost (CR 702.34a): offered at
 /// exactly the targets the text allows, the card itself on the stack and
@@ -10680,74 +10778,7 @@ fn every_flashback_spell_does_what_its_text_says() {
     for (card, spec) in cards.iter().filter(|(_, s)| s.flashback.is_some() && s.additional.is_none() && !s.slots.iter().any(|s| matches!(s, Slot::Spell(_)))) {
         let flashback = spec.flashback.as_ref().expect("filtered");
         for (which, build) in boards.iter().enumerate().filter(|(i, _)| *i == 0 || spec.reads_morbid()).map(|(_, b)| *b) {
-            let (mut state, mut world) = build(&registry, &cache);
-            // A card of that name already in the graveyard is the one cast,
-            // as the engine offers one cast for copies of an untargeted
-            // spell; the reference has it on the stack, out of the graveyard.
-            let there = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some(card.name.as_str())).map(|(id, _)| *id);
-            let spell = match there {
-                Some(id) => {
-                    world.yard.remove(&id);
-                    let at = world.graveyard[0].iter().position(|n| *n == card.name).expect("in the graveyard");
-                    world.graveyard[0].remove(at);
-                    id
-                }
-                None => card_in_graveyard(&mut state, &registry, &card.name, P0),
-            };
-            fund(&mut state, P0, flashback, 0);
-            let name = format!("{} by flashback{which}", card.name);
-            let expected = target_sets(spec, &world, P0);
-            match offered_as(&state, &registry, spell, Some(flashback)) {
-                Ok(sets) if sets == expected => {}
-                Ok(sets) => {
-                    failures.push(format!("{name}: offers targets {sets:?}, the text allows {expected:?}"));
-                    continue;
-                }
-                Err(why) => {
-                    failures.push(format!("{name}: {why}"));
-                    continue;
-                }
-            }
-            // With the opponent's spell on the stack, a sorcery's flashback
-            // is not offered and an instant's is (CR 307.1, 304.1).
-            let (mut busy, mut busy_world) = (state.clone(), world.clone());
-            the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
-            let offered_busy = engine::legal_actions(&busy, &registry).castable_spells.iter().any(|c| c.object_id == spell && c.is_flashback);
-            if offered_busy != card.has_type("Instant") {
-                failures.push(format!("{name}: offered with a spell on the stack {offered_busy}, and it is {}an instant", if card.has_type("Instant") { "" } else { "not " }));
-            }
-            let asks = engine::legal_actions(&state, &registry).castable_spells.iter()
-                .any(|c| c.object_id == spell && c.is_flashback && matches!(c.target_spec, CastTargetSpec::ChosenAtCast));
-            for targets in expected {
-                casts += 1;
-                // An {X} in the flashback cost: every X from nothing to what
-                // floats (CR 107.3a).
-                let xs: Vec<World> = if flashback.symbols.contains(&ManaSymbol::X) {
-                    (0..=X_FLOAT).map(|x| World { x, pool: x_left(&world, x), ..world.clone() }).collect()
-                } else {
-                    vec![world.clone()]
-                };
-                let want: Vec<World> = xs.iter().flat_map(|w| resolution_ways(spec, w, &targets, P0))
-                    .map(|way| {
-                        let mut after = resolve(spec, &way, &targets, P0, card, spell);
-                        let last = after.graveyard[0].pop();
-                        assert_eq!(last.as_deref(), Some(card.name.as_str()), "the spell went last into its graveyard");
-                        after.exile[0].push(card.name.clone());
-                        after
-                    })
-                    .collect();
-                let first = cast_for(spell, if asks { Vec::new() } else { targets.clone() }, Some(flashback));
-                let (endings, asked) = questions_asked(|| if is_random(spec) {
-                    over_seeds(&state, &registry, distinct(&want), |s| every_ending_casting(s, &registry, spell, &targets, Some(first.clone())))
-                } else {
-                    every_ending_casting(&state, &registry, spell, &targets, Some(first.clone()))
-                });
-                if let Some(why) = disagreement(&want, &endings, &registry)
-                    .or_else(|| wrong_chooser(spec, &targets, &world, P0, spell, &asked))
-                {
-                    failures.push(format!("{name} at {targets:?}: {why}"));
-                }
-            }
+            check_flashback_on(card, spec, flashback, which, build(&registry, &cache), &registry, &cache, &mut failures, &mut casts);
         }
     }
     assert!(casts > 0);
