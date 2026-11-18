@@ -8926,7 +8926,15 @@ fn check_turn_begins_on(card: &Printed, spec: &Spec, active: PlayerId, borrowed:
     // The engine passes for a player with nothing to do, so the
     // first question after the draw is the active player's land
     // drop.
-    let (got, asked) = questions_asked(|| every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain)));
+    // A trigger that does something at random is played over seeds, and
+    // every way its text allows must be reached (Charmbreaker Devils with
+    // two instants in the graveyard returns either).
+    let random = spec.upkeep.as_ref().is_some_and(|u| is_random(&u.trigger.spec));
+    let (got, asked) = questions_asked(|| if random {
+        over_seeds(&state, registry, distinct(&want), |s| every_scene_ending(s, registry, Scene::Until(Step::PrecombatMain)))
+    } else {
+        every_scene_ending(&state, registry, Scene::Until(Step::PrecombatMain))
+    });
     // Who answers what it asks: its controller, or the player its
     // text names, the enchanted player for a Curse.
     let targets = spec.upkeep.as_ref().map(|u| target_sets(&u.trigger.spec, &World { source: Some(id), ..world.clone() }, P0)).filter(|sets| sets.len() == 1).map(|mut sets| sets.remove(0)).unwrap_or_default();
