@@ -6639,9 +6639,10 @@ fn still_chooses_copy(name: &str, m: &Model) -> bool {
 /// holds (603.4), is put on the stack by its controller, the active
 /// player's first and each player's in any order they choose (101.4,
 /// 603.3b), its targets chosen as it is put there (603.3d); then they
-/// resolve, last put first, each every way it can. What their resolution
-/// puts onto the battlefield triggers in turn. A token copy triggers as
-/// what it copies would (707.2).
+/// resolve, last put first, each every way it can. What the resolution of
+/// one sets off triggers in turn, and resolves before the rest of them
+/// ([`settle_above`]). A token copy triggers as what it copies would
+/// (707.2).
 fn settle_triggers(w: World) -> Vec<World> {
     settle_triggers_choosing(w, None)
 }
@@ -6806,10 +6807,10 @@ fn stack_outcomes(world: &World, stack: &[&(Option<ObjectId>, PlayerId, Trigger)
                     };
                     let mut out: Vec<World> = paid.iter()
                         .flat_map(|paid| resolution_ways(&trigger.spec, paid, targets, *controller))
-                        .map(|way| {
+                        .flat_map(|way| {
                             let mut after = apply(&trigger.spec, &way, targets, *controller);
                             after.state_based_actions();
-                            after
+                            settle_above(after)
                         })
                         .collect();
                     if trigger.optional || paid.is_empty() {
@@ -6822,6 +6823,18 @@ fn stack_outcomes(world: &World, stack: &[&(Option<ObjectId>, PlayerId, Trigger)
         out.extend(worlds);
     }
     out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
+}
+
+/// What a resolution set off, settled before anything still on the stack
+/// under it resolves: a trigger goes on the stack the next time a player
+/// would receive priority (CR 603.3b), above what is there, and the top of
+/// the stack resolves first (405.5, 608.1). A Fiend Hunter that dies with
+/// its enters ability still on the stack returns nothing as it leaves, and
+/// then exiles its target for good (its ruling of 2018-12-07). The faces
+/// noted for what is still on the stack are kept (701.28f).
+fn settle_above(mut w: World) -> Vec<World> {
+    let faces = std::mem::take(&mut w.faces_put);
+    settle_triggers(w).into_iter().map(|mut w| { w.faces_put.clone_from(&faces); w }).collect()
 }
 
 /// The permanent `card`, read as `spec`, under `controller`: its printed
@@ -7067,7 +7080,7 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
                             .flat_map(|way| {
                                 let mut after = apply(&trigger.spec, way, targets, caster);
                                 after.state_based_actions();
-                                settle_triggers(after)
+                                settle_above(after)
                             })
                             .collect();
                         if trigger.optional {
