@@ -1409,15 +1409,6 @@ impl GameState {
         self.pending_entry_batches.push(batch);
     }
 
-    /// Whether an entry is waiting on an enters-as-a-copy answer: a deferred
-    /// card or a token not yet created. The effect that started it has not
-    /// finished, so the game loop runs no state-based action or trigger pass
-    /// until it is in (CR 704.3).
-    #[must_use]
-    pub fn entry_choice_waiting(&self) -> bool {
-        !self.pending_entry_choices.is_empty() || !self.pending_token_copies.is_empty()
-    }
-
     /// The batch whose entry `object` belongs to, if one is held, taken out
     /// once no member is still waiting on its choice.
     pub(crate) fn take_ready_entry_batch(&mut self, object: ObjectId) -> Option<Option<EntryBatch>> {

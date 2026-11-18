@@ -405,3 +405,36 @@ fn a_token_copy_of_a_twin_clone_is_not_asked() {
     assert_eq!(state.name_of(token, &reg), "Grizzly Bears");
     assert!(state.pending_token_copies.is_empty());
 }
+
+/// The prompt is a decision point like any other: the fuzzer's every-step
+/// check holds at it. Skipping the trigger scan along with the state-based
+/// actions left a cast Twin's `SpellResolved` unscanned at its prompt
+/// (CR 603.3, invariants/stack.rs).
+#[test]
+fn the_invariants_hold_at_a_cast_twins_copy_prompt() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // `game_at_step` builds turn 1 as if it were not the first; a later
+    // turn is what that shape is.
+    state.turn_number = 2;
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
+
+    let mut seen: Option<Vec<String>> = None;
+    mtg_engine::engine::run_game_loop(&mut state, &reg, |s, _, legal| {
+        if matches!(&s.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget {
+                effect: mtg_engine::state::PendingEffect::EnterAsCopy { .. }, .. }, .. }))
+        {
+            seen = Some(mtg_engine::invariants::check_core(s, &reg));
+            return Action::Concede;
+        }
+        legal.actions.iter()
+            .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == twin))
+            .cloned()
+            .unwrap_or(Action::PassPriority)
+    });
+
+    let v = seen.expect("the copy choice was asked");
+    assert!(v.is_empty(), "{v:?}");
+}

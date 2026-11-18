@@ -1509,13 +1509,10 @@ fn run_game_loop_inner<F>(
         // anything else looks at the board — the entry itself is waiting on
         // the answer, so SBAs and triggers have nothing to say about it yet.
         crate::replacement::process_pending_entry_choices(state, registry);
-        // While one is waiting, the effect that put it there has not finished
-        // resolving: no state-based actions and no triggers until the entry
-        // is in (CR 704.3, 603.3). Running them between two answers killed
-        // creatures mid-resolution and let a later copy see the deaths
-        // (#1064).
-        let entry_waiting = state.entry_choice_waiting();
-        while !entry_waiting {
+        // While one is open, the effect that put it there has not finished
+        // resolving, so `check_state_based_actions` does nothing until the
+        // entry is in (CR 704.3, `sba::mid_resolution`; #1064).
+        loop {
             let mut any_work = false;
             loop {
                 let sba = check_state_based_actions(state, registry);
