@@ -1509,3 +1509,13 @@ illegal or dubious resolutions do.
   and `state.events`, and the P/T of Boneyard Wurm or Splinterfright on the
   board. Verify that no zone shows the card and no event moves it anywhere
   but the battlefield
+  — **played 2026-11-18: five rules bugs, all in the gap between deferred
+  entries.** Grimoire returning two Twins asks them one at a time with SBAs
+  run between (#1064: a Boar copy got morbid), offers co-entering creatures
+  (#1065), asks the owner not the new controller (#1066) and drops the black
+  Zombie addition (#1067); Back from the Brink's Twin token is never asked
+  (#1068). The lesson generalises: any resolution that moves several objects
+  "at once" and defers one is a sequence the engine runs one by one. Put a
+  state-dependent card beside it (Boneyard Wurm, morbid, an anthem) and a
+  second deferred choice after it. Unburial Rites on a Twin is still
+  unchecked
