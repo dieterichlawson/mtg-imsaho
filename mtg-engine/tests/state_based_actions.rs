@@ -648,53 +648,37 @@ fn a_deferred_entry_does_not_hand_the_card_to_the_new_controller_early() {
     assert_eq!(obj.controller, P0, "and the entry is under the controller it asked for");
 }
 
-/// The list of creatures to copy is built before state-based actions run,
-/// and answered after them. Anything they killed in between is no longer a
-/// creature on the battlefield to copy (CR 608.2d) — a Grimoire of the Dead
-/// returning thirteen creatures at once kills some of them to the legend
-/// rule in the same breath.
+/// The enters-as-a-copy choice is the last step of the effect that put the
+/// permanent there, so no state-based action runs underneath it (CR 704.3):
+/// a creature with lethal damage is still on the battlefield, still offered,
+/// until the entry is in. They used to run, and between two Evil Twins'
+/// answers from one Grimoire of the Dead they killed creatures mid-resolution
+/// and let the second Twin's copy see the deaths (#1064).
 #[test]
-fn the_copy_choice_stops_offering_a_creature_that_has_since_died() {
-    let r = reg();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let doomed = named_permanent(&mut state, &r, "Grizzly Bears", P1);
-    let survivor = named_permanent(&mut state, &r, "Walking Corpse", P1);
-    let twin = begin_entering_twin(&mut state, &r);
-    mtg_engine::replacement::process_pending_entry_choices(&mut state, &r);
-    assert!(state.awaiting_action.is_some(), "the copy choice is up, offering both");
-
-    // One of the two dies before the answer is given.
-    state.get_object_mut(doomed).unwrap().damage_marked = 9;
-    while check_state_based_actions(&mut state, &r) {}
-    mtg_engine::replacement::refresh_pending_entry_choice(&mut state, &r);
-
-    let offered = pending_choice_options(&state);
-    assert!(offered.contains(&Target::Object(survivor)), "got {offered:?}");
-    assert!(!offered.contains(&Target::Object(doomed)),
-        "a creature in the graveyard is not one to copy: {offered:?}");
-    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Hand,
-        "and the entry is still waiting on the answer");
-}
-
-/// When every offered creature dies, the choice cannot be made at all, so
-/// the permanent enters as its printed self — the same answer it gets when
-/// the board was empty to begin with.
-#[test]
-fn a_copy_choice_whose_every_option_died_enters_the_printed_card() {
+fn no_state_based_action_runs_under_an_open_copy_choice() {
     let r = reg();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let doomed = named_permanent(&mut state, &r, "Grizzly Bears", P1);
     let twin = begin_entering_twin(&mut state, &r);
     mtg_engine::replacement::process_pending_entry_choices(&mut state, &r);
-    assert!(state.awaiting_action.is_some(), "test precondition: the choice is up");
+    assert!(state.awaiting_action.is_some(), "the copy choice is up");
 
     state.get_object_mut(doomed).unwrap().damage_marked = 9;
-    while check_state_based_actions(&mut state, &r) {}
-    mtg_engine::replacement::refresh_pending_entry_choice(&mut state, &r);
+    assert!(!check_state_based_actions(&mut state, &r),
+        "nothing happens while the resolution waits on the answer");
+    assert_eq!(state.get_object(doomed).unwrap().zone, Zone::Battlefield);
+    assert!(pending_choice_options(&state).contains(&Target::Object(doomed)));
 
-    assert!(state.awaiting_action.is_none(), "nothing left to ask about");
-    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield,
-        "the entry goes ahead as the printed 0/0");
+    // Answered, the entry completes and the board is checked as usual.
+    let mut state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(doomed))) },
+        &r,
+    );
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &r), "Grizzly Bears");
+    while check_state_based_actions(&mut state, &r) {}
+    assert_eq!(state.get_object(doomed).unwrap().zone, Zone::Graveyard);
 }
 
 /// Answered with a creature, it enters as that creature — and is then an
