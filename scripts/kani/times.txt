@@ -1607,3 +1607,7 @@ SUCCESSFUL      86s  proofs::engine_under_card::howlpack_of_estwald_transforms_b
 SUCCESSFUL      89s  proofs::engine_under_card::villagers_of_estwald_transform_when_no_spell_was_cast
 SUCCESSFUL      83s  proofs::engine_under_card::hanweir_watchkeep_transforms_with_no_spell_cast
 SUCCESSFUL      96s  proofs::engine_under_card::howlpack_alpha_stays_with_one_spell_cast_by_each_player
+SUCCESSFUL      87s  proofs::engine_under_card::bane_of_hanweir_transforms_back_with_two_spells_cast_by_a_player
+SUCCESSFUL      88s  proofs::engine_under_card::hanweir_watchkeep_stays_with_a_spell_cast
+SUCCESSFUL      83s  proofs::engine_under_card::bane_of_hanweir_stays_with_one_spell_cast_by_each_player
+SUCCESSFUL      96s  proofs::engine_under_card::kruin_outlaw_transforms_with_no_spell_cast

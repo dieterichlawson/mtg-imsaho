@@ -2,7 +2,8 @@
 //! in the pool prints (CR 205.3, 205.4, 702): Stromkirk Noble's "can't be
 //! blocked by Humans", Blazing Torch's "by Vampires or Zombies", Orchard
 //! Spirit's "except by creatures with flying or reach", Spare from Evil's
-//! "non-Human creatures" and Moonmist's "Werewolves and Wolves". Each
+//! "non-Human creatures", Moonmist's "Werewolves and Wolves" and
+//! Instigator Gang's "attacking creatures you control". Each
 //! filter is its own Boolean combination of the questions it asks of the
 //! object, and these show that `matches_filter` answers exactly that
 //! combination.
@@ -135,6 +136,28 @@ each_filter! {
         let f = F::Or(vec![F::HasSubtype("Wolf".into()), F::HasSubtype("Werewolf".into())]);
         assert!(matched(&f) == (answer(Asked::Wolf) || answer(Asked::Werewolf)));
         std::mem::forget(f);
+    }
+    // Instigator Gang's and Wildblood Pack's: an attacking creature of the
+    // player who controls the source (CR 506.4, 108.4). Its questions are
+    // the board's own, not a subtype's or a keyword's: who controls the
+    // creature, either player for a source of either player's, and
+    // whether it is attacking, in a combat where one creature is, this
+    // one or another.
+    yours_and_attacking_matches_exactly_an_attacker_you_control: {
+        let f = F::And(vec![F::ControlledByYou, F::Attacking]);
+        let (registry, mut state, blank) = blank_board();
+        let controller = PlayerId(u8::from(kani::any::<bool>()));
+        let id = state.create_object(blank, controller, Zone::Battlefield, Some(1), Some(1));
+        let other = state.create_object(blank, controller, Zone::Battlefield, Some(1), Some(1));
+        let source_controller = PlayerId(u8::from(kani::any::<bool>()));
+        let attacking: bool = kani::any();
+        // One attacker either way: a map the solver may or may not have
+        // put to is one of either size to every read after.
+        let mut combat = crate::state::CombatState::new();
+        combat.attackers.insert(if attacking { id } else { other }, PlayerId(0));
+        state.combat = Some(combat);
+        assert!(state.matches_filter(id, &f, id, source_controller, &registry) == (controller == source_controller && attacking));
+        std::mem::forget((registry, state, f));
     }
 }
 

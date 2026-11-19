@@ -1862,6 +1862,36 @@ fn werewolf_as_cast((card, back, cast): (Box<dyn CardBehavior>, bool, [u32; 2]))
     std::mem::forget((registry, state));
 }
 
+/// The same for Instigator Gang, without the power and toughness read
+/// back: its faces' "attacking creatures you control get +1/+0" (and
+/// +3/+0) is a filter of two conditions, and the layers matching it ran
+/// out of memory at 5 GB with nothing on the board open and no trigger
+/// run at all. What is asserted is the transform: the face it shows, and
+/// that it is otherwise as it was. What the filter matches is proved of
+/// the engine with the filter built where it is matched
+/// (`proofs::actions::filters`), and the ability is read on every small
+/// board.
+fn werewolf_flips((card, back, cast): (Box<dyn CardBehavior>, bool, [u32; 2])) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let id = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    let o = state.get_object_mut(id).expect("just created");
+    o.is_transformed = back;
+    o.tapped = kani::any();
+    let tapped = o.tapped;
+    state.num_spells_cast_last_turn.insert(PlayerId(0), cast[0]);
+    state.num_spells_cast_last_turn.insert(PlayerId(1), cast[1]);
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, id, &[], &registry);
+
+    let turns = if back { cast[0] >= 2 || cast[1] >= 2 } else { cast[0] + cast[1] == 0 };
+    let o = state.get_object(id).expect("still an object");
+    assert!(o.is_transformed == (back != turns) && o.zone == Zone::Battlefield && o.controller == you && o.tapped == tapped);
+    assert!(o.damage_marked == 0 && o.counters.is_empty());
+    std::mem::forget((registry, state));
+}
+
 /// "At the beginning of your upkeep, mill two cards." (Splinterfright)
 /// and "At the beginning of enchanted player's upkeep, that player mills
 /// two cards." (Curse of the Bloody Tome) resolving, the player `who`
@@ -3296,16 +3326,17 @@ engine_under_card! {
 }
 
 // The Werewolves either of whose faces prints a static ability: the
-// spells cast last turn fixed by each harness (`werewolf_as_cast`).
+// spells cast last turn fixed by each harness (`werewolf_as_cast`), and
+// for Instigator Gang the transform alone (`werewolf_flips`).
 engine_under_card! {
     hanweir_watchkeep_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(HanweirWatchkeep), false, [0, 0]));
     hanweir_watchkeep_stays_with_a_spell_cast: werewolf_as_cast((Box::new(HanweirWatchkeep), false, [0, 1]));
     bane_of_hanweir_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(HanweirWatchkeep), true, [0, 2]));
     bane_of_hanweir_stays_with_one_spell_cast_by_each_player: werewolf_as_cast((Box::new(HanweirWatchkeep), true, [1, 1]));
-    instigator_gang_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(InstigatorGang), false, [0, 0]));
-    instigator_gang_stays_with_a_spell_cast: werewolf_as_cast((Box::new(InstigatorGang), false, [0, 1]));
-    wildblood_pack_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(InstigatorGang), true, [0, 2]));
-    wildblood_pack_stays_with_one_spell_cast_by_each_player: werewolf_as_cast((Box::new(InstigatorGang), true, [1, 1]));
+    instigator_gang_transforms_with_no_spell_cast: werewolf_flips((Box::new(InstigatorGang), false, [0, 0]));
+    instigator_gang_stays_with_a_spell_cast: werewolf_flips((Box::new(InstigatorGang), false, [0, 1]));
+    wildblood_pack_transforms_back_with_two_spells_cast_by_a_player: werewolf_flips((Box::new(InstigatorGang), true, [0, 2]));
+    wildblood_pack_stays_with_one_spell_cast_by_each_player: werewolf_flips((Box::new(InstigatorGang), true, [1, 1]));
     kruin_outlaw_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(KruinOutlaw), false, [0, 0]));
     kruin_outlaw_stays_with_a_spell_cast: werewolf_as_cast((Box::new(KruinOutlaw), false, [0, 1]));
     terror_of_kruin_pass_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(KruinOutlaw), true, [0, 2]));
