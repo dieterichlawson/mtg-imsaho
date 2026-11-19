@@ -6300,8 +6300,10 @@ fn tops_of_shuffled_libraries(spec: &Spec, world: World) -> Vec<World> {
 /// on top of a library shuffled before it, each choice another player
 /// makes, each card a search can find.
 fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
-    let mut ways: Vec<World> = random_choices(spec, world, caster).into_iter()
-        .flat_map(|w| tops_of_shuffled_libraries(spec, w))
+    // The top of a shuffled library first: a card discarded at random
+    // after a draw is one of the hand as that draw leaves it.
+    let mut ways: Vec<World> = tops_of_shuffled_libraries(spec, world.clone()).into_iter()
+        .flat_map(|w| random_choices(spec, &w, caster))
         .collect();
     if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature
         | Effect::PlayerExilesFromGraveyard { .. } | Effect::PilesSacrificed { .. } | Effect::ExileFromGraveyard { .. }))
@@ -9528,7 +9530,14 @@ fn check_loyalty_on(card: &Printed, back: bool, walker: &Walker, k: usize, loyal
             })
             .collect();
         let at = format!("{name} at {targets:?}");
-        let (endings, asked) = questions_asked(|| every_ending_from(&state, &registry, None, Some(act.clone())));
+        // Over seeds where what it set off reads a library it shuffled
+        // (Garruk's search, then a Selhoff Occultist's mill for the
+        // creature sacrificed): any card of it is on top (CR 701.20a).
+        let (endings, asked) = questions_asked(|| if want.iter().any(|w| w.randomized) {
+            over_seeds(&state, &registry, distinct(&want), |s| every_ending_from(s, &registry, None, Some(act.clone())))
+        } else {
+            every_ending_from(&state, &registry, None, Some(act.clone()))
+        });
         if let Some(why) = disagreement(&want, &endings, &registry) {
             failures.push(format!("{at}: {why}"));
             continue;
@@ -9561,7 +9570,11 @@ fn check_loyalty_on(card: &Printed, back: bool, walker: &Walker, k: usize, loyal
             let mut held = engine::submit_action(&state, &act, &registry);
             if held.stack.len() == 1 && held.priority_player == Some(P0) {
                 held.move_object(id, Zone::Exile, &registry);
-                let (endings, asked) = questions_asked(|| every_ending(&held, &registry, None));
+                let (endings, asked) = questions_asked(|| if want.iter().any(|w| w.randomized) {
+                    over_seeds(&held, &registry, distinct(&want), |s| every_ending(s, &registry, None))
+                } else {
+                    every_ending(&held, &registry, None)
+                });
                 if let Some(why) = disagreement(&want, &endings, &registry)
                     .or_else(|| wrong_chooser(&ability.spec, targets, &world, P0, id, &asked))
                 {
@@ -9655,15 +9668,8 @@ fn check_loyalty_abilities_on(walkers: &[WalkerFace], small: &Small, on: &[Piece
             let mut loyalties = vec![printed, need];
             loyalties.retain(|l| *l > 0);
             loyalties.dedup();
-            // An ability that searches shuffles, and what a trigger of
-            // the board's then mills or draws is any card of that
-            // library, which the reference does not yet play: such an
-            // ability is not played beside a permanent that triggers
-            // on a death (Garruk's sacrifice beside a Selhoff
-            // Occultist).
-            let shuffles = format!("{:?}", ability.spec.effects).contains("Search");
             for loyalty in loyalties {
-                let Some(made) = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, shuffles) else { continue };
+                let Some(made) = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false) else { continue };
                 *checked += 1;
                 let name = format!("{}'s ability {k} at {loyalty} loyalty{which}", face.name);
                 check_loyalty_on(card, front.is_some(), walker, k, loyalty, need, false, &name, made, small.registry, small.cache, failures);
@@ -9709,6 +9715,31 @@ fn on_named_small_boards(boards: &[[(&str, PlayerId); 3]], check: &dyn Fn(&Small
 enum Named<'a> {
     Permanent(&'a str, PlayerId),
     Yard(&'a str, PlayerId),
+}
+
+/// Boards on which a loyalty ability's search shuffles a library that a
+/// trigger of the board's then reads, each built by name and every
+/// loyalty ability played on it. Garruk, the Veil-Cursed sacrifices the
+/// Grizzly Bears: beside a Selhoff Occultist, whose trigger mills a card
+/// of the library the search shuffled, and beside a Murder of Crows,
+/// whose trigger draws one and then discards a card of the hand that
+/// draw leaves. Either is any card of that library (CR 701.20a), which
+/// the reference did not play, so that such an ability was kept off a
+/// board with a death trigger; and the Crows' board is the one on which
+/// the card on top was first chosen after the card discarded, a discard
+/// of a card never drawn.
+#[test]
+fn loyalty_abilities_agree_where_a_search_shuffles_under_a_trigger_that_reads_the_library() {
+    let walkers = planeswalker_faces();
+    let boards = [
+        vec![Named::Permanent("Grizzly Bears", P0), Named::Permanent("Selhoff Occultist", P0)],
+        vec![Named::Permanent("Grizzly Bears", P0), Named::Permanent("Murder of Crows", P0)],
+    ];
+    let (failures, checked) = on_named_boards(&boards, &|small, on, which, failures, checked| {
+        check_loyalty_abilities_on(&walkers, small, on, which, failures, checked);
+    });
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} loyalty abilities on boards where a search shuffles under a trigger disagree:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// [`on_named_small_boards`] for boards that may hold a card in a
