@@ -1185,9 +1185,13 @@ fn read_planeswalker(card: &Printed) -> Result<Walker, String> {
     Ok(walker)
 }
 
+/// A planeswalker's face, the front of its card if it is the back, and
+/// what the grammar reads of it.
+type WalkerFace = (Printed, Option<Printed>, Result<Walker, String>);
+
 /// Each planeswalker face in the pool, read: the face, its front face if
 /// it is a back face, and its reading.
-fn planeswalker_faces() -> Vec<(Printed, Option<Printed>, Result<Walker, String>)> {
+fn planeswalker_faces() -> Vec<WalkerFace> {
     let mut faces = Vec::new();
     for card in cached_oracle().values().filter(|c| c.has_type("Planeswalker")) {
         faces.push((card.clone(), None, read_planeswalker(card)));
@@ -3645,10 +3649,12 @@ struct World {
     /// go on the stack once that is done.
     died: Vec<(ObjectId, Model, u32)>,
     /// What left the battlefield without dying as what is resolving
-    /// resolved (exiled, returned to a hand, put into a library), each as
-    /// it last existed there: its "leaves the battlefield" trigger goes on
-    /// the stack once that is done (CR 603.6c, 603.10a).
-    left: Vec<(ObjectId, Model)>,
+    /// resolved (exiled, returned to a hand, put into a library, or a
+    /// permanent that is no creature put into a graveyard), each as it
+    /// last existed there and when ([`World::deaths`]): its "leaves the
+    /// battlefield" trigger goes on the stack once that is done, and it
+    /// watched what died as it left (CR 603.6c, 603.10a).
+    left: Vec<(ObjectId, Model, u32)>,
     /// Triggers something other than an entry, a death or a leaving set
     /// off, each with its source and controller: they go on the stack with
     /// those the next time the triggers are settled (CR 603.3b). Combat
@@ -3975,7 +3981,7 @@ impl World {
                 self.died.push((id, last, self.deaths));
             }
         } else if let Some(last) = self.as_it_last_was(id) {
-            self.left.push((id, last));
+            self.left.push((id, last, self.deaths));
         }
         let Some(mut m) = self.permanents.remove(&id) else { return };
         // Off the battlefield a double-faced card has only its front face
@@ -6819,7 +6825,7 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
     // dying beside it, looking back (CR 603.6c, 603.10a).
     // Each permanent that left without dying: its own "leaves the
     // battlefield" trigger, looking back (CR 603.6c, 603.10a).
-    for (gone, last) in &left {
+    for (gone, last, _) in &left {
         if let Some(t) = text(last).and_then(|s| s.dies).filter(|t| t.on_leaving) {
             triggers.push((Some(*gone), last.controller, *t));
         }
@@ -6828,8 +6834,14 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
         if let Some(t) = text(last).and_then(|s| s.dies) {
             triggers.push((Some(*dead), last.controller, *t));
         }
+        // What watches a death: what is on the battlefield, and what left
+        // it in the same event or since, as it last was (CR 603.10a), a
+        // creature that died or any other permanent that left. A Gutter
+        // Grime sacrificed in one pile with a creature saw it die, and its
+        // Ooze, a 0/0 with the Grime gone, lives under a Glorious Anthem.
         let watchers = w.permanents.iter().map(|(id, m)| (*id, m))
-            .chain(died.iter().filter(|(_, _, left)| when <= left).map(|(id, m, _)| (*id, m)));
+            .chain(died.iter().filter(|(_, _, left)| when <= left).map(|(id, m, _)| (*id, m)))
+            .chain(left.iter().filter(|(_, _, at)| when <= at).map(|(id, m, _)| (*id, m)));
         for (watcher, m) in watchers {
             if let Some(watch) = text(m).and_then(|s| s.watch) {
                 if last.matches_from(&watch.dying, m.controller, watcher == *dead) {
@@ -6877,7 +6889,7 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
         ts.iter().map(|(src, c, t)| {
             let source = src.and_then(|id| w.permanents.get(&id)
                 .or_else(|| died.iter().find(|(d, _, _)| *d == id).map(|(_, m, _)| m))
-                .or_else(|| left.iter().find(|(d, _)| *d == id).map(|(_, m)| m)));
+                .or_else(|| left.iter().find(|(d, _, _)| *d == id).map(|(_, m, _)| m)));
             let own = if t.on_leaving { format!("{src:?}") } else { String::new() };
             format!("{c:?} {t:?} {source:?} {own}")
         }).collect()
@@ -9509,32 +9521,84 @@ fn check_loyalty_on(card: &Printed, back: bool, walker: &Walker, k: usize, loyal
 fn every_loyalty_ability_does_what_its_text_says_on_every_small_board() {
     let walkers = planeswalker_faces();
     on_every_small_board("loyalty abilities", &|small, on, which, failures, checked| {
-        for (face, front, walker) in &walkers {
-            let Ok(walker) = walker else { continue };
-            let card = front.as_ref().unwrap_or(face);
-            let card_id = small.registry.get_id_by_name(&card.name).expect("a card in the pool");
-            let printed = small.registry.get(card_id).expect("a card in the pool").starting_loyalty().expect("a planeswalker's printed loyalty");
-            for (k, ability) in walker.abilities.iter().enumerate() {
-                let need = u32::try_from(-ability.change).unwrap_or(0);
-                let mut loyalties = vec![printed, need];
-                loyalties.retain(|l| *l > 0);
-                loyalties.dedup();
-                // An ability that searches shuffles, and what a trigger of
-                // the board's then mills or draws is any card of that
-                // library, which the reference does not yet play: such an
-                // ability is not played beside a permanent that triggers
-                // on a death (Garruk's sacrifice beside a Selhoff
-                // Occultist).
-                let shuffles = format!("{:?}", ability.spec.effects).contains("Search");
-                for loyalty in loyalties {
-                    let Some(made) = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, shuffles) else { continue };
-                    *checked += 1;
-                    let name = format!("{}'s ability {k} at {loyalty} loyalty{which}", face.name);
-                    check_loyalty_on(card, front.is_some(), walker, k, loyalty, need, false, &name, made, small.registry, small.cache, failures);
-                }
+        check_loyalty_abilities_on(&walkers, small, on, which, failures, checked);
+    });
+}
+
+/// Every loyalty ability the grammar reads, on one small board
+/// ([`every_loyalty_ability_does_what_its_text_says_on_every_small_board`]).
+fn check_loyalty_abilities_on(walkers: &[WalkerFace], small: &Small, on: &[Piece], which: &str, failures: &mut Vec<String>, checked: &mut usize) {
+    for (face, front, walker) in walkers {
+        let Ok(walker) = walker else { continue };
+        let card = front.as_ref().unwrap_or(face);
+        let card_id = small.registry.get_id_by_name(&card.name).expect("a card in the pool");
+        let printed = small.registry.get(card_id).expect("a card in the pool").starting_loyalty().expect("a planeswalker's printed loyalty");
+        for (k, ability) in walker.abilities.iter().enumerate() {
+            let need = u32::try_from(-ability.change).unwrap_or(0);
+            let mut loyalties = vec![printed, need];
+            loyalties.retain(|l| *l > 0);
+            loyalties.dedup();
+            // An ability that searches shuffles, and what a trigger of
+            // the board's then mills or draws is any card of that
+            // library, which the reference does not yet play: such an
+            // ability is not played beside a permanent that triggers
+            // on a death (Garruk's sacrifice beside a Selhoff
+            // Occultist).
+            let shuffles = format!("{:?}", ability.spec.effects).contains("Search");
+            for loyalty in loyalties {
+                let Some(made) = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, shuffles) else { continue };
+                *checked += 1;
+                let name = format!("{}'s ability {k} at {loyalty} loyalty{which}", face.name);
+                check_loyalty_on(card, front.is_some(), walker, k, loyalty, need, false, &name, made, small.registry, small.cache, failures);
             }
         }
+    }
+}
+
+/// The boards of three pieces on which a loyalty ability once ended
+/// otherwise than the reference allowed, each built by name and every
+/// loyalty ability played on it. What watches a death is whatever was on
+/// the battlefield as it happened, a permanent that left in the same
+/// event among them (CR 603.10a), and not creatures alone: Liliana of the
+/// Veil's last ability, a Gutter Grime sacrificed in one pile with a
+/// creature, and the Ooze the Grime still makes, a 0/0 with the Grime
+/// gone, kept alive by the Glorious Anthem in the other pile. One board
+/// in sixty of those of three pieces found it.
+#[test]
+fn loyalty_abilities_agree_on_the_three_piece_boards_that_once_did_not() {
+    let walkers = planeswalker_faces();
+    let boards: [[(&str, PlayerId); 3]; 2] = [
+        [("Avacyn's Pilgrim", P1), ("Glorious Anthem", P1), ("Gutter Grime", P1)],
+        [("Gutter Grime", P0), ("Hollowhenge Scavenger", P0), ("Intangible Virtue", P0)],
+    ];
+    let (failures, checked) = on_named_small_boards(&boards, &|small, on, which, failures, checked| {
+        check_loyalty_abilities_on(&walkers, small, on, which, failures, checked);
     });
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} loyalty abilities on the boards that once disagreed do again:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// `check`, as [`on_every_small_board`] hands it a board, on each of
+/// `boards`: a board named by its permanents' cards and whose they are,
+/// each as it entered. What it reports and how much it checked.
+fn on_named_small_boards(boards: &[[(&str, PlayerId); 3]], check: &dyn Fn(&Small, &[Piece], &str, &mut Vec<String>, &mut usize)) -> (Vec<String>, usize) {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let vocabulary = board_vocabulary(&cards);
+    let mut pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    pool.sort_unstable();
+    let small = Small { registry: &registry, cache: &cache, cards: &cards, vocabulary: &vocabulary, pool: &pool };
+    let (mut failures, mut checked) = (Vec::new(), 0);
+    for board in boards {
+        let on: Vec<Piece> = board.iter().map(|(name, side)| {
+            let card = vocabulary.iter().position(|(printed, _)| printed.name == *name)
+                .unwrap_or_else(|| panic!("{name} is a permanent of the boards' vocabulary"));
+            Piece::Permanent { card, side: *side, wear: 0 }
+        }).collect();
+        check(&small, &on, &format!(" on {board:?}"), &mut failures, &mut checked);
+    }
+    (failures, checked)
 }
 
 /// One werewolf placed on one board under P0, and two of its upkeeps
@@ -9932,12 +9996,6 @@ fn every_combat_ends_as_the_rules_say_on_every_small_board() {
 /// `CARD_SEMANTICS_SMALL=3`.
 #[test]
 fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
-    let registry = registry();
-    let cache = oracle_cache();
-    let (cards, _) = readable(&registry, &cache);
-    let vocabulary = board_vocabulary(&cards);
-    let mut pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
-    pool.sort_unstable();
     let boards: [[(&str, PlayerId); 3]; 15] = [
         [("Stromkirk Patrol", P0), ("Typhoid Rats", P0), ("Pitchburn Devils", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Gallows Warden", P1)],
@@ -9955,16 +10013,10 @@ fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
         [("Skaab Goliath", P0), ("Creepy Doll", P1), ("Selhoff Occultist", P1)],
         [("Ashmouth Hound", P0), ("Unruly Mob", P1), ("Voiceless Spirit", P1)],
     ];
-    let (mut failures, mut combats) = (Vec::new(), 0);
-    for board in boards {
-        let on: Vec<Piece> = board.iter().map(|(name, side)| {
-            let card = vocabulary.iter().position(|(printed, _)| printed.name == *name)
-                .unwrap_or_else(|| panic!("{name} is a permanent of the boards' vocabulary"));
-            Piece::Permanent { card, side: *side, wear: 0 }
-        }).collect();
-        let made = small_board(&on, &registry, &cache, &vocabulary, &pool, false).expect("a board of the family");
-        check_combat_on(&format!(" on {board:?}"), made, &registry, &mut failures, &mut combats);
-    }
+    let (failures, combats) = on_named_small_boards(&boards, &|small, on, which, failures, combats| {
+        let made = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false).expect("a board of the family");
+        check_combat_on(which, made, small.registry, failures, combats);
+    });
     assert!(combats > 0);
     assert!(failures.is_empty(), "{} of {combats} combats on the boards that once disagreed do again:\n  {}", failures.len(), failures.join("\n  "));
 }
