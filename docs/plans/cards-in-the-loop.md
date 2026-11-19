@@ -442,7 +442,11 @@ the family, in 40 shares:
 | flashback | 10,376,473 | the same |
 | combat | 94,552, and 1,441,016 on the 2,052,641 boards of two worn pieces | all agree |
 | activated abilities | 17,923,840 | the same, once three gaps above were closed |
-| casts | 91,095,375 | one disagreement, a gap above; that share agrees now, and the rest are to be run again against the reference as it now stands |
+| casts | 91,095,375 | the same, once the gap above was closed |
+
+144 million plays, every one agreeing with the reference as it stands at
+4b60d3c; each check was run again whole against it after the last gap
+was closed.
 
 Combat is cheap enough that `prove.sh exhaustive` plays it on every
 board of two worn pieces. The boards are walked one at a time now, so
@@ -450,8 +454,7 @@ three pieces fit in memory: a slice of them (one share of 4,000) fights
 11,112 combats that all agree, and all 88,573,365 boards are some hours
 of this machine for combat alone.
 
-**Next.** The two reruns above; combat on every board of three pieces;
-and the cuts above. Three pieces as they entered is 88 million boards
+**Next.** Combat on every board of three pieces; and the cuts above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 

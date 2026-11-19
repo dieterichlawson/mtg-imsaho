@@ -357,10 +357,10 @@ size rather than boards written for each test: on every board of one
 piece, 2,032 of them, every cast, activated ability, flashback, upkeep,
 end step, loyalty ability, transformation, watched entry and cast, and
 combat agrees with its text, and they run in the `proofs` workflow; on
-every board of two pieces, 325,888 of them, some 150 million plays, the
-same but for thirteen gaps of the reference those boards found and
-closed, in each of which the engine was right (the casts are being run
-again against the reference as it now stands).
+every board of two pieces, 325,888 of them, 144 million plays, the same:
+those boards found thirteen gaps of the reference, in each of which the
+engine was right, and every check was run again whole once the last was
+closed.
 And Kani runs a card's own hook with the engine's own actions
 under it, the board's numbers left open
 (`proofs/engine_under_card.rs`: 147 harnesses over 73 spells so far,
