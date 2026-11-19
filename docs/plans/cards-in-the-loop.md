@@ -486,8 +486,8 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 144
-harnesses over 71 of the 88 spells, every one proved; 3.9 hours of
+**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 147
+harnesses over 73 of the 88 spells, every one proved; 4 hours of
 solver time in all on this machine while it was busy, the longest 12
 minutes and most about one. By family, each a function of what the text
 says and a row for each card and case:
@@ -501,7 +501,7 @@ says and a row for each card and case:
 | tokens | Midnight Haunting, Moan of the Unhallowed, Spider Spawning | that many tokens of that power, toughness, colour, subtype and keyword under the caster |
 | Auras and Curses | the twelve "enchant creature" Auras and Wreath of Geists, the six Curses | attached, and the creature (or the enchanted player's creatures) as the text says, read back through the engine's layers and its attack, block and untap queries |
 | moves between zones | Counterspell, Dissipate, Lost in the Mist, Silent Departure, Grasp of Phantoms, Swords to Plowshares, Purify the Grave, Runic Repetition, Unburial Rites, Ghoulcaller's Chant, Sever the Bloodline | where each card is, under whom, and what the list it left and the list it joined hold |
-| the rest | Bump in the Night, Infernal Plunge, Gnaw to the Bone, Prey Upon | life, mana, and a fight's damage |
+| the rest | Bump in the Night, Infernal Plunge, Gnaw to the Bone, Prey Upon, Rolling Temblor (one creature without flying), Tribute to Hunger | life, mana, a fight's damage, and a question asked and its effect applied |
 
 Three more things that put a harness out of reach were measured on the
 way: an amount of damage the solver leaves open (Brimstone Volley's 3 or
@@ -509,21 +509,39 @@ way: an amount of damage the solver leaves open (Brimstone Volley's 3 or
 under two minutes); a board of seven objects under the default loop
 bound of 7 (Spider Spawning with two creature cards: a table may say
 `unwind(9)`); and a card that asks of each creature whether to act on it
-before queueing what it does (Rolling Temblor's "without flying").
+before queueing what it does (Rolling Temblor's "without flying": more
+than one permanent on the board, and it does not fit).
 
-**Not yet.** Rolling Temblor, as above. Spare from Evil (three creatures
-and the engine's protection read back) and Tribute to Hunger each ran
-out of memory at 8 GB as first written; Tribute to Hunger is the first
-of the spells that ask a question, where the harness runs the card's
-hook, reads the question it left, and has the engine's own
-`resolve_choice` answer it. The other spells that ask or choose at
-random (Divine Reckoning, Make a Wish, Creeping Renaissance, Frightful
-Delusion, Memory's Journey, Forbidden Alchemy, Night Terrors, Past in
-Flames, Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling
-Counterpart (a copy needs a printed creature to copy) and Army of the
-Damned (thirteen tokens). Then the hooks of permanents: some 200
-overrides (53 activated abilities, 23 upkeeps, 15 enters, 20 deaths
-watched or own, the combat triggers).
+**A card that asks.** Tribute to Hunger is the first: its hook leaves a
+question (who is asked, among what, whether they may decline, and the
+effect an answer applies), and the engine's answering of a choice
+(`engine::actions::choices::resolve_choice`) checks the answer is one of
+the options and applies that effect. Measured: the hook alone, with the
+real asking, proves in 72 s; the hook and then `resolve_choice` ran out
+of memory at 5 GB on a board with nothing open, as the stack's
+resolution does; and so did the hook and then the effect applied
+directly, until the question was read where it lies rather than taken
+out of the state (CBMC copies that enum whole). As it stands the proof
+runs the hook, holds the question it left to the text, and applies the
+effect the question holds through the engine's own
+`apply_pending_effect` at each option: 145-151 s. The dispatcher between
+is proved of itself (`proofs::actions::answering`). This is the shape
+for every card that asks.
+
+**Not yet.** Rolling Temblor beside a creature that has flying, and
+Rolling Temblor beside any second permanent (one creature without
+flying, alone, proves in 71 s; each of the others ran out of memory at
+8 GB, nothing about the board left open). Spare from Evil: with one
+creature of yours and one other, the engine's protection read back ran
+out of memory at 8 GB. These three are what more memory would be tried
+on first. The other spells that ask or choose at random (Divine
+Reckoning, Make a Wish, Creeping Renaissance, Frightful Delusion,
+Memory's Journey, Forbidden Alchemy, Night Terrors, Past in Flames,
+Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling Counterpart
+(a copy needs a printed creature to copy) and Army of the Damned
+(thirteen tokens). Then the hooks of permanents: some 200 overrides (53
+activated abilities, 23 upkeeps, 15 enters, 20 deaths watched or own,
+the combat triggers).
 
 These harnesses are also the first proofs of the engine's actions
 composed with nothing stood in for: `try_destroy` over the real

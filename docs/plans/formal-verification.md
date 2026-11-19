@@ -363,7 +363,7 @@ closed, in each of which the engine was right (the casts are being run
 again against the reference as it now stands).
 And Kani runs a card's own hook with the engine's own actions
 under it, the board's numbers left open
-(`proofs/engine_under_card.rs`: 144 harnesses over 71 spells so far,
+(`proofs/engine_under_card.rs`: 147 harnesses over 73 spells so far,
 each about a minute); the spell's trip through the stack does not fit in
 CBMC with the engine under it, and stays the engine's own proof. The 285
 card harnesses kept from before are of what a card declares and of what
@@ -1220,7 +1220,7 @@ changes, damage, drawing, milling, token making, attachment, countering,
 control change, fight and continuous effects run under it, and what is
 asserted is the board afterwards, read back through the engine's own
 characteristics, against the card's text. Only `format!`, the log and
-allocator growth and freeing are taken out. 144 harnesses over 71 of
+allocator growth and freeing are taken out. 147 harnesses over 73 of
 the 88 spells, each proved, 25 s to 12 minutes and mostly about one;
 `docs/plans/cards-in-the-loop.md`, B2, has what each family is, what
 keeps a harness in reach (a fixed player where a card reaches a library
