@@ -3613,6 +3613,11 @@ struct World {
     /// it last existed there: its "leaves the battlefield" trigger goes on
     /// the stack once that is done (CR 603.6c, 603.10a).
     left: Vec<(ObjectId, Model)>,
+    /// Legendary permanents of one name under one player that differ, the
+    /// state-based actions having found them: that player chooses which
+    /// to keep (CR 704.5j), each way played where the triggers are settled
+    /// ([`settle_triggers`]).
+    legend_choices: Vec<Vec<ObjectId>>,
     /// The events creatures have died in so far: a resolution is one, and
     /// each pass of the state-based actions that follows is another (CR
     /// 704.3). A watcher that died sees the deaths of its own event and of
