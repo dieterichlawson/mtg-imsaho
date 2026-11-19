@@ -1225,7 +1225,7 @@ control change, fight and continuous effects run under it, and what is
 asserted is the board afterwards, read back through the engine's own
 characteristics, against the card's text. Only `format!`, the log and
 allocator growth and freeing are taken out. 504 harnesses over 206
-cards, each proved, 25 s to 12 minutes and mostly a minute or two: 202
+cards, each proved, 27 s to 12 minutes and mostly a minute or two: 202
 over 86 of the 88 spells, and 302 over the hooks of 120 permanents
 (enters, death, combat-damage, upkeep, end-step, attack and block
 triggers, Equipment, activated and loyalty abilities, and the

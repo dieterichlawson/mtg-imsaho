@@ -5473,6 +5473,257 @@ fn nevermore(_: ()) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents the engine reads. Nothing resolves in these: the card
+// is on the battlefield, and the board is read back through the engine's
+// own layers and queries, as its text says the board should read. ----
+
+/// A creature of `card` on the battlefield under `you`, at the power and
+/// toughness the card prints.
+fn printed_creature(state: &mut GameState, registry: &crate::cards::CardRegistry, card: CardId, you: PlayerId) -> ObjectId {
+    let (power, toughness) = registry.printed_pt(card, false).expect("its face");
+    state.create_object(card, you, Zone::Battlefield, power, toughness)
+}
+
+/// "Creatures you control get +N/+N." (Glorious Anthem; Heartless
+/// Summoning's -1/-1) under the first player: their 2/2 creature reads
+/// that much more through the engine's layers (CR 613.4c), and the other
+/// player's 2/2 reads 2/2.
+fn your_creatures_get((card, by): (Box<dyn CardBehavior>, i32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let yours = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let theirs = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    a_source(&mut state, card, PlayerId(0));
+
+    assert!(state.effective_power(yours, &registry) == Some(2 + by) && state.effective_toughness(yours, &registry) == Some(2 + by));
+    assert!(state.effective_power(theirs, &registry) == Some(2) && state.effective_toughness(theirs, &registry) == Some(2));
+    std::mem::forget((registry, state));
+}
+
+/// "Other Spirit creatures you control get +P/+T." (Battleground Geist,
+/// Gallows Warden) under the first player: their other Spirit, a 2/2,
+/// reads that much more (CR 613.4c); their creature that is no Spirit
+/// and the other player's Spirit read 2/2; and the card itself reads
+/// what it prints, "other" leaving it out.
+fn other_spirits_get((card, (p, t)): (Box<dyn CardBehavior>, (i32, i32))) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let spirit = a_permanent(&mut state, blank, Permanent::Spirit);
+    state.get_object_mut(spirit).expect("just created").controller = PlayerId(0);
+    let other = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let theirs = a_permanent(&mut state, blank, Permanent::Spirit);
+    state.get_object_mut(theirs).expect("just created").controller = PlayerId(1);
+    state.get_object_mut(theirs).expect("just created").toughness = Some(2);
+    state.get_object_mut(spirit).expect("just created").toughness = Some(2);
+    let lord = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(state.effective_power(spirit, &registry) == Some(2 + p) && state.effective_toughness(spirit, &registry) == Some(2 + t));
+    assert!(state.effective_power(other, &registry) == Some(2) && state.effective_toughness(other, &registry) == Some(2));
+    assert!(state.effective_power(theirs, &registry) == Some(2) && state.effective_toughness(theirs, &registry) == Some(2));
+    let printed = registry.printed_pt(card, false).expect("its face");
+    assert!(state.effective_power(lord, &registry) == printed.0 && state.effective_toughness(lord, &registry) == printed.1);
+    std::mem::forget((registry, state));
+}
+
+/// Boneyard Wurm ("Boneyard Wurm's power and toughness are each equal to
+/// the number of creature cards in your graveyard.") under the first
+/// player, `creatures` creature cards and another card in their
+/// graveyard and a creature card in the other player's: it reads that
+/// many and that many (CR 604.3, 613.4a).
+fn boneyard_wurm(creatures: usize) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::boneyard_wurm::BoneyardWurm));
+    for _ in 0..creatures {
+        a_card_in(&mut state, blank, 0, Zone::Graveyard, true);
+    }
+    a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+    let wurm = state.create_object(card, PlayerId(0), Zone::Battlefield, Some(0), Some(0));
+
+    let n = Some(i32::try_from(creatures).expect("a few"));
+    assert!(state.effective_power(wurm, &registry) == n && state.effective_toughness(wurm, &registry) == n);
+    std::mem::forget((registry, state));
+}
+
+/// Scourge of Geier Reach ("This creature gets +1/+1 for each creature
+/// your opponents control."), a 3/3 as printed, under the first player
+/// with `theirs` creatures of the other player's and one more of its
+/// controller's: it reads that many more of each (CR 613.4c).
+fn scourge_of_geier_reach(theirs: usize) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::scourge_of_geier_reach::ScourgeOfGeierReach));
+    for _ in 0..theirs {
+        a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    }
+    a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let scourge = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    let more = i32::try_from(theirs).expect("a few");
+    assert!(state.effective_power(scourge, &registry) == Some(3 + more) && state.effective_toughness(scourge, &registry) == Some(3 + more));
+    std::mem::forget((registry, state));
+}
+
+/// Angelic Overseer ("Flying. As long as you control a Human, this
+/// creature has hexproof and indestructible.") under the first player
+/// beside a Human, theirs (`yours`) or the other player's: it has flying
+/// either way, and hexproof and indestructible exactly beside a Human of
+/// its controller's (CR 613.1f).
+fn angelic_overseer(yours: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::angelic_overseer::AngelicOverseer));
+    let human = a_permanent(&mut state, blank, Permanent::Human);
+    state.get_object_mut(human).expect("just created").controller = PlayerId(u8::from(!yours));
+    let overseer = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(state.has_keyword(overseer, Keyword::Flying, &registry));
+    assert!(state.has_keyword(overseer, Keyword::Hexproof, &registry) == yours);
+    assert!(state.has_keyword(overseer, Keyword::Indestructible, &registry) == yours);
+    std::mem::forget((registry, state));
+}
+
+/// Night Revelers ("This creature has haste as long as an opponent
+/// controls a Human.") under the first player beside a Human, the other
+/// player's (`theirs`) or its controller's: it has haste exactly beside
+/// an opponent's (CR 613.1f).
+fn night_revelers(theirs: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::night_revelers::NightRevelers));
+    let human = a_permanent(&mut state, blank, Permanent::Human);
+    state.get_object_mut(human).expect("just created").controller = PlayerId(u8::from(theirs));
+    let revelers = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(state.has_keyword(revelers, Keyword::Haste, &registry) == theirs);
+    std::mem::forget((registry, state));
+}
+
+/// Intangible Virtue ("Creature tokens you control get +1/+1 and have
+/// vigilance.") under the first player: their 2/2 creature token reads
+/// 3/3 with vigilance (CR 613.4c, 613.1f); their creature that is no
+/// token, and the other player's token, read 2/2 without it.
+fn intangible_virtue(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::intangible_virtue::IntangibleVirtue));
+    let token = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    state.get_object_mut(token).expect("just created").is_token = true;
+    let card_creature = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let theirs = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(theirs).expect("just created").is_token = true;
+    a_source(&mut state, card, PlayerId(0));
+
+    assert!(state.effective_power(token, &registry) == Some(3) && state.effective_toughness(token, &registry) == Some(3));
+    assert!(state.has_keyword(token, Keyword::Vigilance, &registry));
+    for id in [card_creature, theirs] {
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+        assert!(!state.has_keyword(id, Keyword::Vigilance, &registry));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// One-Eyed Scarecrow ("Defender. Creatures with flying your opponents
+/// control get -1/-0.") under the first player: the other player's 2/2
+/// with flying reads 1/2 (CR 613.4c); their 2/2 without it, and its
+/// controller's own flier, read 2/2; and it has defender.
+fn one_eyed_scarecrow(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::one_eyed_scarecrow::OneEyedScarecrow));
+    let flier = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(flier).expect("just created").keywords = vec![Keyword::Flying];
+    let walker = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let yours = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    state.get_object_mut(yours).expect("just created").keywords = vec![Keyword::Flying];
+    let scarecrow = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(state.effective_power(flier, &registry) == Some(1) && state.effective_toughness(flier, &registry) == Some(2));
+    for id in [walker, yours] {
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+    }
+    assert!(state.has_keyword(scarecrow, Keyword::Defender, &registry));
+    std::mem::forget((registry, state));
+}
+
+/// A creature's printed keywords, as the engine reads them off the
+/// permanent (CR 702): each of `has`, and none of `lacks`.
+fn has_keywords((card, has, lacks): (Box<dyn CardBehavior>, &[Keyword], &[Keyword])) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let creature = printed_creature(&mut state, &registry, card, you);
+
+    for k in has {
+        assert!(state.has_keyword(creature, *k, &registry));
+    }
+    for k in lacks {
+        assert!(!state.has_keyword(creature, *k, &registry));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Vampire Interloper ("Flying. This creature can't block."), untapped
+/// on the battlefield: the engine says it cannot block (CR 509.1b),
+/// where the blank creature beside it can.
+fn vampire_interloper(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::vampire_interloper::VampireInterloper));
+    let other = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let interloper = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(!crate::combat::can_block_at_all(&state, interloper, &registry));
+    assert!(crate::combat::can_block_at_all(&state, other, &registry));
+    std::mem::forget((registry, state));
+}
+
+/// A creature that "can't be blocked" (Invisible Stalker), or "except by
+/// creatures with flying or reach" (Orchard Spirit: `except`), attacking:
+/// the engine says a creature with neither cannot block it, and one with
+/// flying or with reach can exactly where the text makes the exception
+/// (CR 509.1b).
+fn evades((card, except): (Box<dyn CardBehavior>, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let walker = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let flier = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(flier).expect("just created").keywords = vec![Keyword::Flying];
+    let reacher = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(reacher).expect("just created").keywords = vec![Keyword::Reach];
+    let attacker = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(!crate::combat::can_block_attacker(&state, walker, attacker, &registry));
+    assert!(crate::combat::can_block_attacker(&state, flier, attacker, &registry) == except);
+    assert!(crate::combat::can_block_attacker(&state, reacher, attacker, &registry) == except);
+    std::mem::forget((registry, state));
+}
+
+/// Laboratory Maniac ("If you would draw a card while your library has
+/// no cards in it, you win the game instead.") under the first player,
+/// the player `who` names drawing a card by the engine's own draw from a
+/// library of `cards` cards: its controller drawing from an empty one,
+/// the other player has lost and its controller has not drawn from an
+/// empty library (CR 614.1a, 104.2b); with a card there, or the other
+/// player drawing, the draw is a draw (121.1, 704.5b).
+fn laboratory_maniac((cards, who): (usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::laboratory_maniac::LaboratoryManiac));
+    let library = a_library(&mut state, blank, who, cards);
+    printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    let _ = crate::engine::draw_cards(&mut state, PlayerId(who), 1, &registry);
+
+    let wins = cards == 0 && who == 0;
+    assert!(state.players[1].lost == wins && !state.players[0].lost);
+    assert!(state.players[who as usize].has_drawn_from_empty == (cards == 0 && who == 1));
+    if cards == 1 {
+        assert!(state.get_object(library[0].expect("made")).expect("still an object").zone == Zone::Hand);
+    }
+    std::mem::forget((registry, state));
+}
+
+/// "{T}: Add ..." (Sol Ring's {C}{C}, Avacyn's Pilgrim's {W}), the mana
+/// ability activated through the engine: the permanent is tapped (CR
+/// 605.3a), and its controller's pool holds exactly that mana.
+fn taps_for((card, mana, n): (Box<dyn CardBehavior>, ManaType, u32)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = u8::from(kani::any::<bool>());
+    let source = state.create_object(card, PlayerId(you), Zone::Battlefield, None, None);
+    state.get_object_mut(source).expect("just created").summoning_sick = false;
+
+    crate::engine::activate_mana_source(&mut state, source, 0, &registry);
+
+    assert!(state.get_object(source).expect("still an object").tapped);
+    for p in 0..2u8 {
+        let pool = &state.players[p as usize].mana_pool;
+        assert!(pool.get(mana) == if p == you { n } else { 0 } && pool.total() == if p == you { n } else { 0 });
+    }
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -6232,4 +6483,33 @@ engine_under_card! {
     screeching_bat_asks_nothing_with_nothing_to_pay: screeching_bat_asks_nothing(false);
     screeching_bat_gone_asks_nothing: screeching_bat_asks_nothing(true);
     nevermore_asks_its_controller_for_a_nonland_card_name: nevermore(());
+}
+
+// Permanents the engine reads.
+engine_under_card! {
+    glorious_anthem_gives_your_creatures_one_and_one: your_creatures_get((Box::new(crate::cards::glorious_anthem::GloriousAnthem), 1));
+    heartless_summoning_takes_one_and_one_from_your_creatures: your_creatures_get((Box::new(crate::cards::isd::heartless_summoning::HeartlessSummoning), -1));
+    battleground_geist_gives_your_other_spirits_a_power: other_spirits_get((Box::new(crate::cards::isd::battleground_geist::BattlegroundGeist), (1, 0)));
+    gallows_warden_gives_your_other_spirits_a_toughness: other_spirits_get((Box::new(crate::cards::isd::gallows_warden::GallowsWarden), (0, 1)));
+    boneyard_wurm_with_no_creature_card_is_nothing_by_nothing: boneyard_wurm(0);
+    boneyard_wurm_with_two_creature_cards_is_two_by_two: boneyard_wurm(2);
+    scourge_of_geier_reach_alone_is_as_printed: scourge_of_geier_reach(0);
+    scourge_of_geier_reach_grows_by_their_two_creatures: scourge_of_geier_reach(2);
+    angelic_overseer_beside_your_human_has_hexproof_and_indestructible: angelic_overseer(true);
+    angelic_overseer_beside_their_human_has_neither: angelic_overseer(false);
+    night_revelers_beside_their_human_has_haste: night_revelers(true);
+    night_revelers_beside_your_human_has_none: night_revelers(false);
+    intangible_virtue_gives_your_tokens_one_and_one_and_vigilance: intangible_virtue(());
+    one_eyed_scarecrow_takes_a_power_from_their_fliers: one_eyed_scarecrow(());
+    elite_inquisitor_has_first_strike_and_vigilance: has_keywords((Box::new(crate::cards::isd::elite_inquisitor::EliteInquisitor), &[Keyword::FirstStrike, Keyword::Vigilance], &[Keyword::Flying, Keyword::Hexproof]));
+    invisible_stalker_has_hexproof: has_keywords((Box::new(crate::cards::isd::invisible_stalker::InvisibleStalker), &[Keyword::Hexproof], &[Keyword::Flying]));
+    grave_bramble_has_defender: has_keywords((Box::new(crate::cards::isd::grave_bramble::GraveBramble), &[Keyword::Defender], &[Keyword::Reach]));
+    vampire_interloper_cannot_block: vampire_interloper(());
+    invisible_stalker_is_blocked_by_nothing: evades((Box::new(crate::cards::isd::invisible_stalker::InvisibleStalker), false));
+    orchard_spirit_is_blocked_only_by_flying_or_reach: evades((Box::new(crate::cards::isd::orchard_spirit::OrchardSpirit), true));
+    laboratory_maniac_wins_for_its_controller_drawing_from_an_empty_library: laboratory_maniac((0, 0));
+    laboratory_maniac_leaves_the_other_player_to_draw_from_an_empty_library: laboratory_maniac((0, 1));
+    laboratory_maniac_leaves_a_draw_from_a_library_with_a_card_alone: laboratory_maniac((1, 0));
+    sol_ring_taps_for_two_colorless: taps_for((Box::new(crate::cards::sol_ring::SolRing), ManaType::Colorless, 2));
+    avacyns_pilgrim_taps_for_white: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), ManaType::White, 1));
 }
