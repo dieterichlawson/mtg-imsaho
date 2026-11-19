@@ -1383,6 +1383,13 @@ enum Native {
     Draw(PlayerId),
     /// "Flip a coin. If you win the flip, destroy that creature."
     FlipToDestroy(ObjectId),
+    /// "Whenever this creature blocks or becomes blocked by a creature,
+    /// this creature deals N damage to that creature": the source, as it
+    /// was when the block was declared should it be gone by now (CR
+    /// 608.2h), the other creature, and N.
+    BlockDamage { source: ObjectId, as_it_was: Box<Model>, other: ObjectId, n: u32 },
+    /// A stake's "destroy that creature. It can't be regenerated."
+    Staked(ObjectId),
 }
 
 impl PartialEq for Native {
@@ -6979,6 +6986,22 @@ fn native_outcomes(native: &Native, w: &World) -> Vec<World> {
             after.hand[p.0 as usize].push(card);
             vec![after]
         }
+        Native::BlockDamage { source, as_it_was, other, n } => {
+            let from = after.permanents.get(source).cloned().unwrap_or_else(|| (**as_it_was).clone());
+            if let Some(m) = after.permanents.get_mut(other).filter(|m| !protected(m, &from)) {
+                if deal(m, *n) {
+                    m.deathtouched |= has(&from, Keyword::Deathtouch);
+                }
+            }
+            vec![after]
+        }
+        Native::Staked(other) => {
+            if after.permanents.get(other).is_some_and(|m| !has(m, Keyword::Indestructible)) {
+                after.leave(*other, Dest::Graveyard);
+                after.a_creature_died = true;
+            }
+            vec![after]
+        }
         // Each flip won or lost (CR 705.2): the creature destroyed, if it
         // is still there, or not; none once a player has lost, the game
         // over before the trigger resolves (704.5a, 104.2a).
@@ -9902,8 +9925,10 @@ fn every_combat_ends_as_the_rules_say_on_every_small_board() {
 /// them (CR 603.3b, 101.4); a trigger whose every target is gone by then
 /// does nothing (608.2b); and a token one trigger made is there for the
 /// next (`docs/plans/cards-in-the-loop.md`, the gaps found by combat on
-/// three pieces). Two attackers and a blocker is the least board that
-/// shows any of it, and those are otherwise reached only with
+/// three pieces). The last board is the one the engine had wrong too:
+/// the two triggers of an Ashmouth Hound that two creatures block are
+/// its controller's to order (defect 48). Three creatures is the least
+/// board that shows any of it, and those are otherwise reached only with
 /// `CARD_SEMANTICS_SMALL=3`.
 #[test]
 fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
@@ -9913,7 +9938,7 @@ fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
     let vocabulary = board_vocabulary(&cards);
     let mut pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
     pool.sort_unstable();
-    let boards: [[(&str, PlayerId); 3]; 14] = [
+    let boards: [[(&str, PlayerId); 3]; 15] = [
         [("Stromkirk Patrol", P0), ("Typhoid Rats", P0), ("Pitchburn Devils", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Gallows Warden", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Skaab Goliath", P1)],
@@ -9928,6 +9953,7 @@ fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
         [("Balefire Dragon", P0), ("Pitchburn Devils", P0), ("Makeshift Mauler", P1)],
         [("Selhoff Occultist", P0), ("Sturmgeist", P0), ("Kalonian Tusker", P1)],
         [("Skaab Goliath", P0), ("Creepy Doll", P1), ("Selhoff Occultist", P1)],
+        [("Ashmouth Hound", P0), ("Unruly Mob", P1), ("Voiceless Spirit", P1)],
     ];
     let (mut failures, mut combats) = (Vec::new(), 0);
     for board in boards {
@@ -10767,32 +10793,32 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
     // Block triggers (CR 509.4): "blocks or becomes blocked by a creature,
     // this creature deals 1 damage to that creature", and a stake on
     // either destroying the other if it is the type the stake names, past
-    // any shield. A creature blocked by two triggers once for each, and
-    // each trigger resolves as its source last existed, so the state-based
-    // actions wait until all of them have (CR 603.10, 608.2h).
+    // any shield. A creature blocked by two triggers once for each. They
+    // are triggers like any other: put on the stack together, the active
+    // player's first and each player's in the order they choose, and
+    // resolved one at a time with the state-based actions and whatever a
+    // death sets off between them (CR 603.3b). An Ashmouth Hound blocked
+    // by an Unruly Mob and a Voiceless Spirit lives if the Mob is dealt
+    // its damage first and dies, to a Mob grown by the Spirit's death, if
+    // the Spirit is.
     for attack in attacks {
         let a = attack.attacker;
         for &b in &attack.blockers {
             for (one, other) in [(a, b), (b, a)] {
                 let (Some(om), Some(xm)) = (w.permanents.get(&one).cloned(), w.permanents.get(&other).cloned()) else { continue };
-                let staked = w.permanents.values()
-                    .any(|e| e.combat.stake.as_ref().is_some_and(|t| xm.subtypes.contains(t)) && e.attached == Some(Target::Object(one)));
-                if staked && !has(&xm, Keyword::Indestructible) {
-                    w.leave(other, Dest::Graveyard);
-                    w.a_creature_died = true;
-                    continue;
+                let stakes: Vec<(ObjectId, PlayerId)> = w.permanents.iter()
+                    .filter(|(_, e)| e.combat.stake.as_ref().is_some_and(|t| xm.subtypes.contains(t)) && e.attached == Some(Target::Object(one)))
+                    .map(|(id, e)| (*id, e.controller))
+                    .collect();
+                for (stake, controller) in stakes {
+                    w.set_off.push((Some(stake), controller, Trigger { native: Some(Native::Staked(other)), ..Trigger::default() }));
                 }
-                if let Some(n) = om.combat.block_damage.filter(|_| !protected(&xm, &om)) {
-                    let m = w.permanents.get_mut(&other).expect("in combat");
-                    if deal(m, n) {
-                        m.deathtouched |= has(&om, Keyword::Deathtouch);
-                    }
+                if let Some(n) = om.combat.block_damage {
+                    let native = Native::BlockDamage { source: one, as_it_was: Box::new(om.clone()), other, n };
+                    w.set_off.push((Some(one), om.controller, Trigger { native: Some(native), ..Trigger::default() }));
                 }
             }
         }
-    }
-    if attacks.iter().any(|t| !t.blockers.is_empty()) {
-        w.state_based_actions();
     }
     // What a death by then sets off, each way it resolves, before the
     // damage (CR 603.3b, 510.1).
