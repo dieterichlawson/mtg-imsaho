@@ -1519,3 +1519,30 @@ illegal or dubious resolutions do.
   state-dependent card beside it (Boneyard Wurm, morbid, an anthem) and a
   second deferred choice after it. Unburial Rites on a Twin is still
   unchecked
+- L69 [proposed 2026-11-19, from #1011's defects 43 and 47, `5edca336`,
+  `e3757cd4`] the cast-time position. Since #1011 a spell's targets are
+  checked and its additional costs paid with the spell on the stack (CR
+  601.2a, 601.2c, 601.2h), but only for requirements that read a power
+  (`TargetRequirement::reads_power`). Put a hand-counting creature (Sturmgeist)
+  on the board and in the graveyard. Cast Smite the Monstrous at it and pay
+  Corpse Lunge's exile with it. Compare what every screen of the cast says
+  (the target rows, the board, the mark screen) with what the engine counts
+  and deals. Then look for a requirement `reads_power` misses: anything that
+  reads the hand, the graveyard or the stack, on a spell cast from the hand or
+  by flashback
+- L70 [proposed 2026-11-19, from `7eb59c76`, CR 111.4] an unnamed token is
+  named "<subtypes> Token". Make a Spirit token (Doomed Traveler), copy it
+  with Cackling Counterpart and an Evil Twin, then aim Sever the Bloodline and
+  the Twin's same-name ability at it. Read every surface (CLI board and rows,
+  log, LLM board, page inspector) for "Spirit Token token", a `[tok]` badge
+  on the card copy, or a same-name check that compares "Spirit" with
+  "Spirit Token"
+- L71 [proposed 2026-11-19, from #1011's defects 44-46, `59766cbe`,
+  `df1a87d9`, `c556239b`] creatures put onto the battlefield together are
+  planned against the board as it was (CR 614.12). Grimoire of the Dead
+  returns Essence of the Wild, Dearly Departed, two Humans, Unbreathing Horde
+  and an opponent's Evil Twin. Verify that no returnee copies the Essence, the
+  Humans and the Twin's Human copy each get Dearly Departed's counter, and the
+  Horde counts only itself (its ruling). Then put an Essence on the
+  battlefield beforehand, put a second Essence there, and use Moldgraf
+  Monstrosity's random two
