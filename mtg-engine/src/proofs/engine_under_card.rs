@@ -3343,6 +3343,181 @@ fn evil_twin_destroys(_: ()) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents: more damage, a coin, a random choice. ----
+
+/// Balefire Dragon ("Whenever this creature deals combat damage to a
+/// player, it deals that much damage to each creature that player
+/// controls.") having dealt 6 to the second player, beside one creature,
+/// that player's (`theirs`) or its own controller's: the engine's own
+/// damage marks 6 more on that player's creature (CR 120.3e) and none on
+/// the other's, and each is otherwise as it was. One creature, as for
+/// Rolling Temblor: a second permanent is past what fits.
+fn balefire_dragon(theirs: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::balefire_dragon::BalefireDragon));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(creature).expect("just created").controller = PlayerId(u8::from(theirs));
+    let dragon = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let before = state.get_object(creature).expect("just created");
+    let (tapped, damage) = (before.tapped, before.damage_marked);
+
+    registry.get(card).expect("registered").on_combat_damage_to_player(&mut state, dragon, PlayerId(1), 6, &registry);
+
+    let o = state.get_object(creature).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage + if theirs { 6 } else { 0 });
+    assert!(state.get_object(dragon).expect("still an object").damage_marked == 0);
+    std::mem::forget((registry, state));
+}
+
+/// Burning Vengeance ("Whenever you cast a spell from your graveyard,
+/// this enchantment deals 2 damage to any target.") its trigger
+/// resolving at a creature or a planeswalker (`at` which), or, with
+/// none, at either player: 2 more damage marked on the creature (CR
+/// 120.3e), two loyalty counters gone from the planeswalker's three
+/// (120.3c), or 2 life from that player (120.3a), and nothing else.
+fn burning_vengeance(at: Option<Permanent>) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::burning_vengeance::BurningVengeance));
+    let permanent = at.map(|what| a_permanent(&mut state, blank, what));
+    let source = a_source(&mut state, card, PlayerId(0));
+    let spell = state.create_object(blank, PlayerId(0), Zone::Stack, None, None);
+    let player = u8::from(kani::any::<bool>());
+    let target = permanent.map_or(Target::Player(PlayerId(player)), Target::Object);
+    let damage = permanent.map_or(0, |id| state.get_object(id).expect("just created").damage_marked);
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_spell_cast(&mut state, source, PlayerId(0), spell, &[target], &registry);
+
+    match (at, permanent) {
+        (Some(Permanent::Planeswalker), Some(id)) => {
+            let o = state.get_object(id).expect("still an object");
+            assert!(o.damage_marked == 0 && o.counters.get(&CounterType::Loyalty).copied().unwrap_or(0) == 1);
+            assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+        }
+        (_, Some(id)) => {
+            let o = state.get_object(id).expect("still an object");
+            assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + 2);
+            assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+        }
+        (_, None) => {
+            for p in 0..2u8 {
+                assert!(state.players[p as usize].life == life[p as usize] - if p == player { 2 } else { 0 });
+            }
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Nightfall Predator, Daybreak Ranger's other face ("{R}, {T}: This
+/// creature fights target creature."), its ability resolving at a 2/2:
+/// the engine's own fight, each dealing damage equal to its power to the
+/// other (CR 701.14a): 4 more marked on the target, the Predator's
+/// printed power as its transformed face is read, and 2 on the Predator.
+fn nightfall_predator_fights(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::daybreak_ranger::DaybreakRanger));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let predator = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.get_object_mut(predator).expect("just created").is_transformed = true;
+    assert!(state.effective_power(predator, &registry) == Some(4));
+    let damage = state.get_object(target).expect("just created").damage_marked;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, predator, 1, &[Target::Object(target)], &registry);
+
+    assert!(state.get_object(target).expect("still an object").damage_marked == damage + 4);
+    assert!(state.get_object(predator).expect("still an object").damage_marked == 2);
+    std::mem::forget((registry, state));
+}
+
+/// Olivia Voldaren ("{1}{R}: Olivia Voldaren deals 1 damage to another
+/// target creature. That creature becomes a Vampire in addition to its
+/// other types. Put a +1/+1 counter on Olivia Voldaren.") its first
+/// ability resolving at a creature: 1 more damage marked on it (CR
+/// 120.3e), Vampire among its subtypes as the engine reads them
+/// (205.1b), and one +1/+1 counter on Olivia.
+fn olivia_voldaren_bites(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::olivia_voldaren::OliviaVoldaren));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let olivia = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+    assert!(!state.has_subtype(target, "Vampire", &registry));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, olivia, 0, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + 1 && o.tapped == tapped && o.controller == controller);
+    assert!(state.has_subtype(target, "Vampire", &registry));
+    let v = state.get_object(olivia).expect("still an object");
+    assert!(v.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == 1 && v.damage_marked == 0);
+    std::mem::forget((registry, state));
+}
+
+/// Creepy Doll ("Whenever this creature deals combat damage to a
+/// creature, flip a coin. If you win the flip, destroy that creature.")
+/// its trigger resolving for a creature, the game's random numbers in
+/// any state: the creature is in its owner's graveyard by the engine's
+/// own destruction (CR 701.7a) or on the battlefield as it was, and each
+/// is a way the coin can fall (705.2).
+fn creepy_doll(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::creepy_doll::CreepyDoll));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    let doll = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.rng_state = kani::any();
+    let before = state.get_object(creature).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+
+    registry.get(card).expect("registered").on_deals_combat_damage_to_creature(&mut state, doll, creature, 1, &registry);
+
+    let o = state.get_object(creature).expect("still an object");
+    if o.zone == Zone::Battlefield {
+        assert!(o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+    } else {
+        assert!(o.zone == Zone::Graveyard && o.controller == PlayerId(1) && state.players[1].graveyard_order.contains(&creature));
+    }
+    kani::cover!(o.zone == Zone::Graveyard, "the flip won");
+    kani::cover!(o.zone == Zone::Battlefield, "the flip lost");
+    std::mem::forget((registry, state));
+}
+
+/// Woodland Sleuth ("Morbid — When this creature enters, if a creature
+/// died this turn, return a creature card at random from your graveyard
+/// to your hand.") entered under the first player with two creature
+/// cards and one other card in their graveyard, a creature having died
+/// this turn or not (`died`), the game's random numbers at `seed`: with
+/// one dead, exactly one of the two creature cards is in their hand and
+/// the other where it was (CR 701.9c), the `pick`th as that seed has it;
+/// with none, nothing moves (603.4). The card that is no creature stays
+/// either way.
+///
+/// A seed for each of the two, not the random numbers left open: open,
+/// the card moved is one the solver leaves open, and the harness ran out
+/// of memory at 7 GB. That a choice at random is one of the candidates,
+/// whatever the numbers, is proved of the engine
+/// (`proofs::actions::random`); Creepy Doll's coin above is proved with
+/// them open.
+fn woodland_sleuth((died, seed, pick): (bool, u64, usize)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::woodland_sleuth::WoodlandSleuth));
+    let other = a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    let creatures = [a_card_in(&mut state, blank, 0, Zone::Graveyard, true), a_card_in(&mut state, blank, 0, Zone::Graveyard, true)];
+    for id in creatures {
+        state.get_object_mut(id).expect("just created").card_types = vec![CardType::Creature];
+    }
+    let sleuth = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.creature_died_this_turn = died;
+    state.rng_state = seed;
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, sleuth, &[], &registry);
+
+    let zone = |id| state.get_object(id).expect("still an object").zone;
+    assert!(zone(other) == Zone::Graveyard);
+    if died {
+        assert!(zone(creatures[pick]) == Zone::Hand && zone(creatures[1 - pick]) == Zone::Graveyard);
+        assert!(state.players[0].graveyard_order.len() == 2);
+    } else {
+        assert!(zone(creatures[0]) == Zone::Graveyard && zone(creatures[1]) == Zone::Graveyard);
+        assert!(state.players[0].graveyard_order.len() == 3);
+    }
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -3925,4 +4100,25 @@ engine_under_card! {
     grimgrin_gone_gets_no_counter: grimgrin_untaps(false);
     moorland_haunt_makes_a_spirit: moorland_haunt(());
     evil_twin_destroys_its_target: evil_twin_destroys(());
+}
+
+/// Two states of the game's random numbers (`GameState::rng_state`): from
+/// the first, the next number is odd and a choice of one card of two at
+/// random is the first; from the second it is even, and the second.
+const SEED_FIRST: u64 = 0;
+const SEED_SECOND: u64 = 2;
+
+// Permanents: more damage, a coin, a random choice.
+engine_under_card! {
+    balefire_dragon_deals_that_much_to_the_creature_of_the_player_it_damaged: balefire_dragon(true);
+    balefire_dragon_deals_nothing_to_its_own_controllers_creature: balefire_dragon(false);
+    burning_vengeance_deals_two_to_a_creature: burning_vengeance(Some(Permanent::Creature));
+    burning_vengeance_deals_two_to_a_planeswalker: burning_vengeance(Some(Permanent::Planeswalker));
+    burning_vengeance_deals_two_to_a_player: burning_vengeance(None);
+    nightfall_predator_fights_its_target: nightfall_predator_fights(());
+    olivia_voldaren_bites_and_gets_a_counter: olivia_voldaren_bites(());
+    creepy_doll_destroys_what_it_damaged_or_not_as_the_coin_falls: creepy_doll(());
+    woodland_sleuth_returns_nothing_with_no_death: woodland_sleuth((false, 0, 0));
+    woodland_sleuth_with_morbid_returns_the_first_creature_card_at_one_seed: woodland_sleuth((true, SEED_FIRST, 0));
+    woodland_sleuth_with_morbid_returns_the_second_creature_card_at_another: woodland_sleuth((true, SEED_SECOND, 1));
 }

@@ -1747,3 +1747,14 @@ SUCCESSFUL      66s  proofs::engine_under_card::grimgrin_untaps_and_gets_a_count
 SUCCESSFUL      59s  proofs::engine_under_card::grimgrin_gone_gets_no_counter
 SUCCESSFUL      72s  proofs::engine_under_card::evil_twin_destroys_its_target
 SUCCESSFUL     127s  proofs::engine_under_card::moorland_haunt_makes_a_spirit
+SUCCESSFUL      54s  proofs::engine_under_card::balefire_dragon_deals_nothing_to_its_own_controllers_creature
+SUCCESSFUL      87s  proofs::engine_under_card::balefire_dragon_deals_that_much_to_the_creature_of_the_player_it_damaged
+SUCCESSFUL      98s  proofs::engine_under_card::burning_vengeance_deals_two_to_a_creature
+SUCCESSFUL     107s  proofs::engine_under_card::burning_vengeance_deals_two_to_a_planeswalker
+SUCCESSFUL      91s  proofs::engine_under_card::burning_vengeance_deals_two_to_a_player
+SUCCESSFUL     150s  proofs::engine_under_card::nightfall_predator_fights_its_target
+SUCCESSFUL     106s  proofs::engine_under_card::olivia_voldaren_bites_and_gets_a_counter
+SUCCESSFUL      76s  proofs::engine_under_card::creepy_doll_destroys_what_it_damaged_or_not_as_the_coin_falls
+SUCCESSFUL      51s  proofs::engine_under_card::woodland_sleuth_returns_nothing_with_no_death
+SUCCESSFUL     122s  proofs::engine_under_card::woodland_sleuth_with_morbid_returns_the_first_creature_card_at_one_seed
+SUCCESSFUL     120s  proofs::engine_under_card::woodland_sleuth_with_morbid_returns_the_second_creature_card_at_another
