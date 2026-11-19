@@ -2047,16 +2047,20 @@ fn curse_of_the_pierced_heart_chooses(at_the_planeswalker: bool) {
 /// 2/2 black Zombie creature tokens, where X is half the number of
 /// Zombies you control, rounded down.") under the player `who` names,
 /// who controls `zombies` Zombie creatures, beside one Zombie of the
-/// other player's that is not counted: X new permanents, each a token, a
-/// 2/2 black Zombie creature under that player (CR 111.2, 107.1a). The
-/// player is a harness's own: left open, the count of their Zombies is a
-/// number the solver proves and symbolic execution does not fold, and
-/// the tokens made for it were a list of open length that "grew past
-/// its capacity".
-fn endless_ranks_of_the_dead((zombies, who): (usize, u8)) {
+/// other player's (`theirs`) that is not counted, or none: X new
+/// permanents, each a token, a 2/2 black Zombie creature under that
+/// player (CR 111.2, 107.1a). One Zombie of theirs beside one of the
+/// other player's makes none.
+///
+/// Four permanents at most once the token is made: with a fifth, a list
+/// the engine collects the battlefield into outgrows the room its first
+/// entry gave it, which a proof here does not allow (`no_growing`), so
+/// three Zombies, and two beside another player's, are the small
+/// boards'.
+fn endless_ranks_of_the_dead((zombies, theirs, who): (usize, bool, u8)) {
     let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::endless_ranks_of_the_dead::EndlessRanksOfTheDead));
     let you = PlayerId(who);
-    for k in 0..=zombies {
+    for k in 0..zombies + usize::from(theirs) {
         let id = state.create_object(blank, you, Zone::Battlefield, Some(2), Some(2));
         let o = state.get_object_mut(id).expect("just created");
         o.card_types = vec![CardType::Creature];
@@ -2086,25 +2090,24 @@ fn endless_ranks_of_the_dead((zombies, who): (usize, u8)) {
 
 /// Mayor of Avabruck's other face, Howlpack Alpha ("At the beginning of
 /// your end step, create a 2/2 green Wolf creature token."), one
-/// player's card under either player, on the battlefield or gone from it
-/// by then (`there`): one new permanent, a token, a 2/2 green Wolf
-/// creature under the player who last controlled the Alpha (CR 608.2h,
-/// 111.2). With the Alpha gone the engine reads the Wolf through its
-/// layers as the 2/2 it was made. Beside the Alpha it is a 3/3, by the
-/// Alpha's own "each other creature you control that's a Werewolf or a
-/// Wolf gets +1/+1", and that read is not made here: the filter, read
-/// back from the card's printed effects, is one the solver matches as
-/// every filter there is (`werewolf_flips` says the same of Instigator
-/// Gang), and the harness went over 4 GB. What is asserted there is the
-/// token as it was made, a 2/2 before any effect.
-fn howlpack_alpha(there: bool) {
+/// player's card under either player, its trigger resolving after it
+/// has left the battlefield: one new permanent, a token, a 2/2 green
+/// Wolf creature under the player who last controlled the Alpha (CR
+/// 608.2h, 111.2), read back through the engine's layers.
+///
+/// Not proved with the Alpha still on the battlefield, where the Wolf is
+/// a 3/3 by the Alpha's own "each other creature you control that's a
+/// Werewolf or a Wolf gets +1/+1": the filter, read back from the card's
+/// printed effects, is one the solver matches as every filter there is
+/// (`werewolf_flips` says the same of Instigator Gang), and the token
+/// entering beside it ran out of memory at 7 GB with the power not read
+/// at all. That board is the small boards'.
+fn howlpack_alpha(_: ()) {
     let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mayor_of_avabruck::MayorOfAvabruck));
     let you = PlayerId(u8::from(kani::any::<bool>()));
     let alpha = a_creature_of(&mut state, card, PlayerId(1), you);
     state.get_object_mut(alpha).expect("just created").is_transformed = true;
-    if !there {
-        state.move_object(alpha, Zone::Graveyard, &registry);
-    }
+    state.move_object(alpha, Zone::Graveyard, &registry);
     let before = state.objects.len();
 
     registry.get(card).expect("registered").on_end_step(&mut state, alpha, &[], &registry);
@@ -2114,10 +2117,7 @@ fn howlpack_alpha(there: bool) {
     let t = state.get_object(id).expect("made");
     assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
     assert!(state.is_creature(id, &registry));
-    assert!(t.power == Some(2) && t.toughness == Some(2));
-    if !there {
-        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
-    }
+    assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
     assert!(t.colors == [Color::Green] && t.subtypes.len() == 1 && t.subtypes[0] == "Wolf");
     std::mem::forget((registry, state));
 }
@@ -2297,35 +2297,6 @@ fn attacking(state: &mut GameState, attacker: ObjectId) -> crate::cards::AttackI
     crate::cards::AttackInfo::new(attacker, PlayerId(1))
 }
 
-/// Geist of Saint Traft ("Whenever this creature attacks, create a 4/4
-/// white Angel creature token with flying that's tapped and attacking.
-/// Exile that token at end of combat.") attacking the second player, who
-/// controls no planeswalker: one new permanent, a token, a 4/4 white
-/// Angel creature with flying under the Geist's controller, tapped and
-/// attacking that player without having been declared (CR 508.4), and
-/// the engine holds its exile for the end of combat (603.7).
-fn geist_of_saint_traft(_: ()) {
-    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::geist_of_saint_traft::GeistOfSaintTraft));
-    let you = PlayerId(0);
-    let geist = a_creature_of(&mut state, card, you, you);
-    let attack = attacking(&mut state, geist);
-    let before = state.objects.len();
-
-    registry.get(card).expect("registered").on_attacks(&mut state, geist, attack, &[], &registry);
-
-    assert!(state.objects.len() == before + 1 && state.awaiting_action.is_none());
-    let id = ObjectId(geist.0 + 1);
-    let t = state.get_object(id).expect("made");
-    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && t.tapped);
-    assert!(state.is_creature(id, &registry) && state.has_keyword(id, Keyword::Flying, &registry));
-    assert!(state.effective_power(id, &registry) == Some(4) && state.effective_toughness(id, &registry) == Some(4));
-    assert!(t.colors == [Color::White] && t.subtypes.len() == 1 && t.subtypes[0] == "Angel");
-    let combat = state.combat.as_ref().expect("in combat");
-    assert!(combat.attackers.get(&id) == Some(&PlayerId(1)) && combat.attackers.get(&geist) == Some(&PlayerId(1)));
-    assert!(state.end_of_combat_exiles.len() == 1 && state.end_of_combat_exiles[0].target_id == id && state.end_of_combat_exiles[0].controller == you);
-    std::mem::forget((registry, state));
-}
-
 /// Kessig Cagebreakers ("Whenever this creature attacks, create a 2/2
 /// green Wolf creature token that's tapped and attacking for each
 /// creature card in your graveyard.") attacking the second player, who
@@ -2333,6 +2304,15 @@ fn geist_of_saint_traft(_: ()) {
 /// card that is no creature in its controller's graveyard: that many new
 /// permanents, each a token, a 2/2 green Wolf creature under its
 /// controller, tapped and attacking that player (CR 508.4).
+///
+/// Proved with no creature card there, where it makes nothing. With one
+/// or two, and for Geist of Saint Traft's Angel, a token put onto the
+/// battlefield attacking ran out of memory at 7 GB (1.7 to 2.1 million
+/// steps of symbolic execution). The engine's own proofs take that in
+/// two halves, the offer of what the token attacks with the effect
+/// recorded (`proofs::actions::choosing_targets`) and the effect by
+/// itself (`proofs::actions::answering`); here it is one piece, and too
+/// much. Those are the small boards'.
 fn kessig_cagebreakers(creatures: u64) {
     let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::kessig_cagebreakers::KessigCagebreakers));
     let you = PlayerId(0);
@@ -3793,17 +3773,15 @@ engine_under_card! {
     curse_of_the_pierced_heart_deals_one_to_them_enchanted: curse_of_the_pierced_heart(1);
     curse_of_the_pierced_heart_asks_and_deals_one_to_the_player: curse_of_the_pierced_heart_chooses(false);
     curse_of_the_pierced_heart_asks_and_deals_one_to_their_planeswalker: curse_of_the_pierced_heart_chooses(true);
-    endless_ranks_of_the_dead_makes_you_nothing_with_no_zombie: endless_ranks_of_the_dead((0, 0));
-    endless_ranks_of_the_dead_makes_you_nothing_with_one_zombie: endless_ranks_of_the_dead((1, 0));
-    endless_ranks_of_the_dead_makes_you_a_zombie_with_two: endless_ranks_of_the_dead((2, 0));
-    endless_ranks_of_the_dead_makes_them_a_zombie_with_two: endless_ranks_of_the_dead((2, 1));
-    endless_ranks_of_the_dead_makes_you_a_zombie_with_three: endless_ranks_of_the_dead((3, 0));
+    endless_ranks_of_the_dead_makes_you_nothing_with_no_zombie: endless_ranks_of_the_dead((0, true, 0));
+    endless_ranks_of_the_dead_makes_you_nothing_with_one_zombie_beside_one_of_theirs: endless_ranks_of_the_dead((1, true, 0));
+    endless_ranks_of_the_dead_makes_you_a_zombie_with_two: endless_ranks_of_the_dead((2, false, 0));
+    endless_ranks_of_the_dead_makes_them_a_zombie_with_two: endless_ranks_of_the_dead((2, false, 1));
 }
 
 // Permanents: end step triggers, and a cast trigger.
 engine_under_card! {
-    howlpack_alpha_makes_a_wolf: howlpack_alpha(true);
-    howlpack_alpha_gone_still_makes_a_wolf: howlpack_alpha(false);
+    howlpack_alpha_gone_still_makes_a_wolf: howlpack_alpha(());
     unholy_fiend_has_its_controller_lose_a_life: unholy_fiend(true);
     unholy_fiend_gone_still_has_its_controller_lose_a_life: unholy_fiend(false);
     reaper_from_the_abyss_does_nothing_with_no_death: reaper_from_the_abyss(false);
@@ -3821,10 +3799,7 @@ engine_under_card! {
     hamlet_captain_attacking_gives_their_human_nothing: hamlet_captain((true, false));
     hamlet_captain_blocking_gives_your_human_one_and_one: hamlet_captain((false, true));
     hamlet_captain_blocking_gives_their_human_nothing: hamlet_captain((false, false));
-    geist_of_saint_traft_attacks_with_an_angel_beside_it: geist_of_saint_traft(());
     kessig_cagebreakers_attack_alone_with_no_creature_card: kessig_cagebreakers(0);
-    kessig_cagebreakers_attack_with_a_wolf_for_one_creature_card: kessig_cagebreakers(1);
-    kessig_cagebreakers_attack_with_two_wolves_for_two_creature_cards: kessig_cagebreakers(2);
     grimgrin_attacks_destroys_its_target_and_gets_a_counter: grimgrin_attacks(());
 }
 
