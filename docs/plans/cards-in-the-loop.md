@@ -603,8 +603,8 @@ of a spell is out of reach whatever is open, and stays the engine's proof
 harnesses over 266 of the 270 cards, every one proved: 202 over 86 of
 the 88 spells, and 393 over 180 of the 182 permanents (below); 15.6
 hours of solver time in all on this machine while it was busy, the
-longest 12 minutes and most a minute or two. The spells, by family, each a function
-of what the text says and a row for each card and case:
+longest 12 minutes and most a minute or two. The spells, by family, each a
+function of what the text says and a row for each card and case:
 
 | Family | Cards | What is asserted of the board afterwards |
 |---|---|---|
@@ -654,9 +654,10 @@ dispatch and the creature then found in exile proves in 108 s; asked as
 well which card the Hunter then holds, it ran out of memory at 7 GB,
 with room given to the Hunter's list first or without; and the card's
 own hook called as the engine calls it, and then asked the same, proves
-in 80 s. What the card writes under the dispatch is written by either
-card of the registry or by neither, as far as symbolic execution can
-tell, and every later read of it is of all of those. So a harness
+in 80 s. The likely reason, which was not measured further: under the
+dispatch the solver cannot tell which card's behaviour it was handed,
+so what the card writes is written by either card of the registry or by
+neither, and every later read of it is of all of those. So a harness
 applies an effect through the engine where it then reads the board
 (zones, life, damage), and calls the card's hook where it then reads
 what the card keeps of its own: Fiend Hunter's exiled card (the whole
