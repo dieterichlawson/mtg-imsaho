@@ -347,18 +347,28 @@ proved. See
 What the Kani card proofs showed was narrower than their name: each card's
 own code, with the engine actions it calls replaced by recorders, asked for
 the calls its text implies. They said nothing of the state the engine
-leaves, and nothing tied a recorder to the action it stood for. Running the
-real engine under a card instead does not fit in CBMC, even for Doom Blade
-with only its target's numbers left open. So the 715 harnesses that asserted
-a record of calls are removed (2026-11-18), and a card's proof is to run the
-engine itself: the engine in the loop is the reference's job, on generated
-boards and on every board of a stated small size rather than boards written
-for each test (`docs/plans/cards-in-the-loop.md`, part B: on every board
-of one piece, 2,032 of them, every cast, activated ability, flashback,
-upkeep and end step the grammar reads agrees with its text, some 810,000
-plays in all, and they run in the `proofs` workflow). The 285 card
-harnesses kept are of what a card declares and of what its own code
-writes to the state, each of which the engine's own proofs read.
+leaves, and nothing tied a recorder to the action it stood for. So the 715
+harnesses that asserted a record of calls are removed (2026-11-18), and a
+card's proof is to run the engine itself, two ways
+(`docs/plans/cards-in-the-loop.md`, part B). The reference plays every
+card through cast, stack, resolution, state-based actions and triggers
+with the engine, on generated boards and on every board of a stated small
+size rather than boards written for each test: on every board of one
+piece, 2,032 of them, every cast, activated ability, flashback, upkeep,
+end step, loyalty ability, transformation, watched entry and cast, and
+combat agrees with its text, and they run in the `proofs` workflow; on
+every board of two pieces, 325,888 of them, some 150 million plays, the
+same but for thirteen gaps of the reference those boards found and
+closed, in each of which the engine was right (the casts and activated
+abilities are being run again against the reference as it now stands).
+And Kani runs a card's own hook with the engine's own actions
+under it, the board's numbers left open
+(`proofs/engine_under_card.rs`: 144 harnesses over 71 spells so far,
+each about a minute); the spell's trip through the stack does not fit in
+CBMC with the engine under it, and stays the engine's own proof. The 285
+card harnesses kept from before are of what a card declares and of what
+its own code writes to the state, each of which the engine's own proofs
+read.
 
 ### Tier 4: whole-game properties
 
@@ -1202,6 +1212,20 @@ section below speaks of a card's resolution being proved, or counts 989
 or 990 card harnesses, it describes those, and is kept as the record of
 what was measured and why each technique was needed: the engine's
 proofs still use every one.
+
+**Added since, 2026-11-19: cards with the engine under them.**
+`mtg-engine/src/proofs/engine_under_card.rs` runs a card's own
+`on_resolve` with no recorder: the engine's own destruction, zone
+changes, damage, drawing, milling, token making, attachment, countering,
+control change, fight and continuous effects run under it, and what is
+asserted is the board afterwards, read back through the engine's own
+characteristics, against the card's text. Only `format!`, the log and
+allocator growth and freeing are taken out. 144 harnesses over 71 of
+the 88 spells, each proved, 25 s to 12 minutes and mostly about one;
+`docs/plans/cards-in-the-loop.md`, B2, has what each family is, what
+keeps a harness in reach (a fixed player where a card reaches a library
+or a hand, a fixed amount of damage, lists of fixed length) and the
+spells not yet done.
 
 What `mtg-engine/src/proofs/cards/` holds now, 285 harnesses over 21
 modules (the 275 kept, and ten of each Equipment's own check of its equip

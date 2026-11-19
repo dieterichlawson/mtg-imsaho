@@ -428,14 +428,30 @@ Abyss returned by a Moldgraf Monstrosity sacrificed).
 A check that gives up (the reference meeting what it does not play) no
 longer ends its share: it is reported as that board's failure, by name.
 
-**Two pieces.** Combat is cheap enough to play on every board of two
-pieces in every state of wear, and `prove.sh exhaustive` does: 2,052,641
-boards of the family, 1,441,016 combats, all agree (as they entered,
-325,888 boards and 94,552 combats). The watchers of casts on every board
-of two pieces as they entered: 3,910,656 casts, all agree.
+**Two pieces.** Every board of two pieces as they entered, 325,888 of
+the family, in 40 shares:
 
-**Next.** The two-piece run of the rest to its end, each disagreement
-worked to its cause; and the cut above. Three pieces as they entered is 88 million boards
+| Check | Plays | Result |
+|---|---|---|
+| end steps | 2,607,104 | all agree, against the reference as it now stands (4b60d3c) |
+| werewolves | 3,910,656 | the same |
+| enter watchers | 1,955,328 | the same |
+| cast watchers | 3,910,656 | the same |
+| loyalty abilities | 3,541,144 | the same |
+| upkeeps | 8,921,612 | the same |
+| flashback | 10,376,473 | the same |
+| combat | 94,552, and 1,441,016 on the 2,052,641 boards of two worn pieces | all agree |
+| activated abilities | 17,923,000 or so | all 40 shares agree once three gaps above were closed; being run again whole against the reference as it now stands |
+| casts | 91,095,375 | one disagreement, a gap above; that share agrees now, and the rest are to be run again against the reference as it now stands |
+
+Combat is cheap enough that `prove.sh exhaustive` plays it on every
+board of two worn pieces. The boards are walked one at a time now, so
+three pieces fit in memory: a slice of them (one share of 4,000) fights
+11,112 combats that all agree, and all 88,573,365 boards are some hours
+of this machine for combat alone.
+
+**Next.** The two reruns above; combat on every board of three pieces;
+and the cuts above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 
@@ -470,13 +486,50 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-`proofs/engine_under_card.rs` holds these, eleven harnesses over five
-cards, all proved. What they take out is `format!`, the log, and growing
-and freeing an allocation; no engine action. Next, family by family over
-the 88 spells (the eight "destroy target", the five "deals N damage",
-the Auras and Curses attaching, the draws, the tokens, the pumps), then
-the hooks of permanents: each row a harness, each about a minute, so the
-whole of it is hours on the full tier and not on a pull request's.
+**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 144
+harnesses over 71 of the 88 spells, every one proved; 3.9 hours of
+solver time in all on this machine while it was busy, the longest 12
+minutes and most about one. By family, each a function of what the text
+says and a row for each card and case:
+
+| Family | Cards | What is asserted of the board afterwards |
+|---|---|---|
+| "Destroy target ..." | Doom Blade, Victim of Night, Smite the Monstrous, Rebuke, Ancient Grudge, Naturalize, Urgent Exorcism, Bramblecrush, Maw of the Mire, Into the Maw of Hell, Paraselene | in its owner's graveyard and out of combat; untouched if indestructible; tapped, undamaged, out of combat and the shield spent if it regenerates; the life or damage the text adds |
+| "deals N damage to ..." | Geistflame, Lightning Bolt, Lava Axe, Brimstone Volley (with and without morbid), Devil's Play (X of 0, 1, 4), Corpse Lunge, Harvest Pyre, Blasphemous Act | N more damage marked on a creature, N life fewer for a player, N loyalty fewer for a planeswalker, each amount a harness |
+| pumps and until-end-of-turn effects | Giant Growth, Ranger's Guile, Moment of Heroism, Spidery Grasp, Travel Preparations, Feeling of Dread, Nightbird's Clutches, Rally the Peasants, Vampiric Fury, Hysterical Blindness, Traitorous Blood | power, toughness and keywords as the engine's layers read them back; each of up to two targets with none, one and two; each creature of the side named and no other |
+| draws and mills | Think Twice, Divination, Altar's Reap, Dream Twist | the top N in the hand or graveyard in order, the rest in order, the empty-library draw marked; each player and each library size a harness |
+| tokens | Midnight Haunting, Moan of the Unhallowed, Spider Spawning | that many tokens of that power, toughness, colour, subtype and keyword under the caster |
+| Auras and Curses | the twelve "enchant creature" Auras and Wreath of Geists, the six Curses | attached, and the creature (or the enchanted player's creatures) as the text says, read back through the engine's layers and its attack, block and untap queries |
+| moves between zones | Counterspell, Dissipate, Lost in the Mist, Silent Departure, Grasp of Phantoms, Swords to Plowshares, Purify the Grave, Runic Repetition, Unburial Rites, Ghoulcaller's Chant, Sever the Bloodline | where each card is, under whom, and what the list it left and the list it joined hold |
+| the rest | Bump in the Night, Infernal Plunge, Gnaw to the Bone, Prey Upon | life, mana, and a fight's damage |
+
+Three more things that put a harness out of reach were measured on the
+way: an amount of damage the solver leaves open (Brimstone Volley's 3 or
+5 in one harness ran out of memory at 7 GB; a harness for each proves in
+under two minutes); a board of seven objects under the default loop
+bound of 7 (Spider Spawning with two creature cards: a table may say
+`unwind(9)`); and a card that asks of each creature whether to act on it
+before queueing what it does (Rolling Temblor's "without flying").
+
+**Not yet.** Rolling Temblor, as above. Spare from Evil (three creatures
+and the engine's protection read back) and Tribute to Hunger each ran
+out of memory at 8 GB as first written; Tribute to Hunger is the first
+of the spells that ask a question, where the harness runs the card's
+hook, reads the question it left, and has the engine's own
+`resolve_choice` answer it. The other spells that ask or choose at
+random (Divine Reckoning, Make a Wish, Creeping Renaissance, Frightful
+Delusion, Memory's Journey, Forbidden Alchemy, Night Terrors, Past in
+Flames, Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling
+Counterpart (a copy needs a printed creature to copy) and Army of the
+Damned (thirteen tokens). Then the hooks of permanents: some 200
+overrides (53 activated abilities, 23 upkeeps, 15 enters, 20 deaths
+watched or own, the combat triggers).
+
+These harnesses are also the first proofs of the engine's actions
+composed with nothing stood in for: `try_destroy` over the real
+`move_object` and `has_keyword`, the damage queue over the real
+settling, `draw_cards` over the real replacement lookup. That is part of
+what B3 asks for.
 
 ### B3. The engine's own proofs
 
