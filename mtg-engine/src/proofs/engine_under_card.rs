@@ -4921,10 +4921,13 @@ fn cackling_counterpart(there: bool) {
 /// Destroy the rest.") resolving with two creatures of the first
 /// player's and one of the second's: the first player, the active one,
 /// is asked which of their two to keep, with no way to decline, and the
-/// second, with one, is not asked; the effect the question holds keeps
-/// the one chosen (`pick`), and the other is in its owner's graveyard by
-/// the engine's own destruction (CR 701.7a), the second player's
-/// creature where it was.
+/// second, with one, is not asked; the effect the question holds, the
+/// card's own hook called as the engine calls it, keeps the one chosen
+/// (`pick`), and the other is in its owner's graveyard by the engine's
+/// own destruction (CR 701.7a), the second player's creature where it
+/// was. Applied through the engine's dispatch, what the spell keeps of
+/// who has chosen ran out of memory at 7 GB in symbolic execution
+/// (`fiend_hunter` says why).
 fn divine_reckoning(pick: usize) {
     use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
     let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::divine_reckoning::DivineReckoning));
@@ -4945,9 +4948,7 @@ fn divine_reckoning(pick: usize) {
     }
     assert!(state.get_object(yours[0]).expect("still an object").zone == Zone::Battlefield);
     crate::proofs::cards::clear_prompt(&mut state);
-    let effect = PendingEffect::CardEffect { source_id: spell, key: String::new() };
-    crate::engine::apply_pending_effect(&mut state, &Target::Object(yours[pick]), &effect, &registry);
-    std::mem::forget(effect);
+    registry.get(card).expect("registered").resolve_card_effect(&mut state, spell, "", &Target::Object(yours[pick]), &registry);
 
     assert!(state.awaiting_action.is_none());
     let zone = |id| state.get_object(id).expect("still an object").zone;
@@ -5328,6 +5329,147 @@ fn grimoire_of_the_dead_raises(_: ()) {
     assert!(state.get_object(other).expect("still an object").zone == Zone::Graveyard);
     assert!(state.get_object(grimoire).expect("still an object").zone == Zone::Graveyard);
     assert!(state.players[0].graveyard_order.len() == 2 && state.players[1].graveyard_order.is_empty());
+    std::mem::forget((registry, state));
+}
+
+// ---- Permanents that ask whether to pay, the mana already floating
+// (a payment planned from lands is the engine's, `proofs::actions::
+// paying`), and the one that asks for a name. ----
+
+/// Mentor of the Meek ("Whenever another creature you control with power
+/// 2 or less enters, you may pay {1}. If you do, draw a card.") the first
+/// player's, its trigger resolving with {1} floating in their pool and a
+/// card in their library: they are asked whether to pay, and answering
+/// yes the mana is spent and the card is in their hand (CR 121.1);
+/// answering no the mana floats still and nothing is drawn.
+fn mentor_of_the_meek(yes: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mentor_of_the_meek::MentorOfTheMeek));
+    let library = a_library(&mut state, blank, 0, 1);
+    let entered = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let mentor = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.players[0].mana_pool.add(ManaType::Colorless, 1);
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.on_any_creature_enters(&mut state, mentor, entered, PlayerId(0), &registry);
+    asked_yes_or_no(&mut state, mentor, PlayerId(0));
+    behavior.on_yes_no_choice(&mut state, mentor, yes, &registry);
+
+    let drawn = state.get_object(library[0].expect("made")).expect("still an object");
+    assert!(drawn.zone == if yes { Zone::Hand } else { Zone::Library });
+    assert!(state.players[0].mana_pool.total() == u32::from(!yes) && !state.players[0].has_drawn_from_empty);
+    assert!(state.awaiting_action.is_none());
+    std::mem::forget((registry, state));
+}
+
+/// The same trigger with nothing that could pay {1}: nothing is asked
+/// (CR 118.3), and nothing is drawn.
+fn mentor_of_the_meek_asks_nothing(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mentor_of_the_meek::MentorOfTheMeek));
+    let library = a_library(&mut state, blank, 0, 1);
+    let entered = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let mentor = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+
+    registry.get(card).expect("registered").on_any_creature_enters(&mut state, mentor, entered, PlayerId(0), &registry);
+
+    assert!(state.awaiting_action.is_none());
+    assert!(state.get_object(library[0].expect("made")).expect("still an object").zone == Zone::Library);
+    std::mem::forget((registry, state));
+}
+
+/// Which creatures entering set Mentor of the Meek's trigger off: a
+/// creature of power 2 under its controller does; the Mentor itself, a
+/// creature under the other player, and one of power 3 do not ("another
+/// creature you control with power 2 or less").
+fn mentor_of_the_meek_watches(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mentor_of_the_meek::MentorOfTheMeek));
+    let small = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let theirs = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let big = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    state.get_object_mut(big).expect("just created").power = Some(3);
+    let mentor = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+
+    let behavior = registry.get(card).expect("registered");
+    assert!(behavior.should_trigger_on_creature_enters(&state, mentor, small, PlayerId(0), &registry));
+    assert!(!behavior.should_trigger_on_creature_enters(&state, mentor, mentor, PlayerId(0), &registry));
+    assert!(!behavior.should_trigger_on_creature_enters(&state, mentor, theirs, PlayerId(1), &registry));
+    assert!(!behavior.should_trigger_on_creature_enters(&state, mentor, big, PlayerId(0), &registry));
+    std::mem::forget((registry, state));
+}
+
+/// Screeching Bat ("At the beginning of your upkeep, you may pay
+/// {2}{B}{B}. If you do, transform this creature.") the first player's
+/// at their upkeep, showing either face (`back`), with {2}{B}{B}
+/// floating in their pool: they are asked whether to pay, and answering
+/// yes the mana is spent and it shows its other face, whose power and
+/// toughness the engine then reads (CR 701.28a, 712.8); answering no
+/// the mana floats still and it is as it was.
+fn screeching_bat((back, yes): (bool, bool)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::screeching_bat::ScreechingBat));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let bat = state.create_object(card, PlayerId(0), Zone::Battlefield, power, toughness);
+    state.get_object_mut(bat).expect("just created").is_transformed = back;
+    state.players[0].mana_pool.add(ManaType::Black, 2);
+    state.players[0].mana_pool.add(ManaType::Colorless, 2);
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.on_upkeep(&mut state, bat, &[], &registry);
+    asked_yes_or_no(&mut state, bat, PlayerId(0));
+    behavior.on_yes_no_choice(&mut state, bat, yes, &registry);
+
+    let shows_back = back != yes;
+    let o = state.get_object(bat).expect("still an object");
+    assert!(o.is_transformed == shows_back && o.zone == Zone::Battlefield && o.controller == PlayerId(0));
+    assert!(state.players[0].mana_pool.total() == if yes { 0 } else { 4 });
+    state.get_object_mut(bat).expect("still an object").is_transformed = shows_back;
+    let face = registry.printed_pt(card, shows_back).expect("that face");
+    assert!(state.effective_power(bat, &registry) == face.0 && state.effective_toughness(bat, &registry) == face.1);
+    assert!(state.awaiting_action.is_none());
+    std::mem::forget((registry, state));
+}
+
+/// The same trigger with nothing that could pay (`gone` false), or for a
+/// Bat put into its graveyard since (`gone`), the mana floating: nothing
+/// is asked (CR 118.3, 400.7).
+fn screeching_bat_asks_nothing(gone: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::screeching_bat::ScreechingBat));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let bat = state.create_object(card, PlayerId(0), Zone::Battlefield, power, toughness);
+    if gone {
+        state.players[0].mana_pool.add(ManaType::Black, 4);
+        state.move_object(bat, Zone::Graveyard, &registry);
+    }
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, bat, &[], &registry);
+
+    assert!(state.awaiting_action.is_none());
+    assert!(!state.get_object(bat).expect("still an object").is_transformed);
+    std::mem::forget((registry, state));
+}
+
+/// Nevermore ("As this enchantment enters, choose a nonland card name.
+/// Spells with the chosen name can't be cast.") entering under either
+/// player, the registry holding it, the blank card and a land (Forest):
+/// its controller is asked for a card name, on its behalf, and the
+/// names offered are those of the two cards that are not lands, in
+/// order, the land's not among them. What the answer does is the
+/// engine's (`proofs::actions`).
+fn nevermore(_: ()) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::nevermore::Nevermore));
+    registry.register(Box::new(crate::cards::forest::Forest));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let nevermore = a_source(&mut state, card, you);
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, nevermore, &[], &registry);
+
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, source, choice: ResolutionChoiceKind::ChooseCardName { options, source_id, .. } }) => {
+            assert!(*player == you && *source == nevermore && *source_id == nevermore && options.len() == 2);
+            assert!(options[0] == registry.printed_name(blank, false).expect("its face"));
+            assert!(options[1] == registry.printed_name(card, false).expect("its face"));
+        }
+        _ => panic!("its controller is asked for a card name"),
+    }
     std::mem::forget((registry, state));
 }
 
@@ -6056,7 +6198,6 @@ engine_under_card! {
     garruk_relentless_at_two_loyalty_transforms: garruk_relentless_transforms(2);
     garruk_relentless_at_one_loyalty_transforms: garruk_relentless_transforms(1);
     garruk_relentless_at_three_loyalty_does_not_trigger: garruk_relentless_transforms(3);
-    garruk_the_veil_cursed_gives_your_creatures_trample_and_the_graveyards_count: garruk_the_veil_cursed_overruns(());
     garruk_the_veil_cursed_sacrifices_the_one_creature_and_searches: garruk_the_veil_cursed_searches(());
     liliana_of_the_veil_edicts_a_player_with_no_creature: liliana_of_the_veil_edicts((0, 0));
     liliana_of_the_veil_edicts_a_player_with_one_creature: liliana_of_the_veil_edicts((1, 0));
@@ -6070,4 +6211,25 @@ engine_under_card! {
     grimoire_of_the_dead_discards_the_one_card_and_studies: grimoire_of_the_dead_studies(1);
     grimoire_of_the_dead_asks_which_of_two_cards_to_discard: grimoire_of_the_dead_studies(2);
     grimoire_of_the_dead_raises_every_creature_card_as_a_black_zombie: grimoire_of_the_dead_raises(());
+}
+
+// Seven objects on the board, so its loops are unwound further.
+engine_under_card! {
+    unwind(9)
+    garruk_the_veil_cursed_gives_your_creatures_trample_and_the_graveyards_count: garruk_the_veil_cursed_overruns(());
+}
+
+// Permanents that ask whether to pay, and the one that asks for a name.
+engine_under_card! {
+    mentor_of_the_meek_asked_and_paid_draws_a_card: mentor_of_the_meek(true);
+    mentor_of_the_meek_asked_and_declined_draws_nothing: mentor_of_the_meek(false);
+    mentor_of_the_meek_asks_nothing_with_nothing_to_pay: mentor_of_the_meek_asks_nothing(());
+    mentor_of_the_meek_watches_small_creatures_of_yours_that_are_not_itself: mentor_of_the_meek_watches(());
+    screeching_bat_asked_and_paid_transforms: screeching_bat((false, true));
+    screeching_bat_asked_and_declined_stays: screeching_bat((false, false));
+    stalking_vampire_asked_and_paid_transforms_back: screeching_bat((true, true));
+    stalking_vampire_asked_and_declined_stays: screeching_bat((true, false));
+    screeching_bat_asks_nothing_with_nothing_to_pay: screeching_bat_asks_nothing(false);
+    screeching_bat_gone_asks_nothing: screeching_bat_asks_nothing(true);
+    nevermore_asks_its_controller_for_a_nonland_card_name: nevermore(());
 }
