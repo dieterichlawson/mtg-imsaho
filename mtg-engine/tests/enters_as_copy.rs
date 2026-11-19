@@ -576,3 +576,45 @@ fn a_cast_twin_is_not_in_a_graveyard_while_it_chooses() {
     assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.name_of(twin, &reg), "Boneyard Wurm");
 }
+
+/// The fuzzer's transition check holds over a cast Twin's resolution: a
+/// spell that has resolved and waits on its copy choice is entering, not
+/// "still in the stack zone with no resolution in progress" (#1061's
+/// review). Every submit is observed and checked, as the fuzzer does.
+#[test]
+fn the_transition_checks_hold_over_a_cast_twins_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.turn_number = 2;
+    state.observe_every_submit = true;
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
+
+    let mut prev: Option<(mtg_engine::state::GameState, Action)> = None;
+    let mut violations = Vec::new();
+    let mut asked = false;
+    mtg_engine::engine::run_game_loop(&mut state, &reg, |s, _, legal| {
+        if let Some((p, a)) = prev.take() {
+            violations.extend(mtg_engine::invariants::check_transition(&p, Some(&a), s, &reg));
+        }
+        if asked && s.get_object(twin).is_some_and(|o| o.zone == Zone::Battlefield) {
+            return Action::Concede;
+        }
+        let action = if matches!(&s.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    effect: mtg_engine::state::PendingEffect::EnterAsCopy { .. }, .. }, .. })) {
+            asked = true;
+            Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(bear))) }
+        } else {
+            legal.actions.iter()
+                .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == twin))
+                .cloned()
+                .unwrap_or(Action::PassPriority)
+        };
+        prev = Some((s.clone(), action.clone()));
+        action
+    });
+
+    assert!(asked, "the copy choice was asked");
+    assert!(violations.is_empty(), "{violations:?}");
+}

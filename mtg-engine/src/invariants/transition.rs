@@ -1104,7 +1104,11 @@ fn pass_contract(prev: &GameState, cur: &GameState, events: &[GameEvent], v: &mu
                 }
                 match top {
                     StackEntry::Spell(id) => {
-                        let in_stack_zone = cur.get_object(*id).is_some_and(|o| o.zone == Zone::Stack);
+                        // A permanent spell entering with its copy choice
+                        // still to make is in the stack zone and done with
+                        // its resolution (CR 608.3, 614.12b; #1061).
+                        let in_stack_zone = cur.get_object(*id).is_some_and(|o| o.zone == Zone::Stack)
+                            && !cur.pending_entry_choices.contains(id);
                         if in_stack_zone && cur.resolving_spell != Some(*id) {
                             v.push(format!("spell #{} resolved but is still in the stack zone with no resolution in progress", id.0));
                         }

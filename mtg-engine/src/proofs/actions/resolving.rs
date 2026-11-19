@@ -636,7 +636,9 @@ impl CardBehavior for Ending {
 /// the battlefield); with a question waiting, its resolution is not over:
 /// it is still the spell resolving and stays on the stack, until the
 /// answer finishes it. For a spell of no target, either player's, its
-/// card's resolution each of the three.
+/// card's resolution each of the three. (A permanent spell whose entry
+/// waits on its copy choice also stays in the stack zone, entering, CR
+/// 614.12b; that branch is played, not proved: `tests/enters_as_copy.rs`.)
 fn a_spell_ending(ending: u8) {
     // SAFETY: as in `answer`, before the card resolves.
     unsafe { *std::ptr::addr_of_mut!(ENDING.value) = ending };
