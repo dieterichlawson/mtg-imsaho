@@ -1780,6 +1780,1089 @@ fn sturmgeist((cards, who, there): (usize, u8, bool)) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents: what a step sets off (an upkeep, an end step), each
+// hook run as the trigger resolves. ----
+
+/// A Werewolf's "At the beginning of each upkeep, if no spells were cast
+/// last turn, transform this creature." and its other face's "..., if a
+/// player cast two or more spells last turn, transform this creature."
+/// resolving, the creature showing its front face or its back (`back`)
+/// under either player, each player having cast none, one or two spells
+/// last turn: it has transformed if that face's condition holds as the
+/// trigger resolves (CR 603.4, 701.28a) and not otherwise, and the engine
+/// reads the power and toughness of the face it then shows (712.8). It is
+/// otherwise as it was.
+fn werewolf((card, back): (Box<dyn CardBehavior>, bool)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let id = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    let o = state.get_object_mut(id).expect("just created");
+    o.is_transformed = back;
+    o.tapped = kani::any();
+    let tapped = o.tapped;
+    let cast: [u32; 2] = [kani::any(), kani::any()];
+    kani::assume(cast[0] <= 2 && cast[1] <= 2);
+    state.num_spells_cast_last_turn.insert(PlayerId(0), cast[0]);
+    state.num_spells_cast_last_turn.insert(PlayerId(1), cast[1]);
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, id, &[], &registry);
+
+    let turns = if back { cast[0] >= 2 || cast[1] >= 2 } else { cast[0] + cast[1] == 0 };
+    let shows_back = back != turns;
+    let o = state.get_object(id).expect("still an object");
+    assert!(o.is_transformed == shows_back && o.zone == Zone::Battlefield && o.controller == you && o.tapped == tapped);
+    let face = registry.printed_pt(card, shows_back).expect("that face");
+    assert!(state.effective_power(id, &registry) == face.0 && state.effective_toughness(id, &registry) == face.1);
+    kani::cover!(turns, "it transforms");
+    kani::cover!(!turns, "it does not");
+    std::mem::forget((registry, state));
+}
+
+/// "At the beginning of your upkeep, mill two cards." (Splinterfright)
+/// and "At the beginning of enchanted player's upkeep, that player mills
+/// two cards." (Curse of the Bloody Tome) resolving, the player `who`
+/// names the one who mills (a harness for each: `draws` says why), their
+/// library of `cards` cards: the top two of it, or all of it if there are
+/// fewer, are in their graveyard, top first (CR 701.17a), the rest their
+/// library in the order they were, and milling an empty library is not
+/// drawing from one (701.17b).
+fn mills_two_at_upkeep((card, cursed, cards, who): (Box<dyn CardBehavior>, bool, usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let library = a_library(&mut state, blank, who, cards);
+    // A Curse is the other player's, attached to the one who mills; a
+    // creature is that player's own.
+    let source = a_source(&mut state, card, PlayerId(if cursed { 1 - who } else { who }));
+    if cursed {
+        state.get_object_mut(source).expect("just created").attached_to_player = Some(PlayerId(who));
+    }
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, source, &[], &registry);
+
+    let milled = cards.min(2);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < milled {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - milled] == id);
+        }
+    }
+    assert!(state.players[1 - who as usize].graveyard_order.is_empty());
+    std::mem::forget((registry, state));
+}
+
+/// Bloodgift Demon ("At the beginning of your upkeep, target player draws
+/// a card and loses 1 life.") its trigger resolving at the player `who`
+/// names (a harness for each: `draws` says why), their library of `cards`
+/// cards: the top card of it is in their hand (CR 121.1) and they have 1
+/// life fewer (119.3); with none to draw they have drawn from an empty
+/// library (704.5b) and lost the life all the same. The other player has
+/// as much life as before.
+fn bloodgift_demon((cards, who): (usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::bloodgift_demon::BloodgiftDemon));
+    let library = a_library(&mut state, blank, who, cards);
+    let demon = a_source(&mut state, card, PlayerId(0));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, demon, &[Target::Player(PlayerId(who))], &registry);
+
+    let drawn = cards.min(1);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - drawn && player.has_drawn_from_empty == (cards == 0));
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < drawn {
+            assert!(o.zone == Zone::Hand);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - drawn] == id);
+        }
+    }
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] - i32::from(p == who));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Angel of Flight Alabaster ("At the beginning of your upkeep, return
+/// target Spirit card from your graveyard to your hand.") its trigger
+/// resolving at a card in its controller's graveyard, beside another
+/// there: the card is in its owner's hand and no longer in the
+/// graveyard's order (CR 400.3), and the other card is where it was.
+fn angel_of_flight_alabaster(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::angel_of_flight_alabaster::AngelOfFlightAlabaster));
+    let other = a_card_in(&mut state, blank, 0, Zone::Graveyard, true);
+    let spirit = a_card_in(&mut state, blank, 0, Zone::Graveyard, true);
+    state.get_object_mut(spirit).expect("just created").subtypes = vec!["Spirit".to_string()];
+    let angel = a_source(&mut state, card, PlayerId(0));
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, angel, &[Target::Object(spirit)], &registry);
+
+    let o = state.get_object(spirit).expect("still an object");
+    assert!(o.zone == Zone::Hand && o.controller == PlayerId(0) && o.owner == PlayerId(0));
+    let yard = &state.players[0].graveyard_order;
+    assert!(yard.len() == 1 && yard[0] == other);
+    assert!(state.get_object(other).expect("still an object").zone == Zone::Graveyard);
+    std::mem::forget((registry, state));
+}
+
+/// Curse of the Pierced Heart ("At the beginning of enchanted player's
+/// upkeep, this Aura deals 1 damage to that player or a planeswalker that
+/// player controls.") attached to either player, who controls no
+/// planeswalker: that player has 1 life fewer (CR 120.3a), the other as
+/// much as before, and nothing is asked.
+fn curse_of_the_pierced_heart(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::curse_of_the_pierced_heart::CurseOfThePiercedHeart));
+    let cursed = u8::from(kani::any::<bool>());
+    let curse = a_source(&mut state, card, PlayerId(1 - cursed));
+    state.get_object_mut(curse).expect("just created").attached_to_player = Some(PlayerId(cursed));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, curse, &[], &registry);
+
+    assert!(state.awaiting_action.is_none());
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] - i32::from(p == cursed));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// The same with a planeswalker of three loyalty under the enchanted
+/// player: the Curse's controller is asked which, the player or the
+/// planeswalker and no other, and may not decline; the damage the
+/// question holds, 1 from the Curse, applied by the engine at the one
+/// `at_the_planeswalker` names (`tribute_to_hunger` says why not through
+/// the answer's dispatcher), takes a loyalty counter from the
+/// planeswalker (CR 120.3c) or 1 life from the player (120.3a), and
+/// nothing from the other.
+fn curse_of_the_pierced_heart_chooses(at_the_planeswalker: bool) {
+    use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::curse_of_the_pierced_heart::CurseOfThePiercedHeart));
+    let walker = a_permanent(&mut state, blank, Permanent::Planeswalker);
+    state.get_object_mut(walker).expect("just created").controller = PlayerId(1);
+    let curse = a_source(&mut state, card, PlayerId(0));
+    state.get_object_mut(curse).expect("just created").attached_to_player = Some(PlayerId(1));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, curse, &[], &registry);
+
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
+            assert!(*player == PlayerId(0) && !*optional);
+            assert!(options.len() == 2 && options[0] == Target::Player(PlayerId(1)) && options[1] == Target::Object(walker));
+            assert!(matches!(effect, PendingEffect::DealDamage { amount: 1, source_id } if *source_id == curse));
+        }
+        _ => panic!("its controller is asked which"),
+    }
+    crate::proofs::cards::clear_prompt(&mut state);
+    let effect = PendingEffect::DealDamage { amount: 1, source_id: curse };
+    let at = if at_the_planeswalker { Target::Object(walker) } else { Target::Player(PlayerId(1)) };
+    crate::engine::apply_pending_effect(&mut state, &at, &effect, &registry);
+
+    let o = state.get_object(walker).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == 0);
+    assert!(o.counters.get(&CounterType::Loyalty).copied().unwrap_or(0) == if at_the_planeswalker { 2 } else { 3 });
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1] - i32::from(!at_the_planeswalker));
+    std::mem::forget((registry, state, effect));
+}
+
+/// Endless Ranks of the Dead ("At the beginning of your upkeep, create X
+/// 2/2 black Zombie creature tokens, where X is half the number of
+/// Zombies you control, rounded down.") under either player, who
+/// controls `zombies` Zombie creatures, beside one Zombie of the other
+/// player's that is not counted: X new permanents, each a token, a 2/2
+/// black Zombie creature under that player (CR 111.2, 107.1a).
+fn endless_ranks_of_the_dead(zombies: usize) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::endless_ranks_of_the_dead::EndlessRanksOfTheDead));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    for k in 0..=zombies {
+        let id = state.create_object(blank, you, Zone::Battlefield, Some(2), Some(2));
+        let o = state.get_object_mut(id).expect("just created");
+        o.card_types = vec![CardType::Creature];
+        o.subtypes = vec!["Zombie".to_string()];
+        // The last is the other player's.
+        if k == zombies {
+            o.controller = PlayerId(1 - you.0);
+        }
+    }
+    let ranks = a_source(&mut state, card, you);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, ranks, &[], &registry);
+
+    let made = zombies / 2;
+    assert!(state.objects.len() == before + made);
+    for k in 1..=made {
+        let id = ObjectId(ranks.0 + u64::try_from(k).expect("a few"));
+        let t = state.get_object(id).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+        assert!(state.is_creature(id, &registry));
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+        assert!(t.colors == [Color::Black] && t.subtypes.len() == 1 && t.subtypes[0] == "Zombie");
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Mayor of Avabruck's other face, Howlpack Alpha ("At the beginning of
+/// your end step, create a 2/2 green Wolf creature token."), one
+/// player's card under either player, on the battlefield or gone from it
+/// by then (`there`): one new permanent, a token, a 2/2 green Wolf
+/// creature under the player who last controlled the Alpha (CR 608.2h,
+/// 111.2). Howlpack Alpha's own "each other creature you control that's
+/// a Werewolf or a Wolf gets +1/+1" is the board's and not the token's:
+/// the Wolf is a 3/3 beside the Alpha and a 2/2 without it (613.4c).
+fn howlpack_alpha(there: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mayor_of_avabruck::MayorOfAvabruck));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let alpha = a_creature_of(&mut state, card, PlayerId(1), you);
+    state.get_object_mut(alpha).expect("just created").is_transformed = true;
+    if !there {
+        state.move_object(alpha, Zone::Graveyard, &registry);
+    }
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_end_step(&mut state, alpha, &[], &registry);
+
+    assert!(state.objects.len() == before + 1);
+    let id = ObjectId(alpha.0 + 1);
+    let t = state.get_object(id).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+    assert!(state.is_creature(id, &registry));
+    let size = if there { 3 } else { 2 };
+    assert!(state.effective_power(id, &registry) == Some(size) && state.effective_toughness(id, &registry) == Some(size));
+    assert!(t.colors == [Color::Green] && t.subtypes.len() == 1 && t.subtypes[0] == "Wolf");
+    std::mem::forget((registry, state));
+}
+
+/// Cloistered Youth's other face, Unholy Fiend ("At the beginning of
+/// your end step, you lose 1 life."), one player's card under either
+/// player, on the battlefield or gone from it by then (`there`): the
+/// player who last controlled it has 1 life fewer (CR 119.3, 608.2h),
+/// the other as much as before.
+fn unholy_fiend(there: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::cloistered_youth::CloisteredYouth));
+    let you = u8::from(kani::any::<bool>());
+    let fiend = a_creature_of(&mut state, card, PlayerId(1), PlayerId(you));
+    state.get_object_mut(fiend).expect("just created").is_transformed = true;
+    if !there {
+        state.move_object(fiend, Zone::Graveyard, &registry);
+    }
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_end_step(&mut state, fiend, &[], &registry);
+
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] - i32::from(p == you));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Reaper from the Abyss ("Morbid — At the beginning of each end step,
+/// if a creature died this turn, destroy target non-Demon creature.")
+/// its trigger resolving at a creature, a creature having died this turn
+/// or not (`died`): with one dead the target is put into its owner's
+/// graveyard by the engine's own destruction (CR 701.7a), and with none
+/// it is where it was and as it was (603.4).
+fn reaper_from_the_abyss(died: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::reaper_from_the_abyss::ReaperFromTheAbyss));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let reaper = a_source(&mut state, card, PlayerId(0));
+    state.creature_died_this_turn = died;
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+
+    registry.get(card).expect("registered").on_end_step(&mut state, reaper, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    if died {
+        assert!(o.zone == Zone::Graveyard && o.controller == PlayerId(1) && !o.tapped && o.damage_marked == 0);
+        assert!(state.players[1].graveyard_order.contains(&target));
+    } else {
+        assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+    }
+    assert!(state.get_object(reaper).expect("still an object").zone == Zone::Battlefield);
+    std::mem::forget((registry, state));
+}
+
+/// Charmbreaker Devils ("Whenever you cast an instant or sorcery spell,
+/// this creature gets +4/+0 until end of turn.") its trigger resolving:
+/// it has 4 more power and as much toughness as before, read back through
+/// the engine's layers (CR 613.4c), and is otherwise as it was.
+fn charmbreaker_devils_cast(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::charmbreaker_devils::CharmbreakerDevils));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let devils = a_creature_of(&mut state, card, you, you);
+    state.get_object_mut(devils).expect("just created").tapped = kani::any();
+    let tapped = state.get_object(devils).expect("just created").tapped;
+    let spell = state.create_object(blank, you, Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_spell_cast(&mut state, devils, you, spell, &[], &registry);
+
+    assert!(state.effective_power(devils, &registry) == Some(6) && state.effective_toughness(devils, &registry) == Some(2));
+    let o = state.get_object(devils).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.controller == you && o.damage_marked == 0);
+    std::mem::forget((registry, state));
+}
+
+// ---- Permanents: what an attack or a block sets off. ----
+
+/// Ashmouth Hound ("Whenever this creature blocks or becomes blocked by
+/// a creature, this creature deals 1 damage to that creature.") under
+/// the first player, blocking (`blocks`) or blocked by a creature: 1 more
+/// damage is marked on that creature by the engine's own damage (CR
+/// 120.3e), which is otherwise as it was, and none on the Hound.
+fn ashmouth_hound(blocks: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::ashmouth_hound::AshmouthHound));
+    let other = a_permanent(&mut state, blank, Permanent::Creature);
+    let hound = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let before = state.get_object(other).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+
+    let behavior = registry.get(card).expect("registered");
+    if blocks {
+        behavior.on_blocks(&mut state, hound, other, &registry);
+    } else {
+        behavior.on_becomes_blocked(&mut state, hound, other, &registry);
+    }
+
+    let o = state.get_object(other).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + 1 && o.tapped == tapped && o.controller == controller);
+    let h = state.get_object(hound).expect("still an object");
+    assert!(h.zone == Zone::Battlefield && h.damage_marked == 0);
+    std::mem::forget((registry, state));
+}
+
+/// Wooden Stake ("Whenever equipped creature blocks or becomes blocked
+/// by a Vampire, destroy that creature. It can't be regenerated.") its
+/// trigger resolving for the Vampire, the creature it equips blocking
+/// (`blocks`) or blocked: the Vampire is put into its owner's graveyard
+/// by the engine's own destruction (CR 701.7a), a regeneration shield on
+/// it left unused (701.15c), unless it is indestructible and nothing
+/// happens to it (702.12b).
+fn wooden_stake(blocks: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::wooden_stake::WoodenStake));
+    let vampire = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(vampire).expect("just created").regeneration_shields = u32::from(kani::any::<bool>());
+    // One effect either way (`destroys` says why).
+    let indestructible: bool = kani::any();
+    let keyword = if indestructible { Keyword::Indestructible } else { Keyword::Flying };
+    state.until_end_of_turn.push(TemporaryEffect::GrantKeyword { target: vampire, keyword });
+    let stake = a_source(&mut state, card, PlayerId(0));
+    let before = state.get_object(vampire).expect("just created");
+    let (shields, tapped, damage, controller) = (before.regeneration_shields, before.tapped, before.damage_marked, before.controller);
+
+    let behavior = registry.get(card).expect("registered");
+    if blocks {
+        behavior.on_blocks(&mut state, stake, vampire, &registry);
+    } else {
+        behavior.on_becomes_blocked(&mut state, stake, vampire, &registry);
+    }
+
+    let o = state.get_object(vampire).expect("still an object");
+    if indestructible {
+        assert!(o.zone == Zone::Battlefield && o.regeneration_shields == shields && o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+    } else {
+        assert!(o.zone == Zone::Graveyard && o.controller == PlayerId(1) && !o.tapped && o.damage_marked == 0);
+        assert!(state.players[1].graveyard_order.contains(&vampire));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Hamlet Captain ("Whenever this creature attacks or blocks, other
+/// Humans you control get +1/+1 until end of turn.") under the first
+/// player, attacking (`attacks`) or blocking, beside a Human of its
+/// controller's (`yours`) or of the other player's and a creature of its
+/// controller's that is no Human: the Human has 1 more power and
+/// toughness, read back through the engine's layers (CR 613.4c), if it
+/// is its controller's and is as it was if not; the other creature and
+/// the Captain itself are as they were.
+fn hamlet_captain((attacks, yours): (bool, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::hamlet_captain::HamletCaptain));
+    let human = a_permanent(&mut state, blank, Permanent::Human);
+    state.get_object_mut(human).expect("just created").controller = PlayerId(u8::from(!yours));
+    let other = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(other).expect("just created").controller = PlayerId(0);
+    let captain = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let pt = |state: &GameState, id| (state.effective_power(id, &registry), state.effective_toughness(id, &registry));
+    let was = [pt(&state, human), pt(&state, other), pt(&state, captain)];
+
+    let behavior = registry.get(card).expect("registered");
+    if attacks {
+        behavior.on_attacks(&mut state, captain, crate::cards::AttackInfo::new(captain, PlayerId(1)), &[], &registry);
+    } else {
+        behavior.on_blocks(&mut state, captain, other, &registry);
+    }
+
+    let up = i32::from(yours);
+    assert!(pt(&state, human) == (was[0].0.map(|p| p + up), was[0].1.map(|t| t + up)));
+    assert!(pt(&state, other) == was[1] && pt(&state, captain) == was[2]);
+    std::mem::forget((registry, state));
+}
+
+/// The first player's creature of `card` attacking the second player:
+/// the combat the engine reads, and the attack as a trigger is told of
+/// it.
+fn attacking(state: &mut GameState, attacker: ObjectId) -> crate::cards::AttackInfo {
+    let mut combat = CombatState::new();
+    combat.attackers.insert(attacker, PlayerId(1));
+    state.combat = Some(combat);
+    crate::cards::AttackInfo::new(attacker, PlayerId(1))
+}
+
+/// Geist of Saint Traft ("Whenever this creature attacks, create a 4/4
+/// white Angel creature token with flying that's tapped and attacking.
+/// Exile that token at end of combat.") attacking the second player, who
+/// controls no planeswalker: one new permanent, a token, a 4/4 white
+/// Angel creature with flying under the Geist's controller, tapped and
+/// attacking that player without having been declared (CR 508.4), and
+/// the engine holds its exile for the end of combat (603.7).
+fn geist_of_saint_traft(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::geist_of_saint_traft::GeistOfSaintTraft));
+    let you = PlayerId(0);
+    let geist = a_creature_of(&mut state, card, you, you);
+    let attack = attacking(&mut state, geist);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_attacks(&mut state, geist, attack, &[], &registry);
+
+    assert!(state.objects.len() == before + 1 && state.awaiting_action.is_none());
+    let id = ObjectId(geist.0 + 1);
+    let t = state.get_object(id).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && t.tapped);
+    assert!(state.is_creature(id, &registry) && state.has_keyword(id, Keyword::Flying, &registry));
+    assert!(state.effective_power(id, &registry) == Some(4) && state.effective_toughness(id, &registry) == Some(4));
+    assert!(t.colors == [Color::White] && t.subtypes.len() == 1 && t.subtypes[0] == "Angel");
+    let combat = state.combat.as_ref().expect("in combat");
+    assert!(combat.attackers.get(&id) == Some(&PlayerId(1)) && combat.attackers.get(&geist) == Some(&PlayerId(1)));
+    assert!(state.end_of_combat_exiles.len() == 1 && state.end_of_combat_exiles[0].target_id == id && state.end_of_combat_exiles[0].controller == you);
+    std::mem::forget((registry, state));
+}
+
+/// Kessig Cagebreakers ("Whenever this creature attacks, create a 2/2
+/// green Wolf creature token that's tapped and attacking for each
+/// creature card in your graveyard.") attacking the second player, who
+/// controls no planeswalker, with `creatures` creature cards and one
+/// card that is no creature in its controller's graveyard: that many new
+/// permanents, each a token, a 2/2 green Wolf creature under its
+/// controller, tapped and attacking that player (CR 508.4).
+fn kessig_cagebreakers(creatures: u64) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::kessig_cagebreakers::KessigCagebreakers));
+    let you = PlayerId(0);
+    a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    for _ in 0..creatures {
+        let id = a_card_in(&mut state, blank, 0, Zone::Graveyard, true);
+        state.get_object_mut(id).expect("just created").card_types = vec![CardType::Creature];
+    }
+    let cagebreakers = a_creature_of(&mut state, card, you, you);
+    let attack = attacking(&mut state, cagebreakers);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_attacks(&mut state, cagebreakers, attack, &[], &registry);
+
+    assert!(state.objects.len() == before + usize::try_from(creatures).expect("a few") && state.awaiting_action.is_none());
+    for k in 1..=creatures {
+        let id = ObjectId(cagebreakers.0 + k);
+        let t = state.get_object(id).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && t.tapped);
+        assert!(state.is_creature(id, &registry));
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+        assert!(t.colors == [Color::Green] && t.subtypes.len() == 1 && t.subtypes[0] == "Wolf");
+        assert!(state.combat.as_ref().expect("in combat").attackers.get(&id) == Some(&PlayerId(1)));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Grimgrin, Corpse-Born ("Whenever Grimgrin attacks, destroy target
+/// creature defending player controls, then put a +1/+1 counter on
+/// Grimgrin.") attacking, its trigger resolving at a creature: the
+/// creature is put into its owner's graveyard by the engine's own
+/// destruction (CR 701.7a), unless it is indestructible and nothing
+/// happens to it, or it has a regeneration shield, which is used
+/// instead; and Grimgrin has a +1/+1 counter whichever of those it was
+/// (the card's ruling of 2013-07-01).
+fn grimgrin_attacks(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::grimgrin_corpse_born::GrimgrinCorpseBorn));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(target).expect("just created").regeneration_shields = u32::from(kani::any::<bool>());
+    let indestructible: bool = kani::any();
+    let keyword = if indestructible { Keyword::Indestructible } else { Keyword::Flying };
+    state.until_end_of_turn.push(TemporaryEffect::GrantKeyword { target, keyword });
+    let grimgrin = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let shield = state.get_object(target).expect("just created").regeneration_shields > 0;
+
+    registry.get(card).expect("registered").on_attacks(&mut state, grimgrin, crate::cards::AttackInfo::new(grimgrin, PlayerId(1)), &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    if indestructible {
+        assert!(o.zone == Zone::Battlefield && o.regeneration_shields == u32::from(shield));
+    } else if shield {
+        assert!(o.zone == Zone::Battlefield && o.tapped && o.damage_marked == 0 && o.regeneration_shields == 0);
+    } else {
+        assert!(o.zone == Zone::Graveyard && state.players[1].graveyard_order.contains(&target));
+    }
+    let g = state.get_object(grimgrin).expect("still an object");
+    assert!(g.zone == Zone::Battlefield && g.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == 1);
+    assert!(state.effective_power(grimgrin, &registry) == Some(3) && state.effective_toughness(grimgrin, &registry) == Some(3));
+    std::mem::forget((registry, state));
+}
+
+// ---- Permanents: activated abilities, each resolving (its cost paid
+// and its trip through the stack the engine's: `proofs::actions::
+// activating`, `resolving`). ----
+
+/// "{cost}: This creature gets +P/+T [or gains a keyword] until end of
+/// turn." resolving for a creature under either player: it has that much
+/// more power and toughness than before, and the keyword if the text
+/// gives one, read back through the engine's layers (CR 613.4c, 613.1f),
+/// and is otherwise as it was. Resolved twice it has twice as much (each
+/// resolution its own effect, 611.2c).
+fn pumps_itself((card, (power_up, toughness_up), keyword): (Box<dyn CardBehavior>, (i32, i32), Option<Keyword>)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let source = a_creature_of(&mut state, card, you, you);
+    state.get_object_mut(source).expect("just created").tapped = kani::any();
+    let tapped = state.get_object(source).expect("just created").tapped;
+    if let Some(keyword) = keyword {
+        assert!(!state.has_keyword(source, keyword, &registry));
+    }
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.resolve_activated_ability(&mut state, source, 0, &[], &registry);
+
+    assert!(state.effective_power(source, &registry) == Some(2 + power_up) && state.effective_toughness(source, &registry) == Some(2 + toughness_up));
+    if let Some(keyword) = keyword {
+        assert!(state.has_keyword(source, keyword, &registry));
+    }
+    let o = state.get_object(source).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.controller == you && o.damage_marked == 0);
+
+    behavior.resolve_activated_ability(&mut state, source, 0, &[], &registry);
+
+    assert!(state.effective_power(source, &registry) == Some(2 + 2 * power_up) && state.effective_toughness(source, &registry) == Some(2 + 2 * toughness_up));
+    std::mem::forget((registry, state));
+}
+
+/// Avacynian Priest ("{1}, {T}: Tap target non-Human creature.") its
+/// ability resolving at a creature, tapped or not: the creature is
+/// tapped (CR 701.21a) and otherwise as it was.
+fn avacynian_priest(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::avacynian_priest::AvacynianPriest));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let priest = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let before = state.get_object(target).expect("just created");
+    let (damage, controller) = (before.damage_marked, before.controller);
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, priest, 0, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped && o.damage_marked == damage && o.controller == controller);
+    std::mem::forget((registry, state));
+}
+
+/// "{cost}: Create a P/T black <subtype> creature token with flying."
+/// (Bloodline Keeper's Vampire, Skirsdag High Priest's Demon) resolving
+/// for a creature one player owns under either player: one new
+/// permanent, a token, that creature under the ability's controller (CR
+/// 111.2), read back through the engine's own characteristics.
+fn makes_a_flier((card, (power, toughness), subtype): (Box<dyn CardBehavior>, (i32, i32), &str)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let source = a_creature_of(&mut state, card, PlayerId(1), you);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, source, 0, &[], &registry);
+
+    assert!(state.objects.len() == before + 1);
+    let id = ObjectId(source.0 + 1);
+    let t = state.get_object(id).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+    assert!(state.is_creature(id, &registry) && state.has_keyword(id, Keyword::Flying, &registry));
+    assert!(state.effective_power(id, &registry) == Some(power) && state.effective_toughness(id, &registry) == Some(toughness));
+    assert!(t.colors == [Color::Black] && t.subtypes.len() == 1 && t.subtypes[0] == subtype);
+    std::mem::forget((registry, state));
+}
+
+/// Bloodline Keeper ("{B}: Transform this creature. Activate only if you
+/// control five or more Vampires.") its second ability resolving, the
+/// engine's own transform under it: it shows its other face, Lord of
+/// Lineage, whose power and toughness the engine then reads (CR 701.28a,
+/// 712.8), and is otherwise as it was.
+fn bloodline_keeper_transforms(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::bloodline_keeper::BloodlineKeeper));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let keeper = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    state.get_object_mut(keeper).expect("just created").tapped = kani::any();
+    let tapped = state.get_object(keeper).expect("just created").tapped;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, keeper, 1, &[], &registry);
+
+    let o = state.get_object(keeper).expect("still an object");
+    assert!(o.is_transformed && o.zone == Zone::Battlefield && o.controller == you && o.tapped == tapped);
+    let back = registry.printed_back_pt(card).expect("its back face");
+    assert!(state.effective_power(keeper, &registry) == back.0 && state.effective_toughness(keeper, &registry) == back.1);
+    std::mem::forget((registry, state));
+}
+
+/// Nephalia Drownyard ("{1}{U}{B}, {T}: Target player mills three
+/// cards.") its ability resolving at the player `who` names (a harness
+/// for each: `draws` says why), their library of `cards` cards: the top
+/// three of it, or all of it if there are fewer, are in their graveyard,
+/// top first (CR 701.17a), the rest their library in the order they
+/// were.
+fn nephalia_drownyard((cards, who): (usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::nephalia_drownyard::NephaliaDrownyard));
+    let library = a_library(&mut state, blank, who, cards);
+    let land = a_source(&mut state, card, PlayerId(0));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, land, 0, &[Target::Player(PlayerId(who))], &registry);
+
+    let milled = cards.min(3);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < milled {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - milled] == id);
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Ghoulcaller's Bell ("{T}: Each player mills a card.") its ability
+/// resolving, the first player's library of `yours` cards and the second
+/// player's of `theirs`: the top card of each is in its owner's
+/// graveyard (CR 701.17a) and the rest of each library is as it was; a
+/// player with no library mills nothing and has not drawn from an empty
+/// one (701.17b).
+fn ghoulcallers_bell((yours, theirs): (usize, usize)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::ghoulcallers_bell::GhoulcallersBell));
+    let libraries = [a_library(&mut state, blank, 0, yours), a_library(&mut state, blank, 1, theirs)];
+    let bell = a_source(&mut state, card, PlayerId(0));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, bell, 0, &[], &registry);
+
+    for (p, cards) in [(0usize, yours), (1, theirs)] {
+        let milled = cards.min(1);
+        let player = &state.players[p];
+        assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+        for k in 0..cards {
+            let id = libraries[p][k].expect("made");
+            let o = state.get_object(id).expect("still an object");
+            if k < milled {
+                assert!(o.zone == Zone::Graveyard && player.graveyard_order[k] == id);
+            } else {
+                assert!(o.zone == Zone::Library && player.library_order[k - milled] == id);
+            }
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Stensia Bloodhall ("{3}{B}{R}, {T}: This land deals 2 damage to
+/// target player or planeswalker.") its ability resolving at a player,
+/// either one: that player has 2 life fewer (CR 120.3a), and the other
+/// as many as before.
+fn stensia_bloodhall_at_a_player(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::stensia_bloodhall::StensiaBloodhall));
+    let land = a_source(&mut state, card, PlayerId(0));
+    let at = u8::from(kani::any::<bool>());
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, land, 0, &[Target::Player(PlayerId(at))], &registry);
+
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] - if p == at { 2 } else { 0 });
+    }
+    std::mem::forget((registry, state));
+}
+
+/// The same at a planeswalker with three loyalty counters: two of them
+/// are removed (CR 120.3c), and no damage is marked on it.
+fn stensia_bloodhall_at_a_planeswalker(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::stensia_bloodhall::StensiaBloodhall));
+    let target = a_permanent(&mut state, blank, Permanent::Planeswalker);
+    let land = a_source(&mut state, card, PlayerId(0));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, land, 0, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == 0 && o.counters.get(&CounterType::Loyalty).copied().unwrap_or(0) == 1);
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+    std::mem::forget((registry, state));
+}
+
+/// Lantern Spirit ("{U}: Return this creature to its owner's hand.") one
+/// player's card under either player, on the battlefield or gone from it
+/// by then (`there`): there, it is in its owner's hand by the engine's
+/// own zone change (CR 400.3); gone, it is the card in the graveyard and
+/// stays there (400.7).
+fn lantern_spirit(there: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::lantern_spirit::LanternSpirit));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let spirit = a_creature_of(&mut state, card, PlayerId(1), you);
+    if !there {
+        state.move_object(spirit, Zone::Graveyard, &registry);
+    }
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, spirit, 0, &[], &registry);
+
+    let o = state.get_object(spirit).expect("still an object");
+    assert!(o.zone == if there { Zone::Hand } else { Zone::Graveyard } && o.controller == PlayerId(1) && o.owner == PlayerId(1));
+    assert!(state.players[1].graveyard_order.contains(&spirit) != there);
+    std::mem::forget((registry, state));
+}
+
+/// Elder of Laurels ("{3}{G}: Target creature gets +X/+X until end of
+/// turn, where X is the number of creatures you control.") under the
+/// first player, its ability resolving at a creature of its controller's
+/// (`yours`) or of the other player's: X is counted as the ability
+/// resolves, the Elder itself among them and the target if it is its
+/// controller's, so the target has 2 more power and toughness if it is
+/// and 1 more if not (CR 107.3, 613.4c), and the Elder is as it was.
+fn elder_of_laurels(yours: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::elder_of_laurels::ElderOfLaurels));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(target).expect("just created").controller = PlayerId(u8::from(!yours));
+    let elder = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let (power, toughness) = (state.effective_power(target, &registry), state.effective_toughness(target, &registry));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, elder, 0, &[Target::Object(target)], &registry);
+
+    let x = if yours { 2 } else { 1 };
+    assert!(state.effective_power(target, &registry) == power.map(|p| p + x) && state.effective_toughness(target, &registry) == toughness.map(|t| t + x));
+    assert!(state.effective_power(elder, &registry) == Some(2) && state.effective_toughness(elder, &registry) == Some(2));
+    std::mem::forget((registry, state));
+}
+
+/// Gavony Township ("{2}{G}{W}, {T}: Put a +1/+1 counter on each
+/// creature you control.") under the first player, beside a creature of
+/// theirs and one of the other player's: theirs has one +1/+1 counter
+/// and that much more power and toughness (CR 122.1a), the other
+/// player's has none and is as it was, and the land has none.
+fn gavony_township(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::gavony_township::GavonyTownship));
+    let yours = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(yours).expect("just created").controller = PlayerId(0);
+    let theirs = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(theirs).expect("just created").controller = PlayerId(1);
+    let land = a_source(&mut state, card, PlayerId(0));
+    let pt = |state: &GameState, id| (state.effective_power(id, &registry), state.effective_toughness(id, &registry));
+    let was = [pt(&state, yours), pt(&state, theirs)];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, land, 0, &[], &registry);
+
+    let counters = |id| state.get_object(id).expect("still an object").counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    assert!(counters(yours) == 1 && counters(theirs) == 0 && counters(land) == 0);
+    assert!(pt(&state, yours) == (was[0].0.map(|p| p + 1), was[0].1.map(|t| t + 1)) && pt(&state, theirs) == was[1]);
+    std::mem::forget((registry, state));
+}
+
+// ---- Permanents: Equipment, and more activated abilities. ----
+
+/// What an Equipment's text says of the creature it equips, as the
+/// engine reads it back.
+#[derive(Clone, Copy)]
+struct Equipped {
+    /// What it gets.
+    pt: (i32, i32),
+    /// A keyword it has.
+    keyword: Option<Keyword>,
+}
+
+/// "Equip {cost}" resolving at a creature its controller controls (`what`
+/// it is: a Human where the text says more of one), the engine's own
+/// attachment and continuous effects under the card's hook: the
+/// Equipment is attached to the creature (CR 702.6a, 301.5b), and the
+/// creature, read back through the engine's own layers, is what the
+/// Equipment's text `says` of it (613.4c, 613.1f) and otherwise as it
+/// was.
+fn equips((card, what, says): (Box<dyn CardBehavior>, Permanent, Equipped)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, what);
+    state.get_object_mut(target).expect("just created").controller = PlayerId(0);
+    let equipment = a_source(&mut state, card, PlayerId(0));
+    let (power, toughness) = (state.effective_power(target, &registry), state.effective_toughness(target, &registry));
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage) = (before.tapped, before.damage_marked);
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, equipment, 0, &[Target::Object(target)], &registry);
+
+    let e = state.get_object(equipment).expect("still an object");
+    assert!(e.zone == Zone::Battlefield && e.attached_to == Some(target) && e.controller == PlayerId(0));
+    assert!(state.effective_power(target, &registry) == power.map(|p| p + says.pt.0));
+    assert!(state.effective_toughness(target, &registry) == toughness.map(|t| t + says.pt.1));
+    if let Some(keyword) = says.keyword {
+        assert!(state.has_keyword(target, keyword, &registry));
+    }
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage && o.controller == PlayerId(0));
+    std::mem::forget((registry, state));
+}
+
+/// The same at a creature the other player controls by then: "target
+/// creature you control" is checked as the ability resolves (CR 608.2b),
+/// and the Equipment stays unattached, the creature as it was.
+fn equip_leaves_their_creature((card, says): (Box<dyn CardBehavior>, Equipped)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(target).expect("just created").controller = PlayerId(1);
+    let equipment = a_source(&mut state, card, PlayerId(0));
+    let (power, toughness) = (state.effective_power(target, &registry), state.effective_toughness(target, &registry));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, equipment, 0, &[Target::Object(target)], &registry);
+
+    assert!(state.get_object(equipment).expect("still an object").attached_to.is_none());
+    assert!(state.effective_power(target, &registry) == power && state.effective_toughness(target, &registry) == toughness);
+    if let Some(keyword) = says.keyword {
+        assert!(!state.has_keyword(target, keyword, &registry));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// "{cost}: Regenerate this creature." resolving for a creature under
+/// either player, on the battlefield or gone from it by then (`there`):
+/// there, it has one regeneration shield more than before (CR 701.19a);
+/// gone, the card in the graveyard has none (400.7).
+fn shields_itself((card, there): (Box<dyn CardBehavior>, bool)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let source = a_creature_of(&mut state, card, PlayerId(1), you);
+    let had = u32::from(kani::any::<bool>());
+    state.get_object_mut(source).expect("just created").regeneration_shields = had;
+    if !there {
+        state.move_object(source, Zone::Graveyard, &registry);
+    }
+    let had = state.get_object(source).expect("still an object").regeneration_shields;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, source, 0, &[], &registry);
+
+    let o = state.get_object(source).expect("still an object");
+    assert!(o.regeneration_shields == had + u32::from(there));
+    assert!(o.zone == if there { Zone::Battlefield } else { Zone::Graveyard });
+    std::mem::forget((registry, state));
+}
+
+/// Manor Gargoyle ("{1}: Until end of turn, this creature loses
+/// defender and gains flying.") its ability resolving: the engine reads
+/// it as having flying and not defender (CR 613.1f), where before it
+/// read defender and no flying, and it is otherwise as it was.
+fn manor_gargoyle(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::manor_gargoyle::ManorGargoyle));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let gargoyle = a_creature_of(&mut state, card, you, you);
+    assert!(state.has_keyword(gargoyle, Keyword::Defender, &registry) && !state.has_keyword(gargoyle, Keyword::Flying, &registry));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, gargoyle, 0, &[], &registry);
+
+    assert!(!state.has_keyword(gargoyle, Keyword::Defender, &registry) && state.has_keyword(gargoyle, Keyword::Flying, &registry));
+    assert!(state.effective_power(gargoyle, &registry) == Some(2) && state.effective_toughness(gargoyle, &registry) == Some(2));
+    let o = state.get_object(gargoyle).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.controller == you);
+    std::mem::forget((registry, state));
+}
+
+/// Mikaeus, the Lunarch ("{T}: Put a +1/+1 counter on Mikaeus." and
+/// "{T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1 counter on
+/// each other creature you control.") under the first player beside a
+/// creature of theirs and one of the other player's, the ability `index`
+/// names resolving: the first puts one counter on Mikaeus and none on
+/// another; the second one on the creature its controller controls and
+/// none on Mikaeus or the other player's (CR 122.1a).
+fn mikaeus(index: usize) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mikaeus_the_lunarch::MikaeusTheLunarch));
+    let yours = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(yours).expect("just created").controller = PlayerId(0);
+    let theirs = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(theirs).expect("just created").controller = PlayerId(1);
+    let mikaeus = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let pt = |state: &GameState, id| (state.effective_power(id, &registry), state.effective_toughness(id, &registry));
+    let was = [pt(&state, yours), pt(&state, theirs), pt(&state, mikaeus)];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, mikaeus, index, &[], &registry);
+
+    let counters = |id| state.get_object(id).expect("still an object").counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    let (on_it, on_yours) = if index == 0 { (1, 0) } else { (0, 1) };
+    assert!(counters(mikaeus) == on_it && counters(yours) == on_yours && counters(theirs) == 0);
+    let up = |was: (Option<i32>, Option<i32>), n: u32| (was.0.map(|p| p + n as i32), was.1.map(|t| t + n as i32));
+    assert!(pt(&state, yours) == up(was[0], on_yours) && pt(&state, theirs) == was[1] && pt(&state, mikaeus) == up(was[2], on_it));
+    std::mem::forget((registry, state));
+}
+
+/// Selfless Cathar ("{1}{W}, Sacrifice this creature: Creatures you
+/// control get +1/+1 until end of turn.") sacrificed, in its owner's
+/// graveyard by the engine's own zone change, its ability resolving for
+/// the first player beside a creature of theirs and one of the other
+/// player's: theirs has 1 more power and toughness, read back through
+/// the engine's layers (CR 613.4c), the other player's is as it was.
+fn selfless_cathar(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::selfless_cathar::SelflessCathar));
+    let yours = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(yours).expect("just created").controller = PlayerId(0);
+    let theirs = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(theirs).expect("just created").controller = PlayerId(1);
+    let cathar = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.move_object(cathar, Zone::Graveyard, &registry);
+    let pt = |state: &GameState, id| (state.effective_power(id, &registry), state.effective_toughness(id, &registry));
+    let was = [pt(&state, yours), pt(&state, theirs)];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, cathar, 0, &[], &registry);
+
+    assert!(pt(&state, yours) == (was[0].0.map(|p| p + 1), was[0].1.map(|t| t + 1)) && pt(&state, theirs) == was[1]);
+    std::mem::forget((registry, state));
+}
+
+/// Silverchase Fox ("{1}{W}, Sacrifice this creature: Exile target
+/// enchantment.") its ability resolving at an enchantment: the
+/// enchantment is in exile, its owner's card (CR 406.1, 400.3), by the
+/// engine's own zone change.
+fn silverchase_fox(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::silverchase_fox::SilverchaseFox));
+    let target = a_permanent(&mut state, blank, Permanent::Enchantment);
+    let fox = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, fox, 0, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Exile && o.controller == PlayerId(1) && o.owner == PlayerId(1) && !o.tapped);
+    std::mem::forget((registry, state));
+}
+
+/// "{cost}: ~ deals N damage to <target>." resolving at a creature, the
+/// engine's own damage under the hook of the ability `index` names: N
+/// more damage is marked on it than before (CR 120.3e), and it is
+/// otherwise as it was.
+fn an_ability_deals_to_a_creature((card, index, n): (Box<dyn CardBehavior>, usize, u32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let source = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, source, index, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + n && o.tapped == tapped && o.controller == controller);
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+    std::mem::forget((registry, state));
+}
+
+/// The same at a player, either one: that player has N life fewer (CR
+/// 120.3a), and the other as many as before.
+fn an_ability_deals_to_a_player((card, index, n): (Box<dyn CardBehavior>, usize, u32)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let source = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let at = u8::from(kani::any::<bool>());
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, source, index, &[Target::Player(PlayerId(at))], &registry);
+
+    for p in 0..2u8 {
+        let lost = if p == at { i32::try_from(n).expect("small") } else { 0 };
+        assert!(state.players[p as usize].life == life[p as usize] - lost);
+    }
+    std::mem::forget((registry, state));
+}
+
+/// The same at a planeswalker with three loyalty counters: N of them are
+/// removed (CR 120.3c), and no damage is marked on it.
+fn an_ability_deals_to_a_planeswalker((card, index, n): (Box<dyn CardBehavior>, usize, u32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, Permanent::Planeswalker);
+    let source = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, source, index, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == 0);
+    assert!(o.counters.get(&CounterType::Loyalty).copied().unwrap_or(0) == 3u32.saturating_sub(n));
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+    std::mem::forget((registry, state));
+}
+
+/// Kessig Wolf Run ("{X}{R}{G}, {T}: Target creature gets +X/+0 and
+/// gains trample until end of turn.") activated with `x` for X, its
+/// ability resolving at a creature: it has X more power, as much
+/// toughness, and trample, read back through the engine's layers (CR
+/// 107.3, 613.4c, 613.1f), and is otherwise as it was.
+fn kessig_wolf_run(x: u32) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::kessig_wolf_run::KessigWolfRun));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let land = a_source(&mut state, card, PlayerId(0));
+    state.last_activated_x_value = Some(x);
+    let (power, toughness) = (state.effective_power(target, &registry), state.effective_toughness(target, &registry));
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, land, 0, &[Target::Object(target)], &registry);
+
+    assert!(state.effective_power(target, &registry) == power.map(|p| p + i32::try_from(x).expect("small")));
+    assert!(state.effective_toughness(target, &registry) == toughness && state.has_keyword(target, Keyword::Trample, &registry));
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+    std::mem::forget((registry, state));
+}
+
+/// Disciple of Griselbrand ("{1}, Sacrifice a creature: You gain life
+/// equal to the sacrificed creature's toughness.") under either player,
+/// its ability resolving for a creature sacrificed with a toughness from
+/// -1 to 4: its controller has that much more life, and none for a
+/// toughness of 0 or less (CR 119.3, 608.2h); the other player as much
+/// as before.
+fn disciple_of_griselbrand(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::disciple_of_griselbrand::DiscipleOfGriselbrand));
+    let you = u8::from(kani::any::<bool>());
+    let disciple = a_creature_of(&mut state, card, PlayerId(1), PlayerId(you));
+    let sacrificed = a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+    let toughness: i32 = kani::any();
+    kani::assume((-1..=4).contains(&toughness));
+    state.last_activated_sacrifice = Some(sacrificed);
+    state.last_activated_sacrifice_toughness = Some(toughness);
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, disciple, 0, &[], &registry);
+
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] + if p == you { toughness.max(0) } else { 0 });
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Tree of Redemption ("{T}: Exchange your life total with this
+/// creature's toughness.") a 0/13 under either player, who has from 1 to
+/// 30 life: its controller's life total is 13 and its toughness, read
+/// back through the engine's layers, is the life they had (CR 701.12c,
+/// 613.4b); the other player's life is as it was.
+fn tree_of_redemption(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::tree_of_redemption::TreeOfRedemption));
+    let you = u8::from(kani::any::<bool>());
+    let tree = state.create_object(card, PlayerId(you), Zone::Battlefield, Some(0), Some(13));
+    let had: i32 = kani::any();
+    kani::assume((1..=30).contains(&had));
+    if you == 0 {
+        state.players[0].life = had;
+    } else {
+        state.players[1].life = had;
+    }
+    let other = state.players[1 - you as usize].life;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, tree, 0, &[], &registry);
+
+    assert!(state.players[you as usize].life == 13 && state.players[1 - you as usize].life == other);
+    assert!(state.effective_toughness(tree, &registry) == Some(had) && state.effective_power(tree, &registry) == Some(0));
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -2142,4 +3225,167 @@ engine_under_card! {
     sturmgeist_gone_still_draws_their_top_card: sturmgeist((2, 1, false));
     sturmgeist_draws_from_your_empty_library: sturmgeist((0, 0, true));
     sturmgeist_draws_from_their_empty_library: sturmgeist((0, 1, true));
+}
+
+use crate::cards::isd::{daybreak_ranger::DaybreakRanger, gatstaf_shepherd::GatstafShepherd,
+    grizzled_outcasts::GrizzledOutcasts, hanweir_watchkeep::HanweirWatchkeep, instigator_gang::InstigatorGang, kruin_outlaw::KruinOutlaw,
+    mayor_of_avabruck::MayorOfAvabruck, reckless_waif::RecklessWaif, splinterfright::Splinterfright, tormented_pariah::TormentedPariah,
+    ulvenwald_mystics::UlvenwaldMystics, village_ironsmith::VillageIronsmith, villagers_of_estwald::VillagersOfEstwald};
+
+// Permanents: the Werewolves' upkeep triggers, each face of each.
+engine_under_card! {
+    daybreak_ranger_transforms_when_no_spell_was_cast: werewolf((Box::new(DaybreakRanger), false));
+    nightfall_predator_transforms_back_when_a_player_cast_two: werewolf((Box::new(DaybreakRanger), true));
+    gatstaf_shepherd_transforms_when_no_spell_was_cast: werewolf((Box::new(GatstafShepherd), false));
+    gatstaf_howler_transforms_back_when_a_player_cast_two: werewolf((Box::new(GatstafShepherd), true));
+    grizzled_outcasts_transform_when_no_spell_was_cast: werewolf((Box::new(GrizzledOutcasts), false));
+    krallenhorde_wantons_transform_back_when_a_player_cast_two: werewolf((Box::new(GrizzledOutcasts), true));
+    hanweir_watchkeep_transforms_when_no_spell_was_cast: werewolf((Box::new(HanweirWatchkeep), false));
+    bane_of_hanweir_transforms_back_when_a_player_cast_two: werewolf((Box::new(HanweirWatchkeep), true));
+    instigator_gang_transforms_when_no_spell_was_cast: werewolf((Box::new(InstigatorGang), false));
+    wildblood_pack_transforms_back_when_a_player_cast_two: werewolf((Box::new(InstigatorGang), true));
+    kruin_outlaw_transforms_when_no_spell_was_cast: werewolf((Box::new(KruinOutlaw), false));
+    terror_of_kruin_pass_transforms_back_when_a_player_cast_two: werewolf((Box::new(KruinOutlaw), true));
+    mayor_of_avabruck_transforms_when_no_spell_was_cast: werewolf((Box::new(MayorOfAvabruck), false));
+    howlpack_alpha_transforms_back_when_a_player_cast_two: werewolf((Box::new(MayorOfAvabruck), true));
+    reckless_waif_transforms_when_no_spell_was_cast: werewolf((Box::new(RecklessWaif), false));
+    merciless_predator_transforms_back_when_a_player_cast_two: werewolf((Box::new(RecklessWaif), true));
+    tormented_pariah_transforms_when_no_spell_was_cast: werewolf((Box::new(TormentedPariah), false));
+    rampaging_werewolf_transforms_back_when_a_player_cast_two: werewolf((Box::new(TormentedPariah), true));
+    ulvenwald_mystics_transform_when_no_spell_was_cast: werewolf((Box::new(UlvenwaldMystics), false));
+    ulvenwald_primordials_transform_back_when_a_player_cast_two: werewolf((Box::new(UlvenwaldMystics), true));
+    village_ironsmith_transforms_when_no_spell_was_cast: werewolf((Box::new(VillageIronsmith), false));
+    ironfang_transforms_back_when_a_player_cast_two: werewolf((Box::new(VillageIronsmith), true));
+    villagers_of_estwald_transform_when_no_spell_was_cast: werewolf((Box::new(VillagersOfEstwald), false));
+    howlpack_of_estwald_transforms_back_when_a_player_cast_two: werewolf((Box::new(VillagersOfEstwald), true));
+}
+
+// Permanents: other upkeep triggers.
+engine_under_card! {
+    splinterfright_mills_nothing_from_your_empty_library: mills_two_at_upkeep((Box::new(Splinterfright), false, 0, 0));
+    splinterfright_mills_the_one_card_of_their_library: mills_two_at_upkeep((Box::new(Splinterfright), false, 1, 1));
+    splinterfright_mills_the_top_two_of_your_three: mills_two_at_upkeep((Box::new(Splinterfright), false, 3, 0));
+    splinterfright_mills_the_top_two_of_their_three: mills_two_at_upkeep((Box::new(Splinterfright), false, 3, 1));
+    curse_of_the_bloody_tome_mills_nothing_from_your_empty_library: mills_two_at_upkeep((Box::new(CurseOfTheBloodyTome), true, 0, 0));
+    curse_of_the_bloody_tome_mills_the_one_card_of_their_library: mills_two_at_upkeep((Box::new(CurseOfTheBloodyTome), true, 1, 1));
+    curse_of_the_bloody_tome_mills_the_top_two_of_your_three: mills_two_at_upkeep((Box::new(CurseOfTheBloodyTome), true, 3, 0));
+    curse_of_the_bloody_tome_mills_the_top_two_of_their_three: mills_two_at_upkeep((Box::new(CurseOfTheBloodyTome), true, 3, 1));
+    bloodgift_demon_has_you_draw_and_lose_a_life: bloodgift_demon((2, 0));
+    bloodgift_demon_has_them_draw_and_lose_a_life: bloodgift_demon((2, 1));
+    bloodgift_demon_has_you_draw_from_an_empty_library_and_lose_a_life: bloodgift_demon((0, 0));
+    bloodgift_demon_has_them_draw_from_an_empty_library_and_lose_a_life: bloodgift_demon((0, 1));
+    angel_of_flight_alabaster_returns_its_target_to_your_hand: angel_of_flight_alabaster(());
+    curse_of_the_pierced_heart_deals_one_to_the_enchanted_player: curse_of_the_pierced_heart(());
+    curse_of_the_pierced_heart_asks_and_deals_one_to_the_player: curse_of_the_pierced_heart_chooses(false);
+    curse_of_the_pierced_heart_asks_and_deals_one_to_their_planeswalker: curse_of_the_pierced_heart_chooses(true);
+    endless_ranks_of_the_dead_makes_nothing_with_no_zombie: endless_ranks_of_the_dead(0);
+    endless_ranks_of_the_dead_makes_nothing_with_one_zombie: endless_ranks_of_the_dead(1);
+    endless_ranks_of_the_dead_makes_a_zombie_with_two: endless_ranks_of_the_dead(2);
+    endless_ranks_of_the_dead_makes_a_zombie_with_three: endless_ranks_of_the_dead(3);
+}
+
+// Permanents: end step triggers, and a cast trigger.
+engine_under_card! {
+    howlpack_alpha_makes_a_wolf_it_makes_bigger: howlpack_alpha(true);
+    howlpack_alpha_gone_still_makes_a_wolf: howlpack_alpha(false);
+    unholy_fiend_has_its_controller_lose_a_life: unholy_fiend(true);
+    unholy_fiend_gone_still_has_its_controller_lose_a_life: unholy_fiend(false);
+    reaper_from_the_abyss_does_nothing_with_no_death: reaper_from_the_abyss(false);
+    reaper_from_the_abyss_with_morbid_destroys_its_target: reaper_from_the_abyss(true);
+    charmbreaker_devils_get_four_power_for_a_spell_cast: charmbreaker_devils_cast(());
+}
+
+// Permanents: what an attack or a block sets off.
+engine_under_card! {
+    ashmouth_hound_deals_one_to_the_creature_it_blocks: ashmouth_hound(true);
+    ashmouth_hound_deals_one_to_the_creature_that_blocks_it: ashmouth_hound(false);
+    wooden_stake_destroys_the_vampire_its_creature_blocks: wooden_stake(true);
+    wooden_stake_destroys_the_vampire_that_blocks_its_creature: wooden_stake(false);
+    hamlet_captain_attacking_gives_your_human_one_and_one: hamlet_captain((true, true));
+    hamlet_captain_attacking_gives_their_human_nothing: hamlet_captain((true, false));
+    hamlet_captain_blocking_gives_your_human_one_and_one: hamlet_captain((false, true));
+    hamlet_captain_blocking_gives_their_human_nothing: hamlet_captain((false, false));
+    geist_of_saint_traft_attacks_with_an_angel_beside_it: geist_of_saint_traft(());
+    kessig_cagebreakers_attack_alone_with_no_creature_card: kessig_cagebreakers(0);
+    kessig_cagebreakers_attack_with_a_wolf_for_one_creature_card: kessig_cagebreakers(1);
+    kessig_cagebreakers_attack_with_two_wolves_for_two_creature_cards: kessig_cagebreakers(2);
+    grimgrin_attacks_destroys_its_target_and_gets_a_counter: grimgrin_attacks(());
+}
+
+use crate::cards::isd::{bloodline_keeper::BloodlineKeeper, darkthicket_wolf::DarkthicketWolf, feral_ridgewolf::FeralRidgewolf,
+    kessig_wolf::KessigWolf, skirsdag_high_priest::SkirsdagHighPriest};
+
+// Permanents: activated abilities.
+engine_under_card! {
+    darkthicket_wolf_gets_two_and_two: pumps_itself((Box::new(DarkthicketWolf), (2, 2), None));
+    feral_ridgewolf_gets_two_power: pumps_itself((Box::new(FeralRidgewolf), (2, 0), None));
+    kessig_wolf_gains_first_strike: pumps_itself((Box::new(KessigWolf), (0, 0), Some(Keyword::FirstStrike)));
+    avacynian_priest_taps_its_target: avacynian_priest(());
+    bloodline_keeper_makes_a_vampire: makes_a_flier((Box::new(BloodlineKeeper), (2, 2), "Vampire"));
+    skirsdag_high_priest_makes_a_demon: makes_a_flier((Box::new(SkirsdagHighPriest), (5, 5), "Demon"));
+    bloodline_keeper_transforms_into_lord_of_lineage: bloodline_keeper_transforms(());
+    nephalia_drownyard_mills_nothing_from_your_empty_library: nephalia_drownyard((0, 0));
+    nephalia_drownyard_mills_all_of_their_two: nephalia_drownyard((2, 1));
+    nephalia_drownyard_mills_the_top_three_of_your_four: nephalia_drownyard((4, 0));
+    nephalia_drownyard_mills_the_top_three_of_their_four: nephalia_drownyard((4, 1));
+    ghoulcallers_bell_mills_nothing_from_two_empty_libraries: ghoulcallers_bell((0, 0));
+    ghoulcallers_bell_mills_the_top_card_of_each_library: ghoulcallers_bell((2, 2));
+    ghoulcallers_bell_mills_from_the_one_library_there_is: ghoulcallers_bell((0, 2));
+    stensia_bloodhall_deals_two_to_a_player: stensia_bloodhall_at_a_player(());
+    stensia_bloodhall_deals_two_to_a_planeswalker: stensia_bloodhall_at_a_planeswalker(());
+    lantern_spirit_returns_to_its_owners_hand: lantern_spirit(true);
+    lantern_spirit_gone_stays_where_it_is: lantern_spirit(false);
+    elder_of_laurels_gives_your_creature_two_and_two: elder_of_laurels(true);
+    elder_of_laurels_gives_their_creature_one_and_one: elder_of_laurels(false);
+    gavony_township_puts_a_counter_on_each_creature_you_control: gavony_township(());
+}
+
+use crate::cards::isd::{blazing_torch::BlazingTorch, butchers_cleaver::ButchersCleaver, cobbled_wings::CobbledWings,
+    daybreak_ranger::DaybreakRanger as Ranger, demonmail_hauberk::DemonmailHauberk, inquisitors_flail::InquisitorsFlail,
+    manor_skeleton::ManorSkeleton, mask_of_avacyn::MaskOfAvacyn, runechanters_pike::RunechantersPike,
+    sharpened_pitchfork::SharpenedPitchfork, silver_inlaid_dagger::SilverInlaidDagger, skirsdag_cultist::SkirsdagCultist,
+    trepanation_blade::TrepanationBlade, ulvenwald_mystics::UlvenwaldMystics as Mystics, wooden_stake::WoodenStake};
+
+/// An Equipment whose text changes nothing the engine reads off the
+/// creature's power, toughness or keywords.
+const NOTHING: Equipped = Equipped { pt: (0, 0), keyword: None };
+
+// Permanents: Equipment attached by its equip ability, each at a
+// creature, and at a Human where its text says more of one.
+engine_under_card! {
+    butchers_cleaver_gives_three_power: equips((Box::new(ButchersCleaver), Permanent::Creature, Equipped { pt: (3, 0), keyword: None }));
+    butchers_cleaver_gives_a_human_lifelink_too: equips((Box::new(ButchersCleaver), Permanent::Human, Equipped { pt: (3, 0), keyword: Some(Keyword::Lifelink) }));
+    cobbled_wings_gives_flying: equips((Box::new(CobbledWings), Permanent::Creature, Equipped { pt: (0, 0), keyword: Some(Keyword::Flying) }));
+    demonmail_hauberk_gives_four_and_two: equips((Box::new(DemonmailHauberk), Permanent::Creature, Equipped { pt: (4, 2), keyword: None }));
+    inquisitors_flail_is_attached: equips((Box::new(InquisitorsFlail), Permanent::Creature, NOTHING));
+    mask_of_avacyn_gives_one_and_two_and_hexproof: equips((Box::new(MaskOfAvacyn), Permanent::Creature, Equipped { pt: (1, 2), keyword: Some(Keyword::Hexproof) }));
+    runechanters_pike_gives_first_strike_with_no_spell_card_in_the_graveyard: equips((Box::new(RunechantersPike), Permanent::Creature, Equipped { pt: (0, 0), keyword: Some(Keyword::FirstStrike) }));
+    sharpened_pitchfork_gives_first_strike: equips((Box::new(SharpenedPitchfork), Permanent::Creature, Equipped { pt: (0, 0), keyword: Some(Keyword::FirstStrike) }));
+    sharpened_pitchfork_gives_a_human_one_and_one_too: equips((Box::new(SharpenedPitchfork), Permanent::Human, Equipped { pt: (1, 1), keyword: Some(Keyword::FirstStrike) }));
+    silver_inlaid_dagger_gives_two_power: equips((Box::new(SilverInlaidDagger), Permanent::Creature, Equipped { pt: (2, 0), keyword: None }));
+    silver_inlaid_dagger_gives_a_human_three_power: equips((Box::new(SilverInlaidDagger), Permanent::Human, Equipped { pt: (3, 0), keyword: None }));
+    blazing_torch_is_attached: equips((Box::new(BlazingTorch), Permanent::Creature, NOTHING));
+    trepanation_blade_is_attached: equips((Box::new(TrepanationBlade), Permanent::Creature, NOTHING));
+    wooden_stake_gives_one_power: equips((Box::new(WoodenStake), Permanent::Creature, Equipped { pt: (1, 0), keyword: None }));
+    cobbled_wings_is_not_attached_to_their_creature: equip_leaves_their_creature((Box::new(CobbledWings), Equipped { pt: (0, 0), keyword: Some(Keyword::Flying) }));
+}
+
+// Permanents: more activated abilities.
+engine_under_card! {
+    manor_skeleton_gets_a_regeneration_shield: shields_itself((Box::new(ManorSkeleton), true));
+    manor_skeleton_gone_gets_no_shield: shields_itself((Box::new(ManorSkeleton), false));
+    ulvenwald_primordials_get_a_regeneration_shield: shields_itself((Box::new(Mystics), true));
+    manor_gargoyle_loses_defender_and_gains_flying: manor_gargoyle(());
+    mikaeus_puts_a_counter_on_itself: mikaeus(0);
+    mikaeus_puts_a_counter_on_each_other_creature_you_control: mikaeus(1);
+    selfless_cathar_gives_your_creatures_one_and_one: selfless_cathar(());
+    silverchase_fox_exiles_its_target: silverchase_fox(());
+    skirsdag_cultist_deals_two_to_a_creature: an_ability_deals_to_a_creature((Box::new(SkirsdagCultist), 0, 2));
+    skirsdag_cultist_deals_two_to_a_player: an_ability_deals_to_a_player((Box::new(SkirsdagCultist), 0, 2));
+    skirsdag_cultist_deals_two_to_a_planeswalker: an_ability_deals_to_a_planeswalker((Box::new(SkirsdagCultist), 0, 2));
+    daybreak_ranger_deals_two_to_its_target: an_ability_deals_to_a_creature((Box::new(Ranger), 0, 2));
+    kessig_wolf_run_with_no_x_gives_trample: kessig_wolf_run(0);
+    kessig_wolf_run_with_three_for_x_gives_three_power_and_trample: kessig_wolf_run(3);
+    disciple_of_griselbrand_gains_the_toughness_of_what_was_sacrificed: disciple_of_griselbrand(());
+    tree_of_redemption_exchanges_life_and_toughness: tree_of_redemption(());
 }
