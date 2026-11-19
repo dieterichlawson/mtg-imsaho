@@ -511,15 +511,22 @@ made is there for a third to find. Against it the first five shares
 all agreed, the 14 boards among them, and the sixth disagreed in 2 of
 746,372 combats, on one board: defect 48, the engine's, and the block
 triggers the reference resolved together. With both fixed (5a8c669,
-a24dc8b) the first twelve shares, 17,559,145 boards and 8,953,526
-combats, all agree; the other forty-eight are running. The fifteen
-boards that disagreed are fought again in `cargo test`
+a24dc8b) all sixty shares agree: 87,795,922 boards of the family and
+44,778,274 combats, every way each can be declared and every question
+in it answered every way. Two boards needed the check itself changed:
+Falkenrath Marauders beside two Rakish Heirs, and three Rakish Heirs,
+all attacking, give one player seven triggers to order, and nine, each
+Heir triggering for each Vampire that deals its damage. Every order is
+played (5,040, and 362,880), and the check now keeps one game for each
+ending instead of one for each order. The fifteen boards that disagreed
+are fought again in `cargo test`
 (`combat_agrees_on_the_three_piece_boards_that_once_did_not`).
 
-**Next.** The rest of the three-piece shares; and the cuts above. Three
-pieces as they entered is 88 million boards and about 25 billion casts:
-some 500 hours on these four cores, a day and a half on 64, which is
-what a larger machine would be asked for.
+**Next.** The cuts above; and three pieces for the other checks. Combat
+on three pieces was five hours of this machine. The casts are another
+matter: 88 million boards and about 25 billion casts, some 500 hours on
+these four cores, a day and a half on 64, which is what a larger machine
+would be asked for.
 
 ### B2. Kani with the engine under a card (under way)
 

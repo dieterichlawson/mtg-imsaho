@@ -1985,12 +1985,12 @@ fn angel_of_flight_alabaster(_: ()) {
 
 /// Curse of the Pierced Heart ("At the beginning of enchanted player's
 /// upkeep, this Aura deals 1 damage to that player or a planeswalker that
-/// player controls.") attached to either player, who controls no
+/// player controls.") attached to the player `cursed` names (a harness
+/// for each: left open, the harness went over 4 GB), who controls no
 /// planeswalker: that player has 1 life fewer (CR 120.3a), the other as
 /// much as before, and nothing is asked.
-fn curse_of_the_pierced_heart(_: ()) {
+fn curse_of_the_pierced_heart(cursed: u8) {
     let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::curse_of_the_pierced_heart::CurseOfThePiercedHeart));
-    let cursed = u8::from(kani::any::<bool>());
     let curse = a_source(&mut state, card, PlayerId(1 - cursed));
     state.get_object_mut(curse).expect("just created").attached_to_player = Some(PlayerId(cursed));
     let life = [state.players[0].life, state.players[1].life];
@@ -2045,13 +2045,17 @@ fn curse_of_the_pierced_heart_chooses(at_the_planeswalker: bool) {
 
 /// Endless Ranks of the Dead ("At the beginning of your upkeep, create X
 /// 2/2 black Zombie creature tokens, where X is half the number of
-/// Zombies you control, rounded down.") under either player, who
-/// controls `zombies` Zombie creatures, beside one Zombie of the other
-/// player's that is not counted: X new permanents, each a token, a 2/2
-/// black Zombie creature under that player (CR 111.2, 107.1a).
-fn endless_ranks_of_the_dead(zombies: usize) {
+/// Zombies you control, rounded down.") under the player `who` names,
+/// who controls `zombies` Zombie creatures, beside one Zombie of the
+/// other player's that is not counted: X new permanents, each a token, a
+/// 2/2 black Zombie creature under that player (CR 111.2, 107.1a). The
+/// player is a harness's own: left open, the count of their Zombies is a
+/// number the solver proves and symbolic execution does not fold, and
+/// the tokens made for it were a list of open length that "grew past
+/// its capacity".
+fn endless_ranks_of_the_dead((zombies, who): (usize, u8)) {
     let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::endless_ranks_of_the_dead::EndlessRanksOfTheDead));
-    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let you = PlayerId(who);
     for k in 0..=zombies {
         let id = state.create_object(blank, you, Zone::Battlefield, Some(2), Some(2));
         let o = state.get_object_mut(id).expect("just created");
@@ -2085,9 +2089,14 @@ fn endless_ranks_of_the_dead(zombies: usize) {
 /// player's card under either player, on the battlefield or gone from it
 /// by then (`there`): one new permanent, a token, a 2/2 green Wolf
 /// creature under the player who last controlled the Alpha (CR 608.2h,
-/// 111.2). Howlpack Alpha's own "each other creature you control that's
-/// a Werewolf or a Wolf gets +1/+1" is the board's and not the token's:
-/// the Wolf is a 3/3 beside the Alpha and a 2/2 without it (613.4c).
+/// 111.2). With the Alpha gone the engine reads the Wolf through its
+/// layers as the 2/2 it was made. Beside the Alpha it is a 3/3, by the
+/// Alpha's own "each other creature you control that's a Werewolf or a
+/// Wolf gets +1/+1", and that read is not made here: the filter, read
+/// back from the card's printed effects, is one the solver matches as
+/// every filter there is (`werewolf_flips` says the same of Instigator
+/// Gang), and the harness went over 4 GB. What is asserted there is the
+/// token as it was made, a 2/2 before any effect.
 fn howlpack_alpha(there: bool) {
     let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mayor_of_avabruck::MayorOfAvabruck));
     let you = PlayerId(u8::from(kani::any::<bool>()));
@@ -2105,8 +2114,10 @@ fn howlpack_alpha(there: bool) {
     let t = state.get_object(id).expect("made");
     assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
     assert!(state.is_creature(id, &registry));
-    let size = if there { 3 } else { 2 };
-    assert!(state.effective_power(id, &registry) == Some(size) && state.effective_toughness(id, &registry) == Some(size));
+    assert!(t.power == Some(2) && t.toughness == Some(2));
+    if !there {
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+    }
     assert!(t.colors == [Color::Green] && t.subtypes.len() == 1 && t.subtypes[0] == "Wolf");
     std::mem::forget((registry, state));
 }
@@ -2936,6 +2947,422 @@ fn tree_of_redemption(_: ()) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents: triggers that ask "you may". The hook asks; the
+// answer's own hook (`on_yes_no_choice`) is run for each answer, the
+// engine's dispatch of an answer to it proved of itself
+// (`proofs::actions::answering`; `tribute_to_hunger` says why not here). ----
+
+/// The question a "you may" trigger of `source` asks: of the player
+/// `you`, yes or no, on the source's behalf (CR 603.5). Read where it
+/// lies and then taken down, as answered.
+fn asked_yes_or_no(state: &mut GameState, source: ObjectId, you: PlayerId) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, source: asked_for, choice: ResolutionChoiceKind::YesNo { source_card, .. } }) => {
+            assert!(*player == you && *asked_for == source && *source_card == source);
+        }
+        _ => panic!("its controller is asked yes or no"),
+    }
+    crate::proofs::cards::clear_prompt(state);
+}
+
+/// A "you may transform this creature" trigger of a double-faced
+/// creature under either player, set off by another creature's death
+/// (Thraben Sentry) or, `at_upkeep`, by its controller's upkeep
+/// (Cloistered Youth): its controller is asked, and answering yes it
+/// shows its other face, whose power and toughness the engine then
+/// reads (CR 701.28a, 712.8); answering no it is as it was.
+fn may_transform((card, at_upkeep, yes): (Box<dyn CardBehavior>, bool, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let source = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    state.get_object_mut(source).expect("just created").tapped = kani::any();
+    let tapped = state.get_object(source).expect("just created").tapped;
+    let dead = a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+
+    let behavior = registry.get(card).expect("registered");
+    if at_upkeep {
+        behavior.on_upkeep(&mut state, source, &[], &registry);
+    } else {
+        behavior.on_any_creature_dies(&mut state, source, dead, you, &[], 2, false, &[], &registry);
+    }
+    asked_yes_or_no(&mut state, source, you);
+    behavior.on_yes_no_choice(&mut state, source, yes, &registry);
+
+    let o = state.get_object(source).expect("still an object");
+    assert!(o.is_transformed == yes && o.zone == Zone::Battlefield && o.controller == you && o.tapped == tapped);
+    let face = registry.printed_pt(card, yes).expect("that face");
+    assert!(state.effective_power(source, &registry) == face.0 && state.effective_toughness(source, &registry) == face.1);
+    assert!(state.awaiting_action.is_none());
+    std::mem::forget((registry, state));
+}
+
+/// The same trigger resolving for a creature that has transformed
+/// already (`gone` false: the first of two such triggers did it, Thraben
+/// Sentry's ruling of 2011-09-22) or that has left the battlefield
+/// (`gone`): nothing is asked, and nothing is done to it (CR 400.7).
+fn may_transform_asks_nothing((card, at_upkeep, gone): (Box<dyn CardBehavior>, bool, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let source = state.create_object(card, PlayerId(1), Zone::Battlefield, power, toughness);
+    state.get_object_mut(source).expect("just created").controller = you;
+    if gone {
+        state.move_object(source, Zone::Graveyard, &registry);
+    } else {
+        state.get_object_mut(source).expect("just created").is_transformed = true;
+    }
+    let dead = a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+
+    let behavior = registry.get(card).expect("registered");
+    if at_upkeep {
+        behavior.on_upkeep(&mut state, source, &[], &registry);
+    } else {
+        behavior.on_any_creature_dies(&mut state, source, dead, you, &[], 2, false, &[], &registry);
+    }
+
+    assert!(state.awaiting_action.is_none());
+    let o = state.get_object(source).expect("still an object");
+    assert!(o.is_transformed != gone && o.zone == if gone { Zone::Graveyard } else { Zone::Battlefield });
+    std::mem::forget((registry, state));
+}
+
+/// Curiosity ("Whenever enchanted creature deals damage to an opponent,
+/// you may draw a card.") the player `who` names its controller (a
+/// harness for each: `draws` says why), their library of `cards` cards:
+/// they are asked, and answering yes the top card of their library is in
+/// their hand (CR 121.1), or with none to draw they have drawn from an
+/// empty library (704.5b); answering no nothing is drawn.
+fn curiosity((cards, who, yes): (usize, u8, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::curiosity::Curiosity));
+    let library = a_library(&mut state, blank, who, cards);
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    let aura = a_source(&mut state, card, PlayerId(who));
+    state.attach(aura, creature);
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.on_any_damage_to_player(&mut state, aura, creature, PlayerId(1 - who), 2, &registry);
+    asked_yes_or_no(&mut state, aura, PlayerId(who));
+    behavior.on_yes_no_choice(&mut state, aura, yes, &registry);
+
+    let drawn = if yes { cards.min(1) } else { 0 };
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - drawn && player.has_drawn_from_empty == (yes && cards == 0));
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < drawn {
+            assert!(o.zone == Zone::Hand);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - drawn] == id);
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Murder of Crows ("Whenever another creature dies, you may draw a
+/// card. If you do, discard a card.") the player `who` names its
+/// controller (a harness for each: `draws` says why), their hand empty
+/// and their library of `cards` cards: they are asked; answering yes
+/// with a card to draw, it is drawn and, the only card in their hand,
+/// discarded, so that it is in their graveyard (CR 701.8a) and the rest
+/// of the library as it was; with none to draw nothing is discarded
+/// ("if you do"), and they have drawn from an empty library (704.5b);
+/// answering no nothing moves.
+fn murder_of_crows((cards, who, yes): (usize, u8, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::murder_of_crows::MurderOfCrows));
+    let library = a_library(&mut state, blank, who, cards);
+    let crows = a_creature_of(&mut state, card, PlayerId(who), PlayerId(who));
+    let dead = a_card_in(&mut state, blank, 1 - who, Zone::Graveyard, true);
+    let yard = state.players[who as usize].graveyard_order.len();
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.on_any_creature_dies(&mut state, crows, dead, PlayerId(1 - who), &[], 2, false, &[], &registry);
+    asked_yes_or_no(&mut state, crows, PlayerId(who));
+    behavior.on_yes_no_choice(&mut state, crows, yes, &registry);
+
+    let looted = if yes { cards.min(1) } else { 0 };
+    let player = &state.players[who as usize];
+    assert!(state.awaiting_action.is_none());
+    assert!(player.library_order.len() == cards - looted && player.graveyard_order.len() == yard + looted);
+    assert!(player.has_drawn_from_empty == (yes && cards == 0));
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < looted {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[yard + k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - looted] == id);
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+// ---- Permanents: more enters triggers, watchers and abilities. ----
+
+/// Village Bell-Ringer ("When this creature enters, untap all creatures
+/// you control.") entered under the first player beside a creature of
+/// theirs and one of the other player's, each tapped or not: theirs is
+/// untapped (CR 701.21b), the other player's is as it was, and each is
+/// otherwise unchanged.
+fn village_bell_ringer(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::village_bell_ringer::VillageBellRinger));
+    let yours = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(yours).expect("just created").controller = PlayerId(0);
+    let theirs = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(theirs).expect("just created").controller = PlayerId(1);
+    let ringer = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let was = state.get_object(theirs).expect("just created").tapped;
+    let damage = [state.get_object(yours).expect("just created").damage_marked, state.get_object(theirs).expect("just created").damage_marked];
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, ringer, &[], &registry);
+
+    let (y, t) = (state.get_object(yours).expect("still an object"), state.get_object(theirs).expect("still an object"));
+    assert!(!y.tapped && y.zone == Zone::Battlefield && y.damage_marked == damage[0] && y.controller == PlayerId(0));
+    assert!(t.tapped == was && t.zone == Zone::Battlefield && t.damage_marked == damage[1] && t.controller == PlayerId(1));
+    std::mem::forget((registry, state));
+}
+
+/// Undead Alchemist ("Whenever a creature card is put into an opponent's
+/// graveyard from their library, exile that card and create a 2/2 black
+/// Zombie creature token.") under either player, its trigger resolving
+/// for a card still in that graveyard (`there`) or taken out of it
+/// since: the card is in exile if it was there to exile (CR 406.1,
+/// 400.7), and either way its controller has one new permanent, a token,
+/// a 2/2 black Zombie creature (111.2).
+fn undead_alchemist(there: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::undead_alchemist::UndeadAlchemist));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let milled = a_card_in(&mut state, blank, 1, if there { Zone::Graveyard } else { Zone::Hand }, true);
+    let alchemist = a_creature_of(&mut state, card, PlayerId(1), you);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_creature_card_milled(&mut state, alchemist, milled, PlayerId(1), &registry);
+
+    let o = state.get_object(milled).expect("still an object");
+    assert!(o.zone == if there { Zone::Exile } else { Zone::Hand } && o.owner == PlayerId(1));
+    assert!(state.players[1].graveyard_order.is_empty());
+    assert!(state.objects.len() == before + 1);
+    let id = ObjectId(alchemist.0 + 1);
+    let t = state.get_object(id).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+    assert!(state.is_creature(id, &registry));
+    assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+    assert!(t.colors == [Color::Black] && t.subtypes.len() == 1 && t.subtypes[0] == "Zombie");
+    std::mem::forget((registry, state));
+}
+
+/// Deranged Assistant ("{T}: Add {C}. Mill a card.") its mana ability
+/// activated by the player `who` names (a harness for each: `draws` says
+/// why), their library of `cards` cards: the top card of it is in their
+/// graveyard (CR 701.17a), the rest their library in the order they
+/// were; with no card there nothing is milled, and that is not drawing
+/// from an empty library (701.17b). The mana is the engine's
+/// (`proofs::cards::mana`).
+fn deranged_assistant((cards, who): (usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::deranged_assistant::DerangedAssistant));
+    let library = a_library(&mut state, blank, who, cards);
+    let assistant = a_creature_of(&mut state, card, PlayerId(who), PlayerId(who));
+
+    registry.get(card).expect("registered").on_activate_mana_ability(&mut state, assistant, 0, &registry);
+
+    let milled = cards.min(1);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < milled {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - milled] == id);
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Cellar Door ("{3}, {T}: Target player mills a card from the bottom of
+/// their library. If it's a creature card, you create a 2/2 black Zombie
+/// creature token.") under the first player, its ability resolving at
+/// the player `who` names (a harness for each: `draws` says why), their
+/// library of `cards` cards, the bottom one a creature card or not
+/// (`creature`): the bottom card is in its owner's graveyard and the
+/// rest their library in the order they were (CR 701.17a); for a
+/// creature card the Door's controller, not the player milled, has a new
+/// 2/2 black Zombie creature token (111.2), and otherwise none.
+fn cellar_door((cards, who, creature): (usize, u8, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::cellar_door::CellarDoor));
+    let library = a_library(&mut state, blank, who, cards);
+    if creature {
+        let bottom = library[cards - 1].expect("made");
+        let o = state.get_object_mut(bottom).expect("just created");
+        o.card_types = vec![CardType::Creature];
+        o.power = Some(2);
+        o.toughness = Some(2);
+    }
+    let door = a_source(&mut state, card, PlayerId(0));
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, door, 0, &[Target::Player(PlayerId(who))], &registry);
+
+    let milled = cards.min(1);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k + milled == cards {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[0] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k] == id);
+        }
+    }
+    let made = usize::from(creature && cards > 0);
+    assert!(state.objects.len() == before + made);
+    if made == 1 {
+        let id = ObjectId(door.0 + 1);
+        let t = state.get_object(id).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == PlayerId(0) && t.owner == PlayerId(0));
+        assert!(state.is_creature(id, &registry));
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+        assert!(t.colors == [Color::Black] && t.subtypes.len() == 1 && t.subtypes[0] == "Zombie");
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Ludevic's Test Subject ("{1}{U}: Put a hatchling counter on this
+/// creature. Then if there are five or more hatchling counters on it,
+/// remove all of them and transform it.") with `had` hatchling counters,
+/// its ability resolving: short of five it has one more and shows the
+/// face it showed; at five it has none and shows its other face,
+/// Ludevic's Abomination, whose power and toughness the engine then
+/// reads (CR 122.1, 701.28a, 712.8).
+fn ludevics_test_subject(had: u32) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::ludevics_test_subject::LudevicsTestSubject));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let subject = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    // One entry either way (`gutter_grime` says why).
+    state.get_object_mut(subject).expect("just created").counters.insert(CounterType::Hatchling, had);
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, subject, 0, &[], &registry);
+
+    let hatched = had + 1 >= 5;
+    let o = state.get_object(subject).expect("still an object");
+    assert!(o.counters.get(&CounterType::Hatchling).copied().unwrap_or(0) == if hatched { 0 } else { had + 1 });
+    assert!(o.is_transformed == hatched && o.zone == Zone::Battlefield && o.controller == you);
+    let face = registry.printed_pt(card, hatched).expect("that face");
+    assert!(state.effective_power(subject, &registry) == face.0 && state.effective_toughness(subject, &registry) == face.1);
+    std::mem::forget((registry, state));
+}
+
+/// Full Moon's Rise ("Sacrifice this enchantment: Regenerate all Werewolf
+/// creatures you control.") the first player's, its ability resolving
+/// beside a Werewolf of theirs, a Werewolf of the other player's and a
+/// creature of theirs that is no Werewolf: their Werewolf has one
+/// regeneration shield more (CR 701.19a), and neither of the others has.
+fn full_moons_rise(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::full_moons_rise::FullMoonsRise));
+    let mut a = |controller: u8, werewolf: bool| {
+        let id = a_permanent(&mut state, blank, Permanent::Creature);
+        let o = state.get_object_mut(id).expect("just created");
+        o.controller = PlayerId(controller);
+        if werewolf {
+            o.subtypes = vec!["Werewolf".to_string()];
+        }
+        id
+    };
+    let (yours, theirs, other) = (a(0, true), a(1, true), a(0, false));
+    let rise = a_source(&mut state, card, PlayerId(0));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, rise, 0, &[], &registry);
+
+    let shields = |id| state.get_object(id).expect("still an object").regeneration_shields;
+    assert!(shields(yours) == 1 && shields(theirs) == 0 && shields(other) == 0);
+    std::mem::forget((registry, state));
+}
+
+/// Grimgrin, Corpse-Born ("Sacrifice another creature: Untap Grimgrin and
+/// put a +1/+1 counter on it.") tapped or not, on the battlefield or
+/// gone from it by then (`there`): there, it is untapped (CR 701.21b)
+/// with one +1/+1 counter more; gone, the card in the graveyard has no
+/// counter (121.1).
+fn grimgrin_untaps(there: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::grimgrin_corpse_born::GrimgrinCorpseBorn));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let grimgrin = a_creature_of(&mut state, card, PlayerId(1), you);
+    state.get_object_mut(grimgrin).expect("just created").tapped = kani::any();
+    if !there {
+        state.move_object(grimgrin, Zone::Graveyard, &registry);
+    }
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, grimgrin, 0, &[], &registry);
+
+    let o = state.get_object(grimgrin).expect("still an object");
+    let counters = o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    if there {
+        assert!(o.zone == Zone::Battlefield && !o.tapped && counters == 1 && o.controller == you);
+        assert!(state.effective_power(grimgrin, &registry) == Some(3) && state.effective_toughness(grimgrin, &registry) == Some(3));
+    } else {
+        assert!(o.zone == Zone::Graveyard && counters == 0);
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Moorland Haunt ("{W}{U}, {T}, Exile a creature card from your
+/// graveyard: Create a 1/1 white Spirit creature token with flying.")
+/// under either player, its ability resolving: one new permanent, a
+/// token, a 1/1 white Spirit creature with flying under its controller
+/// (CR 111.2).
+fn moorland_haunt(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::moorland_haunt::MoorlandHaunt));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let haunt = a_source(&mut state, card, PlayerId(1));
+    state.get_object_mut(haunt).expect("just created").controller = you;
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, haunt, 0, &[], &registry);
+
+    assert!(state.objects.len() == before + 1);
+    let id = ObjectId(haunt.0 + 1);
+    let t = state.get_object(id).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+    assert!(state.is_creature(id, &registry) && state.has_keyword(id, Keyword::Flying, &registry));
+    assert!(state.effective_power(id, &registry) == Some(1) && state.effective_toughness(id, &registry) == Some(1));
+    assert!(t.colors == [Color::White] && t.subtypes.len() == 1 && t.subtypes[0] == "Spirit");
+    std::mem::forget((registry, state));
+}
+
+/// Evil Twin's "{U}{B}, {T}: Destroy target creature with the same name
+/// as this creature." resolving at a creature: the creature is put into
+/// its owner's graveyard by the engine's own destruction (CR 701.7a),
+/// unless it is indestructible and nothing happens to it, or it has a
+/// regeneration shield, which is used instead (701.15a).
+fn evil_twin_destroys(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::evil_twin::EvilTwin));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(target).expect("just created").regeneration_shields = u32::from(kani::any::<bool>());
+    // One effect either way (`destroys` says why).
+    let indestructible: bool = kani::any();
+    let keyword = if indestructible { Keyword::Indestructible } else { Keyword::Flying };
+    state.until_end_of_turn.push(TemporaryEffect::GrantKeyword { target, keyword });
+    let twin = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let shield = state.get_object(target).expect("just created").regeneration_shields > 0;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, twin, 0, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    if indestructible {
+        assert!(o.zone == Zone::Battlefield && o.regeneration_shields == u32::from(shield));
+    } else if shield {
+        assert!(o.zone == Zone::Battlefield && o.tapped && o.damage_marked == 0 && o.regeneration_shields == 0);
+    } else {
+        assert!(o.zone == Zone::Graveyard && state.players[1].graveyard_order.contains(&target));
+    }
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -3362,18 +3789,20 @@ engine_under_card! {
     bloodgift_demon_has_you_draw_from_an_empty_library_and_lose_a_life: bloodgift_demon((0, 0));
     bloodgift_demon_has_them_draw_from_an_empty_library_and_lose_a_life: bloodgift_demon((0, 1));
     angel_of_flight_alabaster_returns_its_target_to_your_hand: angel_of_flight_alabaster(());
-    curse_of_the_pierced_heart_deals_one_to_the_enchanted_player: curse_of_the_pierced_heart(());
+    curse_of_the_pierced_heart_deals_one_to_you_enchanted: curse_of_the_pierced_heart(0);
+    curse_of_the_pierced_heart_deals_one_to_them_enchanted: curse_of_the_pierced_heart(1);
     curse_of_the_pierced_heart_asks_and_deals_one_to_the_player: curse_of_the_pierced_heart_chooses(false);
     curse_of_the_pierced_heart_asks_and_deals_one_to_their_planeswalker: curse_of_the_pierced_heart_chooses(true);
-    endless_ranks_of_the_dead_makes_nothing_with_no_zombie: endless_ranks_of_the_dead(0);
-    endless_ranks_of_the_dead_makes_nothing_with_one_zombie: endless_ranks_of_the_dead(1);
-    endless_ranks_of_the_dead_makes_a_zombie_with_two: endless_ranks_of_the_dead(2);
-    endless_ranks_of_the_dead_makes_a_zombie_with_three: endless_ranks_of_the_dead(3);
+    endless_ranks_of_the_dead_makes_you_nothing_with_no_zombie: endless_ranks_of_the_dead((0, 0));
+    endless_ranks_of_the_dead_makes_you_nothing_with_one_zombie: endless_ranks_of_the_dead((1, 0));
+    endless_ranks_of_the_dead_makes_you_a_zombie_with_two: endless_ranks_of_the_dead((2, 0));
+    endless_ranks_of_the_dead_makes_them_a_zombie_with_two: endless_ranks_of_the_dead((2, 1));
+    endless_ranks_of_the_dead_makes_you_a_zombie_with_three: endless_ranks_of_the_dead((3, 0));
 }
 
 // Permanents: end step triggers, and a cast trigger.
 engine_under_card! {
-    howlpack_alpha_makes_a_wolf_it_makes_bigger: howlpack_alpha(true);
+    howlpack_alpha_makes_a_wolf: howlpack_alpha(true);
     howlpack_alpha_gone_still_makes_a_wolf: howlpack_alpha(false);
     unholy_fiend_has_its_controller_lose_a_life: unholy_fiend(true);
     unholy_fiend_gone_still_has_its_controller_lose_a_life: unholy_fiend(false);
@@ -3475,4 +3904,50 @@ engine_under_card! {
     kessig_wolf_run_with_three_for_x_gives_three_power_and_trample: kessig_wolf_run(3);
     disciple_of_griselbrand_gains_the_toughness_of_what_was_sacrificed: disciple_of_griselbrand(());
     tree_of_redemption_exchanges_life_and_toughness: tree_of_redemption(());
+}
+
+use crate::cards::isd::{cloistered_youth::CloisteredYouth, thraben_sentry::ThrabenSentry};
+
+// Permanents: triggers that ask "you may".
+engine_under_card! {
+    thraben_sentry_asked_and_answered_yes_transforms: may_transform((Box::new(ThrabenSentry), false, true));
+    thraben_sentry_asked_and_answered_no_does_not: may_transform((Box::new(ThrabenSentry), false, false));
+    thraben_militia_is_asked_nothing_by_a_second_trigger: may_transform_asks_nothing((Box::new(ThrabenSentry), false, false));
+    thraben_sentry_gone_is_asked_nothing: may_transform_asks_nothing((Box::new(ThrabenSentry), false, true));
+    cloistered_youth_asked_and_answered_yes_transforms: may_transform((Box::new(CloisteredYouth), true, true));
+    cloistered_youth_asked_and_answered_no_does_not: may_transform((Box::new(CloisteredYouth), true, false));
+    unholy_fiend_is_asked_nothing_at_upkeep: may_transform_asks_nothing((Box::new(CloisteredYouth), true, false));
+    cloistered_youth_gone_is_asked_nothing: may_transform_asks_nothing((Box::new(CloisteredYouth), true, true));
+    curiosity_asked_and_answered_yes_draws_your_top_card: curiosity((2, 0, true));
+    curiosity_asked_and_answered_yes_draws_their_top_card: curiosity((2, 1, true));
+    curiosity_asked_and_answered_no_draws_nothing_for_you: curiosity((2, 0, false));
+    curiosity_asked_and_answered_no_draws_nothing_for_them: curiosity((2, 1, false));
+    curiosity_asked_and_answered_yes_draws_from_your_empty_library: curiosity((0, 0, true));
+    murder_of_crows_asked_and_answered_yes_draws_and_discards_your_card: murder_of_crows((2, 0, true));
+    murder_of_crows_asked_and_answered_yes_draws_and_discards_their_card: murder_of_crows((2, 1, true));
+    murder_of_crows_asked_and_answered_no_moves_nothing: murder_of_crows((2, 0, false));
+    murder_of_crows_with_no_card_to_draw_discards_nothing: murder_of_crows((0, 1, true));
+}
+
+// Permanents: more enters triggers, watchers and abilities.
+engine_under_card! {
+    village_bell_ringer_untaps_your_creatures: village_bell_ringer(());
+    undead_alchemist_exiles_the_card_and_makes_a_zombie: undead_alchemist(true);
+    undead_alchemist_makes_a_zombie_for_a_card_gone_since: undead_alchemist(false);
+    deranged_assistant_mills_nothing_from_your_empty_library: deranged_assistant((0, 0));
+    deranged_assistant_mills_the_top_of_your_two: deranged_assistant((2, 0));
+    deranged_assistant_mills_the_top_of_their_two: deranged_assistant((2, 1));
+    cellar_door_mills_nothing_from_your_empty_library: cellar_door((0, 0, false));
+    cellar_door_mills_the_bottom_of_your_two: cellar_door((2, 0, false));
+    cellar_door_mills_the_bottom_of_their_two: cellar_door((2, 1, false));
+    cellar_door_mills_your_creature_card_and_makes_a_zombie: cellar_door((2, 0, true));
+    cellar_door_mills_their_creature_card_and_makes_you_a_zombie: cellar_door((2, 1, true));
+    ludevics_test_subject_gets_a_first_hatchling_counter: ludevics_test_subject(0);
+    ludevics_test_subject_gets_a_fourth_hatchling_counter: ludevics_test_subject(3);
+    ludevics_test_subject_hatches_at_five: ludevics_test_subject(4);
+    full_moons_rise_shields_your_werewolves: full_moons_rise(());
+    grimgrin_untaps_and_gets_a_counter: grimgrin_untaps(true);
+    grimgrin_gone_gets_no_counter: grimgrin_untaps(false);
+    moorland_haunt_makes_a_spirit: moorland_haunt(());
+    evil_twin_destroys_its_target: evil_twin_destroys(());
 }
