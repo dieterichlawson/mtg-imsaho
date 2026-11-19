@@ -542,9 +542,16 @@ Reckoning, Make a Wish, Creeping Renaissance, Frightful Delusion,
 Memory's Journey, Forbidden Alchemy, Night Terrors, Past in Flames,
 Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling Counterpart
 (a copy needs a printed creature to copy) and Army of the Damned
-(thirteen tokens). Then the hooks of permanents: some 200 overrides (53
-activated abilities, 23 upkeeps, 15 enters, 20 deaths watched or own,
-the combat triggers).
+(thirteen tokens).
+
+**Permanents, begun.** Fifteen harnesses over nine of the fifteen enters
+triggers, all proved (30 s to 7 minutes): Armored Skaab's mill for each
+player and library, Claustrophobia's tap, Crossway Vampire's "can't
+block", Geist-Honored Monk's Spirits, Hollowhenge Scavenger and Morkrut
+Banshee with and without morbid, and the two that ask, Slayer of the
+Wicked and Geistcatcher's Rig, as Tribute to Hunger above. Left of some
+200 overrides: 53 activated abilities, 23 upkeeps, six enters, 20
+deaths watched or own, the combat triggers.
 
 These harnesses are also the first proofs of the engine's actions
 composed with nothing stood in for: `try_destroy` over the real

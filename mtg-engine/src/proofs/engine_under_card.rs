@@ -1,5 +1,6 @@
 //! A card resolving with the engine itself under it: no recorder stands in
-//! for an engine action here. The card's own hook runs, and under it the
+//! for an engine action here. The card's own hook runs (a spell's
+//! `on_resolve`, a permanent's enters trigger), and under it the
 //! engine's own destruction, zone change, damage, drawing, token making
 //! and continuous effects; what is asserted is the board afterwards, read
 //! back through the engine's own characteristics, against the card's text.
@@ -1142,6 +1143,210 @@ fn tribute_to_hunger(pick: usize) {
     std::mem::forget((registry, state, effect));
 }
 
+// ---- Permanents: their enters triggers, each hook run for a permanent
+// of the card already on the battlefield, as the trigger resolves. ----
+
+/// A permanent of `card` on the battlefield under `you`: the source of a
+/// trigger of its own.
+fn a_source(state: &mut GameState, card: CardId, you: PlayerId) -> ObjectId {
+    state.create_object(card, you, Zone::Battlefield, None, None)
+}
+
+/// Armored Skaab ("When this creature enters, mill four cards.") entered
+/// under the player `who` names (a harness for each: `draws` says why),
+/// their library of `cards` cards: the top four of it, or all of it if
+/// there are fewer, are in their graveyard, top first (CR 701.17a), and
+/// milling an empty library is not drawing from one (701.17b).
+fn armored_skaab((cards, who): (usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::armored_skaab::ArmoredSkaab));
+    let library = a_library(&mut state, blank, who, cards);
+    let skaab = a_source(&mut state, card, PlayerId(who));
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, skaab, &[], &registry);
+
+    let milled = cards.min(4);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+    for k in 0..milled {
+        let id = library[k].expect("made");
+        assert!(state.get_object(id).expect("still an object").zone == Zone::Graveyard && player.graveyard_order[k] == id);
+    }
+    assert!(state.get_object(skaab).expect("still an object").zone == Zone::Battlefield);
+    std::mem::forget((registry, state));
+}
+
+/// Claustrophobia ("When this Aura enters, tap enchanted creature.")
+/// entered attached to a creature, tapped or not: the creature is tapped
+/// (CR 701.21a), and otherwise as it was.
+fn claustrophobia_enters(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::claustrophobia::Claustrophobia));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    let aura = a_source(&mut state, card, PlayerId(u8::from(kani::any::<bool>())));
+    state.attach(aura, creature);
+    let before = state.get_object(creature).expect("just created");
+    let (damage, controller) = (before.damage_marked, before.controller);
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, aura, &[], &registry);
+
+    let o = state.get_object(creature).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped && o.damage_marked == damage && o.controller == controller);
+    assert!(state.get_object(aura).expect("still an object").attached_to == Some(creature));
+    std::mem::forget((registry, state));
+}
+
+/// Crossway Vampire ("When this creature enters, target creature can't
+/// block this turn.") entered, its trigger resolving at a creature: that
+/// creature cannot block, as the engine's own query answers, and is
+/// otherwise as it was.
+fn crossway_vampire(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::crossway_vampire::CrosswayVampire));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    let vampire = a_source(&mut state, card, PlayerId(0));
+    let before = state.get_object(creature).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+    assert!(state.can_block(creature, &registry));
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, vampire, &[Target::Object(creature)], &registry);
+
+    assert!(!state.can_block(creature, &registry));
+    let o = state.get_object(creature).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+    std::mem::forget((registry, state));
+}
+
+/// Geist-Honored Monk ("When this creature enters, create two 1/1 white
+/// Spirit creature tokens with flying.") entered under either player:
+/// two new permanents, each a token, a 1/1 white Spirit creature with
+/// flying under that player (CR 111.1, 111.2).
+fn geist_honored_monk(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::geist_honored_monk::GeistHonoredMonk));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let monk = a_source(&mut state, card, you);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, monk, &[], &registry);
+
+    assert!(state.objects.len() == before + 2);
+    for k in 1..=2 {
+        let id = ObjectId(monk.0 + k);
+        let t = state.get_object(id).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+        assert!(state.is_creature(id, &registry) && state.has_keyword(id, Keyword::Flying, &registry));
+        assert!(state.effective_power(id, &registry) == Some(1) && state.effective_toughness(id, &registry) == Some(1));
+        assert!(t.colors == [Color::White] && t.subtypes.len() == 1 && t.subtypes[0] == "Spirit");
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Hollowhenge Scavenger ("Morbid — When this creature enters, if a
+/// creature died this turn, you gain 5 life.") entered under either
+/// player, a creature having died this turn or not (`died`): its
+/// controller has 5 life more if one did and as much as before if none
+/// did (CR 700.4, 119.3), and the other player as much as before.
+fn hollowhenge_scavenger(died: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::hollowhenge_scavenger::HollowhengeScavenger));
+    let you = u8::from(kani::any::<bool>());
+    let scavenger = a_source(&mut state, card, PlayerId(you));
+    state.creature_died_this_turn = died;
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, scavenger, &[], &registry);
+
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] + if p == you && died { 5 } else { 0 });
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Morkrut Banshee ("Morbid — When this creature enters, if a creature
+/// died this turn, target creature gets -4/-4 until end of turn.")
+/// entered, its trigger resolving at a creature, a creature having died
+/// this turn or not (`died`): the target has 4 less power and toughness,
+/// read back through the engine's layers (CR 613.4c), if one did, and is
+/// as it was if none did.
+fn morkrut_banshee(died: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::morkrut_banshee::MorkrutBanshee));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    let banshee = a_source(&mut state, card, PlayerId(0));
+    state.creature_died_this_turn = died;
+    let (power, toughness) = (state.effective_power(creature, &registry), state.effective_toughness(creature, &registry));
+    let before = state.get_object(creature).expect("just created");
+    let (tapped, damage) = (before.tapped, before.damage_marked);
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, banshee, &[Target::Object(creature)], &registry);
+
+    let down = if died { 4 } else { 0 };
+    assert!(state.effective_power(creature, &registry) == power.map(|p| p - down));
+    assert!(state.effective_toughness(creature, &registry) == toughness.map(|t| t - down));
+    let o = state.get_object(creature).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage);
+    std::mem::forget((registry, state));
+}
+
+/// A "you may <do something to> target ..." enters trigger resolving at
+/// its target: its hook asks its controller, who may decline, about
+/// exactly that target (CR 603.5), and the question holds `effect`; that
+/// effect, applied by the engine at the target (`tribute_to_hunger` says
+/// why not through the answer's dispatcher), leaves the board as
+/// `after` says. What it returns is the board for `after` to be asked of.
+fn may_do_to_its_target(card: Box<dyn CardBehavior>, what: Permanent, holds: &dyn Fn(&crate::state::PendingEffect, ObjectId) -> bool,
+    effect: &dyn Fn(ObjectId) -> crate::state::PendingEffect) -> (crate::cards::CardRegistry, GameState, ObjectId, (bool, u32, PlayerId))
+{
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, what);
+    let you = PlayerId(0);
+    let source = a_source(&mut state, card, you);
+    let before = state.get_object(target).expect("just created");
+    let was = (before.tapped, before.damage_marked, before.controller);
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, source, &[Target::Object(target)], &registry);
+
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
+            assert!(*player == you && *optional);
+            assert!(options.len() == 1 && options[0] == Target::Object(target));
+            assert!(holds(effect, source));
+        }
+        _ => panic!("its controller is asked whether to"),
+    }
+    crate::proofs::cards::clear_prompt(&mut state);
+    let effect = effect(source);
+    crate::engine::apply_pending_effect(&mut state, &Target::Object(target), &effect, &registry);
+    std::mem::forget(effect);
+    (registry, state, target, was)
+}
+
+/// Slayer of the Wicked ("When this creature enters, you may destroy
+/// target Vampire, Werewolf, or Zombie.") entered, its trigger resolving
+/// at a creature: its controller is asked, and the destruction the
+/// question holds puts the creature into its owner's graveyard (CR
+/// 701.7a).
+fn slayer_of_the_wicked(_: ()) {
+    use crate::state::PendingEffect;
+    let (registry, state, target, _) = may_do_to_its_target(Box::new(crate::cards::isd::slayer_of_the_wicked::SlayerOfTheWicked), Permanent::Creature,
+        &|effect, _| matches!(effect, PendingEffect::Destroy { source_name } if source_name == "Slayer of the Wicked"),
+        &|_| PendingEffect::Destroy { source_name: "Slayer of the Wicked".to_string() });
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Graveyard && o.controller == PlayerId(1));
+    std::mem::forget((registry, state));
+}
+
+/// Geistcatcher's Rig ("When this creature enters, you may have it deal 4
+/// damage to target creature with flying.") entered, its trigger
+/// resolving at a creature: its controller is asked, and the damage the
+/// question holds, 4 from the Rig, is marked on the creature (CR
+/// 120.3e), which is otherwise as it was.
+fn geistcatchers_rig(_: ()) {
+    use crate::state::PendingEffect;
+    let (registry, state, target, (tapped, damage, controller)) = may_do_to_its_target(Box::new(crate::cards::isd::geistcatchers_rig::GeistcatchersRig), Permanent::Creature,
+        &|effect, source| matches!(effect, PendingEffect::DealDamage { amount: 4, source_id } if *source_id == source),
+        &|source| PendingEffect::DealDamage { amount: 4, source_id: source });
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + 4 && o.tapped == tapped && o.controller == controller);
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -1414,4 +1619,23 @@ engine_under_card! {
     rolling_temblor_deals_two_damage_to_a_creature_without_flying: rolling_temblor(false);
     tribute_to_hunger_has_the_opponent_sacrifice_their_first_creature: tribute_to_hunger(0);
     tribute_to_hunger_has_the_opponent_sacrifice_their_second_creature: tribute_to_hunger(1);
+}
+
+// Permanents: enters triggers.
+engine_under_card! {
+    armored_skaab_mills_nothing_from_your_empty_library: armored_skaab((0, 0));
+    armored_skaab_mills_nothing_from_their_empty_library: armored_skaab((0, 1));
+    armored_skaab_mills_all_of_your_three: armored_skaab((3, 0));
+    armored_skaab_mills_all_of_their_three: armored_skaab((3, 1));
+    armored_skaab_mills_all_of_your_four: armored_skaab((4, 0));
+    armored_skaab_mills_all_of_their_four: armored_skaab((4, 1));
+    claustrophobia_taps_the_creature_it_enchants_as_it_enters: claustrophobia_enters(());
+    crossway_vampire_stops_its_target_blocking: crossway_vampire(());
+    geist_honored_monk_makes_two_spirits: geist_honored_monk(());
+    hollowhenge_scavenger_gains_nothing_with_no_death: hollowhenge_scavenger(false);
+    hollowhenge_scavenger_with_morbid_gains_five_life: hollowhenge_scavenger(true);
+    morkrut_banshee_does_nothing_with_no_death: morkrut_banshee(false);
+    morkrut_banshee_with_morbid_gives_its_target_minus_four: morkrut_banshee(true);
+    slayer_of_the_wicked_asks_and_destroys_its_target: slayer_of_the_wicked(());
+    geistcatchers_rig_asks_and_deals_four_damage_to_its_target: geistcatchers_rig(());
 }

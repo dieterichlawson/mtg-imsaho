@@ -9,10 +9,10 @@ proofs that a card works when it resolves: the 715 harnesses that
 claimed that by asserting a record of the calls a card made, with
 recorders standing in for the engine, were removed (2026-11-18).
 
-**With the engine** (`proofs::engine_under_card`, 147): the card's own
-`on_resolve` run with the engine's own actions under it and no recorder,
-the board afterwards asserted against the card's text. 73 of the 88
-spells so far (2026-11-19); the hooks of permanents are next.
+**With the engine** (`proofs::engine_under_card`, 162): the card's own
+hook run with the engine's own actions under it and no recorder, the
+board afterwards asserted against the card's text. 73 of the 88 spells
+and the first nine enters triggers of permanents so far (2026-11-19).
 
 What a card does through cast, stack, resolution, state-based actions
 and triggers together is checked with the engine itself, on every small
@@ -21,20 +21,20 @@ part B).
 
 Each harness's last result (`scripts/kani/times.txt`). The 285 declared
 ones are as the last run of every harness left them, 49 run again after
-the removal; the 147 with the engine were each run at the code as
+the removal; the 162 with the engine were each run at the code as
 committed, between 2026-11-18 and 2026-11-19, on a machine busy with
 other runs (their times are upper bounds).
 
-432 harnesses over 188 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 147 of 73 cards resolving with the engine itself under them. 82 cards have none.
+447 harnesses over 189 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 162 of 80 cards resolving with the engine itself under them. 81 cards have none.
 
-- SUCCESSFUL: 432
+- SUCCESSFUL: 447
 
 | card | declared | with the engine | proved | not proved |
 |---|---|---|---|---|
 | altars_reap | 0 | 8 | 8 |  |
 | ancient_grudge | 1 | 1 | 2 |  |
 | angelic_overseer | 1 | 0 | 1 |  |
-| armored_skaab | 1 | 0 | 1 |  |
+| armored_skaab | 1 | 6 | 7 |  |
 | avacynian_priest | 2 | 0 | 2 |  |
 | avacyns_pilgrim | 1 | 0 | 1 |  |
 | back_from_the_brink | 8 | 0 | 8 |  |
@@ -52,14 +52,14 @@ other runs (their times are upper bounds).
 | butchers_cleaver | 2 | 0 | 2 |  |
 | charmbreaker_devils | 1 | 0 | 1 |  |
 | civilized_scholar | 3 | 0 | 3 |  |
-| claustrophobia | 1 | 1 | 2 |  |
+| claustrophobia | 1 | 2 | 3 |  |
 | clifftop_retreat | 2 | 0 | 2 |  |
 | cloistered_youth | 1 | 0 | 1 |  |
 | cobbled_wings | 2 | 0 | 2 |  |
 | corpse_lunge | 0 | 3 | 3 |  |
 | counterspell | 1 | 2 | 3 |  |
 | creeping_renaissance | 1 | 0 | 1 |  |
-| crossway_vampire | 1 | 0 | 1 |  |
+| crossway_vampire | 1 | 1 | 2 |  |
 | curiosity | 1 | 1 | 2 |  |
 | curse_of_deaths_hold | 0 | 1 | 1 |  |
 | curse_of_oblivion | 0 | 1 | 1 |  |
@@ -94,7 +94,8 @@ other runs (their times are upper bounds).
 | gallows_warden | 1 | 0 | 1 |  |
 | garruk_relentless | 2 | 0 | 2 |  |
 | gavony_township | 2 | 0 | 2 |  |
-| geistcatchers_rig | 1 | 0 | 1 |  |
+| geist_honored_monk | 0 | 1 | 1 |  |
+| geistcatchers_rig | 1 | 1 | 2 |  |
 | geistflame | 1 | 3 | 4 |  |
 | ghost_quarter | 2 | 0 | 2 |  |
 | ghostly_possession | 1 | 1 | 2 |  |
@@ -115,7 +116,7 @@ other runs (their times are upper bounds).
 | heartless_summoning | 1 | 0 | 1 |  |
 | heretics_punishment | 1 | 0 | 1 |  |
 | hinterland_harbor | 2 | 0 | 2 |  |
-| hollowhenge_scavenger | 1 | 0 | 1 |  |
+| hollowhenge_scavenger | 1 | 2 | 3 |  |
 | holy_strength | 1 | 1 | 2 |  |
 | hysterical_blindness | 1 | 1 | 2 |  |
 | infernal_plunge | 0 | 1 | 1 |  |
@@ -145,7 +146,7 @@ other runs (their times are upper bounds).
 | moan_of_the_unhallowed | 0 | 1 | 1 |  |
 | moment_of_heroism | 0 | 1 | 1 |  |
 | moorland_haunt | 9 | 0 | 9 |  |
-| morkrut_banshee | 1 | 0 | 1 |  |
+| morkrut_banshee | 1 | 2 | 3 |  |
 | mountain | 1 | 0 | 1 |  |
 | naturalize | 1 | 2 | 3 |  |
 | nephalia_drownyard | 1 | 0 | 1 |  |
@@ -184,7 +185,7 @@ other runs (their times are upper bounds).
 | skeletal_grimace | 1 | 1 | 2 |  |
 | skirsdag_cultist | 1 | 0 | 1 |  |
 | skirsdag_high_priest | 2 | 0 | 2 |  |
-| slayer_of_the_wicked | 1 | 0 | 1 |  |
+| slayer_of_the_wicked | 1 | 1 | 2 |  |
 | smite_the_monstrous | 1 | 1 | 2 |  |
 | snapcaster_mage | 2 | 0 | 2 |  |
 | sol_ring | 1 | 0 | 1 |  |
@@ -233,5 +234,5 @@ other runs (their times are upper bounds).
 
 What these do is the engine's, played with it by `tests/card_semantics.rs`, or printed data alone.
 
-abattoir_ghoul, abbey_griffin, ambush_viper, angel_of_flight_alabaster, army_of_the_damned, ashmouth_hound, balefire_dragon, bloodcrazed_neonate, bloodgift_demon, burning_vengeance, cackling_counterpart, caravan_vigil, cellar_door, champion_of_the_parish, chapel_geist, coral_merfolk, creepy_doll, delver_of_secrets, deranged_assistant, desperate_ravings, divine_reckoning, doomed_traveler, elder_cathar, endless_ranks_of_the_dead, falkenrath_marauders, falkenrath_noble, forbidden_alchemy, fortress_crab, galvanic_juggernaut, gatstaf_shepherd, geist_honored_monk, geist_of_saint_traft, goblin_piker, grizzled_outcasts, grizzly_bears, gutter_grime, hanweir_watchkeep, instigator_gang, kalonian_tusker, kessig_cagebreakers, kindercatch, kruin_outlaw, laboratory_maniac, lumberknot, make_a_wish, makeshift_mauler, markov_patrician, mausoleum_guard, mayor_of_avabruck, memorys_journey, moldgraf_monstrosity, moon_heron, moonmist, mulch, murder_of_crows, night_terrors, pitchburn_devils, rage_thrower, rakish_heir, reckless_waif, riot_devils, rotting_fensnake, savannah_lions, selhoff_occultist, skaab_goliath, spectral_rider, splinterfright, stitched_drake, stromkirk_noble, stromkirk_patrol, sturmgeist, thraben_purebloods, tormented_pariah, typhoid_rats, ulvenwald_mystics, undead_alchemist, unruly_mob, village_cannibals, village_ironsmith, villagers_of_estwald, voiceless_spirit, walking_corpse
+abattoir_ghoul, abbey_griffin, ambush_viper, angel_of_flight_alabaster, army_of_the_damned, ashmouth_hound, balefire_dragon, bloodcrazed_neonate, bloodgift_demon, burning_vengeance, cackling_counterpart, caravan_vigil, cellar_door, champion_of_the_parish, chapel_geist, coral_merfolk, creepy_doll, delver_of_secrets, deranged_assistant, desperate_ravings, divine_reckoning, doomed_traveler, elder_cathar, endless_ranks_of_the_dead, falkenrath_marauders, falkenrath_noble, forbidden_alchemy, fortress_crab, galvanic_juggernaut, gatstaf_shepherd, geist_of_saint_traft, goblin_piker, grizzled_outcasts, grizzly_bears, gutter_grime, hanweir_watchkeep, instigator_gang, kalonian_tusker, kessig_cagebreakers, kindercatch, kruin_outlaw, laboratory_maniac, lumberknot, make_a_wish, makeshift_mauler, markov_patrician, mausoleum_guard, mayor_of_avabruck, memorys_journey, moldgraf_monstrosity, moon_heron, moonmist, mulch, murder_of_crows, night_terrors, pitchburn_devils, rage_thrower, rakish_heir, reckless_waif, riot_devils, rotting_fensnake, savannah_lions, selhoff_occultist, skaab_goliath, spectral_rider, splinterfright, stitched_drake, stromkirk_noble, stromkirk_patrol, sturmgeist, thraben_purebloods, tormented_pariah, typhoid_rats, ulvenwald_mystics, undead_alchemist, unruly_mob, village_cannibals, village_ironsmith, villagers_of_estwald, voiceless_spirit, walking_corpse
 
