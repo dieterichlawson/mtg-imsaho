@@ -454,7 +454,29 @@ three pieces fit in memory: a slice of them (one share of 4,000) fights
 11,112 combats that all agree, and all 88,573,365 boards are some hours
 of this machine for combat alone.
 
-**Next.** Combat on every board of three pieces; and the cuts above. Three pieces as they entered is 88 million boards
+**Three pieces, combat (begun 2026-11-19).** The first three shares of
+60, 4.4 million boards and 2,237,248 combats: 28 disagree, on 14 boards,
+and every one looked at is one gap of the reference, the engine right.
+What a damage step sets off goes on the stack together: a "deals combat
+damage to a player" trigger, and the dies triggers and watchers of what
+the damage killed. The active player's go on first and resolve last,
+and a player orders their own (CR 603.3b, 101.4). The reference
+resolves the damage's triggers first and the deaths' after, whoever
+controls them. Two attackers and a blocker is the smallest board where
+that shows: Stromkirk Patrol and Typhoid Rats attack, Pitchburn Devils
+blocks the Rats and dies, and the Devils' 3 damage (the other player's
+trigger, so first to resolve) kills the Patrol before its counter
+arrives; or Falkenrath Marauders beside a Pitchburn Devils of the same
+player's, who may order them either way. A first repair, both orders of
+the two groups, agreed on five of thirteen boards and allowed too much
+on the rest, and is not kept. The repair to make: the damage's triggers
+become triggers like any other, set off with the deaths and ordered and
+resolved by `settle_triggers`, in place of the combat's own handling of
+them; then the exhaustive combat tier, the two-piece boards and these
+shares again.
+
+**Next.** That repair, and the rest of the three-piece shares; and the
+cuts above. Three pieces as they entered is 88 million boards
 and about 25 billion casts: some 500 hours on these four cores, a day
 and a half on 64, which is what a larger machine would be asked for.
 
