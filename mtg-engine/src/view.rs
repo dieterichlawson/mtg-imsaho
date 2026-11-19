@@ -777,8 +777,12 @@ impl GameView {
         // What is resolving now is still on the stack (CR 608.2n), above
         // everything waiting under it, while it asks its question: a spell
         // (#766), or a triggered or activated ability (#833).
-        let resolving_spell = state.resolving_spell
-            .filter(|id| state.get_object(*id).is_some_and(|o| o.zone == Zone::Stack))
+        // A permanent spell entering with its copy choice still to make is
+        // one too: it has resolved and is not yet on the battlefield (CR
+        // 608.3, 614.12b; #1061).
+        let resolving_spell = state.resolving_spell.into_iter()
+            .chain(state.pending_entry_choices.iter().copied())
+            .find(|id| state.get_object(*id).is_some_and(|o| o.zone == Zone::Stack))
             .and_then(|id| spell_item(id, true));
         let resolving_ability = state.resolving_ability.as_ref()
             .and_then(|entry| entry_item(entry, true));

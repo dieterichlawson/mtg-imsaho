@@ -531,9 +531,17 @@ pub(crate) fn resolve_spell_as(
 
     // If the card is still on the stack after resolution, move it to the
     // appropriate zone. Flashback spells go to exile; others to graveyard.
+    //
+    // Except a permanent spell whose entry is waiting on its copy choice
+    // (CR 608.3, 614.12b): it is entering the battlefield, and the choice is
+    // part of that entry, so it never goes to a graveyard. Moved there, a
+    // resolving Evil Twin sat in its owner's graveyard while asked what to
+    // copy — counted in the graveyard on every surface, and by a Boneyard
+    // Wurm it was offered — then moved Graveyard → Battlefield (#1061). Its
+    // answer moves it from here (`replacement::record_entry_choice`).
     state.resolving_spell = None;
     if let Some(obj) = state.get_object(object_id) {
-        if obj.zone == Zone::Stack {
+        if obj.zone == Zone::Stack && !state.pending_entry_choices.contains(&object_id) {
             state.move_spell_after_resolve(object_id, registry);
         }
     }

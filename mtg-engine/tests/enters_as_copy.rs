@@ -525,3 +525,54 @@ fn fiend_hunter_announces_a_returning_twin_once_it_has_entered() {
             && l.ends_with(") returned to the battlefield")),
         "{:?}", lines(&state));
 }
+
+/// CR 608.3, 614.12b: a resolving permanent spell is put onto the
+/// battlefield, and the copy choice is made as part of that, so the card
+/// never goes to a graveyard. A cast Evil Twin was moved Stack → Graveyard
+/// and asked what to copy from there: listed in its owner's graveyard,
+/// counted by a Boneyard Wurm it was offered (a 2/2 where the rules
+/// position is 1/1), and then moved Graveyard → Battlefield (#1061).
+#[test]
+fn a_cast_twin_is_not_in_a_graveyard_while_it_chooses() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.turn_number = 2;
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
+    in_graveyard(&mut state, &reg, "Festerhide Boar", P0);
+    let twin = castable_spell(&mut state, &reg, "Evil Twin", P0);
+
+    let mut at_prompt = None;
+    let mut answered = false;
+    mtg_engine::engine::run_game_loop(&mut state, &reg, |s, _, legal| {
+        if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTarget {
+                effect: mtg_engine::state::PendingEffect::EnterAsCopy { .. }, .. }, .. }) = &s.awaiting_action {
+            at_prompt = Some((
+                s.get_object(twin).unwrap().zone,
+                s.players[0].graveyard_order.contains(&twin),
+                s.effective_power(wurm, &reg),
+                s.events.iter().any(|e| matches!(e, mtg_engine::events::GameEvent::ObjectMoved {
+                    object, to: Zone::Graveyard, .. } if *object == twin)),
+                mtg_engine::view::GameView::for_player(s, P0, &reg).stack.iter()
+                    .any(|i| i.object_id == twin && i.resolving),
+            ));
+            answered = true;
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Object(wurm))) };
+        }
+        if answered {
+            return Action::Concede;
+        }
+        legal.actions.iter()
+            .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == twin))
+            .cloned()
+            .unwrap_or(Action::PassPriority)
+    });
+
+    let (zone, in_gy, wurm_power, moved_to_gy, shown_resolving) = at_prompt.expect("the copy choice was asked");
+    assert_eq!(zone, Zone::Stack, "still the resolving spell, entering");
+    assert!(!in_gy, "not in its owner's graveyard");
+    assert_eq!(wurm_power, Some(1), "the Wurm counts the Boar alone");
+    assert!(!moved_to_gy, "no Stack → Graveyard move was made");
+    assert!(shown_resolving, "every surface's stack shows it resolving");
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.name_of(twin, &reg), "Boneyard Wurm");
+}

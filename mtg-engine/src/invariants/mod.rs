@@ -187,7 +187,11 @@ pub fn check_core(state: &GameState, registry: &CardRegistry) -> Vec<String> {
         let on_stack = state.stack.iter().any(|e| e.as_spell() == Some(obj.id));
         let resolving = state.resolving_spell == Some(obj.id);
         let being_cast = state.pending_spell_cast.as_ref().is_some_and(|c| c.object_id == obj.id);
-        if !on_stack && !resolving && !being_cast {
+        // A permanent spell that has resolved and is entering the
+        // battlefield, its entry waiting on its copy choice (CR 608.3,
+        // 614.12b): off the stack's entries and not yet a permanent (#1061).
+        let entering = state.pending_entry_choices.contains(&obj.id);
+        if !on_stack && !resolving && !being_cast && !entering {
             v.push(format!("{} ({}) in stack zone but on no stack entry", obj.id.0, obj.name));
         }
     }
