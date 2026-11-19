@@ -4,6 +4,7 @@
 <cards::isd::army_of_the_damned::ArmyOfTheDamned as cards::CardBehavior>::on_resolve 0
 <cards::isd::back_from_the_brink::BackFromTheBrink as cards::CardBehavior>::activated_abilities 0
 <cards::isd::ghoulraiser::Ghoulraiser as cards::CardBehavior>::on_enter_battlefield 0
+<cards::isd::grimoire_of_the_dead::GrimoireOfTheDead as cards::CardBehavior>::resolve_activated_ability 0
 <cards::isd::mulch::Mulch as cards::CardBehavior>::on_resolve 0
 <cards::isd::mulch::Mulch as cards::CardBehavior>::on_resolve 1
 <cards::isd::mulch::Mulch as cards::CardBehavior>::on_resolve 2
@@ -50,6 +51,8 @@
 <std::option::Option<(types::ManaType, u32)> as core::slice::cmp::SlicePartialEq<std::option::Option<(types::ManaType, u32)>>>::equal_same_length 0
 <std::option::Option<ids::ObjectId> as core::slice::cmp::SlicePartialEq<std::option::Option<ids::ObjectId>>>::equal_same_length 0
 <std::option::Option<u32> as core::slice::cmp::SlicePartialEq<std::option::Option<u32>>>::equal_same_length 0
+<std::slice::Iter<'_, &state::GameObject> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&&state::GameObject, bool, (), {closure@mtg-engine/src/state.rs:2275:49: 2275:54}, {closure@std::iter::Iterator::for_each::call<bool, {closure@std::vec::Vec<bool>::extend_trusted<std::iter::Map<std::slice::Iter<'_, &state::GameObject>, {closure@mtg-engine/src/state.rs:2275:49: 2275:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
+<std::slice::Iter<'_, &state::GameObject> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&&state::GameObject, u64, (), {closure@mtg-engine/src/state.rs:2274:44: 2274:49}, {closure@std::iter::Iterator::for_each::call<u64, {closure@std::vec::Vec<u64>::extend_trusted<std::iter::Map<std::slice::Iter<'_, &state::GameObject>, {closure@mtg-engine/src/state.rs:2274:44: 2274:49}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
 <std::slice::Iter<'_, &state::GameObject> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&&state::GameObject, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&&state::GameObject, {closure@mtg-engine/src/cards/isd/bloodline_keeper.rs:18:21: 18:24}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, &state::GameObject>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&&state::GameObject, {closure@mtg-engine/src/cards/isd/bloodline_keeper.rs:18:21: 18:24}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), {closure@mtg-engine/src/vec_map.rs:176:33: 176:41}, {closure@std::iter::Iterator::for_each::call<&state::GameObject, {closure@std::vec::Vec<&state::GameObject>::extend_trusted<std::iter::Map<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)>, {closure@mtg-engine/src/vec_map.rs:176:33: 176:41}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::fold::<(), {closure@std::iter::adapters::map::map_fold<&(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::for_each::call<&state::GameObject, {closure@std::vec::Vec<&state::GameObject>::extend_trusted<std::iter::Map<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
@@ -57,6 +60,9 @@
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, usize, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::adapters::map::map_fold<&state::GameObject, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2006:38: 2006:43}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::iter::Map<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2006:38: 2006:43}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, usize, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::adapters::map::map_fold<&state::GameObject, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2014:38: 2014:43}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::iter::Map<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2014:38: 2014:43}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, usize, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::adapters::map::map_fold<&state::GameObject, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2040:38: 2040:43}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::iter::Map<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2040:38: 2040:43}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
+<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, usize, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::adapters::map::map_fold<&state::GameObject, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2337:38: 2337:43}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::iter::Map<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&state::GameObject, {closure@mtg-engine/src/state.rs:2337:38: 2337:43}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> 0
+<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<&state::GameObject>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::find::check<&state::GameObject, &mut {closure@mtg-engine/src/replacement.rs:323:17: 323:20}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<&state::GameObject>> 0
+<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<&state::GameObject>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::find::check<&state::GameObject, &mut {closure@mtg-engine/src/replacement.rs:99:17: 99:20}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<&state::GameObject>> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:176:33: 176:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:1971:35: 1971:40}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:176:33: 176:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:1988:35: 1988:40}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:176:33: 176:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:1994:35: 1994:40}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
@@ -66,6 +72,7 @@
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:2048:35: 2048:40}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:3367:35: 3367:38}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
 <std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:3427:35: 3427:38}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
+<std::slice::Iter<'_, (ids::ObjectId, std::boxed::Box<state::GameObject>)> as std::iter::Iterator>::try_fold::<(), {closure@std::iter::adapters::map::map_try_fold<'_, &(ids::ObjectId, std::boxed::Box<state::GameObject>), &state::GameObject, (), std::ops::ControlFlow<()>, {closure@mtg-engine/src/vec_map.rs:197:33: 197:41}, {closure@std::iter::Iterator::any::check<&state::GameObject, {closure@mtg-engine/src/state.rs:3733:35: 3733:38}>::{closure#0}}>::{closure#0}}, std::ops::ControlFlow<()>> 0
 <std::slice::Iter<'_, bool> as std::iter::Iterator>::any::<{closure@mtg-engine/src/proofs/actions/resolving.rs:510:41: 510:45}> 0
 <std::slice::Iter<'_, bool> as std::iter::Iterator>::any::<{closure@mtg-engine/src/proofs/actions/resolving.rs:511:41: 511:45}> 0
 <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@mtg-engine/src/mana.rs:83:26: 83:34}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@mtg-engine/src/mana.rs:83:26: 83:34}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> 0
@@ -128,10 +135,13 @@ cards::helpers::creatures_controlled_by 0
 cards::helpers::ids_where::<{closure@mtg-engine/src/cards/isd/make_a_wish.rs:30:13: 30:16}> 0
 core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, types::ManaType, u32), {closure@std::slice::<impl [(u32, types::ManaType, u32)]>::sort_by_key<(u32, u8, u32), {closure@mtg-engine/src/proofs/cards/mana.rs:42:21: 42:32}>::{closure#0}}> 0
 core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, types::ManaType, u32), {closure@std::slice::<impl [(u32, types::ManaType, u32)]>::sort_by_key<(u32, u8, u32), {closure@mtg-engine/src/proofs/cards/mana.rs:49:27: 49:38}>::{closure#0}}> 0
+damage::applicable_effects 3
 engine::actions::choices::resolve_choice 11
 engine::actions::choices::resolve_choice 6
 engine::actions::choices::resolve_choice 8
 engine::advance_mulligan_phase 0
+engine::cards_flow::card_list 0
+engine::cards_flow::mill_cards 0
 mana::pips_of 0
 mana::write_amounts 0
 mtg_kernel::mana::pay_specific 0
@@ -139,6 +149,7 @@ mtg_kernel::mana::spend_generic 0
 mtg_kernel::mana::surplus_order 0
 mtg_kernel::mana::surplus_order 1
 mtg_kernel::reach::within_reach 0
+mtg_kernel::zones::zone_order 1
 proofs::actions::combat_damage::board 0
 proofs::actions::declaring_blocks::recording 2
 proofs::actions::leaving_combat::leaving 3
@@ -178,6 +189,17 @@ proofs::cards::transforming::bloodline_keeper_makes_vampires_and_transforms_at_f
 proofs::cards::zone_rows 0
 proofs::counter_map::any_map 0
 proofs::decide::decided 0
+proofs::engine_under_card::a_library 0
+proofs::engine_under_card::armored_skaab 0
+proofs::engine_under_card::endless_ranks_of_the_dead 0
+proofs::engine_under_card::forbidden_alchemy 0
+proofs::engine_under_card::forbidden_alchemy 1
+proofs::engine_under_card::heretics_punishment 0
+proofs::engine_under_card::heretics_punishment 1
+proofs::engine_under_card::mills 0
+proofs::engine_under_card::mulch 0
+proofs::engine_under_card::mulch 1
+proofs::engine_under_card::nephalia_drownyard 0
 proofs::kind_map::agrees::<types::CounterType> 0
 proofs::kind_map::agrees::<types::ManaType> 0
 proofs::kind_map::any_map::<types::CounterType> 0
@@ -189,12 +211,18 @@ proofs::kind_map::taken::<types::ManaType, std::iter::Map<kind_map::Iter<'_, typ
 proofs::kind_map::taken::<types::ManaType, std::iter::Map<kind_map::Iter<'_, types::ManaType>, {closure@mtg-engine/src/proofs/kind_map.rs:40:43: 40:51}>> 0
 proofs::kind_map::taken::<types::ManaType, std::iter::Map<std::iter::Zip<std::iter::Map<kind_map::Iter<'_, types::ManaType>, {closure@mtg-engine/src/kind_map.rs:133:25: 133:33}>, std::iter::Map<kind_map::Iter<'_, types::ManaType>, {closure@mtg-engine/src/kind_map.rs:138:25: 138:33}>>, {closure@mtg-engine/src/proofs/kind_map.rs:41:56: 41:64}>> 0
 proofs::mana_payment::any_cost 0
+replacement::apply 0
+replacement::run_entering_pass 0
 state::GameState::all_ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:145:13: 145:16}> 0
 state::GameState::all_ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:151:13: 151:16}> 0
 state::GameState::all_objects_in_zone 0
+state::GameState::continuous_pt_mods 0
+state::GameState::creatures_controlled_snapshot 0
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:101:85: 101:88}> 1
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:107:85: 107:88}> 1
+state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/full_moons_rise.rs:68:75: 68:78}> 1
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/garruk_relentless.rs:169:95: 169:98}> 1
+state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/garruk_relentless.rs:209:82: 209:85}> 1
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/grimoire_of_the_dead.rs:84:62: 84:65}> 1
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/liliana_of_the_veil.rs:138:86: 138:89}> 1
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/liliana_of_the_veil.rs:209:62: 209:65}> 1
@@ -202,6 +230,8 @@ state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/night_terrors.
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/night_terrors.rs:64:79: 64:82}> 1
 state::GameState::objects_in_zone 0
 state::GameState::objects_in_zone 1
+state::GameState::printed_colors_of 0
+state::GameState::walk_effects 1
 std::array::try_from_fn_erased::<std::ops::try_trait::NeverShortCircuit<(i32, (usize, [std::option::Option<ids::ObjectId>; 5]), (usize, [std::option::Option<ids::ObjectId>; 5]))>, &mut std::array::drain::Drain<'_, '_, usize, {closure@std::ops::try_trait::NeverShortCircuit<(i32, (usize, [std::option::Option<ids::ObjectId>; 5]), (usize, [std::option::Option<ids::ObjectId>; 5]))>::wrap_mut_1<usize, {closure@mtg-engine/src/proofs/cards/mod.rs:1320:33: 1320:36}>::{closure#0}}>> 0
 std::array::try_from_fn_erased::<std::ops::try_trait::NeverShortCircuit<bool>, &mut std::array::drain::Drain<'_, '_, (), {closure@std::ops::try_trait::NeverShortCircuit<bool>::wrap_mut_1<(), {closure@<bool as kani::Arbitrary>::any_array<7>::{closure#0}}>::{closure#0}}>> 0
 std::array::try_from_fn_erased::<std::ops::try_trait::NeverShortCircuit<ids::ObjectId>, {closure@std::ops::try_trait::NeverShortCircuit<ids::ObjectId>::wrap_mut_1<usize, {closure@mtg-engine/src/proofs/actions/random.rs:117:54: 117:57}>::{closure#0}}> 0
@@ -250,6 +280,7 @@ std::array::try_from_fn_erased::<std::ops::try_trait::NeverShortCircuit<u32>, &m
 std::ptr::drop_glue::<[cards::ManaAbilityDef]> 0
 std::ptr::drop_glue::<[proofs::cards::Act]> 0
 std::ptr::drop_glue::<[std::string::String]> 0
+std::vec::Vec::<ids::ObjectId>::retain_mut::<{closure@std::vec::Vec<ids::ObjectId>::retain<{closure@mtg-engine/src/state.rs:1739:61: 1739:69}>::{closure#0}}> 0
 triggers::collect::combat::attackers_declared 2
 vec_map::VecMap::<ids::ObjectId, state::GameObject>::find::<ids::ObjectId> 0
 vec_map::VecMap::<ids::ObjectId, state::GameObject>::get::<ids::ObjectId> 0
