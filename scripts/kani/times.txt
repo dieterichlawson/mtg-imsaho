@@ -1971,3 +1971,4 @@ SUCCESSFUL      41s  proofs::engine_under_card::stitched_drake_is_a_three_four_w
 SUCCESSFUL      97s  proofs::engine_under_card::essence_of_the_wild_leaves_their_creature_as_it_is
 SUCCESSFUL     236s  proofs::engine_under_card::essence_of_the_wild_makes_your_creature_enter_as_a_copy
 SUCCESSFUL     195s  proofs::engine_under_card::shimmering_grotto_taps_for_colorless
+SUCCESSFUL      51s  proofs::engine_under_card::sol_ring_taps_for_two_colorless
