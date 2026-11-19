@@ -357,7 +357,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** One engine defect, and eighteen gaps of
+**What it has found so far.** One engine defect, and nineteen gaps of
 the reference, each on a board nobody wrote.
 
 The defect (48 in `formal-verification.md`): two triggers of one ability
@@ -444,7 +444,19 @@ The gaps, in each of which the engine was right:
   in one pile with a creature, to Liliana of the Veil's last ability,
   still makes its Ooze, a 0/0 with the Grime gone, and a Glorious Anthem
   in the other pile keeps it alive (loyalty abilities, one board in
-  sixty of three pieces).
+  sixty of three pieces);
+- a library that has been shuffled is in an order nobody knows (CR
+  701.20a), so what a trigger then mills or draws from it is any card
+  of it. Memory's Journey, cast by flashback, shuffles the one creature
+  card in a graveyard into its owner's library; their Boneyard Wurm
+  dies a 0/0 of that; and a Selhoff Occultist's trigger mills the
+  library. The reference milled the card its own list had first, and
+  the engine, over seeds, each of the six (flashback, one board in 480
+  of three pieces: 1 of 6,668,805 casts). The reference now plays every
+  way the top of a shuffled library can lie for what a resolution takes
+  from it, chosen before anything that depends on the card taken (a
+  card discarded after a draw), and counts endings, as it compares
+  them, without a shuffled library's order.
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -453,16 +465,21 @@ cast check; the opponent's spell held on the stack cast on any creature
 of theirs; the source "exiled in response" played only where the
 ability is alone on the stack.
 
-Two cuts, where the reference does not yet read far enough. A loyalty
-ability that searches a library shuffles it, and what a death trigger of
-the board's then mills or draws is any card of it, which the reference
-does not play; such an ability (Garruk, the Veil-Cursed's sacrifice) is
-not played beside a permanent that triggers on a death. And an ability
+One cut, where the reference does not yet read far enough: an ability
 or a spell that lasts the turn is played on into the next turn only
 where neither its cost nor its resolution set off a trigger: the
 reference plays the source's own text for the turn's end and no other
 permanent's, and what a trigger brings may have some (a Reaper from the
 Abyss returned by a Moldgraf Monstrosity sacrificed).
+
+A second cut is gone. A loyalty ability that searches a library
+shuffles it, and what a death trigger of the board's then mills or
+draws is any card of it; the reference did not play that, and such an
+ability (Garruk, the Veil-Cursed's sacrifice) was kept off any board
+with a death trigger. With the last gap above closed it is played
+there, the engine over seeds: 43,624 more abilities on the boards of
+two pieces, all agreeing, and two such boards in `cargo test`
+(`loyalty_abilities_agree_where_a_search_shuffles_under_a_trigger_that_reads_the_library`).
 
 A check that gives up (the reference meeting what it does not play) no
 longer ends its share: it is reported as that board's failure, by name.
@@ -476,7 +493,7 @@ the family, in 40 shares:
 | werewolves | 3,910,656 | the same |
 | enter watchers | 1,955,328 | the same |
 | cast watchers | 3,910,656 | the same |
-| loyalty abilities | 3,541,144 | the same |
+| loyalty abilities | 3,584,768 | all agree, a search's shuffle now played under a board's death trigger (3,541,144 before that cut was lifted) |
 | upkeeps | 8,921,612 | the same |
 | flashback | 10,376,473 | the same |
 | combat | 94,552, and 1,441,016 on the 2,052,641 boards of two worn pieces | all agree |
@@ -536,9 +553,11 @@ machine's hours allows:
 |---|---|---|
 | end steps | 11,707,160 | all agree |
 | werewolves | 17,560,740 | all agree |
-| loyalty abilities | 15,813,161 | 8 disagreed, one gap of the reference (the last above), the engine right; against it as fixed all agree, and all 3,541,144 on two pieces |
+| loyalty abilities | 15,813,161 | 8 disagreed, one gap of the reference (what watches a death, above), the engine right; against it as fixed all agree, and all on two pieces |
 | upkeeps | 40,720,744 | all agree |
 | a permanent entering beside a watcher | 8,780,370 | all agree |
+| a spell cast beside a watcher of casts | 17,560,740 | all agree |
+| flashback, one board in 480 | 6,668,805 | 1 disagreed, the gap of the shuffled library (the last above), the engine right; against it as fixed all agree |
 
 Whole, on these four cores, end steps on three pieces are about 22
 hours, upkeeps about 85 and the loyalty abilities about 60.

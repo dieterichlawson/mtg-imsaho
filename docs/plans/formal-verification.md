@@ -359,7 +359,7 @@ end step, loyalty ability, transformation, watched entry and cast, and
 combat agrees with its text, and they run in the `proofs` workflow; on
 every board of two pieces, 325,888 of them, 144 million plays, the same;
 and on every board of three pieces, 87.8 million of them, every combat
-(44.8 million). Those boards found eighteen gaps of the reference, in
+(44.8 million). Those boards found nineteen gaps of the reference, in
 each of which the engine was right, and one defect of the engine's (48
 below: two block triggers of one source that name different creatures
 were not their controller's to order), which three creatures is the
