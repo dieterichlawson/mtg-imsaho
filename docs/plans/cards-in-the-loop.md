@@ -357,7 +357,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** One engine defect, and seventeen gaps of
+**What it has found so far.** One engine defect, and eighteen gaps of
 the reference, each on a board nobody wrote.
 
 The defect (48 in `formal-verification.md`): two triggers of one ability
@@ -438,7 +438,13 @@ The gaps, in each of which the engine was right:
   a death sets off between them (CR 603.3b, 704.3): the reference
   resolved them all and then looked for the dead, so that two blockers an
   Ashmouth Hound damaged died together and nothing saw the first die
-  (combat, three pieces; the board of defect 48).
+  (combat, three pieces; the board of defect 48);
+- what watches a death is whatever was on the battlefield as it
+  happened (CR 603.10a), not creatures alone: a Gutter Grime sacrificed
+  in one pile with a creature, to Liliana of the Veil's last ability,
+  still makes its Ooze, a 0/0 with the Grime gone, and a Glorious Anthem
+  in the other pile keeps it alive (loyalty abilities, one board in
+  sixty of three pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -522,6 +528,19 @@ ending instead of one for each order. The fifteen boards that disagreed
 are fought again in `cargo test`
 (`combat_agrees_on_the_three_piece_boards_that_once_did_not`).
 
+**Three pieces, the other checks, sampled.** One board in sixty (share 0
+of 60: 1,463,395 boards of the family), which is what a share of this
+machine's hours allows:
+
+| Check | Plays | Result |
+|---|---|---|
+| end steps | 11,707,160 | all agree |
+| werewolves | 17,560,740 | all agree |
+| loyalty abilities | 15,813,161 | 8 disagreed, one gap of the reference (the last above), the engine right; all 3,541,144 on two pieces agree against it as fixed, and the sample is being run again |
+
+Whole, on these four cores, end steps on three pieces are about 22
+hours and upkeeps about 88.
+
 **Next.** The cuts above; and three pieces for the other checks. Combat
 on three pieces was five hours of this machine. The casts are another
 matter: 88 million boards and about 25 billion casts, some 500 hours on
@@ -559,10 +578,11 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 147
-harnesses over 73 of the 88 spells, every one proved; 4 hours of
+**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 368
+harnesses over 165 cards, every one proved: 147 over 73 of the 88
+spells, and 221 over the hooks of 92 permanents (below); 9 hours of
 solver time in all on this machine while it was busy, the longest 12
-minutes and most about one. By family, each a function of what the text
+minutes and most a minute or two. The spells, By family, each a function of what the text
 says and a row for each card and case:
 
 | Family | Cards | What is asserted of the board afterwards |
@@ -614,14 +634,62 @@ Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling Counterpart
 (a copy needs a printed creature to copy) and Army of the Damned
 (thirteen tokens).
 
-**Permanents, begun.** Fifteen harnesses over nine of the fifteen enters
-triggers, all proved (30 s to 7 minutes): Armored Skaab's mill for each
-player and library, Claustrophobia's tap, Crossway Vampire's "can't
-block", Geist-Honored Monk's Spirits, Hollowhenge Scavenger and Morkrut
-Banshee with and without morbid, and the two that ask, Slayer of the
-Wicked and Geistcatcher's Rig, as Tribute to Hunger above. Left of some
-200 overrides: 53 activated abilities, 23 upkeeps, six enters, 20
-deaths watched or own, the combat triggers.
+**Permanents.** 221 harnesses over 92 cards, each the card's own hook as
+its trigger or ability resolves, for a source still on the battlefield
+and, where the text does not need it there, for one gone from it by
+then (a counter then lands nowhere, CR 121.1; a drain, a draw, a token
+or damage happens all the same, for the player who last controlled it,
+608.2h):
+
+| What sets it off | Cards |
+|---|---|
+| entering | Armored Skaab, Claustrophobia, Crossway Vampire, Geist-Honored Monk, Hollowhenge Scavenger, Morkrut Banshee, Village Bell-Ringer; Slayer of the Wicked and Geistcatcher's Rig ask |
+| a death, its own or one it watches | Doomed Traveler, Mausoleum Guard, Elder Cathar, Pitchburn Devils, Rage Thrower, Falkenrath Noble, Selhoff Occultist, Abattoir Ghoul, Galvanic Juggernaut, Gutter Grime, Lumberknot, Unruly Mob, Village Cannibals; Thraben Sentry and Murder of Crows ask |
+| combat damage | Bloodcrazed Neonate, Falkenrath Marauders, Stromkirk Noble, Stromkirk Patrol, Rakish Heir, Curse of Stalked Prey, Sturmgeist; Curiosity asks |
+| an upkeep | the twelve Werewolves, each face; Splinterfright, Curse of the Bloody Tome, Bloodgift Demon, Angel of Flight Alabaster, Curse of the Pierced Heart and its question, Endless Ranks of the Dead; Cloistered Youth asks |
+| an end step, a spell cast, a creature entering, a card milled | Unholy Fiend, Howlpack Alpha (gone), Reaper from the Abyss; Charmbreaker Devils; Champion of the Parish; Undead Alchemist |
+| an attack or a block | Ashmouth Hound, Wooden Stake, Hamlet Captain, Grimgrin, Kessig Cagebreakers (with nothing to count) |
+| equip | the eleven Equipment, each read back through the layers, at a Human where the text says more of one |
+| an activated ability that asks nothing | Darkthicket Wolf, Feral Ridgewolf, Kessig Wolf, Avacynian Priest, Bloodline Keeper (both), Skirsdag High Priest, Nephalia Drownyard, Ghoulcaller's Bell, Stensia Bloodhall, Lantern Spirit, Elder of Laurels, Gavony Township, Manor Skeleton, Ulvenwald Primordials, Manor Gargoyle, Mikaeus (both), Selfless Cathar, Silverchase Fox, Skirsdag Cultist, Daybreak Ranger's damage, Kessig Wolf Run, Disciple of Griselbrand, Tree of Redemption, Deranged Assistant, Cellar Door, Ludevic's Test Subject, Full Moon's Rise, Grimgrin, Moorland Haunt, Evil Twin |
+
+Five more things that put a harness out of reach, each measured:
+
+- A zone change for an owner the solver leaves open is a graveyard it
+  leaves open (4 GB): a source that has left is one player's card under
+  either player.
+- A value the solver can prove constant is not one symbolic execution
+  has folded. A Werewolf's face, just written by the transform, read by
+  the layers: the hook alone proves in a minute, the read alone in a
+  minute, the read after the hook ran out of memory at 7 GB. The harness
+  asserts the face and writes it back as that constant, which changes
+  nothing on any run the assertion allows, and proves in 90 seconds.
+- A filter read back from a card's printed effects is one the solver
+  matches as every filter there is (`proofs::actions::filters` says so
+  of the engine's own). Instigator Gang's "attacking creatures you
+  control" ran out of memory at 5 GB with nothing open and no trigger
+  run: its harnesses assert the transform and leave the power unread,
+  and that filter is now proved of `matches_filter` beside the five that
+  were. Howlpack Alpha's Wolf is proved with the Alpha gone, and not
+  beside it.
+- Five permanents on the battlefield: a list the engine collects them
+  into outgrows its first allocation, which a proof here counts a
+  failure. Endless Ranks of the Dead is proved on boards of four.
+- A token put onto the battlefield attacking (Geist of Saint Traft's
+  Angel, Kessig Cagebreakers' Wolves): out of memory at 7 GB. The
+  engine's own proofs take it in two halves.
+
+Not yet, of permanents: those just named; the hooks that choose at
+random or flip a coin (Ghoulraiser, Woodland Sleuth, Moldgraf
+Monstrosity, Charmbreaker Devils' upkeep, Creepy Doll, Mirror-Mad
+Phantasm); those that search, pay or pick a card (Bitterheart Witch,
+Mentor of the Meek, Screeching Bat, Delver of Secrets, Curse of
+Oblivion, Traveler's Amulet, Ghost Quarter, Graveyard Shovel, Brain
+Weevil, Civilized Scholar, Stitcher's Apprentice, Back from the Brink,
+Grimoire of the Dead); Fiend Hunter, Nevermore, Snapcaster Mage,
+Witchbane Orb, Balefire Dragon, Burning Vengeance, Trepanation Blade's
+trigger, Blazing Torch's sacrifice, Heretic's Punishment, Mindshrieker,
+Olivia Voldaren, Daybreak Ranger's fight, Skeletal Grimace; and the two
+planeswalkers.
 
 These harnesses are also the first proofs of the engine's actions
 composed with nothing stood in for: `try_destroy` over the real

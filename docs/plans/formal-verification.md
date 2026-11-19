@@ -357,14 +357,18 @@ size rather than boards written for each test: on every board of one
 piece, 2,032 of them, every cast, activated ability, flashback, upkeep,
 end step, loyalty ability, transformation, watched entry and cast, and
 combat agrees with its text, and they run in the `proofs` workflow; on
-every board of two pieces, 325,888 of them, 144 million plays, the same:
-those boards found thirteen gaps of the reference, in each of which the
-engine was right, and every check was run again whole once the last was
-closed.
+every board of two pieces, 325,888 of them, 144 million plays, the same;
+and on every board of three pieces, 87.8 million of them, every combat
+(44.8 million). Those boards found eighteen gaps of the reference, in
+each of which the engine was right, and one defect of the engine's (48
+below: two block triggers of one source that name different creatures
+were not their controller's to order), which three creatures is the
+least board to show. Every check a fix touched was run again whole.
 And Kani runs a card's own hook with the engine's own actions
 under it, the board's numbers left open
-(`proofs/engine_under_card.rs`: 147 harnesses over 73 spells so far,
-each about a minute); the spell's trip through the stack does not fit in
+(`proofs/engine_under_card.rs`: 368 harnesses over 165 cards, 73 of the
+88 spells and the hooks of 92 permanents, each a minute or two); the
+spell's trip through the stack does not fit in
 CBMC with the engine under it, and stays the engine's own proof. The 285
 card harnesses kept from before are of what a card declares and of what
 its own code writes to the state, each of which the engine's own proofs
@@ -1220,12 +1224,16 @@ changes, damage, drawing, milling, token making, attachment, countering,
 control change, fight and continuous effects run under it, and what is
 asserted is the board afterwards, read back through the engine's own
 characteristics, against the card's text. Only `format!`, the log and
-allocator growth and freeing are taken out. 147 harnesses over 73 of
-the 88 spells, each proved, 25 s to 12 minutes and mostly about one;
+allocator growth and freeing are taken out. 368 harnesses over 165
+cards, each proved, 25 s to 12 minutes and mostly a minute or two: 147
+over 73 of the 88 spells, and 221 over the hooks of 92 permanents
+(enters, death, combat-damage, upkeep, end-step, attack and block
+triggers, Equipment, and the activated abilities that ask nothing).
 `docs/plans/cards-in-the-loop.md`, B2, has what each family is, what
 keeps a harness in reach (a fixed player where a card reaches a library
-or a hand, a fixed amount of damage, lists of fixed length) and the
-spells not yet done.
+or a hand, a fixed amount of damage, lists of fixed length, a value just
+written put back as the constant it was asserted to be) and what is not
+yet done.
 
 What `mtg-engine/src/proofs/cards/` holds now, 285 harnesses over 21
 modules (the 275 kept, and ten of each Equipment's own check of its equip
