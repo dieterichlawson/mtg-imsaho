@@ -359,8 +359,8 @@ end step, loyalty ability, transformation, watched entry and cast, and
 combat agrees with its text, and they run in the `proofs` workflow; on
 every board of two pieces, 325,888 of them, some 150 million plays, the
 same but for thirteen gaps of the reference those boards found and
-closed, in each of which the engine was right (the casts and activated
-abilities are being run again against the reference as it now stands).
+closed, in each of which the engine was right (the casts are being run
+again against the reference as it now stands).
 And Kani runs a card's own hook with the engine's own actions
 under it, the board's numbers left open
 (`proofs/engine_under_card.rs`: 144 harnesses over 71 spells so far,

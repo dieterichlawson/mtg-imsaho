@@ -441,7 +441,7 @@ the family, in 40 shares:
 | upkeeps | 8,921,612 | the same |
 | flashback | 10,376,473 | the same |
 | combat | 94,552, and 1,441,016 on the 2,052,641 boards of two worn pieces | all agree |
-| activated abilities | 17,923,000 or so | all 40 shares agree once three gaps above were closed; being run again whole against the reference as it now stands |
+| activated abilities | 17,923,840 | the same, once three gaps above were closed |
 | casts | 91,095,375 | one disagreement, a gap above; that share agrees now, and the rest are to be run again against the reference as it now stands |
 
 Combat is cheap enough that `prove.sh exhaustive` plays it on every
