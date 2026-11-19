@@ -1289,14 +1289,19 @@ fn morkrut_banshee(died: bool) {
 /// effect, applied by the engine at the target (`tribute_to_hunger` says
 /// why not through the answer's dispatcher), leaves the board as
 /// `after` says. What it returns is the board for `after` to be asked of.
-fn may_do_to_its_target(card: Box<dyn CardBehavior>, what: Permanent, holds: &dyn Fn(&crate::state::PendingEffect, ObjectId) -> bool,
-    effect: &dyn Fn(ObjectId) -> crate::state::PendingEffect) -> (crate::cards::CardRegistry, GameState, ObjectId, (bool, u32, PlayerId))
+/// `holds` and `effect` are given the trigger's source and its card's
+/// printed name, which an effect may carry for the log: read from the
+/// registry, not spelled here, where the engine names no card
+/// (`tests/engine_knows_no_cards.rs`).
+fn may_do_to_its_target(card: Box<dyn CardBehavior>, what: Permanent, holds: &dyn Fn(&crate::state::PendingEffect, ObjectId, &str) -> bool,
+    effect: &dyn Fn(ObjectId, &str) -> crate::state::PendingEffect) -> (crate::cards::CardRegistry, GameState, ObjectId, (bool, u32, PlayerId))
 {
     use crate::state::{AwaitingAction, ResolutionChoiceKind};
     let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
     let target = a_permanent(&mut state, blank, what);
     let you = PlayerId(0);
     let source = a_source(&mut state, card, you);
+    let name = registry.printed_name(card, false).expect("its face").to_string();
     let before = state.get_object(target).expect("just created");
     let was = (before.tapped, before.damage_marked, before.controller);
 
@@ -1306,14 +1311,14 @@ fn may_do_to_its_target(card: Box<dyn CardBehavior>, what: Permanent, holds: &dy
         Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
             assert!(*player == you && *optional);
             assert!(options.len() == 1 && options[0] == Target::Object(target));
-            assert!(holds(effect, source));
+            assert!(holds(effect, source, &name));
         }
         _ => panic!("its controller is asked whether to"),
     }
     crate::proofs::cards::clear_prompt(&mut state);
-    let effect = effect(source);
+    let effect = effect(source, &name);
     crate::engine::apply_pending_effect(&mut state, &Target::Object(target), &effect, &registry);
-    std::mem::forget(effect);
+    std::mem::forget((effect, name));
     (registry, state, target, was)
 }
 
@@ -1325,8 +1330,8 @@ fn may_do_to_its_target(card: Box<dyn CardBehavior>, what: Permanent, holds: &dy
 fn slayer_of_the_wicked(_: ()) {
     use crate::state::PendingEffect;
     let (registry, state, target, _) = may_do_to_its_target(Box::new(crate::cards::isd::slayer_of_the_wicked::SlayerOfTheWicked), Permanent::Creature,
-        &|effect, _| matches!(effect, PendingEffect::Destroy { source_name } if source_name == "Slayer of the Wicked"),
-        &|_| PendingEffect::Destroy { source_name: "Slayer of the Wicked".to_string() });
+        &|effect, _, name| matches!(effect, PendingEffect::Destroy { source_name } if source_name == name),
+        &|_, name| PendingEffect::Destroy { source_name: name.to_string() });
     let o = state.get_object(target).expect("still an object");
     assert!(o.zone == Zone::Graveyard && o.controller == PlayerId(1));
     std::mem::forget((registry, state));
@@ -1340,8 +1345,8 @@ fn slayer_of_the_wicked(_: ()) {
 fn geistcatchers_rig(_: ()) {
     use crate::state::PendingEffect;
     let (registry, state, target, (tapped, damage, controller)) = may_do_to_its_target(Box::new(crate::cards::isd::geistcatchers_rig::GeistcatchersRig), Permanent::Creature,
-        &|effect, source| matches!(effect, PendingEffect::DealDamage { amount: 4, source_id } if *source_id == source),
-        &|source| PendingEffect::DealDamage { amount: 4, source_id: source });
+        &|effect, source, _| matches!(effect, PendingEffect::DealDamage { amount: 4, source_id } if *source_id == source),
+        &|source, _| PendingEffect::DealDamage { amount: 4, source_id: source });
     let o = state.get_object(target).expect("still an object");
     assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + 4 && o.tapped == tapped && o.controller == controller);
     std::mem::forget((registry, state));
