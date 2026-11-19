@@ -9895,6 +9895,54 @@ fn every_combat_ends_as_the_rules_say_on_every_small_board() {
     });
 }
 
+/// The boards of three pieces on which the reference once disagreed with
+/// the engine about a combat, each built by name and fought every way
+/// ([`check_combat_on`]). What a damage step sets off goes on the stack
+/// together, the active player's first and each player's as they order
+/// them (CR 603.3b, 101.4); a trigger whose every target is gone by then
+/// does nothing (608.2b); and a token one trigger made is there for the
+/// next (`docs/plans/cards-in-the-loop.md`, the gaps found by combat on
+/// three pieces). Two attackers and a blocker is the least board that
+/// shows any of it, and those are otherwise reached only with
+/// `CARD_SEMANTICS_SMALL=3`.
+#[test]
+fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let vocabulary = board_vocabulary(&cards);
+    let mut pool: Vec<&str> = registry.all_names().into_iter().filter(|n| cache.contains_key(*n)).collect();
+    pool.sort_unstable();
+    let boards: [[(&str, PlayerId); 3]; 14] = [
+        [("Stromkirk Patrol", P0), ("Typhoid Rats", P0), ("Pitchburn Devils", P1)],
+        [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Gallows Warden", P1)],
+        [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Skaab Goliath", P1)],
+        [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Skaab Ruinator", P1)],
+        [("Falkenrath Marauders", P0), ("Scourge of Geier Reach", P0), ("Pitchburn Devils", P1)],
+        [("Goblin Piker", P0), ("Sturmgeist", P0), ("Selhoff Occultist", P1)],
+        [("Hollowhenge Scavenger", P0), ("Sturmgeist", P0), ("Selhoff Occultist", P1)],
+        [("Pitchburn Devils", P0), ("Stromkirk Patrol", P0), ("Morkrut Banshee", P1)],
+        [("Balefire Dragon", P0), ("Stitcher's Apprentice", P0), ("Doomed Traveler", P1)],
+        [("Balefire Dragon", P0), ("Feral Ridgewolf", P0), ("Doomed Traveler", P1)],
+        [("Balefire Dragon", P0), ("Morkrut Banshee", P0), ("Mausoleum Guard", P1)],
+        [("Balefire Dragon", P0), ("Pitchburn Devils", P0), ("Makeshift Mauler", P1)],
+        [("Selhoff Occultist", P0), ("Sturmgeist", P0), ("Kalonian Tusker", P1)],
+        [("Skaab Goliath", P0), ("Creepy Doll", P1), ("Selhoff Occultist", P1)],
+    ];
+    let (mut failures, mut combats) = (Vec::new(), 0);
+    for board in boards {
+        let on: Vec<Piece> = board.iter().map(|(name, side)| {
+            let card = vocabulary.iter().position(|(printed, _)| printed.name == *name)
+                .unwrap_or_else(|| panic!("{name} is a permanent of the boards' vocabulary"));
+            Piece::Permanent { card, side: *side, wear: 0 }
+        }).collect();
+        let made = small_board(&on, &registry, &cache, &vocabulary, &pool, false).expect("a board of the family");
+        check_combat_on(&format!(" on {board:?}"), made, &registry, &mut failures, &mut combats);
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats on the boards that once disagreed do again:\n  {}", failures.len(), failures.join("\n  "));
+}
+
 /// One activated ability of `card`, placed on one board under P0: the
 /// engine offers it at exactly the targets and sacrifices its text allows
 /// there, and activated at each (its costs paid, CR 602.2) and resolved it
