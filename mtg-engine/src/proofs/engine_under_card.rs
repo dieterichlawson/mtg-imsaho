@@ -5488,6 +5488,17 @@ fn printed_creature(state: &mut GameState, registry: &crate::cards::CardRegistry
 /// Summoning's -1/-1) under the first player: their 2/2 creature reads
 /// that much more through the engine's layers (CR 613.4c), and the other
 /// player's 2/2 reads 2/2.
+///
+/// A filter of one question fits ("you control", "a token you
+/// control"). One the card builds of several does not, read back from
+/// the card: Battleground Geist's and Gallows Warden's "other Spirit
+/// creatures you control" and One-Eyed Scarecrow's "creatures with
+/// flying your opponents control" each ran out of memory at 7 GB in
+/// symbolic execution, on a board of the card and one creature with
+/// nothing open. Those three have no harness here: what each filter
+/// matches is proved of the engine with the filter built where it is
+/// matched (`proofs::actions::filters`), and that the card prints that
+/// filter and that change is its declared harness (`proofs::cards`).
 fn your_creatures_get((card, by): (Box<dyn CardBehavior>, i32)) {
     let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
     let yours = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
@@ -5496,28 +5507,6 @@ fn your_creatures_get((card, by): (Box<dyn CardBehavior>, i32)) {
 
     assert!(state.effective_power(yours, &registry) == Some(2 + by) && state.effective_toughness(yours, &registry) == Some(2 + by));
     assert!(state.effective_power(theirs, &registry) == Some(2) && state.effective_toughness(theirs, &registry) == Some(2));
-    std::mem::forget((registry, state));
-}
-
-/// "Other Spirit creatures you control get +P/+T." (Battleground Geist,
-/// Gallows Warden) under the first player: their other Spirit, a 2/2,
-/// reads that much more (CR 613.4c), and the card itself reads what it
-/// prints, "other" leaving it out; or, `theirs`, the other player's
-/// Spirit reads 2/2. A board of the two, nothing about it open: with
-/// two more creatures on it, and each tapped or not and damaged or
-/// not, the filter the engine reads back from the card ran out of
-/// memory at 7 GB in symbolic execution.
-fn other_spirits_get((card, (p, t), theirs): (Box<dyn CardBehavior>, (i32, i32), bool)) {
-    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
-    let whose = PlayerId(u8::from(theirs));
-    let spirit = a_creature_of(&mut state, blank, whose, whose);
-    state.get_object_mut(spirit).expect("just created").subtypes = vec!["Spirit".to_string()];
-    let lord = printed_creature(&mut state, &registry, card, PlayerId(0));
-
-    let (p, t) = if theirs { (0, 0) } else { (p, t) };
-    assert!(state.effective_power(spirit, &registry) == Some(2 + p) && state.effective_toughness(spirit, &registry) == Some(2 + t));
-    let printed = registry.printed_pt(card, false).expect("its face");
-    assert!(state.effective_power(lord, &registry) == printed.0 && state.effective_toughness(lord, &registry) == printed.1);
     std::mem::forget((registry, state));
 }
 
@@ -5610,27 +5599,6 @@ fn intangible_virtue(_: ()) {
     std::mem::forget((registry, state));
 }
 
-/// One-Eyed Scarecrow ("Defender. Creatures with flying your opponents
-/// control get -1/-0.") under the first player beside a Chapel Geist, a
-/// 2/3 with flying, the other player's or (`yours`) its controller's:
-/// the other player's reads 1/3 (CR 613.4c) and its controller's own
-/// 2/3; and the Scarecrow has defender. A creature flies by what its
-/// card prints: a keyword written onto a permanent of a card that
-/// prints none is not read by the engine (`GameState::scan_keywords`
-/// says why), and a harness that gave a blank creature flying that way
-/// and claimed it could block an Orchard Spirit failed, as it should.
-fn one_eyed_scarecrow(yours: bool) {
-    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::one_eyed_scarecrow::OneEyedScarecrow));
-    let geist = registry.register(Box::new(crate::cards::isd::chapel_geist::ChapelGeist));
-    let flier = printed_creature(&mut state, &registry, geist, PlayerId(u8::from(!yours)));
-    let scarecrow = printed_creature(&mut state, &registry, card, PlayerId(0));
-
-    assert!(state.has_keyword(flier, Keyword::Flying, &registry));
-    assert!(state.effective_power(flier, &registry) == Some(if yours { 2 } else { 1 }) && state.effective_toughness(flier, &registry) == Some(3));
-    assert!(state.has_keyword(scarecrow, Keyword::Defender, &registry));
-    std::mem::forget((registry, state));
-}
-
 /// A creature's printed keywords, as the engine reads them off the
 /// permanent (CR 702): each of `has`, and none of `lacks`.
 fn has_keywords((card, has, lacks): (Box<dyn CardBehavior>, &[Keyword], &[Keyword])) {
@@ -5665,6 +5633,11 @@ fn vampire_interloper(_: ()) {
 /// with: the engine says a creature with neither cannot block it, and a
 /// creature that prints flying (Chapel Geist) or reach (Somberwald
 /// Spider) can exactly where the text makes the exception (CR 509.1b).
+/// A creature flies by what its card prints: a keyword written onto a
+/// permanent of a card that prints none is not read by the engine
+/// (`GameState::scan_keywords` says why), and this harness, when it
+/// gave a blank creature flying that way and claimed it could block an
+/// Orchard Spirit, failed as it should.
 fn evades((card, except): (Box<dyn CardBehavior>, bool)) {
     let (mut registry, mut state, blank, card) = crate::proofs::cards::board(card);
     let geist = registry.register(Box::new(crate::cards::isd::chapel_geist::ChapelGeist));
@@ -6492,10 +6465,6 @@ engine_under_card! {
 engine_under_card! {
     glorious_anthem_gives_your_creatures_one_and_one: your_creatures_get((Box::new(crate::cards::glorious_anthem::GloriousAnthem), 1));
     heartless_summoning_takes_one_and_one_from_your_creatures: your_creatures_get((Box::new(crate::cards::isd::heartless_summoning::HeartlessSummoning), -1));
-    battleground_geist_gives_your_other_spirit_a_power: other_spirits_get((Box::new(crate::cards::isd::battleground_geist::BattlegroundGeist), (1, 0), false));
-    battleground_geist_gives_their_spirit_nothing: other_spirits_get((Box::new(crate::cards::isd::battleground_geist::BattlegroundGeist), (1, 0), true));
-    gallows_warden_gives_your_other_spirit_a_toughness: other_spirits_get((Box::new(crate::cards::isd::gallows_warden::GallowsWarden), (0, 1), false));
-    gallows_warden_gives_their_spirit_nothing: other_spirits_get((Box::new(crate::cards::isd::gallows_warden::GallowsWarden), (0, 1), true));
     boneyard_wurm_with_no_creature_card_is_nothing_by_nothing: boneyard_wurm(0);
     boneyard_wurm_with_two_creature_cards_is_two_by_two: boneyard_wurm(2);
     scourge_of_geier_reach_alone_is_as_printed: scourge_of_geier_reach(0);
@@ -6505,8 +6474,6 @@ engine_under_card! {
     night_revelers_beside_their_human_has_haste: night_revelers(true);
     night_revelers_beside_your_human_has_none: night_revelers(false);
     intangible_virtue_gives_your_tokens_one_and_one_and_vigilance: intangible_virtue(());
-    one_eyed_scarecrow_takes_a_power_from_their_flier: one_eyed_scarecrow(false);
-    one_eyed_scarecrow_takes_nothing_from_your_flier: one_eyed_scarecrow(true);
     elite_inquisitor_has_first_strike_and_vigilance: has_keywords((Box::new(crate::cards::isd::elite_inquisitor::EliteInquisitor), &[Keyword::FirstStrike, Keyword::Vigilance], &[Keyword::Flying, Keyword::Hexproof]));
     invisible_stalker_has_hexproof: has_keywords((Box::new(crate::cards::isd::invisible_stalker::InvisibleStalker), &[Keyword::Hexproof], &[Keyword::Flying]));
     grave_bramble_has_defender: has_keywords((Box::new(crate::cards::isd::grave_bramble::GraveBramble), &[Keyword::Defender], &[Keyword::Reach]));

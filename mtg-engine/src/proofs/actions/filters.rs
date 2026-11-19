@@ -2,8 +2,11 @@
 //! in the pool prints (CR 205.3, 205.4, 702): Stromkirk Noble's "can't be
 //! blocked by Humans", Blazing Torch's "by Vampires or Zombies", Orchard
 //! Spirit's "except by creatures with flying or reach", Spare from Evil's
-//! "non-Human creatures", Moonmist's "Werewolves and Wolves" and
-//! Instigator Gang's "attacking creatures you control". Each
+//! "non-Human creatures", Moonmist's "Werewolves and Wolves",
+//! Instigator Gang's "attacking creatures you control", Battleground
+//! Geist's and Gallows Warden's "Spirit creatures you control" and
+//! One-Eyed Scarecrow's "creatures with flying your opponents control".
+//! Each
 //! filter is its own Boolean combination of the questions it asks of the
 //! object, and these show that `matches_filter` answers exactly that
 //! combination.
@@ -33,6 +36,7 @@ enum Asked {
     Zombie,
     Wolf,
     Werewolf,
+    Spirit,
     Creature,
     Flying,
     Reach,
@@ -58,6 +62,7 @@ fn has_subtype(_: &GameState, _: ObjectId, subtype: &str, _: &CardRegistry) -> b
         "Zombie" => answer(Asked::Zombie),
         "Wolf" => answer(Asked::Wolf),
         "Werewolf" => answer(Asked::Werewolf),
+        "Spirit" => answer(Asked::Spirit),
         _ => panic!("a subtype no filter here names"),
     }
 }
@@ -157,6 +162,30 @@ each_filter! {
         combat.attackers.insert(if attacking { id } else { other }, PlayerId(0));
         state.combat = Some(combat);
         assert!(state.matches_filter(id, &f, id, source_controller, &registry) == (controller == source_controller && attacking));
+        std::mem::forget((registry, state, f));
+    }
+    // Battleground Geist's and Gallows Warden's: a Spirit of the player
+    // who controls the source (CR 108.4), for a creature and a source of
+    // either player's. "Other" is the effect's scope and not the
+    // filter's (`scopes`).
+    yours_and_a_spirit_matches_exactly_a_spirit_you_control: {
+        let f = F::And(vec![F::ControlledByYou, F::HasSubtype("Spirit".into())]);
+        let (registry, mut state, blank) = blank_board();
+        let controller = PlayerId(u8::from(kani::any::<bool>()));
+        let id = state.create_object(blank, controller, Zone::Battlefield, Some(1), Some(1));
+        let source_controller = PlayerId(u8::from(kani::any::<bool>()));
+        assert!(state.matches_filter(id, &f, id, source_controller, &registry) == (controller == source_controller && answer(Asked::Spirit)));
+        std::mem::forget((registry, state, f));
+    }
+    // One-Eyed Scarecrow's: a creature with flying that an opponent of
+    // the player who controls the source controls.
+    an_opponents_and_flying_matches_exactly_a_flier_an_opponent_controls: {
+        let f = F::And(vec![F::ControlledByOpponent, F::HasKeyword(Keyword::Flying)]);
+        let (registry, mut state, blank) = blank_board();
+        let controller = PlayerId(u8::from(kani::any::<bool>()));
+        let id = state.create_object(blank, controller, Zone::Battlefield, Some(1), Some(1));
+        let source_controller = PlayerId(u8::from(kani::any::<bool>()));
+        assert!(state.matches_filter(id, &f, id, source_controller, &registry) == (controller != source_controller && answer(Asked::Flying)));
         std::mem::forget((registry, state, f));
     }
 }

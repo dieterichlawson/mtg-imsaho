@@ -1902,3 +1902,5 @@ SUCCESSFUL      37s  proofs::engine_under_card::laboratory_maniac_leaves_the_oth
 SUCCESSFUL      80s  proofs::engine_under_card::laboratory_maniac_wins_for_its_controller_drawing_from_an_empty_library
 SUCCESSFUL      49s  proofs::engine_under_card::laboratory_maniac_leaves_a_draw_from_a_library_with_a_card_alone
 SUCCESSFUL     129s  proofs::engine_under_card::avacyns_pilgrim_taps_for_white
+SUCCESSFUL     155s  proofs::engine_under_card::invisible_stalker_is_blocked_by_nothing
+SUCCESSFUL     181s  proofs::engine_under_card::orchard_spirit_is_blocked_only_by_flying_or_reach
