@@ -703,6 +703,80 @@ fn simultaneous_triggers_are_ordered_by_their_controller() {
         "two Abattoir Ghoul triggers, 5 life each");
 }
 
+/// CR 603.3b for two triggers of one ability of one source. Ashmouth Hound
+/// blocked by two creatures triggers once for each (its ruling of
+/// 2011-09-22), and each trigger names the creature it damages: the same
+/// source and the same ability, and not interchangeable, because the order
+/// is which blocker dies first and something may be watching. Blocked by an
+/// Unruly Mob and a Voiceless Spirit: with the Spirit dealt its 1 damage
+/// first it dies, the Mob (the other player's, so above the Hound's second
+/// trigger) gets its counter and is a 2/2 when its own 1 damage arrives, and
+/// then trades with the Hound in combat; with the Mob first both blockers
+/// die and the Hound lives. The engine took such a pair front-first without
+/// asking, as it rightly takes two Thraben Sentry triggers, and so played
+/// only the first of those two games (defect 48; found by combat on every
+/// board of three pieces, `tests/card_semantics.rs`).
+#[test]
+fn two_block_triggers_of_one_source_are_ordered_by_their_controller() {
+    for spirit_first in [true, false] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let hound = named_permanent(&mut state, &reg, "Ashmouth Hound", P0);
+        let mob = named_permanent(&mut state, &reg, "Unruly Mob", P1);
+        let spirit = named_permanent(&mut state, &reg, "Voiceless Spirit", P1);
+
+        // The game's own loop, a player at each decision: the Hound
+        // attacks, both creatures block it, and every pass after that, each
+        // shown here so that the game can be stopped as the combat ends.
+        state.observe_every_submit = true;
+        let mut asked_the_order = None;
+        engine::run_game_loop(&mut state, &reg, |s: &mtg_engine::state::GameState, _acting: PlayerId, legal: &engine::LegalActions| {
+            if s.step == Step::EndCombat || s.turn_number != 1 {
+                return Action::AbandonGame;
+            }
+            match &legal.combat_prompt {
+                Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { .. }) =>
+                    return Action::DeclareAttackers { attackers: vec![(hound, P1)], planeswalker_attacks: vec![] },
+                Some(mtg_engine::actions::CombatPrompt::ChooseBlockers { .. }) =>
+                    return Action::DeclareBlockers { assignments: vec![(mob, hound), (spirit, hound)] },
+                None => {}
+            }
+            match (&legal.resolution_prompt, &s.awaiting_action) {
+                // The damage assignment order (CR 509.2), the blockers as
+                // they are offered: it is not what this test is about.
+                (Some(ResolutionChoiceKind::ChooseDamageAssignmentOrder { options, .. }), _) =>
+                    Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, options[0].clone()) },
+                (Some(ResolutionChoiceKind::ChooseTriggerOrder { options, .. }), Some(AwaitingAction::ResolutionChoice { player, .. })) => {
+                    assert_eq!(*player, P0, "the Hound's controller orders its triggers");
+                    assert_eq!(options.len(), 2, "one trigger for each blocker: {options:?}");
+                    assert_ne!(options[0], options[1], "the two triggers must be tellable apart");
+                    // Each names the creature it is about; the first put on
+                    // the stack resolves last.
+                    let about = |name: &str| options.iter().position(|o| o.contains(name))
+                        .unwrap_or_else(|| panic!("an option names {name}: {options:?}"));
+                    let last = if spirit_first { about("Unruly Mob") } else { about("Voiceless Spirit") };
+                    asked_the_order = Some(options.clone());
+                    Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(last, options[last].clone()) }
+                }
+                (Some(other), _) => panic!("nothing else is asked: {other:?}"),
+                (None, _) => Action::PassPriority,
+            }
+        });
+        assert!(asked_the_order.is_some(), "the Hound's controller was asked the order of its two triggers (CR 603.3b)");
+        assert_eq!(state.step, Step::EndCombat, "the combat was played out");
+
+        let zone = |id| state.get_object(id).expect("still an object").zone;
+        assert_eq!(zone(spirit), Zone::Graveyard, "the Spirit dies of its 1 damage either way");
+        assert_eq!(zone(mob), Zone::Graveyard, "the Mob dies either way: of the trigger, or of combat damage");
+        if spirit_first {
+            assert_eq!(zone(hound), Zone::Graveyard,
+                "the Mob, a 2/2 for the Spirit's death, lived to deal its damage to the Hound");
+        } else {
+            assert_eq!(zone(hound), Zone::Battlefield, "with both blockers dead before damage the Hound is dealt none");
+        }
+    }
+}
+
 /// Bug Q (`audits/AUDIT_BUGS.md)`: Dearly Departed's "each Human
 /// creature you control enters with an additional +1/+1 counter" is
 /// implemented as a `TriggerKind::AnyCreatureEnters` triggered

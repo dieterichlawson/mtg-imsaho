@@ -49,14 +49,16 @@ fn no_words(_: &GameState, _: &CardRegistry, _: &[PendingTrigger], indices: &[us
 /// source (0 and 1 the active player's, objects 1 and 2; 2 the other's,
 /// 3), all ordered already if `ordered`, and of abilities told apart by
 /// their descriptions if `described` (the first trigger's `c`, the
-/// second's `d`), or all of one undescribed ability.
+/// second's `d`), or all of one undescribed ability. Each trigger is an
+/// upkeep's, or, if `blocked`, its source's "becomes blocked by a
+/// creature", the kth trigger's blocker the kth other permanent.
 ///
 /// A slice of sources walked with a plain loop, not a table of optional
 /// rows walked with `flatten`: Kani follows a `Flatten` it is asked for
 /// the next item of through every round its loop is unwound to, and
 /// building the queues from the table so was most of what each proof of
 /// them cost (655,000 steps, and out of memory at 3 GB; 226,000 so).
-fn queues(sources: &[usize], ordered: bool, described: bool) -> (CardRegistry, GameState, [ObjectId; 3]) {
+fn queues(sources: &[usize], ordered: bool, described: bool, blocked: bool) -> (CardRegistry, GameState, [ObjectId; 3]) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut state = crate::proofs::cards::new_game();
@@ -74,7 +76,8 @@ fn queues(sources: &[usize], ordered: bool, described: bool) -> (CardRegistry, G
             (true, 0) => "c".into(),
             (true, _) => "d".into(),
         };
-        c.emit(ids[source], blank, controller, description, TriggerEvent::Upkeep);
+        let event = if blocked { TriggerEvent::BecomesBlocked { blocker_id: ids[1 + k] } } else { TriggerEvent::Upkeep };
+        c.emit(ids[source], blank, controller, description, event);
     }
     for t in c.ap.iter_mut().chain(c.nap.iter_mut()) {
         t.ordered = ordered;
@@ -91,25 +94,30 @@ fn queues(sources: &[usize], ordered: bool, described: bool) -> (CardRegistry, G
 /// different sources; 1, two of one source and one ability; 2, one of the
 /// active player's and one of the other's; 3, two of the active player's
 /// already ordered; 4, the other player's two of different abilities of
-/// one source, with nothing of the active player's.
+/// one source, with nothing of the active player's; 5, the active
+/// player's two of one source and one ability, each for a different
+/// creature that blocked it.
 fn case(k: usize) -> (CardRegistry, GameState, [ObjectId; 3]) {
     match k {
-        0 => queues(&[0, 1], false, false),
-        1 => queues(&[0, 0], false, false),
-        2 => queues(&[0, 2], false, false),
-        3 => queues(&[1, 0], true, false),
-        _ => queues(&[2, 2], false, true),
+        0 => queues(&[0, 1], false, false, false),
+        1 => queues(&[0, 0], false, false, false),
+        2 => queues(&[0, 2], false, false, false),
+        3 => queues(&[1, 0], true, false, false),
+        4 => queues(&[2, 2], false, true, false),
+        _ => queues(&[0, 0], false, false, true),
     }
 }
 
 /// Abilities that triggered together put on the stack (CR 603.3b, 101.4):
 /// the active player's first, then the other player's; a player's own
 /// triggers in the order they choose, so with two or more that can be
-/// told apart (of different sources, or different abilities of one), and
-/// not yet ordered, they are asked the order, of exactly those, nothing
-/// going on the stack until they answer; with only interchangeable ones,
-/// or ones they have ordered already, each goes on front first, unasked.
-/// For each of the cases [`case`] builds.
+/// told apart (of different sources, or different abilities of one, or
+/// of one ability of one source for different creatures it is to damage
+/// or destroy, `TriggerEvent::acted_on`), and not yet ordered, they are
+/// asked the order, of exactly those, nothing going on the stack until
+/// they answer; with only interchangeable ones, or ones they have ordered
+/// already, each goes on front first, unasked. For each of the cases
+/// [`case`] builds.
 fn processed(k: usize) {
     let (registry, mut state, ids) = case(k);
 
@@ -118,8 +126,8 @@ fn processed(k: usize) {
     // SAFETY: as in `pushed`.
     let (p, n) = unsafe { (*std::ptr::addr_of!(PUSHED.value), *std::ptr::addr_of!(PUSHED_N.value)) };
     match k {
-        0 | 4 => {
-            let (player, ap) = if k == 0 { (PlayerId(0), true) } else { (PlayerId(1), false) };
+        0 | 4 | 5 => {
+            let (player, ap) = if k == 4 { (PlayerId(1), false) } else { (PlayerId(0), true) };
             assert!(n == 0);
             assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
                 player: p, choice: ResolutionChoiceKind::ChooseTriggerOrder { ap_queue, indices, options, .. }, ..
@@ -160,6 +168,7 @@ each_queue! {
     the_active_players_trigger_goes_on_before_the_other_players: 2;
     triggers_already_ordered_go_on_in_their_order_unasked: 3;
     two_triggers_of_the_other_player_of_two_abilities_are_asked_their_order: 4;
+    two_triggers_of_one_ability_of_one_source_for_two_blockers_are_asked_their_order: 5;
 }
 
 /// The active player's queue as `process_pending_trigger_pushes` found it

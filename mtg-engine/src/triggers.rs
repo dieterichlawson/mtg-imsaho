@@ -166,6 +166,32 @@ pub enum TriggerEvent {
 }
 
 impl TriggerEvent {
+    /// The creature this event hands the ability to damage or destroy, its
+    /// "that creature": the one blocked, the one blocking, the one dealt
+    /// combat damage.
+    ///
+    /// Two triggers of one ability of one source that name different
+    /// creatures here are not interchangeable (CR 603.3b): which of the two
+    /// is dealt with first is which may die first, and what watches a death
+    /// tells the two apart. Ashmouth Hound blocked by an Unruly Mob and a
+    /// Voiceless Spirit lives if the Mob is dealt its damage first, and
+    /// dies to a Mob grown by the Spirit's death if the Spirit is.
+    /// `process_pending_trigger_pushes` asks for their order.
+    ///
+    /// `None` for every other event, the ones that name something too (the
+    /// creature that died, the one that entered, the one that dealt the
+    /// damage): what this pool's abilities do for those does not depend on
+    /// the order two of them resolve in, and their controller is not asked.
+    #[must_use]
+    pub fn acted_on(&self) -> Option<ObjectId> {
+        match self {
+            TriggerEvent::Blocks { blocked_attacker } => Some(*blocked_attacker),
+            TriggerEvent::BecomesBlocked { blocker_id } => Some(*blocker_id),
+            TriggerEvent::CombatDamageToCreature { damaged_creature, .. } => Some(*damaged_creature),
+            _ => None,
+        }
+    }
+
     /// The `TriggerKind` whose `TriggeredAbilityDef` describes this trigger.
     ///
     /// `None` for the two triggers the engine raises itself rather than
@@ -634,8 +660,10 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
         // Thraben Sentry triggers from two simultaneous deaths — are
         // interchangeable: no ordering of them is distinguishable, so they
         // are taken front-first without a prompt. The prompt is raised only
-        // when the group holds two triggers that differ by source or by
-        // ability.
+        // when the group holds two triggers that differ by source, by
+        // ability, or by the creature each is to damage or destroy
+        // (`TriggerEvent::acted_on`: Ashmouth Hound's two triggers when two
+        // creatures block it were taken front-first, defect 48).
         {
             let queue = if ap_queue {
                 &state.pending_trigger_pushes_ap
@@ -659,6 +687,7 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
             let distinguishable = indices.iter().any(|&i| {
                 queue[i].source.id != first.source.id
                     || queue[i].source.description != first.source.description
+                    || queue[i].event.acted_on() != first.event.acted_on()
             });
             if !settled && indices.len() >= 2 && distinguishable {
                 let (options, details) = order_question_words(state, registry, queue, &indices);

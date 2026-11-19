@@ -274,6 +274,11 @@ fn ashmouth_hound_triggers_once_per_creature_blocking_it() {
         assignments: vec![(first, hound), (second, hound)],
     });
     triggers::process_triggers(&mut state, &reg);
+    // Two triggers, each naming its blocker, are the Hound's controller's
+    // to order (CR 603.3b; `trigger_dispatch.rs` has the board where the
+    // order decides the combat). Here nothing watches, and either will do.
+    order_triggers_front_first(&mut state, &reg);
+    triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_object(first).unwrap().damage_marked, 1,
         "each blocker is dealt 1 — this is the first");
