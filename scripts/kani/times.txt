@@ -1830,3 +1830,12 @@ SUCCESSFUL      33s  proofs::engine_under_card::forbidden_alchemy_looks_at_nothi
 SUCCESSFUL      52s  proofs::engine_under_card::forbidden_alchemy_puts_the_one_card_in_hand
 SUCCESSFUL      79s  proofs::engine_under_card::memorys_journey_shuffles_two_cards_into_their_library
 SUCCESSFUL     169s  proofs::engine_under_card::forbidden_alchemy_asks_which_of_the_top_four
+SUCCESSFUL      70s  proofs::engine_under_card::travelers_amulet_finds_no_basic_land_and_asks_nothing
+SUCCESSFUL     108s  proofs::engine_under_card::travelers_amulet_asks_for_the_forest_and_puts_it_in_hand
+SUCCESSFUL     112s  proofs::engine_under_card::ghost_quarter_destroys_the_land_with_no_basic_land_to_find
+SUCCESSFUL     217s  proofs::engine_under_card::ghost_quarter_destroys_the_land_and_its_controller_finds_a_forest
+SUCCESSFUL      64s  proofs::engine_under_card::caravan_vigil_finds_no_basic_land_and_asks_nothing
+SUCCESSFUL     108s  proofs::engine_under_card::bitterheart_witch_asked_and_answered_no_searches_nothing
+SUCCESSFUL     234s  proofs::engine_under_card::bitterheart_witch_asked_and_answered_yes_attaches_a_curse_to_the_player
+SUCCESSFUL     102s  proofs::engine_under_card::mirror_mad_phantasm_returns_at_one_seed
+SUCCESSFUL     101s  proofs::engine_under_card::mirror_mad_phantasm_returns_at_another_seed
