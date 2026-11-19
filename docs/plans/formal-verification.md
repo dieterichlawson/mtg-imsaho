@@ -366,8 +366,9 @@ were not their controller's to order), which three creatures is the
 least board to show. Every check a fix touched was run again whole.
 And Kani runs a card's own hook with the engine's own actions
 under it, the board's numbers left open
-(`proofs/engine_under_card.rs`: 504 harnesses over 206 cards, 86 of the
-88 spells and the hooks of 120 permanents, each a minute or two); the
+(`proofs/engine_under_card.rs`: 595 harnesses over 266 of the 270
+cards, 86 of the 88 spells and 180 of the 182 permanents, each a minute
+or two); the
 spell's trip through the stack does not fit in
 CBMC with the engine under it, and stays the engine's own proof. The 285
 card harnesses kept from before are of what a card declares and of what
@@ -1224,12 +1225,15 @@ changes, damage, drawing, milling, token making, attachment, countering,
 control change, fight and continuous effects run under it, and what is
 asserted is the board afterwards, read back through the engine's own
 characteristics, against the card's text. Only `format!`, the log and
-allocator growth and freeing are taken out. 504 harnesses over 206
-cards, each proved, 27 s to 12 minutes and mostly a minute or two: 202
-over 86 of the 88 spells, and 302 over the hooks of 120 permanents
-(enters, death, combat-damage, upkeep, end-step, attack and block
-triggers, Equipment, activated and loyalty abilities, and the
-questions a hook asks, with the effect each holds applied).
+allocator growth and freeing are taken out. 595 harnesses over 266 of
+the 270 cards, each proved, 27 s to 12 minutes and mostly a minute or
+two: 202 over 86 of the 88 spells, and 393 over 180 of the 182
+permanents (enters, death, combat-damage, upkeep, end-step, attack and
+block triggers, Equipment, activated and loyalty abilities, and the
+questions a hook asks, with the effect each holds applied; and, for a
+permanent with no hook, the board with it on it read back through the
+engine: its static ability, how it enters, what it replaces, its mana
+ability, the creature it prints).
 `docs/plans/cards-in-the-loop.md`, B2, has what each family is, what
 keeps a harness in reach (a fixed player where a card reaches a library
 or a hand, a fixed amount of damage, lists of fixed length, a value just

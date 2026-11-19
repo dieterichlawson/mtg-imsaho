@@ -580,11 +580,11 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 504
-harnesses over 206 cards, every one proved: 202 over 86 of the 88
-spells, and 302 over the hooks of 120 permanents (below); 14 hours of
-solver time in all on this machine while it was busy, the longest 12
-minutes and most a minute or two. The spells, by family, each a function
+**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 595
+harnesses over 266 of the 270 cards, every one proved: 202 over 86 of
+the 88 spells, and 393 over 180 of the 182 permanents (below); 15.6
+hours of solver time in all on this machine while it was busy, the
+longest 12 minutes and most a minute or two. The spells, by family, each a function
 of what the text says and a row for each card and case:
 
 | Family | Cards | What is asserted of the board afterwards |
@@ -654,12 +654,14 @@ out of memory at 8 GB. These three are what more memory would be tried
 on first. And Army of the Damned: thirteen tokens are more permanents
 than a list of the engine's has room for in a proof here (below).
 
-**Permanents.** 302 harnesses over 120 cards, each the card's own hook as
-its trigger or ability resolves, for a source still on the battlefield
-and, where the text does not need it there, for one gone from it by
-then (a counter then lands nowhere, CR 121.1; a drain, a draw, a token
-or damage happens all the same, for the player who last controlled it,
-608.2h):
+**Permanents.** 393 harnesses over 180 cards. For a card with a hook,
+the hook as its trigger or ability resolves, for a source still on the
+battlefield and, where the text does not need it there, for one gone
+from it by then (a counter then lands nowhere, CR 121.1; a drain, a
+draw, a token or damage happens all the same, for the player who last
+controlled it, 608.2h). For a card with none, the card on the
+battlefield and the board read back through the engine's own layers
+and queries, or the event its text replaces run through the engine:
 
 | What sets it off | Cards |
 |---|---|
@@ -671,10 +673,16 @@ or damage happens all the same, for the player who last controlled it,
 | an attack or a block | Ashmouth Hound, Wooden Stake, Hamlet Captain, Grimgrin, Kessig Cagebreakers (with nothing to count) |
 | equip | the eleven Equipment, each read back through the layers, at a Human where the text says more of one |
 | a hook that asks, searches, pays or picks | Fiend Hunter (the question, what it holds, its return, and the whole card), Witchbane Orb, Snapcaster Mage, Nevermore's question; Moldgraf Monstrosity, Bitterheart Witch; Delver of Secrets, Curse of Oblivion, Screeching Bat on either face and Mentor of the Meek paying from the pool; Homicidal Brute; Trepanation Blade; Ghoulraiser and Charmbreaker Devils' upkeep at two seeds; Olivia Voldaren's second, Mindshrieker, Heretic's Punishment, Graveyard Shovel, Civilized Scholar, Stitcher's Apprentice, Skeletal Grimace's regeneration, Blazing Torch's sacrifice, Brain Weevil, Traveler's Amulet, Ghost Quarter, Mirror-Mad Phantasm, Back from the Brink, Grimoire of the Dead (both) |
+| a static ability, read through the layers | Glorious Anthem, Heartless Summoning's -1/-1, Intangible Virtue, Angelic Overseer, Night Revelers, Boneyard Wurm, Scourge of Geier Reach |
+| a keyword, evasion or protection, asked of the engine | Elite Inquisitor, Invisible Stalker, Grave Bramble, Vampire Interloper, Orchard Spirit (against a creature that prints flying, one that prints reach and one that prints neither) |
+| how it enters, put onto the battlefield by the engine's own zone change | Diregraf Ghoul; Clifftop Retreat, Hinterland Harbor, Isolated Chapel, Sulfur Falls and Woodland Cemetery beside each basic land type they name and beside the other player's; Festerhide Boar and Somberwald Spider with and without a death; Unbreathing Horde; Dearly Departed from a graveyard; Essence of the Wild's copy |
+| an event it replaces, run through the engine | Laboratory Maniac under the engine's draw, Parallel Lives under its token making, Unbreathing Horde under its damage, Stony Silence |
+| a mana ability activated through the engine | Forest, Island, Mountain, Plains, Swamp, Avacyn's Pilgrim, Sol Ring, Shimmering Grotto's first |
+| the creature it prints, the numbers and keywords the Oracle text's | the nineteen creatures with no ability or keywords alone; and the body of Skaab Goliath, Makeshift Mauler, Stitched Drake, Skaab Ruinator, Battleground Geist, Gallows Warden and Geist of Saint Traft, whose own ability is the engine's or is proved elsewhere (below) |
 | a loyalty ability | Garruk Relentless (the fight, the Wolf, the transformation at two loyalty or fewer) and Garruk, the Veil-Cursed (the Wolf, the sacrifice and search, the last); Liliana of the Veil (each player's discard, the sacrifice, the piles asked for) |
 | an activated ability that asks nothing | Darkthicket Wolf, Feral Ridgewolf, Kessig Wolf, Avacynian Priest, Bloodline Keeper (both), Skirsdag High Priest, Nephalia Drownyard, Ghoulcaller's Bell, Stensia Bloodhall, Lantern Spirit, Elder of Laurels, Gavony Township, Manor Skeleton, Ulvenwald Primordials, Manor Gargoyle, Mikaeus (both), Selfless Cathar, Silverchase Fox, Skirsdag Cultist, Daybreak Ranger's damage and Nightfall Predator's fight, Olivia Voldaren's first, Kessig Wolf Run, Disciple of Griselbrand, Tree of Redemption, Deranged Assistant, Cellar Door, Ludevic's Test Subject, Full Moon's Rise, Grimgrin, Moorland Haunt, Evil Twin |
 
-Six more things that put a harness out of reach, each measured:
+Nine more things that put a harness out of reach, each measured:
 
 - A zone change for an owner the solver leaves open is a graveyard it
   leaves open (4 GB): a source that has left is one player's card under
@@ -706,6 +714,30 @@ Six more things that put a harness out of reach, each measured:
   engine's own shuffle under it. A coin with the numbers open fits
   (Creepy Doll, both ways reached).
 
+- A filter a card builds of several questions, read back from the card.
+  "Creatures you control" (Glorious Anthem) and "creature tokens you
+  control" (Intangible Virtue) are one question and prove in a minute
+  or two. "Other Spirit creatures you control" (Battleground Geist,
+  Gallows Warden) and "creatures with flying your opponents control"
+  (One-Eyed Scarecrow) are a list of two, and each ran out of memory at
+  7 GB in symbolic execution on a board of the card and one creature
+  with nothing open; the Scarecrow alone did, its filter asking of the
+  Scarecrow itself whether it flies as its own power is read. What each
+  of those filters matches is proved of the engine with the filter built
+  where it is matched (`proofs::actions::filters`, eight filters now),
+  and that the card prints that filter is its declared harness.
+- A keyword is what a card prints, not something written on a
+  permanent. A harness gave a blank creature flying by writing the
+  keyword onto it and claimed it could block an Orchard Spirit; the
+  proof failed, and the engine was right (`GameState::scan_keywords`
+  reads a card's keywords from its face, so that a transformed
+  permanent keeps none of its front's). The harness now uses a creature
+  that prints flying and one that prints reach.
+- A player left open, again, for a mana ability: a Plains tapped
+  through the engine for either player proved alone under 7 GB and the
+  other four basic lands and Sol Ring ran out of memory there; for the
+  first player each proves in under a minute.
+
 Not yet, of permanents: those just named (Instigator Gang's power read,
 Howlpack Alpha beside its Wolf, a board of five, Geist of Saint Traft's
 Angel and Kessig Cagebreakers' Wolves); a payment planned from lands
@@ -716,19 +748,20 @@ does it (the card Forbidden Alchemy's chooser takes, the name Nevermore
 is given, Liliana's piles, a discard chosen from a hand), each proved of
 the engine's own answer (`proofs::actions`).
 
-Of the 270 cards, 206 have a harness with the engine under them. Of the
-64 that do not, 38 are permanents whose text is a static or a
-replacement effect, a mana ability, a cost or a keyword, which the
-engine reads from what the card declares (the declared harnesses, and
-the engine's own proofs of each effect kind); 19 print nothing a hook
-could run (vanilla and keyword creatures); and 7 have a text that is
-not yet proved with the engine by Kani: Spare from Evil, Army of the
-Damned and Geist of Saint Traft, above, and Laboratory Maniac, Skaab
-Goliath, Makeshift Mauler and Stitched Drake, whose text is a
-replacement of a draw or an additional cost paid as the spell is cast,
-the engine's own path and not a hook of the card's. All of them are
-played with the engine on every small board by
-`tests/card_semantics.rs`.
+Of the 270 cards, 266 have a harness with the engine under them. The
+four that do not: Army of the Damned (thirteen tokens, more permanents
+than a list of the engine's has room for in a proof here), Spare from
+Evil (the protection read back, above), One-Eyed Scarecrow (its filter,
+above) and Rooftop Storm, whose whole text is another cost for a spell,
+which is the engine's cast and not a hook of the card's or a board to
+read. And for some the harness is of part of the text, the rest being
+the engine's own path: the additional cost of Skaab Goliath, Makeshift
+Mauler, Stitched Drake and Skaab Ruinator, and the Ruinator's cast from
+a graveyard; Heartless Summoning's cheaper spells; Shimmering Grotto's
+second ability; the lord effects of Battleground Geist and Gallows
+Warden (their filter, proved of the engine); Geist of Saint Traft's
+Angel; Instigator Gang's bonus. All 270 are played with the engine on
+every small board by `tests/card_semantics.rs`.
 
 These harnesses are also the first proofs of the engine's actions
 composed with nothing stood in for: `try_destroy` over the real
