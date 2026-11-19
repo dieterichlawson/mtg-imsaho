@@ -3882,6 +3882,7 @@ impl World {
     }
 
     fn observed(&self) -> Observed {
+        assert!(self.legend_choices.is_empty(), "a legend-rule choice was left unmade: the triggers were not settled after the state-based actions here");
         let mut now = self.clone();
         now.refresh();
         let all: Vec<&Model> = now.permanents.values().chain(&now.tokens).collect();
@@ -4247,9 +4248,11 @@ impl World {
                 .collect();
             // Of the legendary permanents of one name a player controls,
             // that player chooses one and the rest go to their owners'
-            // graveyards (CR 704.5j). Read where no choice tells them
-            // apart, each choice then being the same game: two of a card
-            // returned from a graveyard together.
+            // graveyards (CR 704.5j). Where no choice tells them apart,
+            // each choice is the same game and the first is kept: two of a
+            // card returned from a graveyard together. Where they differ
+            // (one of them here before, tapped or with a counter), the
+            // choice waits for [`settle_triggers`], which plays each.
             let mut legends: BTreeMap<(u8, &str), Vec<ObjectId>> = BTreeMap::new();
             for (id, m) in &self.permanents {
                 if let (true, Some(name)) = (m.types.iter().any(|t| t == "legendary"), &m.name) {
@@ -4257,11 +4260,19 @@ impl World {
                 }
             }
             let mut surplus: Vec<ObjectId> = Vec::new();
+            let mut choices: Vec<Vec<ObjectId>> = Vec::new();
             for ids in legends.values().filter(|ids| ids.len() > 1) {
                 let kept = format!("{:?}", self.permanents[&ids[0]]);
-                assert!(ids.iter().all(|id| format!("{:?}", self.permanents[id]) == kept),
-                    "the legend rule among permanents that differ is a choice the reference does not yet play: {kept}");
-                surplus.extend(&ids[1..]);
+                if ids.iter().all(|id| format!("{:?}", self.permanents[id]) == kept) {
+                    surplus.extend(&ids[1..]);
+                } else {
+                    choices.push(ids.clone());
+                }
+            }
+            for ids in choices {
+                if !self.legend_choices.contains(&ids) {
+                    self.legend_choices.push(ids);
+                }
             }
             if dying.is_empty() && !tokens_dying.contains(&true) && !falls && spent.is_empty() && surplus.is_empty() {
                 if self.life.iter().all(|l| *l > 0) {
@@ -4377,6 +4388,7 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
         entered: Vec::new(),
         died: Vec::new(),
         left: Vec::new(),
+        legend_choices: Vec::new(),
         deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
@@ -6674,6 +6686,29 @@ fn settle_triggers(w: World) -> Vec<World> {
 /// [`settle_triggers`], with each "you may" of those that trigger now
 /// taken (`Some(true)`) or declined (`Some(false)`) rather than both.
 fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
+    // First a legend-rule choice the state-based actions left (CR 704.5j):
+    // each of them kept in turn, the rest put into their owners'
+    // graveyards together, and the state-based actions checked again
+    // before anything is put on the stack (704.3).
+    if let Some(group) = w.legend_choices.pop() {
+        let there: Vec<ObjectId> = group.into_iter().filter(|id| w.permanents.contains_key(id)).collect();
+        if there.len() < 2 {
+            return settle_triggers_choosing(w, may);
+        }
+        return there.iter()
+            .flat_map(|keep| {
+                let mut way = w.clone();
+                way.deaths += 1;
+                for id in there.iter().filter(|id| *id != keep) {
+                    let creature = way.permanents[id].is_creature();
+                    way.leave(*id, Dest::Graveyard);
+                    way.a_creature_died |= creature;
+                }
+                way.state_based_actions();
+                settle_triggers_choosing(way, may)
+            })
+            .collect();
+    }
     // First what entered and chooses what to enter as (CR 614.12b): as
     // itself, or as a copy of a creature already on the battlefield, each
     // way, and each then as the rest of this goes.
@@ -11092,6 +11127,7 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         entered: Vec::new(),
         died: Vec::new(),
         left: Vec::new(),
+        legend_choices: Vec::new(),
         deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
