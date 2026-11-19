@@ -9934,7 +9934,7 @@ fn check_activated_on(card: &Printed, spec: &Spec, ability: &Activated, count: O
         ways = ways.into_iter()
             .flat_map(|mut w| {
                 w.state_based_actions();
-                let quiet = World { died: Vec::new(), entered: Vec::new(), ..w.clone() }.observed();
+                let quiet = World { died: Vec::new(), entered: Vec::new(), left: Vec::new(), ..w.clone() }.observed();
                 let settled = settle_triggers(w);
                 cost_set_off_a_trigger |= settled.len() != 1 || settled[0].observed() != quiet;
                 settled
@@ -10029,8 +10029,18 @@ fn check_activated_on(card: &Printed, spec: &Spec, ability: &Activated, count: O
             }
         }
         // Played on into the opponent's turn, where what lasted
-        // this one is gone.
-        if lasts_the_turn(&ability.spec) {
+        // this one is gone. Where neither its cost nor its resolution
+        // set off a trigger of the board's, as the cast check has it:
+        // what a trigger brings may have text of its own for the turn's
+        // end (a Reaper from the Abyss returned by a Moldgraf
+        // Monstrosity sacrificed), which this does not play.
+        let quiet = !cost_set_off_a_trigger && ways.iter().cloned().all(|w| {
+            let resolved = resolve(w);
+            let seen = World { died: Vec::new(), entered: Vec::new(), left: Vec::new(), ..resolved.clone() }.observed();
+            let settled = settle_triggers(resolved);
+            settled.len() == 1 && settled[0].observed() == seen
+        });
+        if lasts_the_turn(&ability.spec) && quiet {
             if let (Ok([after]), [w]) = (endings.as_deref(), &want[..]) {
                 // With one spell cast this turn, so that neither face
                 // of a werewolf on the board transforms.
