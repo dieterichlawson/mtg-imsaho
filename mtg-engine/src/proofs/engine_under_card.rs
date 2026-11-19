@@ -3555,6 +3555,7 @@ fn fiend_hunter_holds(_: ()) {
     let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::fiend_hunter::FiendHunter));
     let target = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
     let hunter = a_source(&mut state, card, PlayerId(0));
+    state.get_object_mut(hunter).expect("just created").card_state.reserve(2);
     let effect = PendingEffect::CardEffect { source_id: hunter, key: String::new() };
 
     crate::engine::apply_pending_effect(&mut state, &Target::Object(target), &effect, &registry);
@@ -3562,6 +3563,29 @@ fn fiend_hunter_holds(_: ()) {
     assert!(state.get_object(target).expect("still an object").zone == Zone::Exile);
     let h = state.get_object(hunter).expect("still an object");
     assert!(h.zone == Zone::Battlefield && h.card_state.len() == 1 && h.card_state.get(HUNTED) == Some(&target));
+    std::mem::forget((registry, state, effect));
+}
+
+/// The whole of it on a board with nothing open: the effect applied at
+/// the second player's creature, the Hunter then put into its graveyard
+/// by the engine's own zone change, and its second ability resolving.
+/// The creature card is on the battlefield under its owner's control.
+fn fiend_hunter_exiles_and_returns(_: ()) {
+    use crate::state::PendingEffect;
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::fiend_hunter::FiendHunter));
+    let target = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let hunter = a_source(&mut state, card, PlayerId(0));
+    state.get_object_mut(hunter).expect("just created").card_state.reserve(2);
+    let effect = PendingEffect::CardEffect { source_id: hunter, key: String::new() };
+
+    crate::engine::apply_pending_effect(&mut state, &Target::Object(target), &effect, &registry);
+    assert!(state.get_object(target).expect("still an object").zone == Zone::Exile);
+    state.move_object(hunter, Zone::Graveyard, &registry);
+    registry.get(card).expect("registered").on_leave_battlefield(&mut state, hunter, &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.controller == PlayerId(1) && o.owner == PlayerId(1) && !o.tapped && o.damage_marked == 0);
+    assert!(state.get_object(hunter).expect("still an object").zone == Zone::Graveyard);
     std::mem::forget((registry, state, effect));
 }
 
@@ -4243,6 +4267,325 @@ fn brain_weevil(cards: usize) {
     std::mem::forget((registry, state));
 }
 
+// ---- Spells that take cards by what they are, or at random. ----
+
+/// Mulch ("Reveal the top four cards of your library. Put all land cards
+/// revealed this way into your hand and the rest into your graveyard.")
+/// resolving for the first player, their library of `cards` cards, of
+/// the top four of which `lands` names the land cards (Forest): each
+/// land card of the four is in their hand, each other card of them in
+/// their graveyard in the order it was revealed (CR 701.16a, 701.17a),
+/// and a fifth card is still their library. Milling is not drawing
+/// from an empty library (704.5b).
+fn mulch((cards, lands): (usize, [bool; 4])) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mulch::Mulch));
+    let forest = registry.register(Box::new(crate::cards::forest::Forest));
+    let mut library = [None; 5];
+    for (k, slot) in library.iter_mut().enumerate().take(cards) {
+        let of = if k < 4 && lands[k] { forest } else { blank };
+        let id = state.create_object(of, PlayerId(0), Zone::Library, None, None);
+        state.players[0].library_order.push(id);
+        *slot = Some(id);
+    }
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    let player = &state.players[0];
+    let mut milled = 0;
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k >= 4 {
+            assert!(o.zone == Zone::Library && player.library_order.len() == 1 && player.library_order[0] == id);
+        } else if lands[k] {
+            assert!(o.zone == Zone::Hand && o.owner == PlayerId(0));
+        } else {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[milled] == id);
+            milled += 1;
+        }
+    }
+    assert!(player.graveyard_order.len() == milled && !player.has_drawn_from_empty);
+    assert!(cards > 4 || player.library_order.is_empty());
+    std::mem::forget((registry, state));
+}
+
+/// Past in Flames ("Each instant and sorcery card in your graveyard
+/// gains flashback until end of turn. The flashback cost is equal to its
+/// mana cost.") resolving for the first player, a Lightning Bolt and a
+/// card that is neither kind in their graveyard and a Lightning Bolt in
+/// the other player's: the engine reads one flashback cost granted to
+/// their Bolt, {R} as the card is printed (CR 702.34a), and none to the
+/// other two.
+fn past_in_flames(_: ()) {
+    use crate::types::{ManaCost, ManaSymbol};
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::past_in_flames::PastInFlames));
+    let bolt = registry.register(Box::new(LightningBolt));
+    let yours = a_card_in(&mut state, bolt, 0, Zone::Graveyard, false);
+    let other = a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    let theirs = a_card_in(&mut state, bolt, 1, Zone::Graveyard, false);
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    let printed = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+    let granted = crate::engine::legal::casting::granted_flashback_costs(&state, yours);
+    assert!(granted.len() == 1 && *granted[0] == printed);
+    std::mem::forget(granted);
+    for id in [other, theirs] {
+        let none = crate::engine::legal::casting::granted_flashback_costs(&state, id);
+        assert!(none.is_empty());
+        std::mem::forget(none);
+    }
+    assert!(state.until_end_of_turn.len() == 1);
+    std::mem::forget((printed, registry, state));
+}
+
+/// Make a Wish ("Return two cards at random from your graveyard to your
+/// hand.") resolving for the first player with `cards` cards in their
+/// graveyard and one in the other player's, the game's random numbers
+/// at a seed: two of theirs are in their hand, or all of them if there
+/// are fewer, the rest still their graveyard, and the other player's
+/// card is where it was. `woodland_sleuth` says why a seed.
+fn make_a_wish(cards: usize) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::make_a_wish::MakeAWish));
+    let mut yours = [None; 3];
+    for slot in yours.iter_mut().take(cards) {
+        *slot = Some(a_card_in(&mut state, blank, 0, Zone::Graveyard, false));
+    }
+    let theirs = a_card_in(&mut state, blank, 1, Zone::Graveyard, false);
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    state.rng_state = SEED_FIRST;
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    let mut returned = 0;
+    for k in 0..cards {
+        let o = state.get_object(yours[k].expect("made")).expect("still an object");
+        assert!((o.zone == Zone::Hand || o.zone == Zone::Graveyard) && o.owner == PlayerId(0));
+        if o.zone == Zone::Hand {
+            returned += 1;
+        }
+    }
+    assert!(returned == cards.min(2) && state.players[0].graveyard_order.len() == cards - returned);
+    assert!(state.get_object(theirs).expect("still an object").zone == Zone::Graveyard && state.players[1].graveyard_order == [theirs]);
+    std::mem::forget((registry, state));
+}
+
+/// Desperate Ravings ("Draw two cards, then discard a card at random.")
+/// resolving for the first player with an empty hand and a library of
+/// three, the game's random numbers at `seed`: the top two cards are
+/// drawn (CR 121.1), and then one of the two, the `pick`th as that seed
+/// has it, is in their graveyard (701.8a) and the other in their hand,
+/// the third card still their library.
+fn desperate_ravings((seed, pick): (u64, usize)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::desperate_ravings::DesperateRavings));
+    let library = a_library(&mut state, blank, 0, 3);
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    state.rng_state = seed;
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    let zone = |k: usize| state.get_object(library[k].expect("made")).expect("still an object").zone;
+    assert!(zone(pick) == Zone::Graveyard && zone(1 - pick) == Zone::Hand && zone(2) == Zone::Library);
+    let player = &state.players[0];
+    assert!(player.graveyard_order.len() == 1 && player.library_order.len() == 1 && !player.has_drawn_from_empty);
+    std::mem::forget((registry, state));
+}
+
+/// Moonmist ("Transform all Humans. Prevent all combat damage that would
+/// be dealt this turn by creatures other than Werewolves and Wolves.")
+/// resolving beside a double-faced Human (Village Ironsmith), a
+/// double-faced creature that is no Human (Ludevic's Test Subject) and
+/// a Human with one face: the first shows its other face, whose power
+/// and toughness the engine then reads, and the other two are as they
+/// were (CR 701.28a); and the turn holds one effect, the prevention
+/// the text names with the two kinds of creature it leaves out (615.1).
+fn moonmist(_: ()) {
+    use crate::types::CreatureFilter;
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::moonmist::Moonmist));
+    let ironsmith = registry.register(Box::new(crate::cards::isd::village_ironsmith::VillageIronsmith));
+    let subject = registry.register(Box::new(crate::cards::isd::ludevics_test_subject::LudevicsTestSubject));
+    let (power, toughness) = registry.printed_pt(ironsmith, false).expect("its front face");
+    let human = state.create_object(ironsmith, PlayerId(0), Zone::Battlefield, power, toughness);
+    let (power, toughness) = registry.printed_pt(subject, false).expect("its front face");
+    let lizard = state.create_object(subject, PlayerId(1), Zone::Battlefield, power, toughness);
+    let one_faced = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(one_faced).expect("just created").subtypes = vec!["Human".to_string()];
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    let shows = |id| state.get_object(id).expect("still an object").is_transformed;
+    assert!(shows(human) && !shows(lizard) && !shows(one_faced));
+    assert!(state.until_end_of_turn.len() == 1);
+    match &state.until_end_of_turn[0] {
+        TemporaryEffect::PreventCombatDamageExcept { filter: CreatureFilter::Or(kinds), .. } => {
+            assert!(kinds.len() == 2);
+            assert!(matches!(&kinds[0], CreatureFilter::HasSubtype(s) if s == "Wolf"));
+            assert!(matches!(&kinds[1], CreatureFilter::HasSubtype(s) if s == "Werewolf"));
+        }
+        _ => panic!("the prevention the text names"),
+    }
+    state.get_object_mut(human).expect("still an object").is_transformed = true;
+    let face = registry.printed_pt(ironsmith, true).expect("its other face");
+    assert!(state.effective_power(human, &registry) == face.0 && state.effective_toughness(human, &registry) == face.1);
+    std::mem::forget((registry, state));
+}
+
+/// Creeping Renaissance ("Choose a permanent type. Return all cards of
+/// the chosen type from your graveyard to your hand.") resolving for the
+/// first player, a creature card and a land card (Forest) in their
+/// graveyard and a card of the type chosen in the other player's: they
+/// are asked for one of the five permanent types (CR 110.4), and told
+/// the answer (`land`, or creature) the spell puts their card of that
+/// type into their hand and leaves the other two where they were.
+fn creeping_renaissance(land: bool) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::creeping_renaissance::CreepingRenaissance));
+    let forest = registry.register(Box::new(crate::cards::forest::Forest));
+    let creature = a_card_in(&mut state, blank, 0, Zone::Graveyard, true);
+    let a_land = a_card_in(&mut state, forest, 0, Zone::Graveyard, false);
+    let theirs = a_card_in(&mut state, if land { forest } else { blank }, 1, Zone::Graveyard, !land);
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.on_resolve(&mut state, spell, &[], &registry);
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, source, choice: ResolutionChoiceKind::ChooseCardType { options, controller, .. } }) => {
+            assert!(*player == PlayerId(0) && *controller == PlayerId(0) && *source == spell && options.len() == 5);
+            assert!(options[0] == "Creature" && options[1] == "Artifact" && options[2] == "Enchantment");
+            assert!(options[3] == "Land" && options[4] == "Planeswalker");
+        }
+        _ => panic!("its controller is asked for a permanent type"),
+    }
+    crate::proofs::cards::clear_prompt(&mut state);
+    behavior.on_card_type_choice(&mut state, spell, if land { "Land" } else { "Creature" }, &registry);
+
+    let (back, stays) = if land { (a_land, creature) } else { (creature, a_land) };
+    let o = state.get_object(back).expect("still an object");
+    assert!(o.zone == Zone::Hand && o.owner == PlayerId(0));
+    assert!(state.get_object(stays).expect("still an object").zone == Zone::Graveyard && state.players[0].graveyard_order == [stays]);
+    assert!(state.get_object(theirs).expect("still an object").zone == Zone::Graveyard && state.players[1].graveyard_order == [theirs]);
+    std::mem::forget((registry, state));
+}
+
+/// Night Terrors ("Target player reveals their hand. You choose a
+/// nonland card from it. Exile that card.") resolving for the first
+/// player at the second, whose hand is a land card (Forest) and
+/// `others` cards that are not lands: with none, nothing is exiled;
+/// with one, it is exiled with nothing asked; with two, the spell's
+/// controller is asked which, with no way to decline and the land not
+/// offered, and the effect the question holds exiles the one chosen
+/// (`pick`, CR 406.1). The land and the card not chosen stay in hand.
+fn night_terrors((others, pick): (usize, usize)) {
+    use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::night_terrors::NightTerrors));
+    let forest = registry.register(Box::new(crate::cards::forest::Forest));
+    let land = a_card_in(&mut state, forest, 1, Zone::Hand, false);
+    let mut theirs = [None; 2];
+    for slot in theirs.iter_mut().take(others) {
+        *slot = Some(a_card_in(&mut state, blank, 1, Zone::Hand, false));
+    }
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[Target::Player(PlayerId(1))], &registry);
+
+    if others == 2 {
+        match &state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
+                assert!(*player == PlayerId(0) && !*optional && options.len() == 2);
+                for k in 0..2 {
+                    assert!(options[k] == Target::Object(theirs[k].expect("made")));
+                }
+                assert!(matches!(effect, PendingEffect::CardEffect { source_id, key } if *source_id == spell && key.is_empty()));
+            }
+            _ => panic!("the spell's controller is asked which card"),
+        }
+        crate::proofs::cards::clear_prompt(&mut state);
+        let effect = PendingEffect::CardEffect { source_id: spell, key: String::new() };
+        crate::engine::apply_pending_effect(&mut state, &Target::Object(theirs[pick].expect("made")), &effect, &registry);
+        std::mem::forget(effect);
+    } else {
+        assert!(state.awaiting_action.is_none());
+    }
+    for k in 0..others {
+        let o = state.get_object(theirs[k].expect("made")).expect("still an object");
+        assert!(o.zone == if k == pick { Zone::Exile } else { Zone::Hand } && o.owner == PlayerId(1));
+    }
+    assert!(state.get_object(land).expect("still an object").zone == Zone::Hand);
+    std::mem::forget((registry, state));
+}
+
+/// Forbidden Alchemy ("Look at the top four cards of your library. Put
+/// one of them into your hand and the rest into your graveyard.")
+/// resolving for the first player with `cards` cards in their library:
+/// with none nothing happens; with one it is put into their hand with
+/// nothing asked; with five they are asked which of the top four, in
+/// the order they lie, the fifth not among them, and nothing has moved
+/// yet (the answer's effect is the engine's, `proofs::actions`).
+fn forbidden_alchemy(cards: usize) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::forbidden_alchemy::ForbiddenAlchemy));
+    let mut library = [None; 5];
+    for slot in library.iter_mut().take(cards) {
+        let id = state.create_object(blank, PlayerId(0), Zone::Library, None, None);
+        state.players[0].library_order.push(id);
+        *slot = Some(id);
+    }
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    if cards > 1 {
+        match &state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice { player, source, choice: ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. } }) => {
+                assert!(*player == PlayerId(0) && *source == spell && looked_at.len() == cards.min(4));
+                for k in 0..cards.min(4) {
+                    assert!(Some(looked_at[k]) == library[k]);
+                }
+            }
+            _ => panic!("its controller is asked which card"),
+        }
+        assert!(state.players[0].library_order.len() == cards && state.players[0].graveyard_order.is_empty());
+    } else {
+        assert!(state.awaiting_action.is_none());
+        if cards == 1 {
+            let o = state.get_object(library[0].expect("made")).expect("still an object");
+            assert!(o.zone == Zone::Hand && o.owner == PlayerId(0) && state.players[0].library_order.is_empty());
+        }
+        assert!(state.players[0].graveyard_order.is_empty() && !state.players[0].has_drawn_from_empty);
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Memory's Journey ("Target player shuffles up to three target cards
+/// from their graveyard into their library.") resolving at the second
+/// player and two of the three cards in their graveyard, their library
+/// of one card, the game's random numbers at a seed: the two are cards
+/// of their library, three cards now with the one that was there, and
+/// the third card is still their graveyard.
+fn memorys_journey(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::memorys_journey::MemorysJourney));
+    let library = a_library(&mut state, blank, 1, 1);
+    let two = [a_card_in(&mut state, blank, 1, Zone::Graveyard, false), a_card_in(&mut state, blank, 1, Zone::Graveyard, false)];
+    let stays = a_card_in(&mut state, blank, 1, Zone::Graveyard, false);
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    state.rng_state = SEED_FIRST;
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell,
+        &[Target::Player(PlayerId(1)), Target::Object(two[0]), Target::Object(two[1])], &registry);
+
+    let player = &state.players[1];
+    assert!(player.library_order.len() == 3 && player.graveyard_order.len() == 1 && player.graveyard_order[0] == stays);
+    for id in [two[0], two[1], library[0].expect("made")] {
+        assert!(state.get_object(id).expect("still an object").zone == Zone::Library);
+        assert!(player.library_order[0] == id || player.library_order[1] == id || player.library_order[2] == id);
+    }
+    assert!(state.get_object(stays).expect("still an object").zone == Zone::Graveyard);
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -4854,6 +5197,7 @@ use crate::cards::isd::{charmbreaker_devils::CharmbreakerDevils, ghoulraiser::Gh
 engine_under_card! {
     fiend_hunter_asks_and_exiles_its_target: fiend_hunter(());
     fiend_hunter_holds_the_card_it_exiled: fiend_hunter_holds(());
+    fiend_hunter_exiles_and_returns_on_a_board_with_nothing_open: fiend_hunter_exiles_and_returns(());
     fiend_hunter_leaving_returns_what_it_exiled: fiend_hunter_leaves(true);
     fiend_hunter_leaving_returns_nothing_it_did_not_exile: fiend_hunter_leaves(false);
     olivia_voldaren_takes_a_vampire: olivia_voldaren_takes(true);
@@ -4908,4 +5252,29 @@ engine_under_card! {
     brain_weevil_discards_the_one_card_in_hand: brain_weevil(1);
     brain_weevil_discards_both_of_two_cards: brain_weevil(2);
     brain_weevil_asks_which_two_of_three: brain_weevil(3);
+}
+
+// Spells that take cards by what they are, or at random.
+engine_under_card! {
+    mulch_reveals_nothing_from_an_empty_library: mulch((0, [false; 4]));
+    mulch_puts_the_one_land_in_hand_and_the_other_card_in_the_graveyard: mulch((2, [false, true, false, false]));
+    mulch_sorts_the_top_four_and_leaves_the_fifth: mulch((5, [true, false, true, false]));
+    past_in_flames_grants_flashback_to_your_instant_alone: past_in_flames(());
+    make_a_wish_returns_nothing_from_an_empty_graveyard: make_a_wish(0);
+    make_a_wish_returns_the_one_card_there: make_a_wish(1);
+    make_a_wish_returns_both_of_two_cards: make_a_wish(2);
+    make_a_wish_returns_two_of_three_cards: make_a_wish(3);
+    desperate_ravings_draws_two_and_discards_the_first_at_one_seed: desperate_ravings((SEED_FIRST, 0));
+    desperate_ravings_draws_two_and_discards_the_second_at_another: desperate_ravings((SEED_SECOND, 1));
+    moonmist_transforms_the_human_with_two_faces_and_prevents: moonmist(());
+    creeping_renaissance_asks_and_returns_the_creature_card: creeping_renaissance(false);
+    creeping_renaissance_asks_and_returns_the_land_card: creeping_renaissance(true);
+    night_terrors_exiles_nothing_from_a_hand_of_lands: night_terrors((0, 0));
+    night_terrors_exiles_the_one_nonland_card: night_terrors((1, 0));
+    night_terrors_asks_and_exiles_the_first_nonland_card: night_terrors((2, 0));
+    night_terrors_asks_and_exiles_the_second_nonland_card: night_terrors((2, 1));
+    forbidden_alchemy_looks_at_nothing_in_an_empty_library: forbidden_alchemy(0);
+    forbidden_alchemy_puts_the_one_card_in_hand: forbidden_alchemy(1);
+    forbidden_alchemy_asks_which_of_the_top_four: forbidden_alchemy(5);
+    memorys_journey_shuffles_two_cards_into_their_library: memorys_journey(());
 }
