@@ -6803,6 +6803,17 @@ engine_under_card! {
     skaab_goliath_is_a_six_nine_with_trample: reads_as_printed((Box::new(SkaabGoliath), (6, 9), &[Keyword::Trample], &[Keyword::Flying]));
     makeshift_mauler_is_a_four_five: reads_as_printed((Box::new(MakeshiftMauler), (4, 5), &[], &[Keyword::Trample]));
     stitched_drake_is_a_three_four_with_flying: reads_as_printed((Box::new(StitchedDrake), (3, 4), &[Keyword::Flying], &[Keyword::Trample]));
+    // The body of each of four cards whose own ability is not proved
+    // here: the two Spirit lords (their filter, above), Skaab Ruinator (a
+    // cost, and a cast from a graveyard, which are the engine's) and
+    // Geist of Saint Traft (its Angel enters attacking). One-Eyed
+    // Scarecrow has not even this: its filter asks of each creature
+    // whether it has flying, the Scarecrow itself as its own power is
+    // read, and alone on the board that ran out of memory at 7 GB.
+    battleground_geist_is_a_three_three_with_flying: reads_as_printed((Box::new(crate::cards::isd::battleground_geist::BattlegroundGeist), (3, 3), &[Keyword::Flying], &[Keyword::Vigilance]));
+    gallows_warden_is_a_three_three_with_flying: reads_as_printed((Box::new(crate::cards::isd::gallows_warden::GallowsWarden), (3, 3), &[Keyword::Flying], &[Keyword::Vigilance]));
+    skaab_ruinator_is_a_five_six_with_flying: reads_as_printed((Box::new(crate::cards::isd::skaab_ruinator::SkaabRuinator), (5, 6), &[Keyword::Flying], &[Keyword::Trample]));
+    geist_of_saint_traft_is_a_two_two_with_hexproof: reads_as_printed((Box::new(crate::cards::isd::geist_of_saint_traft::GeistOfSaintTraft), (2, 2), &[Keyword::Hexproof], &[Keyword::Flying]));
     essence_of_the_wild_makes_your_creature_enter_as_a_copy: essence_of_the_wild(true);
     essence_of_the_wild_leaves_their_creature_as_it_is: essence_of_the_wild(false);
     shimmering_grotto_taps_for_colorless: taps_for((Box::new(crate::cards::isd::shimmering_grotto::ShimmeringGrotto), ManaType::Colorless, 1));

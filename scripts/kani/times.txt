@@ -1972,3 +1972,7 @@ SUCCESSFUL      97s  proofs::engine_under_card::essence_of_the_wild_leaves_their
 SUCCESSFUL     236s  proofs::engine_under_card::essence_of_the_wild_makes_your_creature_enter_as_a_copy
 SUCCESSFUL     195s  proofs::engine_under_card::shimmering_grotto_taps_for_colorless
 SUCCESSFUL      51s  proofs::engine_under_card::sol_ring_taps_for_two_colorless
+SUCCESSFUL      68s  proofs::engine_under_card::gallows_warden_is_a_three_three_with_flying
+SUCCESSFUL      74s  proofs::engine_under_card::battleground_geist_is_a_three_three_with_flying
+SUCCESSFUL      55s  proofs::engine_under_card::skaab_ruinator_is_a_five_six_with_flying
+SUCCESSFUL      79s  proofs::engine_under_card::geist_of_saint_traft_is_a_two_two_with_hexproof
