@@ -6721,6 +6721,7 @@ engine_under_card! {
     laboratory_maniac_leaves_the_other_player_to_draw_from_an_empty_library: laboratory_maniac((0, 1));
     laboratory_maniac_leaves_a_draw_from_a_library_with_a_card_alone: laboratory_maniac((1, 0));
     avacyns_pilgrim_taps_for_white: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), ManaType::White, 1));
+    sol_ring_taps_for_two_colorless: taps_for((Box::new(crate::cards::sol_ring::SolRing), ManaType::Colorless, 2));
 }
 
 use crate::cards::isd::{clifftop_retreat::ClifftopRetreat, hinterland_harbor::HinterlandHarbor, isolated_chapel::IsolatedChapel,
