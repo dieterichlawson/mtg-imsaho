@@ -3526,32 +3526,76 @@ fn woodland_sleuth((died, seed, pick): (bool, u64, usize)) {
 /// the exiled card to the battlefield under its owner's control.")
 /// entered, its trigger resolving at a creature: its controller is
 /// asked, and the effect the question holds puts the creature in exile
-/// (CR 406.1). Then, if `leaves`, the Hunter put into its graveyard by
-/// the engine's own zone change and its second ability resolving: the
-/// card it exiled is back on the battlefield under its owner's control,
-/// untapped and undamaged, a new object as it enters (610.3, 400.7); if
-/// the Hunter stays, the card stays in exile.
-fn fiend_hunter(leaves: bool) {
+/// (CR 406.1), the Hunter still on the battlefield.
+///
+/// Three harnesses for the one card. One that entered, exiled, left and
+/// returned ran twenty-five minutes without finishing its symbolic
+/// execution; and this one, asked as well which card the Hunter holds
+/// afterwards, ran out of memory at 7 GB. So `fiend_hunter_holds` reads
+/// that on a board with nothing open, and `fiend_hunter_leaves` starts
+/// from what it reads.
+fn fiend_hunter(_: ()) {
     use crate::state::PendingEffect;
-    let (registry, mut state, target, _) = may_do_to_its_target(Box::new(crate::cards::isd::fiend_hunter::FiendHunter), Permanent::Creature,
+    let (registry, state, target, _) = may_do_to_its_target(Box::new(crate::cards::isd::fiend_hunter::FiendHunter), Permanent::Creature,
         &|effect, source, _| matches!(effect, PendingEffect::CardEffect { source_id, key } if *source_id == source && key.is_empty()),
         &|source, _| PendingEffect::CardEffect { source_id: source, key: String::new() });
     let hunter = ObjectId(target.0 + 1);
-    let card = state.get_object(hunter).expect("the Hunter").card_id;
-    assert!(state.get_object(target).expect("still an object").zone == Zone::Exile);
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Exile && o.owner == PlayerId(1));
     assert!(state.get_object(hunter).expect("still an object").zone == Zone::Battlefield);
+    std::mem::forget((registry, state));
+}
 
-    if leaves {
-        state.move_object(hunter, Zone::Graveyard, &registry);
-        registry.get(card).expect("registered").on_leave_battlefield(&mut state, hunter, &registry);
+/// The effect Fiend Hunter's question holds, applied by the engine at
+/// the second player's creature for a Hunter on the battlefield: the
+/// creature is in exile, and the Hunter holds it, and nothing else, as
+/// the card it exiled (CR 607.2a).
+fn fiend_hunter_holds(_: ()) {
+    use crate::state::PendingEffect;
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::fiend_hunter::FiendHunter));
+    let target = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let hunter = a_source(&mut state, card, PlayerId(0));
+    let effect = PendingEffect::CardEffect { source_id: hunter, key: String::new() };
+
+    crate::engine::apply_pending_effect(&mut state, &Target::Object(target), &effect, &registry);
+
+    assert!(state.get_object(target).expect("still an object").zone == Zone::Exile);
+    let h = state.get_object(hunter).expect("still an object");
+    assert!(h.zone == Zone::Battlefield && h.card_state.len() == 1 && h.card_state.get(HUNTED) == Some(&target));
+    std::mem::forget((registry, state, effect));
+}
+
+/// The key Fiend Hunter keeps the card it exiled under, on its own
+/// object.
+const HUNTED: &str = "exiled_creature";
+
+/// Fiend Hunter the first player's, a creature card of the second
+/// player's in exile, the Hunter holding it as the card it exiled or
+/// not (`holds`: what `fiend_hunter_holds` reads, or a Hunter that
+/// exiled nothing). The Hunter is put into its graveyard by
+/// the engine's own zone change and its second ability resolves: the
+/// card it exiled is on the battlefield under its owner's control,
+/// untapped and undamaged, a new object as it enters (CR 610.3, 400.7);
+/// a card it did not exile stays in exile.
+fn fiend_hunter_leaves(holds: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::fiend_hunter::FiendHunter));
+    let target = state.create_object(blank, PlayerId(1), Zone::Exile, Some(2), Some(2));
+    state.get_object_mut(target).expect("just created").card_types = vec![CardType::Creature];
+    let hunter = a_source(&mut state, card, PlayerId(0));
+    if holds {
+        state.get_object_mut(hunter).expect("just created").card_state.insert(HUNTED.to_string(), target);
     }
 
+    state.move_object(hunter, Zone::Graveyard, &registry);
+    registry.get(card).expect("registered").on_leave_battlefield(&mut state, hunter, &registry);
+
     let o = state.get_object(target).expect("still an object");
-    if leaves {
+    if holds {
         assert!(o.zone == Zone::Battlefield && o.controller == PlayerId(1) && o.owner == PlayerId(1) && !o.tapped && o.damage_marked == 0);
     } else {
         assert!(o.zone == Zone::Exile && o.owner == PlayerId(1));
     }
+    assert!(state.get_object(hunter).expect("still an object").zone == Zone::Graveyard);
     std::mem::forget((registry, state));
 }
 
@@ -3740,6 +3784,462 @@ fn heretics_punishment(_: ()) {
     for p in 0..2u8 {
         assert!(state.players[p as usize].life == life[p as usize] - if p == at { 2 } else { 0 });
     }
+    std::mem::forget((registry, state));
+}
+
+// ---- Permanents: a card looked at, picked or discarded as the hook
+// resolves. Where a player is asked, the question is read where it
+// lies and the effect it holds applied by the engine
+// (`engine::apply_pending_effect`), as the engine's dispatch of an
+// answer does (`proofs::actions::answering`). ----
+
+/// Delver of Secrets ("At the beginning of your upkeep, look at the top
+/// card of your library. You may reveal that card. If an instant or
+/// sorcery card is revealed this way, transform this creature.") the
+/// first player's at their upkeep, the top card of their library an
+/// instant (`instant`: Lightning Bolt) or a card that is neither, over
+/// another: they are asked whether to reveal it, and answering yes with
+/// an instant there the Delver shows its other face, whose power and
+/// toughness the engine then reads (CR 701.28a, 712.8); answering no,
+/// or yes with another card, it is as it was. The library is as it was
+/// either way: revealing a card moves nothing (701.16a).
+fn delver_of_secrets((instant, yes): (bool, bool)) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::delver_of_secrets::DelverOfSecrets));
+    let bolt = registry.register(Box::new(LightningBolt));
+    let top = state.create_object(if instant { bolt } else { blank }, PlayerId(0), Zone::Library, None, None);
+    let under = state.create_object(blank, PlayerId(0), Zone::Library, None, None);
+    state.players[0].library_order.push(top);
+    state.players[0].library_order.push(under);
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let delver = state.create_object(card, PlayerId(0), Zone::Battlefield, power, toughness);
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.on_upkeep(&mut state, delver, &[], &registry);
+    asked_yes_or_no(&mut state, delver, PlayerId(0));
+    behavior.on_yes_no_choice(&mut state, delver, yes, &registry);
+
+    let shows_back = instant && yes;
+    let o = state.get_object(delver).expect("still an object");
+    assert!(o.is_transformed == shows_back && o.zone == Zone::Battlefield && o.controller == PlayerId(0));
+    state.get_object_mut(delver).expect("still an object").is_transformed = shows_back;
+    let face = registry.printed_pt(card, shows_back).expect("that face");
+    assert!(state.effective_power(delver, &registry) == face.0 && state.effective_toughness(delver, &registry) == face.1);
+    assert!(state.players[0].library_order == [top, under] && state.awaiting_action.is_none());
+    std::mem::forget((registry, state));
+}
+
+/// The same trigger with no card to look at (`gone` false: an empty
+/// library) or for a Delver put into its graveyard since (`gone`):
+/// nothing is asked, and nothing is done to it (CR 400.7).
+fn delver_of_secrets_asks_nothing(gone: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::delver_of_secrets::DelverOfSecrets));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let delver = state.create_object(card, PlayerId(0), Zone::Battlefield, power, toughness);
+    if gone {
+        let top = state.create_object(blank, PlayerId(0), Zone::Library, None, None);
+        state.players[0].library_order.push(top);
+        state.move_object(delver, Zone::Graveyard, &registry);
+    }
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, delver, &[], &registry);
+
+    assert!(state.awaiting_action.is_none());
+    let o = state.get_object(delver).expect("still an object");
+    assert!(!o.is_transformed && o.zone == if gone { Zone::Graveyard } else { Zone::Battlefield });
+    std::mem::forget((registry, state));
+}
+
+/// Curse of Oblivion ("At the beginning of enchanted player's upkeep,
+/// that player exiles two cards from their graveyard.") attached to the
+/// second player, `cards` cards in their graveyard and one in the other
+/// player's: with two or fewer, each is in exile by the engine's own
+/// zone change and nothing is asked (CR 406.1); with three, the
+/// enchanted player is asked for exactly two of the three, and the
+/// effect the question holds, applied to each of two (`spared` is the
+/// third), exiles them. The other player's card is where it was.
+fn curse_of_oblivion((cards, spared): (usize, usize)) {
+    use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(CurseOfOblivion));
+    let mut theirs = [None; 3];
+    for slot in theirs.iter_mut().take(cards) {
+        *slot = Some(a_card_in(&mut state, blank, 1, Zone::Graveyard, false));
+    }
+    let yours = a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    let curse = a_source(&mut state, card, PlayerId(0));
+    state.get_object_mut(curse).expect("just created").attached_to_player = Some(PlayerId(1));
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, curse, &[], &registry);
+
+    if cards == 3 {
+        match &state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseObjectSet { options, min, max, effect, .. }, .. }) => {
+                assert!(*player == PlayerId(1) && *min == 2 && *max == 2 && options.len() == 3);
+                for k in 0..3 {
+                    assert!(Some(options[k]) == theirs[k]);
+                }
+                assert!(matches!(effect, PendingEffect::CardEffect { source_id, key } if *source_id == curse && key.is_empty()));
+            }
+            _ => panic!("the enchanted player is asked which two"),
+        }
+        crate::proofs::cards::clear_prompt(&mut state);
+        let effect = PendingEffect::CardEffect { source_id: curse, key: String::new() };
+        for k in 0..3 {
+            if k != spared {
+                crate::engine::apply_pending_effect(&mut state, &Target::Object(theirs[k].expect("made")), &effect, &registry);
+            }
+        }
+        std::mem::forget(effect);
+    } else {
+        assert!(state.awaiting_action.is_none());
+    }
+    for k in 0..cards {
+        let o = state.get_object(theirs[k].expect("made")).expect("still an object");
+        assert!(o.zone == if cards == 3 && k == spared { Zone::Graveyard } else { Zone::Exile } && o.owner == PlayerId(1));
+    }
+    assert!(state.players[1].graveyard_order.len() == usize::from(cards == 3));
+    assert!(state.get_object(yours).expect("still an object").zone == Zone::Graveyard && state.players[0].graveyard_order == [yours]);
+    std::mem::forget((registry, state));
+}
+
+/// Graveyard Shovel ("{2}, {T}: Target player exiles a card from their
+/// graveyard. If it's a creature card, you gain 2 life.") the first
+/// player's, its ability resolving at the second player, `cards` cards
+/// in their graveyard, the first a creature card or not (`creature`)
+/// and a second that is not one: with none nothing happens; with one it
+/// is exiled with nothing asked; with two that player is asked which,
+/// with no way to decline, and the effect the question holds exiles the
+/// one chosen (`pick`, CR 406.1). The Shovel's controller gains 2 life
+/// exactly when the card exiled is a creature card (119.3), and the
+/// other card stays.
+fn graveyard_shovel((cards, creature, pick): (usize, bool, usize)) {
+    use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::graveyard_shovel::GraveyardShovel));
+    let mut theirs = [None; 2];
+    for (k, slot) in theirs.iter_mut().enumerate().take(cards) {
+        *slot = Some(a_card_in(&mut state, blank, 1, Zone::Graveyard, creature && k == 0));
+    }
+    let shovel = a_source(&mut state, card, PlayerId(0));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, shovel, 0, &[Target::Player(PlayerId(1))], &registry);
+
+    if cards == 2 {
+        match &state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
+                assert!(*player == PlayerId(1) && !*optional && options.len() == 2);
+                for k in 0..2 {
+                    assert!(options[k] == Target::Object(theirs[k].expect("made")));
+                }
+                assert!(matches!(effect, PendingEffect::CardEffect { source_id, key } if *source_id == shovel && key.is_empty()));
+            }
+            _ => panic!("that player is asked which card"),
+        }
+        crate::proofs::cards::clear_prompt(&mut state);
+        let effect = PendingEffect::CardEffect { source_id: shovel, key: String::new() };
+        crate::engine::apply_pending_effect(&mut state, &Target::Object(theirs[pick].expect("made")), &effect, &registry);
+        std::mem::forget(effect);
+    } else {
+        assert!(state.awaiting_action.is_none());
+    }
+    for k in 0..cards {
+        let o = state.get_object(theirs[k].expect("made")).expect("still an object");
+        assert!(o.zone == if k == pick { Zone::Exile } else { Zone::Graveyard } && o.owner == PlayerId(1));
+    }
+    let gained = if cards > 0 && pick == 0 && creature { 2 } else { 0 };
+    assert!(state.players[0].life == life[0] + gained && state.players[1].life == life[1]);
+    std::mem::forget((registry, state));
+}
+
+/// Civilized Scholar ("{T}: Draw a card, then discard a card. If a
+/// creature card is discarded this way, untap this creature, then
+/// transform it.") the first player's and tapped for its cost, its
+/// ability resolving with an empty hand and one card in their library,
+/// a creature card (`creature`: Doomed Traveler) or one that is not: the
+/// card is drawn and, the only card in hand, discarded with nothing
+/// asked, so that it is in their graveyard (CR 121.1, 701.8a); a
+/// creature card discarded, the Scholar is untapped and shows its other
+/// face, whose power and toughness the engine then reads (701.28a);
+/// another, it stays tapped and as it was.
+fn civilized_scholar(creature: bool) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::civilized_scholar::CivilizedScholar));
+    let traveler = registry.register(Box::new(crate::cards::isd::doomed_traveler::DoomedTraveler));
+    let drawn = state.create_object(if creature { traveler } else { blank }, PlayerId(0), Zone::Library, None, None);
+    state.players[0].library_order.push(drawn);
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let scholar = state.create_object(card, PlayerId(0), Zone::Battlefield, power, toughness);
+    state.get_object_mut(scholar).expect("just created").tapped = true;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, scholar, 0, &[], &registry);
+
+    assert!(state.awaiting_action.is_none());
+    assert!(state.get_object(drawn).expect("still an object").zone == Zone::Graveyard);
+    assert!(state.players[0].graveyard_order == [drawn] && state.players[0].library_order.is_empty() && !state.players[0].has_drawn_from_empty);
+    let o = state.get_object(scholar).expect("still an object");
+    assert!(o.is_transformed == creature && o.tapped != creature && o.zone == Zone::Battlefield && o.controller == PlayerId(0));
+    state.get_object_mut(scholar).expect("still an object").is_transformed = creature;
+    let face = registry.printed_pt(card, creature).expect("that face");
+    assert!(state.effective_power(scholar, &registry) == face.0 && state.effective_toughness(scholar, &registry) == face.1);
+    std::mem::forget((registry, state));
+}
+
+/// The same with a card in hand already: its controller is asked which
+/// of the two to discard, one card and at once (CR 701.8a), the two
+/// offered being their hand.
+fn civilized_scholar_asks(_: ()) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::civilized_scholar::CivilizedScholar));
+    let held = a_card_in(&mut state, blank, 0, Zone::Hand, false);
+    let drawn = state.create_object(blank, PlayerId(0), Zone::Library, None, None);
+    state.players[0].library_order.push(drawn);
+    let scholar = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.get_object_mut(scholar).expect("just created").tapped = true;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, scholar, 0, &[], &registry);
+
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player: asked, source, choice: ResolutionChoiceKind::ChooseCardFromHand { player, cards, discard_immediately, remaining, .. } }) => {
+            assert!(*asked == PlayerId(0) && *player == PlayerId(0) && *source == scholar);
+            assert!(cards.len() == 2 && cards[0] == held && cards[1] == drawn && *discard_immediately && *remaining == 1);
+        }
+        _ => panic!("its controller is asked which card"),
+    }
+    assert!(state.get_object(drawn).expect("still an object").zone == Zone::Hand && state.get_object(held).expect("still an object").zone == Zone::Hand);
+    let o = state.get_object(scholar).expect("still an object");
+    assert!(!o.is_transformed && o.tapped);
+    std::mem::forget((registry, state));
+}
+
+/// The Scholar told which card was discarded for it, as the engine
+/// tells it once the question is answered (`engine::notify_discard`): a
+/// creature card (`creature`: Doomed Traveler) and it is untapped and
+/// shows its other face (CR 701.28a); another and it is as it was.
+fn civilized_scholar_is_told(creature: bool) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::civilized_scholar::CivilizedScholar));
+    let traveler = registry.register(Box::new(crate::cards::isd::doomed_traveler::DoomedTraveler));
+    let discarded = a_card_in(&mut state, if creature { traveler } else { blank }, 0, Zone::Graveyard, false);
+    let scholar = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.get_object_mut(scholar).expect("just created").tapped = true;
+
+    crate::engine::notify_discard(&mut state, scholar, discarded, &registry);
+
+    let o = state.get_object(scholar).expect("still an object");
+    assert!(o.is_transformed == creature && o.tapped != creature && o.zone == Zone::Battlefield);
+    std::mem::forget((registry, state));
+}
+
+/// Homicidal Brute ("At the beginning of your end step, if this creature
+/// didn't attack this turn, tap this creature, then transform it."),
+/// the Scholar's other face, under either player at their end step: one
+/// that did not attack this turn is tapped and shows its front face
+/// again, whose power and toughness the engine then reads (CR 701.28a);
+/// one that attacked is as it was (603.4).
+fn homicidal_brute(attacked: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::civilized_scholar::CivilizedScholar));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let brute = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    let turn = state.turn_number;
+    let o = state.get_object_mut(brute).expect("just created");
+    o.is_transformed = true;
+    o.tapped = attacked;
+    if attacked {
+        o.attacked_on_turn = Some(turn);
+    }
+
+    registry.get(card).expect("registered").on_end_step(&mut state, brute, &[], &registry);
+
+    let o = state.get_object(brute).expect("still an object");
+    assert!(o.is_transformed == attacked && o.tapped && o.zone == Zone::Battlefield && o.controller == you);
+    state.get_object_mut(brute).expect("still an object").is_transformed = attacked;
+    let face = registry.printed_pt(card, attacked).expect("that face");
+    assert!(state.effective_power(brute, &registry) == face.0 && state.effective_toughness(brute, &registry) == face.1);
+    std::mem::forget((registry, state));
+}
+
+/// Stitcher's Apprentice ("{1}{U}, {T}: Create a 2/2 blue Homunculus
+/// creature token, then sacrifice a creature.") the first player's, its
+/// ability resolving: a 2/2 blue Homunculus creature token is theirs
+/// (CR 111.2), and they are asked which of their creatures to
+/// sacrifice, the Apprentice or the token, with no way to decline; the
+/// effect the question holds puts the one chosen (`the_token`, or the
+/// Apprentice) into its owner's graveyard (701.21a), and the other
+/// stays.
+fn stitchers_apprentice(the_token: bool) {
+    use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::stitchers_apprentice::StitchersApprentice));
+    let apprentice = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    let name = registry.printed_name(card, false).expect("its face").to_string();
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, apprentice, 0, &[], &registry);
+
+    let token = ObjectId(apprentice.0 + 1);
+    let t = state.get_object(token).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == PlayerId(0) && t.owner == PlayerId(0));
+    assert!(t.colors == [Color::Blue] && t.subtypes.len() == 1 && t.subtypes[0] == "Homunculus");
+    assert!(state.is_creature(token, &registry));
+    assert!(state.effective_power(token, &registry) == Some(2) && state.effective_toughness(token, &registry) == Some(2));
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
+            assert!(*player == PlayerId(0) && !*optional);
+            assert!(options.len() == 2 && options[0] == Target::Object(apprentice) && options[1] == Target::Object(token));
+            assert!(matches!(effect, PendingEffect::SacrificeCreature { source_name } if *source_name == name));
+        }
+        _ => panic!("its controller is asked which creature"),
+    }
+    crate::proofs::cards::clear_prompt(&mut state);
+    let effect = PendingEffect::SacrificeCreature { source_name: name };
+    let (gone, stays) = if the_token { (token, apprentice) } else { (apprentice, token) };
+    crate::engine::apply_pending_effect(&mut state, &Target::Object(gone), &effect, &registry);
+
+    assert!(state.get_object(gone).expect("still an object").zone == Zone::Graveyard);
+    assert!(state.get_object(stays).expect("still an object").zone == Zone::Battlefield);
+    std::mem::forget((registry, state, effect));
+}
+
+/// Snapcaster Mage ("When this creature enters, target instant or
+/// sorcery card in your graveyard gains flashback until end of turn.
+/// The flashback cost is equal to its mana cost.") entered under the
+/// first player, its trigger resolving at a Lightning Bolt in their
+/// graveyard, a second beside it: the engine reads one flashback cost
+/// granted to the first, {R} as the card is printed (CR 702.34a), and
+/// none to the second; both cards are where they were.
+fn snapcaster_mage(_: ()) {
+    use crate::types::{ManaCost, ManaSymbol};
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::snapcaster_mage::SnapcasterMage));
+    let bolt = registry.register(Box::new(LightningBolt));
+    let target = a_card_in(&mut state, bolt, 0, Zone::Graveyard, false);
+    let beside = a_card_in(&mut state, bolt, 0, Zone::Graveyard, false);
+    let mage = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, mage, &[Target::Object(target)], &registry);
+
+    let printed = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+    let granted = crate::engine::legal::casting::granted_flashback_costs(&state, target);
+    assert!(granted.len() == 1 && *granted[0] == printed);
+    std::mem::forget(granted);
+    let none = crate::engine::legal::casting::granted_flashback_costs(&state, beside);
+    assert!(none.is_empty());
+    std::mem::forget(none);
+    assert!(state.players[0].graveyard_order == [target, beside]);
+    std::mem::forget((printed, registry, state));
+}
+
+/// Skeletal Grimace ("Enchanted creature gets +1/+1 and has '{B}:
+/// Regenerate this creature.'") attached to a creature under either
+/// player, the ability it gives resolving for that creature: the
+/// creature has one regeneration shield more than before (CR 701.19a),
+/// and the Aura none.
+fn skeletal_grimace_shields(_: ()) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(SkeletalGrimace));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    let aura = a_source(&mut state, card, PlayerId(0));
+    state.get_object_mut(aura).expect("just created").attached_to = Some(creature);
+    let had = u32::from(kani::any::<bool>());
+    state.get_object_mut(creature).expect("just created").regeneration_shields = had;
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, creature, 0, &[], &registry);
+
+    assert!(state.get_object(creature).expect("still an object").regeneration_shields == had + 1);
+    assert!(state.get_object(aura).expect("still an object").regeneration_shields == 0);
+    std::mem::forget((registry, state));
+}
+
+/// Moldgraf Monstrosity ("When this creature dies, exile it, then return
+/// two creature cards at random from your graveyard to the
+/// battlefield.") dead in the first player's graveyard beside
+/// `creatures` creature cards (two at most, so that which are picked is
+/// not in question) and one card that is no creature, the game's random
+/// numbers at a seed: the Monstrosity is in exile (CR 406.1), each
+/// creature card is on the battlefield under that player, untapped
+/// (110.2), and the other card is where it was.
+fn moldgraf_monstrosity(creatures: usize) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::moldgraf_monstrosity::MoldgrafMonstrosity));
+    let other = a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    let mut back = [None; 2];
+    for slot in back.iter_mut().take(creatures) {
+        *slot = Some(a_card_in(&mut state, blank, 0, Zone::Graveyard, true));
+    }
+    let monstrosity = a_card_in(&mut state, card, 0, Zone::Graveyard, true);
+    state.rng_state = SEED_FIRST;
+
+    registry.get(card).expect("registered").on_dies(&mut state, monstrosity, &[], &registry);
+
+    assert!(state.get_object(monstrosity).expect("still an object").zone == Zone::Exile);
+    for k in 0..creatures {
+        let o = state.get_object(back[k].expect("made")).expect("still an object");
+        assert!(o.zone == Zone::Battlefield && o.controller == PlayerId(0) && o.owner == PlayerId(0) && !o.tapped);
+    }
+    assert!(state.get_object(other).expect("still an object").zone == Zone::Graveyard && state.players[0].graveyard_order == [other]);
+    std::mem::forget((registry, state));
+}
+
+/// Blazing Torch ("Equipped creature has '{T}, Sacrifice Blazing Torch:
+/// Blazing Torch deals 2 damage to any target.'") attached to the first
+/// player's creature, the cost of the ability it gives paid and the
+/// ability resolving at the second player or, `at_a_creature`, at their
+/// creature: the Torch is in its owner's graveyard by the engine's own
+/// sacrifice as the cost is paid (CR 701.21a, 602.2b), and then the
+/// player has 2 life fewer or the creature 2 damage more (120.3), the
+/// equipped creature as it was.
+fn blazing_torch_sacrificed(at_a_creature: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::blazing_torch::BlazingTorch));
+    let bearer = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    let theirs = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(theirs).expect("just created").toughness = Some(3);
+    let torch = a_source(&mut state, card, PlayerId(0));
+    state.get_object_mut(torch).expect("just created").attached_to = Some(bearer);
+    let life = [state.players[0].life, state.players[1].life];
+
+    let behavior = registry.get(card).expect("registered");
+    behavior.pay_activation_cost(&mut state, bearer, 1, &[], &registry);
+    assert!(state.get_object(torch).expect("still an object").zone == Zone::Graveyard && state.players[0].graveyard_order == [torch]);
+    let at = if at_a_creature { Target::Object(theirs) } else { Target::Player(PlayerId(1)) };
+    behavior.resolve_activated_ability(&mut state, bearer, 1, &[at], &registry);
+
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1] - if at_a_creature { 0 } else { 2 });
+    let o = state.get_object(theirs).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == if at_a_creature { 2 } else { 0 });
+    let b = state.get_object(bearer).expect("still an object");
+    assert!(b.zone == Zone::Battlefield && b.damage_marked == 0);
+    std::mem::forget((registry, state));
+}
+
+/// Brain Weevil ("Sacrifice this creature: Target player discards two
+/// cards. Activate only as a sorcery.") sacrificed for its cost, its
+/// ability resolving at the second player with `cards` cards in hand:
+/// with two or fewer, each is in their graveyard with nothing asked (CR
+/// 701.8a); with three, that player is asked which of their hand to
+/// discard, two to go, and nothing has left it yet.
+fn brain_weevil(cards: usize) {
+    use crate::state::{AwaitingAction, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::brain_weevil::BrainWeevil));
+    let mut hand = [None; 3];
+    for slot in hand.iter_mut().take(cards) {
+        *slot = Some(a_card_in(&mut state, blank, 1, Zone::Hand, false));
+    }
+    let weevil = a_card_in(&mut state, card, 0, Zone::Graveyard, true);
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, weevil, 0, &[Target::Player(PlayerId(1))], &registry);
+
+    if cards == 3 {
+        match &state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice { player: asked, source, choice: ResolutionChoiceKind::ChooseCardFromHand { player, cards: offered, discard_immediately, remaining, .. } }) => {
+                assert!(*asked == PlayerId(1) && *player == PlayerId(1) && *source == weevil);
+                assert!(offered.len() == 3 && *discard_immediately && *remaining == 2);
+                for k in 0..3 {
+                    assert!(Some(offered[k]) == hand[k]);
+                }
+            }
+            _ => panic!("that player is asked which cards"),
+        }
+    } else {
+        assert!(state.awaiting_action.is_none());
+    }
+    for k in 0..cards {
+        let o = state.get_object(hand[k].expect("made")).expect("still an object");
+        assert!(o.zone == if cards == 3 { Zone::Hand } else { Zone::Graveyard } && o.owner == PlayerId(1));
+    }
+    assert!(state.players[1].graveyard_order.len() == if cards == 3 { 0 } else { cards });
     std::mem::forget((registry, state));
 }
 
@@ -4352,8 +4852,10 @@ use crate::cards::isd::{charmbreaker_devils::CharmbreakerDevils, ghoulraiser::Gh
 
 // Permanents: exile and return, control, and cards read by what they are.
 engine_under_card! {
-    fiend_hunter_asks_and_exiles_its_target: fiend_hunter(false);
-    fiend_hunter_leaving_returns_what_it_exiled: fiend_hunter(true);
+    fiend_hunter_asks_and_exiles_its_target: fiend_hunter(());
+    fiend_hunter_holds_the_card_it_exiled: fiend_hunter_holds(());
+    fiend_hunter_leaving_returns_what_it_exiled: fiend_hunter_leaves(true);
+    fiend_hunter_leaving_returns_nothing_it_did_not_exile: fiend_hunter_leaves(false);
     olivia_voldaren_takes_a_vampire: olivia_voldaren_takes(true);
     olivia_voldaren_takes_nothing_that_is_no_vampire: olivia_voldaren_takes(false);
     witchbane_orb_destroys_the_curse_attached_to_you: witchbane_orb(());
@@ -4367,4 +4869,43 @@ engine_under_card! {
     charmbreaker_devils_return_the_second_instant_at_another: returns_one_at_random((Box::new(CharmbreakerDevils), Box::new(LightningBolt), true, SEED_SECOND, 1));
     mindshrieker_mills_a_card_and_grows_by_its_mana_value: mindshrieker(());
     heretics_punishment_mills_three_and_deals_the_greatest_mana_value: heretics_punishment(());
+}
+
+// Permanents: a card looked at, picked or discarded as the hook resolves.
+engine_under_card! {
+    delver_of_secrets_reveals_an_instant_and_transforms: delver_of_secrets((true, true));
+    delver_of_secrets_keeps_an_instant_to_itself_and_stays: delver_of_secrets((true, false));
+    delver_of_secrets_reveals_another_card_and_stays: delver_of_secrets((false, true));
+    delver_of_secrets_asks_nothing_of_an_empty_library: delver_of_secrets_asks_nothing(false);
+    delver_of_secrets_gone_asks_nothing: delver_of_secrets_asks_nothing(true);
+    curse_of_oblivion_exiles_nothing_from_an_empty_graveyard: curse_of_oblivion((0, 0));
+    curse_of_oblivion_exiles_the_one_card_there: curse_of_oblivion((1, 0));
+    curse_of_oblivion_exiles_both_of_two_cards: curse_of_oblivion((2, 0));
+    curse_of_oblivion_asks_for_two_of_three_and_spares_the_first: curse_of_oblivion((3, 0));
+    curse_of_oblivion_asks_for_two_of_three_and_spares_the_last: curse_of_oblivion((3, 2));
+    graveyard_shovel_exiles_nothing_from_an_empty_graveyard: graveyard_shovel((0, false, 0));
+    graveyard_shovel_exiles_the_one_creature_card_for_two_life: graveyard_shovel((1, true, 0));
+    graveyard_shovel_exiles_the_one_other_card_for_no_life: graveyard_shovel((1, false, 0));
+    graveyard_shovel_asks_and_exiles_the_creature_card_for_two_life: graveyard_shovel((2, true, 0));
+    graveyard_shovel_asks_and_exiles_the_other_card_for_no_life: graveyard_shovel((2, true, 1));
+    civilized_scholar_discards_the_creature_card_it_drew_and_transforms: civilized_scholar(true);
+    civilized_scholar_discards_another_card_it_drew_and_stays: civilized_scholar(false);
+    civilized_scholar_asks_which_of_two_cards_to_discard: civilized_scholar_asks(());
+    civilized_scholar_told_of_a_creature_card_untaps_and_transforms: civilized_scholar_is_told(true);
+    civilized_scholar_told_of_another_card_stays: civilized_scholar_is_told(false);
+    homicidal_brute_that_did_not_attack_taps_and_transforms: homicidal_brute(false);
+    homicidal_brute_that_attacked_stays: homicidal_brute(true);
+    stitchers_apprentice_makes_a_homunculus_and_sacrifices_it: stitchers_apprentice(true);
+    stitchers_apprentice_makes_a_homunculus_and_sacrifices_itself: stitchers_apprentice(false);
+    snapcaster_mage_grants_flashback_at_the_cards_own_cost: snapcaster_mage(());
+    skeletal_grimace_shields_the_creature_it_enchants: skeletal_grimace_shields(());
+    moldgraf_monstrosity_is_exiled_with_no_creature_card_to_return: moldgraf_monstrosity(0);
+    moldgraf_monstrosity_returns_the_one_creature_card: moldgraf_monstrosity(1);
+    moldgraf_monstrosity_returns_both_creature_cards: moldgraf_monstrosity(2);
+    blazing_torch_sacrificed_deals_two_to_a_player: blazing_torch_sacrificed(false);
+    blazing_torch_sacrificed_deals_two_to_a_creature: blazing_torch_sacrificed(true);
+    brain_weevil_discards_nothing_from_an_empty_hand: brain_weevil(0);
+    brain_weevil_discards_the_one_card_in_hand: brain_weevil(1);
+    brain_weevil_discards_both_of_two_cards: brain_weevil(2);
+    brain_weevil_asks_which_two_of_three: brain_weevil(3);
 }
