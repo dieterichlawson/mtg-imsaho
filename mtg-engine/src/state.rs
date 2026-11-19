@@ -2197,8 +2197,20 @@ impl GameState {
             obj.instance_continuous_effects = None;
             obj.instance_oracle_text = oracle_text;
         }
+        // The size a reader is told is the size the copy has, read off the
+        // object the way the board reads it, not the copied card's printed
+        // numbers: those are the 0/0 placeholder for a `*/*` creature (CR
+        // 604.3), and "enters as a copy of Boneyard Wurm (0/0)" read as the
+        // line before a death to CR 704.5f while the board showed a 1/1
+        // (issue #1071; #1021 is the same rule for the token line). Counters
+        // a replacement adds as it enters are logged on their own line after
+        // this one. A copy with no P/T (a noncreature) prints none.
         let pt = match (power, toughness) {
-            (Some(p), Some(t)) => format!(" ({p}/{t})"),
+            (Some(p), Some(t)) => {
+                let p = self.effective_power(dest, registry).unwrap_or(p);
+                let t = self.effective_toughness(dest, registry).unwrap_or(t);
+                format!(" ({p}/{t})")
+            }
             _ => String::new(),
         };
         self.log(LogLevel::Event, format!("{old_name} enters as a copy of {name}{pt}"));

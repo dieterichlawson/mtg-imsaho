@@ -4040,3 +4040,25 @@ fn a_token_that_enters_with_counters_is_announced_at_the_size_it_entered() {
     let token = find_token_named(&state, "Festerhide Boar").expect("the copy is there");
     assert_eq!(state.effective_power(token, &reg), Some(5), "and it really is a 5/5");
 }
+
+/// The copy line names the size the copy entered at, not the copied card's
+/// printed numbers: an Evil Twin copying a Boneyard Wurm (`*/*`, CR 604.3)
+/// was logged as "enters as a copy of Boneyard Wurm (0/0)" — the line that
+/// usually comes just before a creature dies to CR 704.5f — while the board
+/// showed it 1/1 (issue #1071, #1021's shape on the copy line).
+#[test]
+fn a_copy_of_a_star_star_creature_is_announced_at_the_size_it_entered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let wurm = named_permanent(&mut state, &reg, "Boneyard Wurm", P0);
+    named_card_in_graveyard(&mut state, &reg, "Festerhide Boar", P0);
+    state.game_log.clear();
+
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(wurm));
+
+    let lines: Vec<String> = state.game_log.iter().map(|e| e.message.clone()).collect();
+    assert_eq!(state.effective_power(twin, &reg), Some(1), "the copy is a 1/1");
+    assert!(lines.iter().any(|l| l.contains("enters as a copy of Boneyard Wurm (1/1)")),
+        "the size that entered: {lines:?}");
+    assert!(!lines.iter().any(|l| l.contains("(0/0)")), "{lines:?}");
+}
