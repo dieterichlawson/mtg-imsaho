@@ -1347,6 +1347,434 @@ fn geistcatchers_rig(_: ()) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents: triggers a death or combat damage sets off, each hook
+// run as the trigger resolves, for a source still on the battlefield or
+// gone from it by then. ----
+
+/// Which trigger of a permanent's resolves: each a hook of its card.
+#[derive(Clone, Copy, PartialEq)]
+enum Fired {
+    /// "When this creature dies".
+    Died,
+    /// "Whenever a creature dies", or another creature, or one of a kind:
+    /// which deaths set it off is the card's own answer
+    /// (`should_trigger_on_creature_dies`) and the engine's collecting,
+    /// proved of it (`proofs::actions::triggers`).
+    CreatureDied,
+    /// "Whenever this creature deals combat damage to a player".
+    DamagedPlayer,
+    /// "Whenever another creature enters".
+    CreatureEntered,
+}
+
+/// A creature of `card`, a 2/2 as far as the engine's layers start from,
+/// on the battlefield: `owner`'s card under `you` (CR 108.3, 110.2).
+fn a_creature_of(state: &mut GameState, card: CardId, owner: PlayerId, you: PlayerId) -> ObjectId {
+    let id = state.create_object(card, owner, Zone::Battlefield, Some(2), Some(2));
+    let o = state.get_object_mut(id).expect("just created");
+    o.card_types = vec![CardType::Creature];
+    o.controller = you;
+    id
+}
+
+/// The trigger `fired` names of `source`'s resolving, `targets` chosen for
+/// it as it went on the stack: the card's own hook, for a creature that
+/// died (the blank card's, in its owner's graveyard), 2 combat damage
+/// dealt to the player who does not control the source, or a creature
+/// that entered, as the trigger is.
+fn fire(state: &mut GameState, registry: &crate::cards::CardRegistry, source: ObjectId, fired: Fired, other: ObjectId, targets: &[Target]) {
+    let card = state.get_object(source).expect("its source").card_id;
+    let behavior = registry.get(card).expect("registered");
+    match fired {
+        Fired::Died => behavior.on_dies(state, source, targets, registry),
+        Fired::CreatureDied => behavior.on_any_creature_dies(state, source, other, PlayerId(1), &[], 2, false, targets, registry),
+        Fired::DamagedPlayer => {
+            let damaged = PlayerId(1 - state.last_known_controller(source).0);
+            behavior.on_combat_damage_to_player(state, source, damaged, 2, registry);
+        }
+        Fired::CreatureEntered => behavior.on_any_creature_enters(state, source, other, PlayerId(1), registry),
+    }
+}
+
+/// "..., put N +1/+1 counters on this creature." resolving for a creature
+/// under either player (one player's card: a zone change for an owner the
+/// solver leaves open is a graveyard it leaves open, and ran out of
+/// memory at 4 GB), still on the battlefield (`there`) or put into its
+/// graveyard since by the engine's own zone change: there, it has N
+/// counters more and that much more power and toughness, read back
+/// through the engine's layers (CR 122.1a, 613.4c), and is otherwise as it
+/// was; gone, it is a new object that no counter is put on (121.1,
+/// 400.7). The other creature on the board is as it was either way.
+fn counters_itself((card, n, fired, there): (Box<dyn CardBehavior>, u32, Fired, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let other = a_permanent(&mut state, blank, Permanent::Creature);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let source = a_creature_of(&mut state, card, PlayerId(1), you);
+    state.get_object_mut(source).expect("just created").tapped = kani::any();
+    let tapped = state.get_object(source).expect("just created").tapped;
+    if !there {
+        state.move_object(source, Zone::Graveyard, &registry);
+    }
+    let was = (state.effective_power(other, &registry), state.effective_toughness(other, &registry));
+
+    fire(&mut state, &registry, source, fired, other, &[]);
+
+    let o = state.get_object(source).expect("still an object");
+    let counters = o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    if there {
+        let up = i32::try_from(n).expect("small");
+        assert!(o.zone == Zone::Battlefield && counters == n && o.tapped == tapped && o.controller == you && o.damage_marked == 0);
+        assert!(state.effective_power(source, &registry) == Some(2 + up) && state.effective_toughness(source, &registry) == Some(2 + up));
+    } else {
+        assert!(o.zone == Zone::Graveyard && counters == 0);
+    }
+    let o = state.get_object(other).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.counters.get(&CounterType::PlusOnePlusOne).is_none());
+    assert!((state.effective_power(other, &registry), state.effective_toughness(other, &registry)) == was);
+    std::mem::forget((registry, state));
+}
+
+/// "Whenever <a creature> deals combat damage to <a player>, put a +1/+1
+/// counter on it." resolving, "it" the creature that dealt the damage and
+/// not the trigger's source: that creature, still on the battlefield
+/// (`there`), has one counter more and one more power and toughness (CR
+/// 122.1a); put into its graveyard since, no counter is put on it
+/// (121.1). The source has none either way.
+fn counters_what_dealt((card, there): (Box<dyn CardBehavior>, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let dealt = a_permanent(&mut state, blank, Permanent::Creature);
+    let source = a_source(&mut state, card, PlayerId(u8::from(kani::any::<bool>())));
+    let before = state.get_object(dealt).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+    let (power, toughness) = (state.effective_power(dealt, &registry), state.effective_toughness(dealt, &registry));
+    if !there {
+        state.move_object(dealt, Zone::Graveyard, &registry);
+    }
+
+    registry.get(card).expect("registered").on_any_combat_damage_to_player(&mut state, source, dealt, PlayerId(1), 2, &registry);
+
+    let o = state.get_object(dealt).expect("still an object");
+    let counters = o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    if there {
+        assert!(o.zone == Zone::Battlefield && counters == 1 && o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+        assert!(state.effective_power(dealt, &registry) == power.map(|p| p + 1));
+        assert!(state.effective_toughness(dealt, &registry) == toughness.map(|t| t + 1));
+    } else {
+        assert!(o.zone == Zone::Graveyard && counters == 0);
+    }
+    let o = state.get_object(source).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.counters.get(&CounterType::PlusOnePlusOne).is_none());
+    std::mem::forget((registry, state));
+}
+
+/// "When this creature dies, create N 1/1 white Spirit creature tokens
+/// with flying." resolving, the creature one player's card that died
+/// under either player's control, put into its owner's graveyard by the
+/// engine's own zone change: N new permanents, each a token, a 1/1 white
+/// Spirit creature with flying, under the player who controlled the
+/// creature as it died and not its owner (CR 603.10a, 608.2h, 111.2).
+fn dies_into_spirits((card, n): (Box<dyn CardBehavior>, u64)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let source = a_creature_of(&mut state, card, PlayerId(1), you);
+    state.move_object(source, Zone::Graveyard, &registry);
+    assert!(state.get_object(source).expect("still an object").zone == Zone::Graveyard);
+    let before = state.objects.len();
+
+    fire(&mut state, &registry, source, Fired::Died, source, &[]);
+
+    assert!(state.objects.len() == before + usize::try_from(n).expect("a few"));
+    for k in 1..=n {
+        let id = ObjectId(source.0 + k);
+        let t = state.get_object(id).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+        assert!(state.is_creature(id, &registry) && state.has_keyword(id, Keyword::Flying, &registry));
+        assert!(state.effective_power(id, &registry) == Some(1) && state.effective_toughness(id, &registry) == Some(1));
+        assert!(t.colors == [Color::White] && t.subtypes.len() == 1 && t.subtypes[0] == "Spirit");
+    }
+    assert!(state.get_object(source).expect("still an object").zone == Zone::Graveyard);
+    std::mem::forget((registry, state));
+}
+
+/// Elder Cathar ("When this creature dies, put a +1/+1 counter on target
+/// creature you control. If that creature is a Human, put two +1/+1
+/// counters on it instead.") dead, its trigger resolving at a creature
+/// that is `what`: one counter on it, or two on a Human, and that much
+/// more power and toughness (CR 122.1a).
+fn elder_cathar((what, n): (Permanent, u32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::elder_cathar::ElderCathar));
+    let target = a_permanent(&mut state, blank, what);
+    let source = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.move_object(source, Zone::Graveyard, &registry);
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+    let (power, toughness) = (state.effective_power(target, &registry), state.effective_toughness(target, &registry));
+
+    fire(&mut state, &registry, source, Fired::Died, source, &[Target::Object(target)]);
+
+    let up = i32::try_from(n).expect("small");
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == n);
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage && o.controller == controller);
+    assert!(state.effective_power(target, &registry) == power.map(|p| p + up));
+    assert!(state.effective_toughness(target, &registry) == toughness.map(|t| t + up));
+    std::mem::forget((registry, state));
+}
+
+/// A creature of `card` under the first player, dead if its trigger is
+/// its own death's (put into the graveyard by the engine's own zone
+/// change) and on the battlefield if it watches for another's, and the
+/// creature that died for it to have watched: the source, and that one.
+fn a_source_of(state: &mut GameState, registry: &crate::cards::CardRegistry, blank: CardId, card: CardId, fired: Fired) -> (ObjectId, ObjectId) {
+    let source = a_creature_of(state, card, PlayerId(0), PlayerId(0));
+    if fired == Fired::Died {
+        state.move_object(source, Zone::Graveyard, registry);
+        return (source, source);
+    }
+    (source, a_card_in(state, blank, 1, Zone::Graveyard, true))
+}
+
+/// A death trigger's "~ deals N damage to <target>" resolving at a
+/// creature, the engine's own damage under the hook: N more damage is
+/// marked on it than before (CR 120.3e), from a source that may no
+/// longer be on the battlefield (608.2h), and it is otherwise as it was.
+fn a_death_deals_to_a_creature((card, fired, n): (Box<dyn CardBehavior>, Fired, u32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let (source, other) = a_source_of(&mut state, &registry, blank, card, fired);
+    let before = state.get_object(target).expect("just created");
+    let (tapped, damage, controller) = (before.tapped, before.damage_marked, before.controller);
+    let life = [state.players[0].life, state.players[1].life];
+
+    fire(&mut state, &registry, source, fired, other, &[Target::Object(target)]);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == damage + n && o.tapped == tapped && o.controller == controller);
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+    std::mem::forget((registry, state));
+}
+
+/// The same at a player, either one: that player has N life fewer (CR
+/// 120.3a), and the other as many as before.
+fn a_death_deals_to_a_player((card, fired, n): (Box<dyn CardBehavior>, Fired, u32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let (source, other) = a_source_of(&mut state, &registry, blank, card, fired);
+    let at = u8::from(kani::any::<bool>());
+    let life = [state.players[0].life, state.players[1].life];
+
+    fire(&mut state, &registry, source, fired, other, &[Target::Player(PlayerId(at))]);
+
+    for p in 0..2u8 {
+        let lost = if p == at { i32::try_from(n).expect("small") } else { 0 };
+        assert!(state.players[p as usize].life == life[p as usize] - lost);
+    }
+    std::mem::forget((registry, state));
+}
+
+/// The same at a planeswalker with three loyalty counters: N of them are
+/// removed (CR 120.3c), and no damage is marked on it.
+fn a_death_deals_to_a_planeswalker((card, fired, n): (Box<dyn CardBehavior>, Fired, u32)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let target = a_permanent(&mut state, blank, Permanent::Planeswalker);
+    let (source, other) = a_source_of(&mut state, &registry, blank, card, fired);
+    let life = [state.players[0].life, state.players[1].life];
+
+    fire(&mut state, &registry, source, fired, other, &[Target::Object(target)]);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == 0);
+    assert!(o.counters.get(&CounterType::Loyalty).copied().unwrap_or(0) == 3u32.saturating_sub(n));
+    assert!(state.players[0].life == life[0] && state.players[1].life == life[1]);
+    std::mem::forget((registry, state));
+}
+
+/// Falkenrath Noble ("Whenever this creature or another creature dies,
+/// target player loses 1 life and you gain 1 life.") under either player,
+/// the trigger its own death's or another's, resolving at either player:
+/// that player has 1 life fewer and its controller, as the creature last
+/// was controlled, 1 more (CR 119.3, 608.2h); a controller who is the
+/// target has as much as before.
+fn falkenrath_noble(fired: Fired) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::falkenrath_noble::FalkenrathNoble));
+    let you = u8::from(kani::any::<bool>());
+    let source = a_creature_of(&mut state, card, PlayerId(1), PlayerId(you));
+    let other = if fired == Fired::Died {
+        state.move_object(source, Zone::Graveyard, &registry);
+        source
+    } else {
+        a_card_in(&mut state, blank, 1, Zone::Graveyard, true)
+    };
+    let at = u8::from(kani::any::<bool>());
+    let life = [state.players[0].life, state.players[1].life];
+
+    fire(&mut state, &registry, source, fired, other, &[Target::Player(PlayerId(at))]);
+
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] - i32::from(p == at) + i32::from(p == you));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Selhoff Occultist ("Whenever this creature or another creature dies,
+/// target player mills a card.") the trigger its own death's or
+/// another's, resolving at the player `who` names (a harness for each:
+/// `draws` says why), their library of `cards` cards: the top one is in
+/// their graveyard (CR 701.17a), after whatever was put there before it,
+/// the rest are their library in the order they were, and milling an
+/// empty library is not drawing from one (701.17b).
+fn selhoff_occultist((fired, cards, who): (Fired, usize, u8)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::selhoff_occultist::SelhoffOccultist));
+    let library = a_library(&mut state, blank, who, cards);
+    let (source, other) = a_source_of(&mut state, &registry, blank, card, fired);
+    let yard = state.players[who as usize].graveyard_order.len();
+
+    fire(&mut state, &registry, source, fired, other, &[Target::Player(PlayerId(who))]);
+
+    let milled = cards.min(1);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - milled && player.graveyard_order.len() == yard + milled && !player.has_drawn_from_empty);
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < milled {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[yard + k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - milled] == id);
+        }
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Abattoir Ghoul ("Whenever a creature dealt damage by this creature
+/// this turn dies, you gain life equal to that creature's toughness.")
+/// under either player, on the battlefield or dead itself by then
+/// (`there`), for a creature that died with a toughness from -1 to 4:
+/// its controller, as it last was controlled, has that much more life,
+/// and none for a toughness of 0 or less (CR 119.3, 608.2h); the other
+/// player as much as before.
+fn abattoir_ghoul(there: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::abattoir_ghoul::AbattoirGhoul));
+    let you = u8::from(kani::any::<bool>());
+    let source = a_creature_of(&mut state, card, PlayerId(1), PlayerId(you));
+    if !there {
+        state.move_object(source, Zone::Graveyard, &registry);
+    }
+    let dead = a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+    let toughness: i32 = kani::any();
+    kani::assume((-1..=4).contains(&toughness));
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_any_creature_dies(&mut state, source, dead, PlayerId(1), &[source], toughness, false, &[], &registry);
+
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] + if p == you { toughness.max(0) } else { 0 });
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Galvanic Juggernaut ("Whenever another creature dies, untap this
+/// creature.") one player's card under either player, tapped or not, on
+/// the battlefield or gone from it by then
+/// (`there`): there, it is untapped (CR 701.21b) and otherwise as it was;
+/// gone, it is the card in the graveyard and nothing is done to it
+/// (400.7).
+fn galvanic_juggernaut(there: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::galvanic_juggernaut::GalvanicJuggernaut));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let source = a_creature_of(&mut state, card, PlayerId(1), you);
+    state.get_object_mut(source).expect("just created").tapped = kani::any();
+    if !there {
+        state.move_object(source, Zone::Graveyard, &registry);
+    }
+    let dead = a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+
+    fire(&mut state, &registry, source, Fired::CreatureDied, dead, &[]);
+
+    let o = state.get_object(source).expect("still an object");
+    assert!(!o.tapped && o.damage_marked == 0);
+    assert!(if there { o.zone == Zone::Battlefield && o.controller == you } else { o.zone == Zone::Graveyard && o.controller == PlayerId(1) });
+    std::mem::forget((registry, state));
+}
+
+/// Gutter Grime ("Whenever a nontoken creature you control dies, put a
+/// slime counter on this enchantment, then create a green Ooze creature
+/// token with 'This token's power and toughness are each equal to the
+/// number of slime counters on Gutter Grime.'") one player's card under
+/// either player, with a slime counter already or none, on the
+/// battlefield or gone from it by then (`there`):
+/// there, it has one slime counter more and its controller a new token, a
+/// green Ooze creature whose power and toughness the engine reads as
+/// that many (CR 604.3, 111.2); gone, no counter is put on it (121.1)
+/// and the Ooze is made all the same, a 0/0 (the card's ruling of
+/// 2011-09-22).
+fn gutter_grime(there: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::gutter_grime::GutterGrime));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let grime = a_source(&mut state, card, PlayerId(1));
+    state.get_object_mut(grime).expect("just created").controller = you;
+    let had = u32::from(kani::any::<bool>());
+    // One entry either way: a map the solver may or may not have put to is
+    // one of either length to every read after.
+    state.get_object_mut(grime).expect("just created").counters.insert(CounterType::Slime, had);
+    if !there {
+        state.move_object(grime, Zone::Graveyard, &registry);
+    }
+    let dead = a_card_in(&mut state, blank, 1, Zone::Graveyard, true);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_any_creature_dies(&mut state, grime, dead, you, &[], 2, false, &[], &registry);
+
+    assert!(state.objects.len() == before + 1);
+    let slime = state.get_object(grime).expect("still an object").counters.get(&CounterType::Slime).copied().unwrap_or(0);
+    let size = if there {
+        assert!(slime == had + 1);
+        i32::try_from(slime).expect("small")
+    } else {
+        0
+    };
+    let id = ObjectId(dead.0 + 1);
+    let t = state.get_object(id).expect("made");
+    assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && !t.tapped);
+    assert!(state.is_creature(id, &registry));
+    assert!(state.effective_power(id, &registry) == Some(size) && state.effective_toughness(id, &registry) == Some(size));
+    assert!(t.colors == [Color::Green] && t.subtypes.len() == 1 && t.subtypes[0] == "Ooze");
+    std::mem::forget((registry, state));
+}
+
+/// Sturmgeist ("Whenever this creature deals combat damage to a player,
+/// draw a card.") the player `who` names its controller (a harness for
+/// each: `draws` says why), the other player's card, on the battlefield
+/// or gone from it by then (`there`), their library of `cards` cards:
+/// the top card of its controller's library, as it last was controlled,
+/// is in their hand (CR 121.1, 608.2h), the rest their library in the
+/// order they were; with none to draw they have drawn from an empty
+/// library (704.5b).
+fn sturmgeist((cards, who, there): (usize, u8, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::sturmgeist::Sturmgeist));
+    let library = a_library(&mut state, blank, who, cards);
+    let source = a_creature_of(&mut state, card, PlayerId(1 - who), PlayerId(who));
+    if !there {
+        state.move_object(source, Zone::Graveyard, &registry);
+    }
+
+    fire(&mut state, &registry, source, Fired::DamagedPlayer, source, &[]);
+
+    let drawn = cards.min(1);
+    let player = &state.players[who as usize];
+    assert!(player.library_order.len() == cards - drawn && player.has_drawn_from_empty == (cards == 0));
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < drawn {
+            assert!(o.zone == Zone::Hand && o.controller == PlayerId(who));
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - drawn] == id);
+        }
+    }
+    assert!(!state.players[1 - who as usize].has_drawn_from_empty);
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -1638,4 +2066,75 @@ engine_under_card! {
     morkrut_banshee_with_morbid_gives_its_target_minus_four: morkrut_banshee(true);
     slayer_of_the_wicked_asks_and_destroys_its_target: slayer_of_the_wicked(());
     geistcatchers_rig_asks_and_deals_four_damage_to_its_target: geistcatchers_rig(());
+}
+
+use crate::cards::isd::{bloodcrazed_neonate::BloodcrazedNeonate, champion_of_the_parish::ChampionOfTheParish,
+    doomed_traveler::DoomedTraveler, falkenrath_marauders::FalkenrathMarauders,
+    lumberknot::Lumberknot, mausoleum_guard::MausoleumGuard, pitchburn_devils::PitchburnDevils, rage_thrower::RageThrower,
+    rakish_heir::RakishHeir, stromkirk_noble::StromkirkNoble, stromkirk_patrol::StromkirkPatrol, unruly_mob::UnrulyMob,
+    village_cannibals::VillageCannibals};
+
+// Permanents: a counter on the trigger's own source, there or gone.
+engine_under_card! {
+    bloodcrazed_neonate_gets_a_counter_for_its_combat_damage: counters_itself((Box::new(BloodcrazedNeonate), 1, Fired::DamagedPlayer, true));
+    bloodcrazed_neonate_gone_gets_no_counter: counters_itself((Box::new(BloodcrazedNeonate), 1, Fired::DamagedPlayer, false));
+    falkenrath_marauders_get_two_counters_for_their_combat_damage: counters_itself((Box::new(FalkenrathMarauders), 2, Fired::DamagedPlayer, true));
+    falkenrath_marauders_gone_get_no_counter: counters_itself((Box::new(FalkenrathMarauders), 2, Fired::DamagedPlayer, false));
+    stromkirk_noble_gets_a_counter_for_its_combat_damage: counters_itself((Box::new(StromkirkNoble), 1, Fired::DamagedPlayer, true));
+    stromkirk_noble_gone_gets_no_counter: counters_itself((Box::new(StromkirkNoble), 1, Fired::DamagedPlayer, false));
+    stromkirk_patrol_gets_a_counter_for_its_combat_damage: counters_itself((Box::new(StromkirkPatrol), 1, Fired::DamagedPlayer, true));
+    stromkirk_patrol_gone_gets_no_counter: counters_itself((Box::new(StromkirkPatrol), 1, Fired::DamagedPlayer, false));
+    lumberknot_gets_a_counter_for_another_creatures_death: counters_itself((Box::new(Lumberknot), 1, Fired::CreatureDied, true));
+    lumberknot_gone_gets_no_counter_for_another_creatures_death: counters_itself((Box::new(Lumberknot), 1, Fired::CreatureDied, false));
+    lumberknot_dead_gets_no_counter_for_its_own_death: counters_itself((Box::new(Lumberknot), 1, Fired::Died, false));
+    unruly_mob_gets_a_counter_for_a_death: counters_itself((Box::new(UnrulyMob), 1, Fired::CreatureDied, true));
+    unruly_mob_gone_gets_no_counter: counters_itself((Box::new(UnrulyMob), 1, Fired::CreatureDied, false));
+    village_cannibals_get_a_counter_for_a_death: counters_itself((Box::new(VillageCannibals), 1, Fired::CreatureDied, true));
+    village_cannibals_gone_get_no_counter: counters_itself((Box::new(VillageCannibals), 1, Fired::CreatureDied, false));
+    champion_of_the_parish_gets_a_counter_for_an_entry: counters_itself((Box::new(ChampionOfTheParish), 1, Fired::CreatureEntered, true));
+    champion_of_the_parish_gone_gets_no_counter: counters_itself((Box::new(ChampionOfTheParish), 1, Fired::CreatureEntered, false));
+}
+
+// Permanents: a counter on the creature that dealt the damage.
+engine_under_card! {
+    rakish_heir_puts_a_counter_on_the_vampire_that_dealt_the_damage: counters_what_dealt((Box::new(RakishHeir), true));
+    rakish_heir_puts_no_counter_on_a_vampire_gone_since: counters_what_dealt((Box::new(RakishHeir), false));
+    curse_of_stalked_prey_puts_a_counter_on_the_creature_that_dealt_the_damage: counters_what_dealt((Box::new(CurseOfStalkedPrey), true));
+    curse_of_stalked_prey_puts_no_counter_on_a_creature_gone_since: counters_what_dealt((Box::new(CurseOfStalkedPrey), false));
+}
+
+// Permanents: what a death sets off.
+engine_under_card! {
+    doomed_traveler_dies_into_a_spirit: dies_into_spirits((Box::new(DoomedTraveler), 1));
+    mausoleum_guard_dies_into_two_spirits: dies_into_spirits((Box::new(MausoleumGuard), 2));
+    elder_cathar_dies_and_puts_a_counter_on_a_creature: elder_cathar((Permanent::Creature, 1));
+    elder_cathar_dies_and_puts_two_counters_on_a_human: elder_cathar((Permanent::Human, 2));
+    pitchburn_devils_dies_and_deals_three_to_a_creature: a_death_deals_to_a_creature((Box::new(PitchburnDevils), Fired::Died, 3));
+    pitchburn_devils_dies_and_deals_three_to_a_player: a_death_deals_to_a_player((Box::new(PitchburnDevils), Fired::Died, 3));
+    pitchburn_devils_dies_and_deals_three_to_a_planeswalker: a_death_deals_to_a_planeswalker((Box::new(PitchburnDevils), Fired::Died, 3));
+    rage_thrower_deals_two_to_a_player_for_a_death: a_death_deals_to_a_player((Box::new(RageThrower), Fired::CreatureDied, 2));
+    falkenrath_noble_dies_and_drains_a_player: falkenrath_noble(Fired::Died);
+    falkenrath_noble_drains_a_player_for_another_creatures_death: falkenrath_noble(Fired::CreatureDied);
+    selhoff_occultist_dies_and_mills_nothing_from_your_empty_library: selhoff_occultist((Fired::Died, 0, 0));
+    selhoff_occultist_dies_and_mills_nothing_from_their_empty_library: selhoff_occultist((Fired::Died, 0, 1));
+    selhoff_occultist_dies_and_mills_the_top_of_your_two: selhoff_occultist((Fired::Died, 2, 0));
+    selhoff_occultist_dies_and_mills_the_top_of_their_two: selhoff_occultist((Fired::Died, 2, 1));
+    selhoff_occultist_mills_the_top_of_your_two_for_another_creatures_death: selhoff_occultist((Fired::CreatureDied, 2, 0));
+    selhoff_occultist_mills_the_top_of_their_two_for_another_creatures_death: selhoff_occultist((Fired::CreatureDied, 2, 1));
+    abattoir_ghoul_gains_the_toughness_of_what_died: abattoir_ghoul(true);
+    abattoir_ghoul_dead_itself_still_gains_the_toughness_of_what_died: abattoir_ghoul(false);
+    galvanic_juggernaut_untaps_for_a_death: galvanic_juggernaut(true);
+    galvanic_juggernaut_gone_is_not_untapped: galvanic_juggernaut(false);
+    gutter_grime_gets_a_slime_counter_and_makes_an_ooze_that_size: gutter_grime(true);
+    gutter_grime_gone_makes_an_ooze_of_no_size: gutter_grime(false);
+}
+
+// Permanents: a card drawn for combat damage.
+engine_under_card! {
+    sturmgeist_draws_your_top_card: sturmgeist((2, 0, true));
+    sturmgeist_draws_their_top_card: sturmgeist((2, 1, true));
+    sturmgeist_gone_still_draws_your_top_card: sturmgeist((2, 0, false));
+    sturmgeist_gone_still_draws_their_top_card: sturmgeist((2, 1, false));
+    sturmgeist_draws_from_your_empty_library: sturmgeist((0, 0, true));
+    sturmgeist_draws_from_their_empty_library: sturmgeist((0, 1, true));
 }
