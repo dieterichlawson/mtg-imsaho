@@ -357,7 +357,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** No engine defect yet; thirteen gaps of the
+**What it has found so far.** No engine defect yet; sixteen gaps of the
 reference, each on a board nobody wrote and in each the engine right:
 
 - the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
@@ -405,7 +405,22 @@ reference, each on a board nobody wrote and in each the engine right:
   sacrificing a Moldgraf Monstrosity that returns a second Grimgrin, the
   one already there untapped or with a counter; the reference kept the
   first of two alike and gave up on two that were not (activated
-  abilities, two pieces).
+  abilities, two pieces);
+- what a damage step sets off goes on the stack together (CR 603.3b,
+  101.4): the reference resolved the damage's own triggers ("deals
+  combat damage to a player", a watcher's or a Curse's counter, an
+  Aura's draw, a coin flipped) as the damage was dealt and the deaths'
+  after, whoever controlled them. Stromkirk Patrol and Typhoid Rats
+  attack, Pitchburn Devils blocks the Rats and dies, and the Devils' 3
+  damage, the other player's trigger and so the first to resolve, kills
+  the Patrol before its counter arrives (combat, three pieces);
+- a trigger whose every target is gone by the time it resolves does
+  nothing (CR 608.2b): that Devils' damage at a creature a trigger above
+  it has already killed (combat, three pieces);
+- "each creature that player controls" is read as the trigger resolves:
+  Balefire Dragon's damage reaches the Spirit of a Doomed Traveler that
+  died in the same step, its trigger the other player's and resolved
+  first (combat, three pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -444,9 +459,13 @@ the family, in 40 shares:
 | activated abilities | 17,923,840 | the same, once three gaps above were closed |
 | casts | 91,095,375 | the same, once the gap above was closed |
 
-144 million plays, every one agreeing with the reference as it stands at
+144 million plays, every one agreeing with the reference as it stood at
 4b60d3c; each check was run again whole against it after the last gap
-was closed.
+was closed. The three gaps combat on three pieces then found change
+combat alone, and combat was run again whole against the reference as
+it stands at 95256e1: the same 94,552 and 1,441,016 combats, all
+agreeing, with the exhaustive tier of the hand-made combats and every
+board of one piece.
 
 Combat is cheap enough that `prove.sh exhaustive` plays it on every
 board of two worn pieces. The boards are walked one at a time now, so
@@ -455,30 +474,29 @@ three pieces fit in memory: a slice of them (one share of 4,000) fights
 of this machine for combat alone.
 
 **Three pieces, combat (begun 2026-11-19).** The first three shares of
-60, 4.4 million boards and 2,237,248 combats: 28 disagree, on 14 boards,
-and every one looked at is one gap of the reference, the engine right.
-What a damage step sets off goes on the stack together: a "deals combat
-damage to a player" trigger, and the dies triggers and watchers of what
-the damage killed. The active player's go on first and resolve last,
-and a player orders their own (CR 603.3b, 101.4). The reference
-resolves the damage's triggers first and the deaths' after, whoever
-controls them. Two attackers and a blocker is the smallest board where
-that shows: Stromkirk Patrol and Typhoid Rats attack, Pitchburn Devils
-blocks the Rats and dies, and the Devils' 3 damage (the other player's
-trigger, so first to resolve) kills the Patrol before its counter
-arrives; or Falkenrath Marauders beside a Pitchburn Devils of the same
-player's, who may order them either way. A first repair, both orders of
+60, 4.4 million boards and 2,237,248 combats: 28 disagreed, on 14 boards,
+and every one was a gap of the reference, the engine right. What a
+damage step sets off goes on the stack together: a "deals combat damage
+to a player" trigger, and the dies triggers and watchers of what the
+damage killed. The active player's go on first and resolve last, and a
+player orders their own (CR 603.3b, 101.4). The reference resolved the
+damage's triggers first and the deaths' after, whoever controlled them.
+Two attackers and a blocker is the smallest board where that shows,
+which is why two pieces never met it. A first repair, both orders of
 the two groups, agreed on five of thirteen boards and allowed too much
-on the rest, and is not kept. The repair to make: the damage's triggers
-become triggers like any other, set off with the deaths and ordered and
-resolved by `settle_triggers`, in place of the combat's own handling of
-them; then the exhaustive combat tier, the two-piece boards and these
-shares again.
+on the rest, and was not kept. The repair made (9b74526, 4b34091,
+95256e1): the damage's triggers are triggers like any other, set off
+with the deaths' and ordered and resolved by `settle_triggers` in place
+of the combat's own handling of them; with them on one stack, a trigger
+whose target another has removed does nothing, and a token another has
+made is there for a third to find. Against it the first five shares,
+7,316,501 boards and 3,731,814 combats, all agree, the 14 boards among
+them; the other fifty-five are running.
 
-**Next.** That repair, and the rest of the three-piece shares; and the
-cuts above. Three pieces as they entered is 88 million boards
-and about 25 billion casts: some 500 hours on these four cores, a day
-and a half on 64, which is what a larger machine would be asked for.
+**Next.** The rest of the three-piece shares; and the cuts above. Three
+pieces as they entered is 88 million boards and about 25 billion casts:
+some 500 hours on these four cores, a day and a half on 64, which is
+what a larger machine would be asked for.
 
 ### B2. Kani with the engine under a card (under way)
 
