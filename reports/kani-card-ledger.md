@@ -9,14 +9,16 @@ proofs that a card works when it resolves: the 715 harnesses that
 claimed that by asserting a record of the calls a card made, with
 recorders standing in for the engine, were removed (2026-11-18).
 
-**With the engine** (`proofs::engine_under_card`, 379): the card's own
+**With the engine** (`proofs::engine_under_card`, 504): the card's own
 hook run with the engine's own actions under it and no recorder, the
-board afterwards asserted against the card's text. 73 of the 88 spells,
-and permanents' hooks: enters, death, combat-damage, upkeep, end-step,
-attack and block triggers, Equipment, and the activated abilities that
-resolve without a question (2026-11-20). What is left out of a harness,
-and why, is said where the harness stands; `docs/plans/cards-in-the-loop.md`
-(B2) lists what is not yet proved at all.
+board afterwards asserted against the card's text. 86 of the 88 spells,
+and the hooks of 120 permanents: enters, death, combat-damage, upkeep,
+end-step, attack and block triggers, Equipment, activated and loyalty
+abilities, and the questions they ask, each read where it lies and its
+effect applied by the engine or by the card's own hook (2026-11-19).
+What is left out of a harness, and why, is said where the harness
+stands; `docs/plans/cards-in-the-loop.md` (B2) lists what is not yet
+proved at all.
 
 What a card does through cast, stack, resolution, state-based actions
 and triggers together is checked with the engine itself, on every small
@@ -25,14 +27,14 @@ part B).
 
 Each harness's last result (`scripts/kani/times.txt`). The 285 declared
 ones are as the last run of every harness left them, 49 run again after
-the removal; the 379 with the engine were each run at the code as
-committed, between 2026-11-18 and 2026-11-20, on a machine busy with
-other runs (their times are upper bounds: 9.2 hours of solver time in
-all, the longest 12 minutes).
+the removal; the 504 with the engine were each run at the code as
+committed, on 2026-11-18 and 2026-11-19, on a machine busy with other
+runs (their times are upper bounds: 14.0 hours of solver time in all,
+the longest 12 minutes).
 
-664 harnesses over 233 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 379 of 170 cards resolving with the engine itself under them. 37 cards have none.
+789 harnesses over 245 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 504 of 206 cards resolving with the engine itself under them. 25 cards have none.
 
-- SUCCESSFUL: 664
+- SUCCESSFUL: 789
 
 | card | declared | with the engine | proved | not proved |
 |---|---|---|---|---|
@@ -45,39 +47,41 @@ all, the longest 12 minutes).
 | ashmouth_hound | 0 | 2 | 2 |  |
 | avacynian_priest | 2 | 1 | 3 |  |
 | avacyns_pilgrim | 1 | 0 | 1 |  |
-| back_from_the_brink | 8 | 0 | 8 |  |
+| back_from_the_brink | 8 | 2 | 10 |  |
 | balefire_dragon | 0 | 2 | 2 |  |
 | battleground_geist | 1 | 0 | 1 |  |
-| bitterheart_witch | 2 | 0 | 2 |  |
+| bitterheart_witch | 2 | 2 | 4 |  |
 | blasphemous_act | 0 | 2 | 2 |  |
-| blazing_torch | 1 | 1 | 2 |  |
+| blazing_torch | 1 | 3 | 4 |  |
 | bloodcrazed_neonate | 0 | 2 | 2 |  |
 | bloodgift_demon | 0 | 4 | 4 |  |
 | bloodline_keeper | 8 | 2 | 10 |  |
 | bonds_of_faith | 1 | 2 | 3 |  |
 | boneyard_wurm | 1 | 0 | 1 |  |
-| brain_weevil | 1 | 0 | 1 |  |
+| brain_weevil | 1 | 4 | 5 |  |
 | bramblecrush | 1 | 4 | 5 |  |
 | brimstone_volley | 1 | 6 | 7 |  |
 | bump_in_the_night | 0 | 1 | 1 |  |
 | burning_vengeance | 0 | 3 | 3 |  |
 | butchers_cleaver | 2 | 2 | 4 |  |
+| cackling_counterpart | 0 | 2 | 2 |  |
+| caravan_vigil | 0 | 4 | 4 |  |
 | cellar_door | 0 | 5 | 5 |  |
 | champion_of_the_parish | 0 | 2 | 2 |  |
-| charmbreaker_devils | 1 | 1 | 2 |  |
-| civilized_scholar | 3 | 0 | 3 |  |
+| charmbreaker_devils | 1 | 3 | 4 |  |
+| civilized_scholar | 3 | 7 | 10 |  |
 | claustrophobia | 1 | 2 | 3 |  |
 | clifftop_retreat | 2 | 0 | 2 |  |
 | cloistered_youth | 1 | 6 | 7 |  |
 | cobbled_wings | 2 | 2 | 4 |  |
 | corpse_lunge | 0 | 3 | 3 |  |
 | counterspell | 1 | 2 | 3 |  |
-| creeping_renaissance | 1 | 0 | 1 |  |
+| creeping_renaissance | 1 | 2 | 3 |  |
 | creepy_doll | 0 | 1 | 1 |  |
 | crossway_vampire | 1 | 1 | 2 |  |
 | curiosity | 1 | 6 | 7 |  |
 | curse_of_deaths_hold | 0 | 1 | 1 |  |
-| curse_of_oblivion | 0 | 1 | 1 |  |
+| curse_of_oblivion | 0 | 6 | 6 |  |
 | curse_of_stalked_prey | 0 | 3 | 3 |  |
 | curse_of_the_bloody_tome | 0 | 5 | 5 |  |
 | curse_of_the_nightly_hunt | 0 | 1 | 1 |  |
@@ -86,13 +90,16 @@ all, the longest 12 minutes).
 | daybreak_ranger | 3 | 4 | 7 |  |
 | dead_weight | 1 | 1 | 2 |  |
 | dearly_departed | 1 | 0 | 1 |  |
+| delver_of_secrets | 0 | 5 | 5 |  |
 | demonmail_hauberk | 2 | 1 | 3 |  |
 | deranged_assistant | 0 | 3 | 3 |  |
+| desperate_ravings | 0 | 2 | 2 |  |
 | devils_play | 1 | 9 | 10 |  |
 | diregraf_ghoul | 1 | 0 | 1 |  |
 | disciple_of_griselbrand | 1 | 1 | 2 |  |
 | dissipate | 1 | 2 | 3 |  |
 | divination | 0 | 8 | 8 |  |
+| divine_reckoning | 0 | 3 | 3 |  |
 | doom_blade | 1 | 1 | 2 |  |
 | doomed_traveler | 0 | 1 | 1 |  |
 | dream_twist | 0 | 8 | 8 |  |
@@ -107,32 +114,33 @@ all, the longest 12 minutes).
 | feeling_of_dread | 0 | 3 | 3 |  |
 | feral_ridgewolf | 2 | 1 | 3 |  |
 | festerhide_boar | 1 | 0 | 1 |  |
-| fiend_hunter | 1 | 0 | 1 |  |
+| fiend_hunter | 1 | 5 | 6 |  |
+| forbidden_alchemy | 0 | 3 | 3 |  |
 | forest | 1 | 0 | 1 |  |
-| frightful_delusion | 2 | 0 | 2 |  |
+| frightful_delusion | 2 | 3 | 5 |  |
 | full_moons_rise | 2 | 1 | 3 |  |
 | furor_of_the_bitten | 1 | 1 | 2 |  |
 | gallows_warden | 1 | 0 | 1 |  |
 | galvanic_juggernaut | 0 | 2 | 2 |  |
-| garruk_relentless | 2 | 0 | 2 |  |
+| garruk_relentless | 2 | 8 | 10 |  |
 | gatstaf_shepherd | 0 | 2 | 2 |  |
 | gavony_township | 2 | 1 | 3 |  |
 | geist_honored_monk | 0 | 1 | 1 |  |
 | geistcatchers_rig | 1 | 1 | 2 |  |
 | geistflame | 1 | 3 | 4 |  |
-| ghost_quarter | 2 | 0 | 2 |  |
+| ghost_quarter | 2 | 2 | 4 |  |
 | ghostly_possession | 1 | 1 | 2 |  |
 | ghoulcallers_bell | 1 | 3 | 4 |  |
 | ghoulcallers_chant | 0 | 2 | 2 |  |
-| ghoulraiser | 1 | 0 | 1 |  |
+| ghoulraiser | 1 | 2 | 3 |  |
 | giant_growth | 0 | 1 | 1 |  |
 | glorious_anthem | 1 | 0 | 1 |  |
 | gnaw_to_the_bone | 0 | 3 | 3 |  |
 | grasp_of_phantoms | 0 | 2 | 2 |  |
 | grave_bramble | 1 | 0 | 1 |  |
-| graveyard_shovel | 1 | 0 | 1 |  |
+| graveyard_shovel | 1 | 5 | 6 |  |
 | grimgrin_corpse_born | 2 | 3 | 5 |  |
-| grimoire_of_the_dead | 6 | 0 | 6 |  |
+| grimoire_of_the_dead | 6 | 3 | 9 |  |
 | grizzled_outcasts | 0 | 2 | 2 |  |
 | gruesome_deformity | 1 | 1 | 2 |  |
 | gutter_grime | 0 | 2 | 2 |  |
@@ -140,7 +148,7 @@ all, the longest 12 minutes).
 | hanweir_watchkeep | 0 | 4 | 4 |  |
 | harvest_pyre | 0 | 2 | 2 |  |
 | heartless_summoning | 1 | 0 | 1 |  |
-| heretics_punishment | 1 | 0 | 1 |  |
+| heretics_punishment | 1 | 1 | 2 |  |
 | hinterland_harbor | 2 | 0 | 2 |  |
 | hollowhenge_scavenger | 1 | 2 | 3 |  |
 | holy_strength | 1 | 1 | 2 |  |
@@ -160,39 +168,45 @@ all, the longest 12 minutes).
 | lantern_spirit | 1 | 2 | 3 |  |
 | lava_axe | 1 | 2 | 3 |  |
 | lightning_bolt | 1 | 3 | 4 |  |
-| liliana_of_the_veil | 16 | 0 | 16 |  |
+| liliana_of_the_veil | 16 | 7 | 23 |  |
 | lost_in_the_mist | 0 | 1 | 1 |  |
 | ludevics_test_subject | 3 | 3 | 6 |  |
 | lumberknot | 0 | 3 | 3 |  |
+| make_a_wish | 0 | 4 | 4 |  |
 | manor_gargoyle | 2 | 1 | 3 |  |
 | manor_skeleton | 1 | 2 | 3 |  |
 | mask_of_avacyn | 2 | 1 | 3 |  |
 | mausoleum_guard | 0 | 1 | 1 |  |
 | maw_of_the_mire | 0 | 1 | 1 |  |
 | mayor_of_avabruck | 0 | 5 | 5 |  |
-| mentor_of_the_meek | 3 | 0 | 3 |  |
+| memorys_journey | 0 | 1 | 1 |  |
+| mentor_of_the_meek | 3 | 4 | 7 |  |
 | midnight_haunting | 0 | 1 | 1 |  |
 | mikaeus_the_lunarch | 2 | 2 | 4 |  |
-| mindshrieker | 1 | 0 | 1 |  |
-| mirror_mad_phantasm | 1 | 0 | 1 |  |
+| mindshrieker | 1 | 1 | 2 |  |
+| mirror_mad_phantasm | 1 | 2 | 3 |  |
 | moan_of_the_unhallowed | 0 | 1 | 1 |  |
+| moldgraf_monstrosity | 0 | 3 | 3 |  |
 | moment_of_heroism | 0 | 1 | 1 |  |
+| moonmist | 0 | 1 | 1 |  |
 | moorland_haunt | 9 | 1 | 10 |  |
 | morkrut_banshee | 1 | 2 | 3 |  |
 | mountain | 1 | 0 | 1 |  |
+| mulch | 0 | 3 | 3 |  |
 | murder_of_crows | 0 | 4 | 4 |  |
 | naturalize | 1 | 2 | 3 |  |
 | nephalia_drownyard | 1 | 4 | 5 |  |
-| nevermore | 6 | 0 | 6 |  |
+| nevermore | 6 | 1 | 7 |  |
 | night_revelers | 1 | 0 | 1 |  |
+| night_terrors | 0 | 4 | 4 |  |
 | nightbirds_clutches | 1 | 3 | 4 |  |
-| olivia_voldaren | 1 | 1 | 2 |  |
+| olivia_voldaren | 1 | 3 | 4 |  |
 | one_eyed_scarecrow | 1 | 0 | 1 |  |
 | orchard_spirit | 1 | 0 | 1 |  |
 | pacifism | 1 | 1 | 2 |  |
 | parallel_lives | 1 | 0 | 1 |  |
 | paraselene | 0 | 2 | 2 |  |
-| past_in_flames | 16 | 0 | 16 |  |
+| past_in_flames | 16 | 1 | 17 |  |
 | pitchburn_devils | 0 | 3 | 3 |  |
 | plains | 1 | 0 | 1 |  |
 | prey_upon | 0 | 1 | 1 |  |
@@ -209,7 +223,7 @@ all, the longest 12 minutes).
 | runechanters_pike | 3 | 1 | 4 |  |
 | runic_repetition | 0 | 1 | 1 |  |
 | scourge_of_geier_reach | 1 | 0 | 1 |  |
-| screeching_bat | 1 | 0 | 1 |  |
+| screeching_bat | 1 | 6 | 7 |  |
 | selfless_cathar | 2 | 1 | 3 |  |
 | selhoff_occultist | 0 | 6 | 6 |  |
 | sensory_deprivation | 1 | 1 | 2 |  |
@@ -220,12 +234,12 @@ all, the longest 12 minutes).
 | silver_inlaid_dagger | 2 | 2 | 4 |  |
 | silverchase_fox | 1 | 1 | 2 |  |
 | skaab_ruinator | 1 | 0 | 1 |  |
-| skeletal_grimace | 1 | 1 | 2 |  |
+| skeletal_grimace | 1 | 2 | 3 |  |
 | skirsdag_cultist | 1 | 3 | 4 |  |
 | skirsdag_high_priest | 2 | 1 | 3 |  |
 | slayer_of_the_wicked | 1 | 1 | 2 |  |
 | smite_the_monstrous | 1 | 1 | 2 |  |
-| snapcaster_mage | 2 | 0 | 2 |  |
+| snapcaster_mage | 2 | 1 | 3 |  |
 | sol_ring | 1 | 0 | 1 |  |
 | somberwald_spider | 1 | 0 | 1 |  |
 | spare_from_evil | 1 | 0 | 1 |  |
@@ -234,7 +248,7 @@ all, the longest 12 minutes).
 | spidery_grasp | 0 | 1 | 1 |  |
 | splinterfright | 0 | 4 | 4 |  |
 | stensia_bloodhall | 1 | 2 | 3 |  |
-| stitchers_apprentice | 1 | 0 | 1 |  |
+| stitchers_apprentice | 1 | 2 | 3 |  |
 | stony_silence | 1 | 0 | 1 |  |
 | stromkirk_noble | 0 | 2 | 2 |  |
 | stromkirk_patrol | 0 | 2 | 2 |  |
@@ -247,9 +261,9 @@ all, the longest 12 minutes).
 | tormented_pariah | 0 | 2 | 2 |  |
 | traitorous_blood | 0 | 1 | 1 |  |
 | travel_preparations | 0 | 3 | 3 |  |
-| travelers_amulet | 1 | 0 | 1 |  |
+| travelers_amulet | 1 | 2 | 3 |  |
 | tree_of_redemption | 1 | 1 | 2 |  |
-| trepanation_blade | 2 | 1 | 3 |  |
+| trepanation_blade | 2 | 5 | 7 |  |
 | tribute_to_hunger | 0 | 2 | 2 |  |
 | ulvenwald_mystics | 0 | 3 | 3 |  |
 | unbreathing_horde | 1 | 0 | 1 |  |
@@ -264,7 +278,7 @@ all, the longest 12 minutes).
 | village_cannibals | 0 | 2 | 2 |  |
 | village_ironsmith | 0 | 2 | 2 |  |
 | villagers_of_estwald | 0 | 2 | 2 |  |
-| witchbane_orb | 1 | 0 | 1 |  |
+| witchbane_orb | 1 | 1 | 2 |  |
 | wooden_stake | 2 | 3 | 5 |  |
 | woodland_cemetery | 2 | 0 | 2 |  |
 | woodland_sleuth | 1 | 3 | 4 |  |
@@ -283,5 +297,5 @@ all, the longest 12 minutes).
 
 What these do is the engine's, played with it by `tests/card_semantics.rs`, or printed data alone.
 
-abbey_griffin, ambush_viper, army_of_the_damned, cackling_counterpart, caravan_vigil, chapel_geist, coral_merfolk, delver_of_secrets, desperate_ravings, divine_reckoning, forbidden_alchemy, fortress_crab, geist_of_saint_traft, goblin_piker, grizzly_bears, kalonian_tusker, kindercatch, laboratory_maniac, make_a_wish, makeshift_mauler, markov_patrician, memorys_journey, moldgraf_monstrosity, moon_heron, moonmist, mulch, night_terrors, riot_devils, rotting_fensnake, savannah_lions, skaab_goliath, spectral_rider, stitched_drake, thraben_purebloods, typhoid_rats, voiceless_spirit, walking_corpse
+abbey_griffin, ambush_viper, army_of_the_damned, chapel_geist, coral_merfolk, fortress_crab, geist_of_saint_traft, goblin_piker, grizzly_bears, kalonian_tusker, kindercatch, laboratory_maniac, makeshift_mauler, markov_patrician, moon_heron, riot_devils, rotting_fensnake, savannah_lions, skaab_goliath, spectral_rider, stitched_drake, thraben_purebloods, typhoid_rats, voiceless_spirit, walking_corpse
 

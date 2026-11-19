@@ -580,12 +580,12 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 379
-harnesses over 170 cards, every one proved: 147 over 73 of the 88
-spells, and 232 over the hooks of 97 permanents (below); 9 hours of
+**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 504
+harnesses over 206 cards, every one proved: 202 over 86 of the 88
+spells, and 302 over the hooks of 120 permanents (below); 14 hours of
 solver time in all on this machine while it was busy, the longest 12
-minutes and most a minute or two. The spells, By family, each a function of what the text
-says and a row for each card and case:
+minutes and most a minute or two. The spells, by family, each a function
+of what the text says and a row for each card and case:
 
 | Family | Cards | What is asserted of the board afterwards |
 |---|---|---|
@@ -597,6 +597,9 @@ says and a row for each card and case:
 | Auras and Curses | the twelve "enchant creature" Auras and Wreath of Geists, the six Curses | attached, and the creature (or the enchanted player's creatures) as the text says, read back through the engine's layers and its attack, block and untap queries |
 | moves between zones | Counterspell, Dissipate, Lost in the Mist, Silent Departure, Grasp of Phantoms, Swords to Plowshares, Purify the Grave, Runic Repetition, Unburial Rites, Ghoulcaller's Chant, Sever the Bloodline | where each card is, under whom, and what the list it left and the list it joined hold |
 | the rest | Bump in the Night, Infernal Plunge, Gnaw to the Bone, Prey Upon, Rolling Temblor (one creature without flying), Tribute to Hunger | life, mana, a fight's damage, and a question asked and its effect applied |
+| cards taken by what they are | Mulch, Past in Flames, Creeping Renaissance, Night Terrors, Forbidden Alchemy, Caravan Vigil (with and without morbid), Moonmist | each card where its kind sends it; the flashback the engine then reads; the question asked, of whom, among what, and what its answer does |
+| at random, at a seed | Make a Wish, Desperate Ravings, Memory's Journey | how many cards moved and which stayed, with the engine's own shuffle and pick under the card |
+| the last of the spells | Frightful Delusion, Cackling Counterpart, Divine Reckoning | the payment asked of the spell's controller and the discard after it; a token that is a copy, read back through the layers; the creature each player keeps and the rest destroyed |
 
 Three more things that put a harness out of reach were measured on the
 way: an amount of damage the solver leaves open (Brimstone Volley's 3 or
@@ -623,20 +626,35 @@ effect the question holds through the engine's own
 is proved of itself (`proofs::actions::answering`). This is the shape
 for every card that asks.
 
+**The engine's dispatch of a card's effect, and then a read.** Fiend
+Hunter's question holds an effect that is the card's own
+(`PendingEffect::CardEffect`), and the engine applies it by finding the
+card's behaviour in the registry from an id read back off the object.
+Measured on a board with nothing open: the effect applied through that
+dispatch and the creature then found in exile proves in 108 s; asked as
+well which card the Hunter then holds, it ran out of memory at 7 GB,
+with room given to the Hunter's list first or without; and the card's
+own hook called as the engine calls it, and then asked the same, proves
+in 80 s. What the card writes under the dispatch is written by either
+card of the registry or by neither, as far as symbolic execution can
+tell, and every later read of it is of all of those. So a harness
+applies an effect through the engine where it then reads the board
+(zones, life, damage), and calls the card's hook where it then reads
+what the card keeps of its own: Fiend Hunter's exiled card (the whole
+card hook to hook, enter to return, in 107 s, where through the
+dispatch it did not finish symbolic execution in 25 minutes), Caravan
+Vigil's land with morbid, Divine Reckoning's kept creatures.
+
 **Not yet.** Rolling Temblor beside a creature that has flying, and
 Rolling Temblor beside any second permanent (one creature without
 flying, alone, proves in 71 s; each of the others ran out of memory at
 8 GB, nothing about the board left open). Spare from Evil: with one
 creature of yours and one other, the engine's protection read back ran
 out of memory at 8 GB. These three are what more memory would be tried
-on first. The other spells that ask or choose at random (Divine
-Reckoning, Make a Wish, Creeping Renaissance, Frightful Delusion,
-Memory's Journey, Forbidden Alchemy, Night Terrors, Past in Flames,
-Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling Counterpart
-(a copy needs a printed creature to copy) and Army of the Damned
-(thirteen tokens).
+on first. And Army of the Damned: thirteen tokens are more permanents
+than a list of the engine's has room for in a proof here (below).
 
-**Permanents.** 232 harnesses over 97 cards, each the card's own hook as
+**Permanents.** 302 harnesses over 120 cards, each the card's own hook as
 its trigger or ability resolves, for a source still on the battlefield
 and, where the text does not need it there, for one gone from it by
 then (a counter then lands nowhere, CR 121.1; a drain, a draw, a token
@@ -652,6 +670,8 @@ or damage happens all the same, for the player who last controlled it,
 | an end step, a spell cast, a creature entering, a card milled | Unholy Fiend, Howlpack Alpha (gone), Reaper from the Abyss; Charmbreaker Devils, Burning Vengeance; Champion of the Parish; Undead Alchemist |
 | an attack or a block | Ashmouth Hound, Wooden Stake, Hamlet Captain, Grimgrin, Kessig Cagebreakers (with nothing to count) |
 | equip | the eleven Equipment, each read back through the layers, at a Human where the text says more of one |
+| a hook that asks, searches, pays or picks | Fiend Hunter (the question, what it holds, its return, and the whole card), Witchbane Orb, Snapcaster Mage, Nevermore's question; Moldgraf Monstrosity, Bitterheart Witch; Delver of Secrets, Curse of Oblivion, Screeching Bat on either face and Mentor of the Meek paying from the pool; Homicidal Brute; Trepanation Blade; Ghoulraiser and Charmbreaker Devils' upkeep at two seeds; Olivia Voldaren's second, Mindshrieker, Heretic's Punishment, Graveyard Shovel, Civilized Scholar, Stitcher's Apprentice, Skeletal Grimace's regeneration, Blazing Torch's sacrifice, Brain Weevil, Traveler's Amulet, Ghost Quarter, Mirror-Mad Phantasm, Back from the Brink, Grimoire of the Dead (both) |
+| a loyalty ability | Garruk Relentless (the fight, the Wolf, the transformation at two loyalty or fewer) and Garruk, the Veil-Cursed (the Wolf, the sacrifice and search, the last); Liliana of the Veil (each player's discard, the sacrifice, the piles asked for) |
 | an activated ability that asks nothing | Darkthicket Wolf, Feral Ridgewolf, Kessig Wolf, Avacynian Priest, Bloodline Keeper (both), Skirsdag High Priest, Nephalia Drownyard, Ghoulcaller's Bell, Stensia Bloodhall, Lantern Spirit, Elder of Laurels, Gavony Township, Manor Skeleton, Ulvenwald Primordials, Manor Gargoyle, Mikaeus (both), Selfless Cathar, Silverchase Fox, Skirsdag Cultist, Daybreak Ranger's damage and Nightfall Predator's fight, Olivia Voldaren's first, Kessig Wolf Run, Disciple of Griselbrand, Tree of Redemption, Deranged Assistant, Cellar Door, Ludevic's Test Subject, Full Moon's Rise, Grimgrin, Moorland Haunt, Evil Twin |
 
 Six more things that put a harness out of reach, each measured:
@@ -686,17 +706,29 @@ Six more things that put a harness out of reach, each measured:
   engine's own shuffle under it. A coin with the numbers open fits
   (Creepy Doll, both ways reached).
 
-Not yet, of permanents: those just named; the other hooks that choose
-at random, which the two seeds will do for (Ghoulraiser, Moldgraf
-Monstrosity, Charmbreaker Devils' upkeep, Mirror-Mad Phantasm); those
-that search, pay or pick a card (Bitterheart Witch,
-Mentor of the Meek, Screeching Bat, Delver of Secrets, Curse of
-Oblivion, Traveler's Amulet, Ghost Quarter, Graveyard Shovel, Brain
-Weevil, Civilized Scholar, Stitcher's Apprentice, Back from the Brink,
-Grimoire of the Dead); Fiend Hunter, Nevermore, Snapcaster Mage,
-Witchbane Orb, Trepanation Blade's trigger, Blazing Torch's sacrifice,
-Heretic's Punishment, Mindshrieker, Olivia Voldaren's second, Skeletal
-Grimace; and the two planeswalkers.
+Not yet, of permanents: those just named (Instigator Gang's power read,
+Howlpack Alpha beside its Wolf, a board of five, Geist of Saint Traft's
+Angel and Kessig Cagebreakers' Wolves); a payment planned from lands
+under a card's "may pay", which is the engine's and proved of it
+(`proofs::actions::paying`), the card proved here with the mana
+floating; and what an answer does where the engine and not the card
+does it (the card Forbidden Alchemy's chooser takes, the name Nevermore
+is given, Liliana's piles, a discard chosen from a hand), each proved of
+the engine's own answer (`proofs::actions`).
+
+Of the 270 cards, 206 have a harness with the engine under them. Of the
+64 that do not, 38 are permanents whose text is a static or a
+replacement effect, a mana ability, a cost or a keyword, which the
+engine reads from what the card declares (the declared harnesses, and
+the engine's own proofs of each effect kind); 19 print nothing a hook
+could run (vanilla and keyword creatures); and 7 have a text that is
+not yet proved with the engine by Kani: Spare from Evil, Army of the
+Damned and Geist of Saint Traft, above, and Laboratory Maniac, Skaab
+Goliath, Makeshift Mauler and Stitched Drake, whose text is a
+replacement of a draw or an additional cost paid as the spell is cast,
+the engine's own path and not a hook of the card's. All of them are
+played with the engine on every small board by
+`tests/card_semantics.rs`.
 
 These harnesses are also the first proofs of the engine's actions
 composed with nothing stood in for: `try_destroy` over the real
