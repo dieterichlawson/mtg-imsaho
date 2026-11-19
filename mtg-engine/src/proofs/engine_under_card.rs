@@ -5677,26 +5677,27 @@ fn laboratory_maniac((cards, who): (usize, u8)) {
     std::mem::forget((registry, state));
 }
 
-/// "{T}: Add ..." (Avacyn's Pilgrim's {W}), the mana ability activated
-/// through the engine: the permanent is tapped (CR 605.3a), and its
-/// controller's pool holds exactly that mana. Past 4 GB and proved
-/// alone under 7; Sol Ring's {C}{C} the same way ran out of memory
-/// there, an artifact's ability being asked first whether anything on
-/// the board forbids it, and is left to the engine's own proofs of an
-/// activation (`proofs::actions::mana_abilities`).
+/// "{T}: Add ..." (Avacyn's Pilgrim's {W}, a basic land's one mana of
+/// its colour, Shimmering Grotto's {C}), the mana ability activated
+/// through the engine for the first player: the permanent is tapped (CR
+/// 605.3a), and its controller's pool holds exactly that mana and the
+/// other player's none. For one player: with the controller left open
+/// the Pilgrim and a Plains proved alone under 7 GB and the other four
+/// basic lands ran out of memory there. Sol Ring's {C}{C} ran out of
+/// memory either way, an artifact's ability being asked first whether
+/// anything on the board forbids it, and is left to the engine's own
+/// proofs of an activation (`proofs::actions::mana_abilities`).
 fn taps_for((card, mana, n): (Box<dyn CardBehavior>, ManaType, u32)) {
     let (registry, mut state, _, card) = crate::proofs::cards::board(card);
-    let you = u8::from(kani::any::<bool>());
-    let source = state.create_object(card, PlayerId(you), Zone::Battlefield, None, None);
+    let source = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
     state.get_object_mut(source).expect("just created").summoning_sick = false;
 
     crate::engine::activate_mana_source(&mut state, source, 0, &registry);
 
     assert!(state.get_object(source).expect("still an object").tapped);
-    for p in 0..2u8 {
-        let pool = &state.players[p as usize].mana_pool;
-        assert!(pool.get(mana) == if p == you { n } else { 0 } && pool.total() == if p == you { n } else { 0 });
-    }
+    let pool = &state.players[0].mana_pool;
+    assert!(pool.get(mana) == n && pool.total() == n);
+    assert!(state.players[1].mana_pool.total() == 0);
     std::mem::forget((registry, state));
 }
 
@@ -5886,6 +5887,53 @@ fn protected_from((card, from, named): (Box<dyn CardBehavior>, &str, bool)) {
     let creature = printed_creature(&mut state, &registry, card, PlayerId(0));
 
     assert!(state.has_protection_from(creature, source, &registry) == named);
+    std::mem::forget((registry, state));
+}
+
+// ---- Creatures that are what they print. A creature with no ability,
+// or with keywords alone, has no hook to run: what there is to hold the
+// card to is its printed power, toughness and keywords, read off a
+// permanent of it through the engine's own layers. The numbers and
+// keywords in the table are the card's Oracle text, not the card's own
+// data read back. ----
+
+/// A creature of the card on the battlefield under either player: the
+/// engine reads it as a creature of `power` and `toughness`, with each
+/// keyword of `has` and none of `lacks` (CR 208.1, 702).
+fn reads_as_printed((card, (power, toughness), has, lacks): (Box<dyn CardBehavior>, (i32, i32), &[Keyword], &[Keyword])) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let creature = printed_creature(&mut state, &registry, card, you);
+
+    assert!(state.is_creature(creature, &registry));
+    assert!(state.effective_power(creature, &registry) == Some(power) && state.effective_toughness(creature, &registry) == Some(toughness));
+    for k in has {
+        assert!(state.has_keyword(creature, *k, &registry));
+    }
+    for k in lacks {
+        assert!(!state.has_keyword(creature, *k, &registry));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Essence of the Wild ("Creatures you control enter as a copy of this
+/// creature.") on the battlefield under the first player, a 6/6, and a
+/// Doomed Traveler card put onto the battlefield from a hand, the first
+/// player's (`yours`) or the other player's: its controller's enters as
+/// a copy and reads 6/6 through the engine's layers (CR 614.1c, 707.2);
+/// the other player's reads the 1/1 it prints.
+fn essence_of_the_wild(yours: bool) {
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::essence_of_the_wild::EssenceOfTheWild));
+    let traveler = registry.register(Box::new(crate::cards::isd::doomed_traveler::DoomedTraveler));
+    printed_creature(&mut state, &registry, card, PlayerId(0));
+    let (power, toughness) = registry.printed_pt(traveler, false).expect("its face");
+    let entering = state.create_object(traveler, PlayerId(u8::from(!yours)), Zone::Hand, power, toughness);
+
+    state.move_object(entering, Zone::Battlefield, &registry);
+
+    assert!(state.get_object(entering).expect("still an object").zone == Zone::Battlefield);
+    let reads = if yours { Some(6) } else { Some(1) };
+    assert!(state.effective_power(entering, &registry) == reads && state.effective_toughness(entering, &registry) == reads);
     std::mem::forget((registry, state));
 }
 
@@ -6721,4 +6769,40 @@ engine_under_card! {
     mountain_taps_for_red: taps_for((Box::new(Mountain), ManaType::Red, 1));
     plains_taps_for_white: taps_for((Box::new(Plains), ManaType::White, 1));
     swamp_taps_for_black: taps_for((Box::new(Swamp), ManaType::Black, 1));
+}
+
+use crate::cards::isd::{abbey_griffin::AbbeyGriffin, ambush_viper::AmbushViper, chapel_geist::ChapelGeist, fortress_crab::FortressCrab,
+    kindercatch::Kindercatch, makeshift_mauler::MakeshiftMauler, markov_patrician::MarkovPatrician, moon_heron::MoonHeron,
+    riot_devils::RiotDevils, rotting_fensnake::RottingFensnake, skaab_goliath::SkaabGoliath, spectral_rider::SpectralRider,
+    stitched_drake::StitchedDrake, thraben_purebloods::ThrabenPurebloods, typhoid_rats::TyphoidRats, voiceless_spirit::VoicelessSpirit};
+use crate::cards::{coral_merfolk::CoralMerfolk, goblin_piker::GoblinPiker, grizzly_bears::GrizzlyBears, kalonian_tusker::KalonianTusker,
+    savannah_lions::SavannahLions};
+
+// Creatures that are what they print, and the last two that replace or tap.
+engine_under_card! {
+    abbey_griffin_is_a_two_two_with_flying_and_vigilance: reads_as_printed((Box::new(AbbeyGriffin), (2, 2), &[Keyword::Flying, Keyword::Vigilance], &[Keyword::Deathtouch]));
+    ambush_viper_is_a_two_one_with_flash_and_deathtouch: reads_as_printed((Box::new(AmbushViper), (2, 1), &[Keyword::Flash, Keyword::Deathtouch], &[Keyword::Flying]));
+    chapel_geist_is_a_two_three_with_flying: reads_as_printed((Box::new(ChapelGeist), (2, 3), &[Keyword::Flying], &[Keyword::Vigilance]));
+    coral_merfolk_is_a_two_one: reads_as_printed((Box::new(CoralMerfolk), (2, 1), &[], &[Keyword::Flying]));
+    fortress_crab_is_a_one_six: reads_as_printed((Box::new(FortressCrab), (1, 6), &[], &[Keyword::Defender]));
+    goblin_piker_is_a_two_one: reads_as_printed((Box::new(GoblinPiker), (2, 1), &[], &[Keyword::Haste]));
+    grizzly_bears_is_a_two_two: reads_as_printed((Box::new(GrizzlyBears), (2, 2), &[], &[Keyword::Trample]));
+    kalonian_tusker_is_a_three_three: reads_as_printed((Box::new(KalonianTusker), (3, 3), &[], &[Keyword::Trample]));
+    kindercatch_is_a_six_six: reads_as_printed((Box::new(Kindercatch), (6, 6), &[], &[Keyword::Flying]));
+    markov_patrician_is_a_three_one_with_lifelink: reads_as_printed((Box::new(MarkovPatrician), (3, 1), &[Keyword::Lifelink], &[Keyword::Flying]));
+    moon_heron_is_a_three_two_with_flying: reads_as_printed((Box::new(MoonHeron), (3, 2), &[Keyword::Flying], &[Keyword::Vigilance]));
+    riot_devils_is_a_two_three: reads_as_printed((Box::new(RiotDevils), (2, 3), &[], &[Keyword::Haste]));
+    rotting_fensnake_is_a_five_one: reads_as_printed((Box::new(RottingFensnake), (5, 1), &[], &[Keyword::Deathtouch]));
+    savannah_lions_is_a_two_one: reads_as_printed((Box::new(SavannahLions), (2, 1), &[], &[Keyword::FirstStrike]));
+    spectral_rider_is_a_two_two_with_intimidate: reads_as_printed((Box::new(SpectralRider), (2, 2), &[Keyword::Intimidate], &[Keyword::Flying]));
+    thraben_purebloods_is_a_three_five: reads_as_printed((Box::new(ThrabenPurebloods), (3, 5), &[], &[Keyword::Vigilance]));
+    typhoid_rats_is_a_one_one_with_deathtouch: reads_as_printed((Box::new(TyphoidRats), (1, 1), &[Keyword::Deathtouch], &[Keyword::Flying]));
+    voiceless_spirit_is_a_two_one_with_flying_and_first_strike: reads_as_printed((Box::new(VoicelessSpirit), (2, 1), &[Keyword::Flying, Keyword::FirstStrike], &[Keyword::Vigilance]));
+    walking_corpse_is_a_two_two: reads_as_printed((Box::new(WalkingCorpse), (2, 2), &[], &[Keyword::Deathtouch]));
+    skaab_goliath_is_a_six_nine_with_trample: reads_as_printed((Box::new(SkaabGoliath), (6, 9), &[Keyword::Trample], &[Keyword::Flying]));
+    makeshift_mauler_is_a_four_five: reads_as_printed((Box::new(MakeshiftMauler), (4, 5), &[], &[Keyword::Trample]));
+    stitched_drake_is_a_three_four_with_flying: reads_as_printed((Box::new(StitchedDrake), (3, 4), &[Keyword::Flying], &[Keyword::Trample]));
+    essence_of_the_wild_makes_your_creature_enter_as_a_copy: essence_of_the_wild(true);
+    essence_of_the_wild_leaves_their_creature_as_it_is: essence_of_the_wild(false);
+    shimmering_grotto_taps_for_colorless: taps_for((Box::new(crate::cards::isd::shimmering_grotto::ShimmeringGrotto), ManaType::Colorless, 1));
 }
