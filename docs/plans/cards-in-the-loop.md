@@ -479,11 +479,11 @@ the family, in 40 shares:
 
 144 million plays, every one agreeing with the reference as it stood at
 4b60d3c; each check was run again whole against it after the last gap
-was closed. The three gaps combat on three pieces then found change
-combat alone, and combat was run again whole against the reference as
-it stands at 95256e1: the same 94,552 and 1,441,016 combats, all
-agreeing, with the exhaustive tier of the hand-made combats and every
-board of one piece.
+was closed. What combat on three pieces then found (four gaps, and
+defect 48 in the engine) changes combat alone, and combat was run again
+whole against the reference and the engine as they stand (a24dc8b): the
+same 94,552 and 1,441,016 combats, all agreeing, with the exhaustive
+tier of the hand-made combats and every board of one piece.
 
 Combat is cheap enough that `prove.sh exhaustive` plays it on every
 board of two worn pieces. The boards are walked one at a time now, so
@@ -507,9 +507,14 @@ on the rest, and was not kept. The repair made (9b74526, 4b34091,
 with the deaths' and ordered and resolved by `settle_triggers` in place
 of the combat's own handling of them; with them on one stack, a trigger
 whose target another has removed does nothing, and a token another has
-made is there for a third to find. Against it the first five shares,
-7,316,501 boards and 3,731,814 combats, all agree, the 14 boards among
-them; the other fifty-five are running.
+made is there for a third to find. Against it the first five shares
+all agreed, the 14 boards among them, and the sixth disagreed in 2 of
+746,372 combats, on one board: defect 48, the engine's, and the block
+triggers the reference resolved together. With both fixed (5a8c669,
+a24dc8b) the first twelve shares, 17,559,145 boards and 8,953,526
+combats, all agree; the other forty-eight are running. The fifteen
+boards that disagreed are fought again in `cargo test`
+(`combat_agrees_on_the_three_piece_boards_that_once_did_not`).
 
 **Next.** The rest of the three-piece shares; and the cuts above. Three
 pieces as they entered is 88 million boards and about 25 billion casts:
