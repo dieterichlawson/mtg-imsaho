@@ -6928,8 +6928,20 @@ fn stack_outcomes(world: &World, stack: &[&(Option<ObjectId>, PlayerId, Trigger)
                         after.state_based_actions();
                         settle_above(after)
                     };
+                    // With every target it chose gone by now, it does
+                    // nothing (CR 608.2b): a Pitchburn Devils' 3 damage at
+                    // a creature that a trigger above it has killed.
+                    let chosen: Vec<(&Target, &Slot)> = targets.iter().zip(&trigger.spec.slots)
+                        .filter(|(_, slot)| !matches!(slot, Slot::This))
+                        .collect();
+                    let gone = !chosen.is_empty() && chosen.iter().all(|(t, slot)| match (t, slot) {
+                        (Target::Object(o), Slot::GraveyardCard { .. }) => !w.yard.contains_key(o),
+                        (Target::Object(o), _) => !w.permanents.contains_key(o),
+                        _ => false,
+                    });
                     let mut out: Vec<World> = match &trigger.native {
                         Some(native) => native_outcomes(native, &w).into_iter().flat_map(settled).collect(),
+                        None if gone => vec![w.clone()],
                         None => paid.iter()
                             .flat_map(|paid| resolution_ways(&trigger.spec, paid, targets, *controller))
                             .flat_map(|way| settled(apply(&trigger.spec, &way, targets, *controller)))
