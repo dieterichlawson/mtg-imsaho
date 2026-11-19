@@ -357,7 +357,7 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** No engine defect yet; ten gaps of the
+**What it has found so far.** No engine defect yet; thirteen gaps of the
 reference, each on a board nobody wrote and in each the engine right:
 
 - the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
@@ -391,7 +391,21 @@ reference, each on a board nobody wrote and in each the engine right:
 - a creature that regenerates is removed from combat (CR 701.19c): a
   first striker's blocker that regenerates in the first-strike step
   deals no damage in the second (Abattoir Ghoul blocked by a shielded
-  Falkenrath Noble; combat, two worn pieces).
+  Falkenrath Noble; combat, two worn pieces);
+- "leaves the battlefield" is any way of leaving, not a death alone (CR
+  603.6c): of two Fiend Hunters returned together that exile each
+  other, the second one's leaving returns the first, which the reference
+  had left in exile with it (the one disagreement in 91,095,375 casts on
+  the boards of two pieces);
+- what was resolving goes on resolving once the triggers its cost set
+  off have: Demonmail Hauberk's equip, paid by sacrificing a Falkenrath
+  Noble whose death trigger resolves above it, still attaches the
+  Hauberk (activated abilities, two pieces);
+- the legend rule's choice (CR 704.5j) where the two differ: Grimgrin
+  sacrificing a Moldgraf Monstrosity that returns a second Grimgrin, the
+  one already there untapped or with a counter; the reference kept the
+  first of two alike and gave up on two that were not (activated
+  abilities, two pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -400,11 +414,19 @@ cast check; the opponent's spell held on the stack cast on any creature
 of theirs; the source "exiled in response" played only where the
 ability is alone on the stack.
 
-One cut, where the reference does not yet read far enough: a loyalty
+Two cuts, where the reference does not yet read far enough. A loyalty
 ability that searches a library shuffles it, and what a death trigger of
 the board's then mills or draws is any card of it, which the reference
 does not play; such an ability (Garruk, the Veil-Cursed's sacrifice) is
-not played beside a permanent that triggers on a death.
+not played beside a permanent that triggers on a death. And an ability
+or a spell that lasts the turn is played on into the next turn only
+where neither its cost nor its resolution set off a trigger: the
+reference plays the source's own text for the turn's end and no other
+permanent's, and what a trigger brings may have some (a Reaper from the
+Abyss returned by a Moldgraf Monstrosity sacrificed).
+
+A check that gives up (the reference meeting what it does not play) no
+longer ends its share: it is reported as that board's failure, by name.
 
 **Two pieces.** Combat is cheap enough to play on every board of two
 pieces in every state of wear, and `prove.sh exhaustive` does: 2,052,641
