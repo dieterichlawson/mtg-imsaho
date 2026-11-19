@@ -3518,6 +3518,231 @@ fn woodland_sleuth((died, seed, pick): (bool, u64, usize)) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents: exile and return, control, and cards read from a
+// library or a graveyard by what they are. ----
+
+/// Fiend Hunter ("When this creature enters, you may exile another
+/// target creature. When this creature leaves the battlefield, return
+/// the exiled card to the battlefield under its owner's control.")
+/// entered, its trigger resolving at a creature: its controller is
+/// asked, and the effect the question holds puts the creature in exile
+/// (CR 406.1). Then, if `leaves`, the Hunter put into its graveyard by
+/// the engine's own zone change and its second ability resolving: the
+/// card it exiled is back on the battlefield under its owner's control,
+/// untapped and undamaged, a new object as it enters (610.3, 400.7); if
+/// the Hunter stays, the card stays in exile.
+fn fiend_hunter(leaves: bool) {
+    use crate::state::PendingEffect;
+    let (registry, mut state, target, _) = may_do_to_its_target(Box::new(crate::cards::isd::fiend_hunter::FiendHunter), Permanent::Creature,
+        &|effect, source, _| matches!(effect, PendingEffect::CardEffect { source_id, key } if *source_id == source && key.is_empty()),
+        &|source, _| PendingEffect::CardEffect { source_id: source, key: String::new() });
+    let hunter = ObjectId(target.0 + 1);
+    let card = state.get_object(hunter).expect("the Hunter").card_id;
+    assert!(state.get_object(target).expect("still an object").zone == Zone::Exile);
+    assert!(state.get_object(hunter).expect("still an object").zone == Zone::Battlefield);
+
+    if leaves {
+        state.move_object(hunter, Zone::Graveyard, &registry);
+        registry.get(card).expect("registered").on_leave_battlefield(&mut state, hunter, &registry);
+    }
+
+    let o = state.get_object(target).expect("still an object");
+    if leaves {
+        assert!(o.zone == Zone::Battlefield && o.controller == PlayerId(1) && o.owner == PlayerId(1) && !o.tapped && o.damage_marked == 0);
+    } else {
+        assert!(o.zone == Zone::Exile && o.owner == PlayerId(1));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// Olivia Voldaren ("{3}{B}{B}: Gain control of target Vampire for as
+/// long as you control Olivia Voldaren.") the first player's, its second
+/// ability resolving at the second player's creature, a Vampire or not
+/// (`vampire`): the first player controls a Vampire from then on (CR
+/// 613.1b), and a creature that is no Vampire by then stays its
+/// controller's.
+fn olivia_voldaren_takes(vampire: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::olivia_voldaren::OliviaVoldaren));
+    let target = a_permanent(&mut state, blank, Permanent::Creature);
+    let o = state.get_object_mut(target).expect("just created");
+    o.controller = PlayerId(1);
+    if vampire {
+        o.subtypes = vec!["Vampire".to_string()];
+    }
+    let olivia = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, olivia, 1, &[Target::Object(target)], &registry);
+
+    let o = state.get_object(target).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.controller == PlayerId(u8::from(!vampire)) && o.owner == PlayerId(1));
+    assert!(state.get_object(olivia).expect("still an object").controller == PlayerId(0));
+    std::mem::forget((registry, state));
+}
+
+/// Witchbane Orb ("When this artifact enters, destroy all Curses attached
+/// to you.") entered under the first player, a Curse attached to each
+/// player: the one attached to them is in its owner's graveyard by the
+/// engine's own destruction (CR 701.7a), and the one attached to the
+/// other player is where it was.
+fn witchbane_orb(_: ()) {
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::witchbane_orb::WitchbaneOrb));
+    let curse = registry.register(Box::new(crate::cards::isd::curse_of_the_bloody_tome::CurseOfTheBloodyTome));
+    let mut a_curse_on = |player: u8| {
+        let id = state.create_object(curse, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).expect("just created").attached_to_player = Some(PlayerId(player));
+        id
+    };
+    let (yours, theirs) = (a_curse_on(0), a_curse_on(1));
+    let orb = a_source(&mut state, card, PlayerId(0));
+
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, orb, &[], &registry);
+
+    let y = state.get_object(yours).expect("still an object");
+    assert!(y.zone == Zone::Graveyard && y.attached_to_player.is_none() && state.players[1].graveyard_order.contains(&yours));
+    let t = state.get_object(theirs).expect("still an object");
+    assert!(t.zone == Zone::Battlefield && t.attached_to_player == Some(PlayerId(1)));
+    assert!(state.get_object(orb).expect("still an object").zone == Zone::Battlefield);
+    std::mem::forget((registry, state));
+}
+
+/// Trepanation Blade ("Whenever equipped creature attacks, defending
+/// player reveals cards from the top of their library until they reveal
+/// a land card. The creature gets +1/+0 until end of turn for each card
+/// revealed this way. That player puts the revealed cards into their
+/// graveyard.") its trigger resolving for the first player's creature
+/// attacking the second, whose library is `cards` cards, the `land`th of
+/// them a land if any is: the cards down to and with the land, or all of
+/// them with none, are in that player's graveyard in the order they
+/// lay (CR 701.17a), the rest their library as it was, and the attacker
+/// has 1 more power for each, its toughness as it was (613.4c).
+fn trepanation_blade((cards, land): (usize, Option<usize>)) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::trepanation_blade::TrepanationBlade));
+    let forest = registry.register(Box::new(crate::cards::forest::Forest));
+    let mut library = [None; 4];
+    for (k, slot) in library.iter_mut().enumerate().take(cards) {
+        let id = state.create_object(if land == Some(k) { forest } else { blank }, PlayerId(1), Zone::Library, None, None);
+        state.players[1].library_order.push(id);
+        *slot = Some(id);
+    }
+    let attacker = a_permanent(&mut state, blank, Permanent::Creature);
+    state.get_object_mut(attacker).expect("just created").controller = PlayerId(0);
+    let blade = a_source(&mut state, card, PlayerId(0));
+    state.attach(blade, attacker);
+    let (power, toughness) = (state.effective_power(attacker, &registry), state.effective_toughness(attacker, &registry));
+
+    registry.get(card).expect("registered").on_attacks(&mut state, blade, crate::cards::AttackInfo::new(attacker, PlayerId(1)), &[], &registry);
+
+    let revealed = land.map_or(cards, |k| k + 1);
+    let player = &state.players[1];
+    assert!(player.library_order.len() == cards - revealed && player.graveyard_order.len() == revealed && !player.has_drawn_from_empty);
+    for k in 0..cards {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < revealed {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[k - revealed] == id);
+        }
+    }
+    let up = i32::try_from(revealed).expect("a few");
+    assert!(state.effective_power(attacker, &registry) == power.map(|p| p + up) && state.effective_toughness(attacker, &registry) == toughness);
+    std::mem::forget((registry, state));
+}
+
+/// A card of one kind returned at random from its controller's graveyard
+/// to their hand: Ghoulraiser's enters trigger ("return a Zombie card at
+/// random") and Charmbreaker Devils' upkeep trigger ("return an instant
+/// or sorcery card at random"), each for the first player with two cards
+/// of that kind (`kind`'s, a card the registry prints as one) and one
+/// that is not in their graveyard, the game's random numbers at `seed`:
+/// exactly one of the two is in their hand, the `pick`th as that seed
+/// has it (CR 701.9c), and the other two cards are where they were.
+/// `woodland_sleuth` says why a seed and not the numbers left open.
+fn returns_one_at_random((card, kind, upkeep, seed, pick): (Box<dyn CardBehavior>, Box<dyn CardBehavior>, bool, u64, usize)) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let kind = registry.register(kind);
+    let other = a_card_in(&mut state, blank, 0, Zone::Graveyard, false);
+    let two = [a_card_in(&mut state, kind, 0, Zone::Graveyard, false), a_card_in(&mut state, kind, 0, Zone::Graveyard, false)];
+    let source = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+    state.rng_state = seed;
+
+    let behavior = registry.get(card).expect("registered");
+    if upkeep {
+        behavior.on_upkeep(&mut state, source, &[], &registry);
+    } else {
+        behavior.on_enter_battlefield(&mut state, source, &[], &registry);
+    }
+
+    let zone = |id| state.get_object(id).expect("still an object").zone;
+    assert!(zone(two[pick]) == Zone::Hand && zone(two[1 - pick]) == Zone::Graveyard && zone(other) == Zone::Graveyard);
+    assert!(state.players[0].graveyard_order.len() == 2);
+    std::mem::forget((registry, state));
+}
+
+/// Mindshrieker ("{2}: Target player mills a card. This creature gets
+/// +X/+X until end of turn, where X is the milled card's mana value.")
+/// its ability resolving at the second player, the top of whose library
+/// is a card of mana value 2 (Doom Blade) over another: that card is in
+/// their graveyard (CR 701.17a), the other their library, and the
+/// Mindshrieker has 2 more power and toughness, read back through the
+/// engine's layers (202.3, 613.4c).
+fn mindshrieker(_: ()) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::mindshrieker::Mindshrieker));
+    let blade = registry.register(Box::new(DoomBlade));
+    let top = state.create_object(blade, PlayerId(1), Zone::Library, None, None);
+    let under = state.create_object(blank, PlayerId(1), Zone::Library, None, None);
+    state.players[1].library_order.push(top);
+    state.players[1].library_order.push(under);
+    let shrieker = a_creature_of(&mut state, card, PlayerId(0), PlayerId(0));
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, shrieker, 0, &[Target::Player(PlayerId(1))], &registry);
+
+    assert!(state.get_object(top).expect("still an object").zone == Zone::Graveyard && state.players[1].graveyard_order == [top]);
+    assert!(state.get_object(under).expect("still an object").zone == Zone::Library && state.players[1].library_order == [under]);
+    assert!(state.effective_power(shrieker, &registry) == Some(4) && state.effective_toughness(shrieker, &registry) == Some(4));
+    std::mem::forget((registry, state));
+}
+
+/// Heretic's Punishment ("{3}{R}: Choose any target, then mill three
+/// cards. This enchantment deals damage to that permanent or player
+/// equal to the greatest mana value among the milled cards.") the first
+/// player's, its ability resolving at either player, the top of its
+/// controller's library a card of mana value 1 (Lightning Bolt), one of
+/// 2 (Doom Blade), a card with no cost and a fourth: the top three are
+/// in their graveyard in order (CR 701.17a), the fourth is their
+/// library, and the player chosen has 2 life fewer (202.3, 120.3a).
+fn heretics_punishment(_: ()) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::heretics_punishment::HereticsPunishment));
+    let (bolt, blade) = (registry.register(Box::new(LightningBolt)), registry.register(Box::new(DoomBlade)));
+    let mut library = [None; 4];
+    for (slot, of) in library.iter_mut().zip([bolt, blade, blank, blank]) {
+        let id = state.create_object(of, PlayerId(0), Zone::Library, None, None);
+        state.players[0].library_order.push(id);
+        *slot = Some(id);
+    }
+    let punishment = a_source(&mut state, card, PlayerId(0));
+    let at = u8::from(kani::any::<bool>());
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").resolve_activated_ability(&mut state, punishment, 0, &[Target::Player(PlayerId(at))], &registry);
+
+    let player = &state.players[0];
+    assert!(player.library_order.len() == 1 && player.graveyard_order.len() == 3);
+    for k in 0..4 {
+        let id = library[k].expect("made");
+        let o = state.get_object(id).expect("still an object");
+        if k < 3 {
+            assert!(o.zone == Zone::Graveyard && player.graveyard_order[k] == id);
+        } else {
+            assert!(o.zone == Zone::Library && player.library_order[0] == id);
+        }
+    }
+    for p in 0..2u8 {
+        assert!(state.players[p as usize].life == life[p as usize] - if p == at { 2 } else { 0 });
+    }
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -4121,4 +4346,25 @@ engine_under_card! {
     woodland_sleuth_returns_nothing_with_no_death: woodland_sleuth((false, 0, 0));
     woodland_sleuth_with_morbid_returns_the_first_creature_card_at_one_seed: woodland_sleuth((true, SEED_FIRST, 0));
     woodland_sleuth_with_morbid_returns_the_second_creature_card_at_another: woodland_sleuth((true, SEED_SECOND, 1));
+}
+
+use crate::cards::isd::{charmbreaker_devils::CharmbreakerDevils, ghoulraiser::Ghoulraiser, walking_corpse::WalkingCorpse};
+
+// Permanents: exile and return, control, and cards read by what they are.
+engine_under_card! {
+    fiend_hunter_asks_and_exiles_its_target: fiend_hunter(false);
+    fiend_hunter_leaving_returns_what_it_exiled: fiend_hunter(true);
+    olivia_voldaren_takes_a_vampire: olivia_voldaren_takes(true);
+    olivia_voldaren_takes_nothing_that_is_no_vampire: olivia_voldaren_takes(false);
+    witchbane_orb_destroys_the_curse_attached_to_you: witchbane_orb(());
+    trepanation_blade_reveals_nothing_from_an_empty_library: trepanation_blade((0, None));
+    trepanation_blade_reveals_a_land_on_top_for_one_power: trepanation_blade((2, Some(0)));
+    trepanation_blade_reveals_down_to_the_land_for_two_power: trepanation_blade((3, Some(1)));
+    trepanation_blade_reveals_all_of_a_library_with_no_land: trepanation_blade((2, None));
+    ghoulraiser_returns_the_first_zombie_card_at_one_seed: returns_one_at_random((Box::new(Ghoulraiser), Box::new(WalkingCorpse), false, SEED_FIRST, 0));
+    ghoulraiser_returns_the_second_zombie_card_at_another: returns_one_at_random((Box::new(Ghoulraiser), Box::new(WalkingCorpse), false, SEED_SECOND, 1));
+    charmbreaker_devils_return_the_first_instant_at_one_seed: returns_one_at_random((Box::new(CharmbreakerDevils), Box::new(LightningBolt), true, SEED_FIRST, 0));
+    charmbreaker_devils_return_the_second_instant_at_another: returns_one_at_random((Box::new(CharmbreakerDevils), Box::new(LightningBolt), true, SEED_SECOND, 1));
+    mindshrieker_mills_a_card_and_grows_by_its_mana_value: mindshrieker(());
+    heretics_punishment_mills_three_and_deals_the_greatest_mana_value: heretics_punishment(());
 }
