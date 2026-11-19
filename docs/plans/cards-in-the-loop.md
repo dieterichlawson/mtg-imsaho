@@ -536,10 +536,12 @@ machine's hours allows:
 |---|---|---|
 | end steps | 11,707,160 | all agree |
 | werewolves | 17,560,740 | all agree |
-| loyalty abilities | 15,813,161 | 8 disagreed, one gap of the reference (the last above), the engine right; all 3,541,144 on two pieces agree against it as fixed, and the sample is being run again |
+| loyalty abilities | 15,813,161 | 8 disagreed, one gap of the reference (the last above), the engine right; against it as fixed all agree, and all 3,541,144 on two pieces |
+| upkeeps | 40,720,744 | all agree |
+| a permanent entering beside a watcher | 8,780,370 | all agree |
 
 Whole, on these four cores, end steps on three pieces are about 22
-hours and upkeeps about 88.
+hours, upkeeps about 85 and the loyalty abilities about 60.
 
 **Next.** The cuts above; and three pieces for the other checks. Combat
 on three pieces was five hours of this machine. The casts are another
