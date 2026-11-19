@@ -1518,7 +1518,9 @@ illegal or dubious resolutions do.
   "at once" and defers one is a sequence the engine runs one by one. Put a
   state-dependent card beside it (Boneyard Wurm, morbid, an anthem) and a
   second deferred choice after it. Unburial Rites on a Twin is still
-  unchecked
+  unchecked — **played 2026-11-19**: the rules hold, but Rites logs "returned to
+  the battlefield" before the Twin has chosen (#1070, #1067's line on a path
+  the fix did not take). Fiend Hunter's return has the same order in the code
 - L69 [proposed 2026-11-19, from #1011's defects 43 and 47, `5edca336`,
   `e3757cd4`] the cast-time position. Since #1011 a spell's targets are
   checked and its additional costs paid with the spell on the stack (CR
@@ -1529,14 +1531,20 @@ illegal or dubious resolutions do.
   (the target rows, the board, the mark screen) with what the engine counts
   and deals. Then look for a requirement `reads_power` misses: anything that
   reads the hand, the graveyard or the stack, on a spell cast from the hand or
-  by flashback
+  by flashback — **played 2026-11-19**: the engine is right (the Lunge deals 3,
+  Smite leaves out the 3/3), but every screen of the cast draws the hand with
+  the spell still in it (#1069). Self-targeting from the graveyard is excluded
+  by `o.id != spell_id` on every zone arm, so that half is checked. Nothing
+  outside power was found that tells hand from stack in this pool
 - L70 [proposed 2026-11-19, from `7eb59c76`, CR 111.4] an unnamed token is
   named "<subtypes> Token". Make a Spirit token (Doomed Traveler), copy it
   with Cackling Counterpart and an Evil Twin, then aim Sever the Bloodline and
   the Twin's same-name ability at it. Read every surface (CLI board and rows,
   log, LLM board, page inspector) for "Spirit Token token", a `[tok]` badge
   on the card copy, or a same-name check that compares "Spirit" with
-  "Spirit Token"
+  "Spirit Token" — **played 2026-11-19, holds**: the board reads `Spirit Token
+  1/1 (flying) [tok]`, the Twin `Spirit Token 1/1 (#8) [copy]`, the log keeps
+  "1/1 Spirit token", and Sever exiles all three "Spirit Token"s
 - L71 [proposed 2026-11-19, from #1011's defects 44-46, `59766cbe`,
   `df1a87d9`, `c556239b`] creatures put onto the battlefield together are
   planned against the board as it was (CR 614.12). Grimoire of the Dead
@@ -1545,4 +1553,8 @@ illegal or dubious resolutions do.
   Humans and the Twin's Human copy each get Dearly Departed's counter, and the
   Horde counts only itself (its ruling). Then put an Essence on the
   battlefield beforehand, put a second Essence there, and use Moldgraf
-  Monstrosity's random two
+  Monstrosity's random two — **played 2026-11-19, the first half holds**: the
+  Essence is a 6/6 that nobody copies, Elder Cathar, Doomed Traveler and the
+  Twin's Doomed Traveler copy are each +1/+1, and the Horde is 1/1. The copy
+  line prints a `*/*` card's 0/0 (#1071). The Essence beforehand, two
+  Essences, and Moldgraf are still unplayed
