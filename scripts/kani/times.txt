@@ -1538,8 +1538,8 @@ SUCCESSFUL      30s  proofs::engine_under_card::hollowhenge_scavenger_gains_noth
 SUCCESSFUL      32s  proofs::engine_under_card::hollowhenge_scavenger_with_morbid_gains_five_life
 SUCCESSFUL      73s  proofs::engine_under_card::morkrut_banshee_does_nothing_with_no_death
 SUCCESSFUL      83s  proofs::engine_under_card::morkrut_banshee_with_morbid_gives_its_target_minus_four
-SUCCESSFUL     120s  proofs::engine_under_card::slayer_of_the_wicked_asks_and_destroys_its_target
-SUCCESSFUL     111s  proofs::engine_under_card::geistcatchers_rig_asks_and_deals_four_damage_to_its_target
+SUCCESSFUL     119s  proofs::engine_under_card::slayer_of_the_wicked_asks_and_destroys_its_target
+SUCCESSFUL     113s  proofs::engine_under_card::geistcatchers_rig_asks_and_deals_four_damage_to_its_target
 SUCCESSFUL      72s  proofs::engine_under_card::bloodcrazed_neonate_gone_gets_no_counter
 SUCCESSFUL      72s  proofs::engine_under_card::bloodcrazed_neonate_gets_a_counter_for_its_combat_damage
 SUCCESSFUL      72s  proofs::engine_under_card::falkenrath_marauders_gone_get_no_counter
@@ -1588,3 +1588,10 @@ SUCCESSFUL      73s  proofs::engine_under_card::sturmgeist_draws_their_top_card
 SUCCESSFUL      90s  proofs::engine_under_card::sturmgeist_gone_still_draws_your_top_card
 SUCCESSFUL      71s  proofs::engine_under_card::sturmgeist_gone_still_draws_their_top_card
 SUCCESSFUL      45s  proofs::engine_under_card::sturmgeist_draws_from_your_empty_library
+SUCCESSFUL      44s  proofs::engine_under_card::sturmgeist_draws_from_their_empty_library
+SUCCESSFUL      98s  proofs::engine_under_card::daybreak_ranger_transforms_when_no_spell_was_cast
+SUCCESSFUL      93s  proofs::engine_under_card::nightfall_predator_transforms_back_when_a_player_cast_two
+SUCCESSFUL      93s  proofs::engine_under_card::gatstaf_shepherd_transforms_when_no_spell_was_cast
+SUCCESSFUL      89s  proofs::engine_under_card::gatstaf_howler_transforms_back_when_a_player_cast_two
+SUCCESSFUL      86s  proofs::engine_under_card::grizzled_outcasts_transform_when_no_spell_was_cast
+SUCCESSFUL      79s  proofs::engine_under_card::krallenhorde_wantons_transform_back_when_a_player_cast_two

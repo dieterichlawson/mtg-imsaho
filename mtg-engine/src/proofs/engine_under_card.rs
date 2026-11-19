@@ -1819,6 +1819,37 @@ fn werewolf((card, back): (Box<dyn CardBehavior>, bool)) {
     std::mem::forget((registry, state));
 }
 
+/// The same for a Werewolf either of whose faces prints a static ability
+/// (Hanweir Watchkeep, Instigator Gang, Kruin Outlaw, Mayor of
+/// Avabruck), with the spells each player cast last turn a harness's own
+/// (`cast`): left to the solver, the face it shows afterwards is open,
+/// and the layers follow both faces' abilities over the board; Hanweir
+/// Watchkeep ran out of memory so at 7 GB. It has transformed if the
+/// condition of the face it showed holds for `cast`, and the engine
+/// reads the power and toughness of the face it then shows.
+fn werewolf_as_cast((card, back, cast): (Box<dyn CardBehavior>, bool, [u32; 2])) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = registry.printed_pt(card, false).expect("its front face");
+    let id = state.create_object(card, you, Zone::Battlefield, power, toughness);
+    let o = state.get_object_mut(id).expect("just created");
+    o.is_transformed = back;
+    o.tapped = kani::any();
+    let tapped = o.tapped;
+    state.num_spells_cast_last_turn.insert(PlayerId(0), cast[0]);
+    state.num_spells_cast_last_turn.insert(PlayerId(1), cast[1]);
+
+    registry.get(card).expect("registered").on_upkeep(&mut state, id, &[], &registry);
+
+    let turns = if back { cast[0] >= 2 || cast[1] >= 2 } else { cast[0] + cast[1] == 0 };
+    let shows_back = back != turns;
+    let o = state.get_object(id).expect("still an object");
+    assert!(o.is_transformed == shows_back && o.zone == Zone::Battlefield && o.controller == you && o.tapped == tapped);
+    let face = registry.printed_pt(card, shows_back).expect("that face");
+    assert!(state.effective_power(id, &registry) == face.0 && state.effective_toughness(id, &registry) == face.1);
+    std::mem::forget((registry, state));
+}
+
 /// "At the beginning of your upkeep, mill two cards." (Splinterfright)
 /// and "At the beginning of enchanted player's upkeep, that player mills
 /// two cards." (Curse of the Bloody Tome) resolving, the player `who`
@@ -3240,14 +3271,6 @@ engine_under_card! {
     gatstaf_howler_transforms_back_when_a_player_cast_two: werewolf((Box::new(GatstafShepherd), true));
     grizzled_outcasts_transform_when_no_spell_was_cast: werewolf((Box::new(GrizzledOutcasts), false));
     krallenhorde_wantons_transform_back_when_a_player_cast_two: werewolf((Box::new(GrizzledOutcasts), true));
-    hanweir_watchkeep_transforms_when_no_spell_was_cast: werewolf((Box::new(HanweirWatchkeep), false));
-    bane_of_hanweir_transforms_back_when_a_player_cast_two: werewolf((Box::new(HanweirWatchkeep), true));
-    instigator_gang_transforms_when_no_spell_was_cast: werewolf((Box::new(InstigatorGang), false));
-    wildblood_pack_transforms_back_when_a_player_cast_two: werewolf((Box::new(InstigatorGang), true));
-    kruin_outlaw_transforms_when_no_spell_was_cast: werewolf((Box::new(KruinOutlaw), false));
-    terror_of_kruin_pass_transforms_back_when_a_player_cast_two: werewolf((Box::new(KruinOutlaw), true));
-    mayor_of_avabruck_transforms_when_no_spell_was_cast: werewolf((Box::new(MayorOfAvabruck), false));
-    howlpack_alpha_transforms_back_when_a_player_cast_two: werewolf((Box::new(MayorOfAvabruck), true));
     reckless_waif_transforms_when_no_spell_was_cast: werewolf((Box::new(RecklessWaif), false));
     merciless_predator_transforms_back_when_a_player_cast_two: werewolf((Box::new(RecklessWaif), true));
     tormented_pariah_transforms_when_no_spell_was_cast: werewolf((Box::new(TormentedPariah), false));
@@ -3258,6 +3281,27 @@ engine_under_card! {
     ironfang_transforms_back_when_a_player_cast_two: werewolf((Box::new(VillageIronsmith), true));
     villagers_of_estwald_transform_when_no_spell_was_cast: werewolf((Box::new(VillagersOfEstwald), false));
     howlpack_of_estwald_transforms_back_when_a_player_cast_two: werewolf((Box::new(VillagersOfEstwald), true));
+}
+
+// The Werewolves either of whose faces prints a static ability: the
+// spells cast last turn fixed by each harness (`werewolf_as_cast`).
+engine_under_card! {
+    hanweir_watchkeep_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(HanweirWatchkeep), false, [0, 0]));
+    hanweir_watchkeep_stays_with_a_spell_cast: werewolf_as_cast((Box::new(HanweirWatchkeep), false, [0, 1]));
+    bane_of_hanweir_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(HanweirWatchkeep), true, [0, 2]));
+    bane_of_hanweir_stays_with_one_spell_cast_by_each_player: werewolf_as_cast((Box::new(HanweirWatchkeep), true, [1, 1]));
+    instigator_gang_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(InstigatorGang), false, [0, 0]));
+    instigator_gang_stays_with_a_spell_cast: werewolf_as_cast((Box::new(InstigatorGang), false, [0, 1]));
+    wildblood_pack_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(InstigatorGang), true, [0, 2]));
+    wildblood_pack_stays_with_one_spell_cast_by_each_player: werewolf_as_cast((Box::new(InstigatorGang), true, [1, 1]));
+    kruin_outlaw_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(KruinOutlaw), false, [0, 0]));
+    kruin_outlaw_stays_with_a_spell_cast: werewolf_as_cast((Box::new(KruinOutlaw), false, [0, 1]));
+    terror_of_kruin_pass_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(KruinOutlaw), true, [0, 2]));
+    terror_of_kruin_pass_stays_with_one_spell_cast_by_each_player: werewolf_as_cast((Box::new(KruinOutlaw), true, [1, 1]));
+    mayor_of_avabruck_transforms_with_no_spell_cast: werewolf_as_cast((Box::new(MayorOfAvabruck), false, [0, 0]));
+    mayor_of_avabruck_stays_with_a_spell_cast: werewolf_as_cast((Box::new(MayorOfAvabruck), false, [0, 1]));
+    howlpack_alpha_transforms_back_with_two_spells_cast_by_a_player: werewolf_as_cast((Box::new(MayorOfAvabruck), true, [0, 2]));
+    howlpack_alpha_stays_with_one_spell_cast_by_each_player: werewolf_as_cast((Box::new(MayorOfAvabruck), true, [1, 1]));
 }
 
 // Permanents: other upkeep triggers.
