@@ -1360,6 +1360,35 @@ struct Trigger {
     /// says so and not "dies": exiled or returned to a hand sets it off
     /// too (CR 603.6c).
     on_leaving: bool,
+    /// What it does as it resolves, where no spell's effect says it: a
+    /// trigger combat damage set off ([`combat_damage`]).
+    native: Option<Native>,
+}
+
+/// What a trigger set off by combat damage does as it resolves
+/// ([`native_outcomes`]). These go on the stack with whatever else the
+/// damage step set off, and are ordered and resolved with it
+/// ([`settle_triggers`]).
+#[derive(Debug, Clone)]
+enum Native {
+    /// "Whenever this creature deals combat damage to a player, ...": the
+    /// attacker, as it was when it dealt the damage (CR 603.10a), and how
+    /// much it dealt.
+    DamagedPlayer { attacker: ObjectId, as_it_was: Box<Model>, dealt: u32 },
+    /// "... put a +1/+1 counter on it": on the creature that dealt the
+    /// damage, a watcher's of its controller's creatures of a type or a
+    /// Curse's on the player dealt it.
+    CounterOn(Src),
+    /// An Aura's "you may draw a card": that player draws.
+    Draw(PlayerId),
+    /// "Flip a coin. If you win the flip, destroy that creature."
+    FlipToDestroy(ObjectId),
+}
+
+impl PartialEq for Native {
+    fn eq(&self, other: &Self) -> bool {
+        format!("{self:?}") == format!("{other:?}")
+    }
 }
 
 /// "Whenever <creatures> die, ...": a leaves-the-battlefield trigger of a
@@ -3613,6 +3642,11 @@ struct World {
     /// it last existed there: its "leaves the battlefield" trigger goes on
     /// the stack once that is done (CR 603.6c, 603.10a).
     left: Vec<(ObjectId, Model)>,
+    /// Triggers something other than an entry, a death or a leaving set
+    /// off, each with its source and controller: they go on the stack with
+    /// those the next time the triggers are settled (CR 603.3b). Combat
+    /// damage's are these.
+    set_off: Vec<(Option<ObjectId>, PlayerId, Trigger)>,
     /// Legendary permanents of one name under one player that differ, the
     /// state-based actions having found them: that player chooses which
     /// to keep (CR 704.5j), each way played where the triggers are settled
@@ -4394,6 +4428,7 @@ fn empty_board(registry: &CardRegistry) -> (GameState, World) {
         died: Vec::new(),
         left: Vec::new(),
         legend_choices: Vec::new(),
+        set_off: Vec::new(),
         deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
@@ -6809,6 +6844,8 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
         }
         triggers.push((id, m.controller, *trigger));
     }
+    // And what else was set off with them.
+    triggers.append(&mut w.set_off);
     // Every "you may" taken, or every one declined, when `may` says so.
     let triggers: Vec<(Option<ObjectId>, PlayerId, Trigger)> = triggers.into_iter()
         .filter(|(_, _, t)| !t.optional || may != Some(false))
@@ -6887,14 +6924,17 @@ fn stack_outcomes(world: &World, stack: &[&(Option<ObjectId>, PlayerId, Trigger)
                         Some(cost) => ways_to_pay(&w, *controller, cost),
                         None => vec![w.clone()],
                     };
-                    let mut out: Vec<World> = paid.iter()
-                        .flat_map(|paid| resolution_ways(&trigger.spec, paid, targets, *controller))
-                        .flat_map(|way| {
-                            let mut after = apply(&trigger.spec, &way, targets, *controller);
-                            after.state_based_actions();
-                            settle_above(after)
-                        })
-                        .collect();
+                    let settled = |mut after: World| {
+                        after.state_based_actions();
+                        settle_above(after)
+                    };
+                    let mut out: Vec<World> = match &trigger.native {
+                        Some(native) => native_outcomes(native, &w).into_iter().flat_map(settled).collect(),
+                        None => paid.iter()
+                            .flat_map(|paid| resolution_ways(&trigger.spec, paid, targets, *controller))
+                            .flat_map(|way| settled(apply(&trigger.spec, &way, targets, *controller)))
+                            .collect(),
+                    };
                     if trigger.optional || paid.is_empty() {
                         out.push(w);
                     }
@@ -6905,6 +6945,46 @@ fn stack_outcomes(world: &World, stack: &[&(Option<ObjectId>, PlayerId, Trigger)
         out.extend(worlds);
     }
     out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
+}
+
+/// Every way a trigger combat damage set off resolves on `w` ([`Native`]).
+fn native_outcomes(native: &Native, w: &World) -> Vec<World> {
+    let mut after = w.clone();
+    match native {
+        Native::DamagedPlayer { attacker, as_it_was, dealt } => {
+            on_damage_to_player(&mut after, *attacker, as_it_was, *dealt);
+            vec![after]
+        }
+        Native::CounterOn(src) => {
+            if let Some(m) = src.model_mut(&mut after) {
+                change(m, 1, 1);
+                m.counters.0 += 1;
+            }
+            vec![after]
+        }
+        Native::Draw(p) => {
+            let card = after.library[p.0 as usize].remove(0);
+            after.hand[p.0 as usize].push(card);
+            vec![after]
+        }
+        // Each flip won or lost (CR 705.2): the creature destroyed, if it
+        // is still there, or not; none once a player has lost, the game
+        // over before the trigger resolves (704.5a, 104.2a).
+        Native::FlipToDestroy(id) => {
+            if after.life.iter().any(|l| *l <= 0) || !after.permanents.contains_key(id) {
+                return vec![after];
+            }
+            let mut won = after.clone();
+            // Abattoir Ghoul's "dies" is any death, this destruction too.
+            let gains = won.gained_if_it_dies(*id);
+            if won.destroy(*id) {
+                for (p, n) in gains {
+                    won.life[p.0 as usize] += n;
+                }
+            }
+            vec![after, won]
+        }
+    }
 }
 
 /// What a resolution set off, settled before anything still on the stack
@@ -10662,25 +10742,34 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
 /// [`combat_after_attacking`] from the blocks declared and their triggers
 /// resolved: the damage of each step, what it sets off, and the end of
 /// combat.
-fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
+fn combat_damage(mut w: World, attacks: &[Attack]) -> Vec<World> {
+    // The tokens made so far (one that entered attacking among them) are
+    // permanents like any other from here on: what the damage sets off
+    // may target them, and settling it numbers them anyway
+    // ([`World::number_tokens`]).
+    w.number_tokens();
+    // What is attacking without having been declared: a token that entered
+    // attacking (CR 508.4).
+    let declared = |id: &ObjectId| attacks.iter().any(|t| t.attacker == *id);
+    let entered_attacking = |w: &World| -> Vec<ObjectId> {
+        w.permanents.iter().filter(|(id, m)| m.attacking && !declared(id)).map(|(id, _)| *id).collect()
+    };
     let fast = |m: &Model| has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike);
     let any_fast = attacks.iter().any(|t| w.permanents.get(&t.attacker).is_some_and(fast) || t.blockers.iter().any(|b| w.permanents.get(b).is_some_and(fast)))
-        || w.tokens.iter().any(|t| t.attacking && fast(t));
+        || entered_attacking(&w).iter().any(|id| fast(&w.permanents[id]));
     let steps: &[Option<bool>] = if any_fast { &[Some(true), Some(false)] } else { &[None] };
     // What each token that entered attacking attacks: the defending player
     // or a planeswalker they control, as its controller chooses (CR 508.4b).
     let defenders: Vec<Target> = std::iter::once(Target::Player(P1))
         .chain(w.permanents.iter().filter(|(_, m)| m.controller == P1 && m.types.iter().any(|t| t == "planeswalker")).map(|(id, _)| Target::Object(*id)))
         .collect();
+    let tokens_attacking = entered_attacking(&w);
     let mut starts = vec![w];
-    for i in 0..starts[0].tokens.len() {
-        if !starts[0].tokens[i].attacking {
-            continue;
-        }
+    for id in tokens_attacking {
         starts = starts.into_iter()
             .flat_map(|s| defenders.iter().map(move |d| {
                 let mut s = s.clone();
-                s.tokens[i].attacks = Some(d.clone());
+                s.permanents.get_mut(&id).expect("attacking").attacks = Some(d.clone());
                 s
             }))
             .collect();
@@ -10770,13 +10859,17 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
             }
             // The tokens attacking, unblocked, each at what it attacks, a
             // planeswalker no longer there taking nothing.
-            for (i, t) in w.tokens.iter().enumerate().filter(|(_, t)| t.attacking && deals(t) && power(t) > 0) {
+            for id in entered_attacking(&w) {
+                let t = &w.permanents[&id];
+                if !(deals(t) && power(t) > 0) {
+                    continue;
+                }
                 let at = t.attacks.clone().unwrap_or(Target::Player(P1));
                 if matches!(at, Target::Object(pw) if !w.permanents.contains_key(&pw)) {
                     continue;
                 }
                 for branch in &mut branches {
-                    branch.push((at.clone(), power(t), Src::Token(i)));
+                    branch.push((at.clone(), power(t), Src::Permanent(id)));
                 }
             }
             // A Zombie's damage to a player that a permanent mills instead
@@ -10801,7 +10894,7 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
                 let mut w2 = w.clone();
                 let mut to_players: Vec<(Src, u32)> = Vec::new();
                 // The creatures a coin-flipper dealt damage, for its trigger.
-                let mut flipped_for: Vec<ObjectId> = Vec::new();
+                let mut flipped_for: Vec<(ObjectId, Src, PlayerId)> = Vec::new();
                 for (to, n, from) in &branch {
                     let source = from.model(&w).clone();
                     if let (Target::Player(p), true, true) = (to, mill_first, mills(&w2, &source)) {
@@ -10837,7 +10930,7 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
                             if deal(m, n) {
                                 m.deathtouched |= has(&source, Keyword::Deathtouch);
                                 if source.combat.flips_to_destroy_what_it_damages {
-                                    flipped_for.push(*id);
+                                    flipped_for.push((*id, *from, source.controller));
                                 }
                                 if let (true, Src::Permanent(s)) = (source.combat.gains_life_when_what_it_damaged_dies, from) {
                                     w2.damaged_by_life_gainers.push((*id, *s));
@@ -10867,76 +10960,51 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
                 let at_damage = w2.clone();
                 w2.state_based_actions();
                 assert_eq!(tokens_before, w2.tokens.len(), "no token here dies of combat damage");
-                // An Aura's "you may draw a card" for each source of damage
-                // to the opponent it enchants, its controller choosing.
-                let mut may_draw: Vec<PlayerId> = Vec::new();
-                for (from, _) in &to_players {
-                    if let Src::Permanent(id) = from {
-                        may_draw.extend(at_damage.permanents.values()
-                            .filter(|e| e.combat.may_draw_on_damage_to_opponent && e.attached == Some(Target::Object(*id)) && e.controller != P1)
-                            .map(|e| e.controller));
-                    }
-                }
-                for (from, dealt) in to_players {
+                // What the damage itself set off, each a trigger of its
+                // source's controller: they go on the stack with what the
+                // step's deaths set off, the active player's first and each
+                // player's in the order they choose, and resolve last put
+                // first (CR 603.3b, 510.4). A Pitchburn Devils that died
+                // blocked deals its 3 damage, the other player's trigger,
+                // before the counter of the Stromkirk Patrol beside what
+                // it blocked.
+                let of = |src: &Src| match src {
+                    Src::Permanent(id) => Some(*id),
+                    Src::Token(_) => None,
+                };
+                for (from, dealt) in &to_players {
                     let source = from.model(&w).clone();
                     if let Src::Permanent(x) = from {
-                        if attacks.iter().any(|t| t.attacker == x) {
-                            on_damage_to_player(&mut w2, x, &source, dealt);
+                        // The attacker's own "whenever this creature deals
+                        // combat damage to a player".
+                        if attacks.iter().any(|t| t.attacker == *x) && !source.combat.on_damage_to_player.is_empty() {
+                            let native = Native::DamagedPlayer { attacker: *x, as_it_was: Box::new(source.clone()), dealt: *dealt };
+                            w2.set_off.push((Some(*x), source.controller, Trigger { native: Some(native), ..Trigger::default() }));
+                        }
+                        // An Aura's "you may draw a card" for each source of
+                        // damage to the opponent it enchants.
+                        for (aura, e) in &at_damage.permanents {
+                            if e.combat.may_draw_on_damage_to_opponent && e.attached == Some(Target::Object(*x)) && e.controller != P1 {
+                                w2.set_off.push((Some(*aura), e.controller, Trigger { optional: true, native: Some(Native::Draw(e.controller)), ..Trigger::default() }));
+                            }
                         }
                     }
                     // A watcher of its controller's creatures of a type, and
-                    // a Curse on the player dealt the damage.
-                    // Each one triggers on its own (CR 603.2).
-                    let watchers = at_damage.permanents.values().filter(|m| m.controller == source.controller
-                        && m.combat.counters_on_yours.as_ref().is_some_and(|t| source.subtypes.contains(t))).count();
-                    let cursed = at_damage.permanents.values().filter(|m| m.combat.counters_on_damage_to_enchanted && m.attached == Some(Target::Player(P1))).count();
-                    for _ in 0..watchers + cursed {
-                        if let Some(m) = from.model_mut(&mut w2) {
-                            change(m, 1, 1);
-                            m.counters.0 += 1;
+                    // a Curse on the player dealt the damage: each one
+                    // triggers on its own (CR 603.2).
+                    for (watcher, m) in &at_damage.permanents {
+                        let watches = m.controller == source.controller && m.combat.counters_on_yours.as_ref().is_some_and(|t| source.subtypes.contains(t));
+                        let curses = m.combat.counters_on_damage_to_enchanted && m.attached == Some(Target::Player(P1));
+                        for _ in 0..usize::from(watches) + usize::from(curses) {
+                            w2.set_off.push((Some(*watcher), m.controller, Trigger { native: Some(Native::CounterOn(*from)), ..Trigger::default() }));
                         }
                     }
                 }
-                w2.state_based_actions();
-                let mut drawn = vec![w2];
-                for p in may_draw {
-                    drawn = drawn.into_iter()
-                        .flat_map(|w| {
-                            let mut took = w.clone();
-                            let card = took.library[p.0 as usize].remove(0);
-                            took.hand[p.0 as usize].push(card);
-                            [w, took]
-                        })
-                        .collect();
+                // A coin flipped for each creature a flipper dealt damage.
+                for (id, flipper, controller) in flipped_for {
+                    w2.set_off.push((of(&flipper), controller, Trigger { native: Some(Native::FlipToDestroy(id)), ..Trigger::default() }));
                 }
-                // Each flip won or lost (CR 705.2): the creature destroyed,
-                // if it is still there, or not; none once a player has lost,
-                // the game over before the trigger resolves (704.5a, 104.2a).
-                for id in flipped_for {
-                    drawn = drawn.into_iter()
-                        .flat_map(|w| {
-                            if w.life.iter().any(|l| *l <= 0) {
-                                return vec![w];
-                            }
-                            let mut won = w.clone();
-                            if won.permanents.contains_key(&id) {
-                                // Abattoir Ghoul's "dies" is any death,
-                                // this destruction too.
-                                let gains = won.gained_if_it_dies(id);
-                                if won.destroy(id) {
-                                    for (p, n) in gains {
-                                        won.life[p.0 as usize] += n;
-                                    }
-                                }
-                                won.state_based_actions();
-                            }
-                            vec![w, won]
-                        })
-                        .collect();
-                }
-                // And what the step's deaths set off on the board, each
-                // way it resolves, before the next step (CR 510.4, 603.3b).
-                next.extend(drawn.into_iter().flat_map(settle_triggers).map(|d| (d, orders.clone())));
+                next.extend(settle_triggers(w2).into_iter().map(|d| (d, orders.clone())));
             }
         }
         worlds = next;
@@ -10953,6 +11021,7 @@ fn combat_damage(w: World, attacks: &[Attack]) -> Vec<World> {
             continue;
         }
         w.tokens.retain(|t| !t.exile_at_end_of_combat);
+        w.permanents.retain(|_, m| !m.exile_at_end_of_combat);
         for t in w.tokens.iter_mut().chain(w.permanents.values_mut()) {
             t.attacking = false;
             t.out_of_combat = false;
@@ -11133,6 +11202,7 @@ fn arena_of(registry: &CardRegistry, attacker: (&Printed, &Spec), blockers: &[(&
         died: Vec::new(),
         left: Vec::new(),
         legend_choices: Vec::new(),
+        set_off: Vec::new(),
         deaths: 0,
         choosing_copy: Vec::new(),
         randomized: false,
