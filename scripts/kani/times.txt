@@ -1595,3 +1595,15 @@ SUCCESSFUL      93s  proofs::engine_under_card::gatstaf_shepherd_transforms_when
 SUCCESSFUL      89s  proofs::engine_under_card::gatstaf_howler_transforms_back_when_a_player_cast_two
 SUCCESSFUL      86s  proofs::engine_under_card::grizzled_outcasts_transform_when_no_spell_was_cast
 SUCCESSFUL      79s  proofs::engine_under_card::krallenhorde_wantons_transform_back_when_a_player_cast_two
+SUCCESSFUL      76s  proofs::engine_under_card::merciless_predator_transforms_back_when_a_player_cast_two
+SUCCESSFUL      93s  proofs::engine_under_card::reckless_waif_transforms_when_no_spell_was_cast
+SUCCESSFUL      91s  proofs::engine_under_card::tormented_pariah_transforms_when_no_spell_was_cast
+SUCCESSFUL      83s  proofs::engine_under_card::rampaging_werewolf_transforms_back_when_a_player_cast_two
+SUCCESSFUL      83s  proofs::engine_under_card::ulvenwald_primordials_transform_back_when_a_player_cast_two
+SUCCESSFUL     101s  proofs::engine_under_card::ulvenwald_mystics_transform_when_no_spell_was_cast
+SUCCESSFUL      89s  proofs::engine_under_card::village_ironsmith_transforms_when_no_spell_was_cast
+SUCCESSFUL      91s  proofs::engine_under_card::ironfang_transforms_back_when_a_player_cast_two
+SUCCESSFUL      86s  proofs::engine_under_card::howlpack_of_estwald_transforms_back_when_a_player_cast_two
+SUCCESSFUL      89s  proofs::engine_under_card::villagers_of_estwald_transform_when_no_spell_was_cast
+SUCCESSFUL      83s  proofs::engine_under_card::hanweir_watchkeep_transforms_with_no_spell_cast
+SUCCESSFUL      96s  proofs::engine_under_card::howlpack_alpha_stays_with_one_spell_cast_by_each_player

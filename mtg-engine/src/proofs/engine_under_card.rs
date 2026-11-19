@@ -25,7 +25,11 @@
 //! fixed, it is under a minute and a gigabyte); and a list the solver may
 //! or may not have pushed to is one of either length to every scan after,
 //! so an effect that may be there is always pushed, as one kind or
-//! another.
+//! another. And a value the solver can prove constant is not one symbolic
+//! execution has folded: a face a transform has just written is asserted
+//! and then written back as that constant before the layers read it
+//! (`werewolf_as_cast`), where reading it as left ran out of memory at
+//! 7 GB and reading it so takes a minute and a half.
 
 use crate::actions::Target;
 use crate::cards::CardBehavior;
@@ -1822,11 +1826,11 @@ fn werewolf((card, back): (Box<dyn CardBehavior>, bool)) {
 /// The same for a Werewolf either of whose faces prints a static ability
 /// (Hanweir Watchkeep, Instigator Gang, Kruin Outlaw, Mayor of
 /// Avabruck), with the spells each player cast last turn a harness's own
-/// (`cast`): left to the solver, the face it shows afterwards is open,
-/// and the layers follow both faces' abilities over the board; Hanweir
-/// Watchkeep ran out of memory so at 7 GB. It has transformed if the
-/// condition of the face it showed holds for `cast`, and the engine
-/// reads the power and toughness of the face it then shows.
+/// (`cast`), so that the face it shows afterwards is one face in each
+/// harness: the layers reading a face left open follow both faces'
+/// abilities over the board. It has transformed if the condition of the
+/// face it showed holds for `cast`, and the engine reads the power and
+/// toughness of the face it then shows.
 fn werewolf_as_cast((card, back, cast): (Box<dyn CardBehavior>, bool, [u32; 2])) {
     let (registry, mut state, _, card) = crate::proofs::cards::board(card);
     let you = PlayerId(u8::from(kani::any::<bool>()));
@@ -1845,6 +1849,14 @@ fn werewolf_as_cast((card, back, cast): (Box<dyn CardBehavior>, bool, [u32; 2]))
     let shows_back = back != turns;
     let o = state.get_object(id).expect("still an object");
     assert!(o.is_transformed == shows_back && o.zone == Zone::Battlefield && o.controller == you && o.tapped == tapped);
+    // The face it shows, written back as the constant it has just been
+    // asserted to be. The transform writes it down a path whose guards
+    // the solver decides and symbolic execution does not fold, so that
+    // the layers, reading it next, follow the static abilities of both
+    // faces at once: measured, the hook alone and the read alone each
+    // prove in a minute, and the read after the hook ran out of memory at
+    // 7 GB. The write changes nothing on any run the assertion allows.
+    state.get_object_mut(id).expect("still an object").is_transformed = shows_back;
     let face = registry.printed_pt(card, shows_back).expect("that face");
     assert!(state.effective_power(id, &registry) == face.0 && state.effective_toughness(id, &registry) == face.1);
     std::mem::forget((registry, state));
