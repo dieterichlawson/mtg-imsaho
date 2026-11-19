@@ -6809,7 +6809,11 @@ fn settle_triggers_choosing(mut w: World, may: Option<bool>) -> Vec<World> {
             out.extend(stack_outcomes(&w, &stack));
         }
     }
-    out.into_iter().flat_map(settle_triggers).collect()
+    // What was resolving when these were set off is what goes on
+    // resolving: an Equipment's equip ability, above which its cost's
+    // death trigger resolved, still attaches that Equipment.
+    let source = w.source;
+    out.into_iter().flat_map(settle_triggers).map(|mut after| { after.source = source; after }).collect()
 }
 
 /// Every way `stack`, triggers listed in the order they are put on it
