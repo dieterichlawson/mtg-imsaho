@@ -1574,6 +1574,27 @@ impl GameState {
         self.pending_entry_batches.push(batch);
     }
 
+    /// Return one card to the battlefield for `source_name` ("Unburial
+    /// Rites", "Fiend Hunter"), under `under` if given, and log "<source>:
+    /// <card> returned to the battlefield" once it is there.
+    ///
+    /// A one-card [`GameState::put_onto_battlefield_together`]. A card that
+    /// logged its own line after `move_object` announced an Evil Twin as
+    /// returned while its entry was still waiting on the copy choice (CR
+    /// 614.12b), the card still in the graveyard or exile being asked
+    /// (#1070, #1067's shape on a single card).
+    pub fn return_to_battlefield(
+        &mut self,
+        id: ObjectId,
+        under: Option<PlayerId>,
+        source_name: &str,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        self.put_onto_battlefield_together(
+            vec![id], under, EntryAdditions::default(),
+            source_name, "returned to the battlefield", None, registry);
+    }
+
     /// The batch whose entry `object` belongs to, if one is held, taken out
     /// once no member is still waiting on its choice.
     pub(crate) fn take_ready_entry_batch(&mut self, object: ObjectId) -> Option<Option<EntryBatch>> {

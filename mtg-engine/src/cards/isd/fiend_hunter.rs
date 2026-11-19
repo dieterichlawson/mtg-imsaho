@@ -66,12 +66,12 @@ impl CardBehavior for FiendHunter {
             .and_then(|o| o.card_state.get("exiled_creature").copied());
         if let Some(target_id) = exiled_id {
             if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Exile) {
-                let returned_name = state.obj_name(target_id);
                 // CR 110.2: the creature returns under its OWNER's control, and that has
                 // to be true when EnteredBattlefield fires — not corrected afterwards.
                 let Some(owner) = state.get_object(target_id).map(|o| o.owner) else { return };
-                state.move_object_under_control(target_id, Zone::Battlefield, owner, registry);
-                state.log(crate::state::LogLevel::Event, format!("{returned_name} returned to the battlefield"));
+                // Logged once the card is there: an exiled Evil Twin's entry
+                // waits on its copy choice (CR 614.12b, #1070).
+                state.return_to_battlefield(target_id, Some(owner), "Fiend Hunter", registry);
             }
         }
     }

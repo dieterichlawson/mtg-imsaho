@@ -813,6 +813,19 @@ pub fn record_move_under(_: &mut GameState, id: ObjectId, to: Zone, controller: 
     true
 }
 
+/// Stands in for `GameState::return_to_battlefield`: the move it makes,
+/// under its controller when one is named, recorded as `move_object` and
+/// `move_object_under_control` record theirs, so a card's proof says the
+/// same of a return whichever it calls. No object on a board here chooses a
+/// copy as it enters, so the entry is never held (`record_move`).
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn record_return(_: &mut GameState, id: ObjectId, under: Option<PlayerId>, _: &str, _: &CardRegistry) {
+    record(match under {
+        Some(c) => Act::MoveUnder(id, Zone::Battlefield, c),
+        None => Act::Move(id, Zone::Battlefield),
+    });
+}
+
 /// Stands in for `helpers::sorted`: `names` as they are, which it asserts
 /// are in order. Sorting a list in order leaves it as it is, so on every
 /// list it accepts this is the sort; and the names a proof's registry
@@ -1157,6 +1170,7 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::choose_at_random, $crate::proofs::cards::record_random)]
         #[kani::stub($crate::state::GameState::put_into_library, $crate::proofs::cards::record_to_library)]
         #[kani::stub($crate::state::GameState::move_object_under_control, $crate::proofs::cards::$under)]
+        #[kani::stub($crate::state::GameState::return_to_battlefield, $crate::proofs::cards::record_return)]
         #[kani::stub($crate::cards::helpers::shuffle_library, $crate::proofs::cards::record_shuffle)]
         #[kani::stub($crate::cards::helpers::sorted, $crate::proofs::cards::names_in_order)]
         #[kani::stub($crate::cards::store_ids, $crate::proofs::cards::record_store_ids)]

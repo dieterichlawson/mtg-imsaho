@@ -464,3 +464,64 @@ fn the_invariants_hold_at_a_cast_twins_copy_prompt() {
     let v = seen.expect("the copy choice was asked");
     assert!(v.is_empty(), "{v:?}");
 }
+
+/// The log lines of a game so far.
+fn lines(state: &mtg_engine::state::GameState) -> Vec<String> {
+    state.game_log.iter().map(|e| e.message.clone()).collect()
+}
+
+/// A single card returned onto the battlefield is announced once it is
+/// there. Unburial Rites logged "Evil Twin (#n) returned to the battlefield"
+/// right after a move that, for a Twin, only queued its copy choice (CR
+/// 614.12b), so a seat reading the log was told it had arrived one decision
+/// before it had (#1070; #1067 was the same on Grimoire).
+#[test]
+fn unburial_rites_announces_a_twin_once_it_has_entered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let twin = in_graveyard(&mut state, &reg, "Evil Twin", P0);
+    let rites = in_graveyard(&mut state, &reg, "Unburial Rites", P0);
+    state.game_log.clear();
+
+    let behavior = reg.get(state.get_object(rites).unwrap().card_id).unwrap();
+    behavior.on_resolve(&mut state, rites, &[Target::Object(twin)], &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+
+    assert_eq!(asked(&state), Some(P0), "the Twin is asked what to copy");
+    assert!(!lines(&state).iter().any(|l| l.contains("returned")),
+        "nothing has returned while the Twin chooses: {:?}", lines(&state));
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
+    assert!(lines(&state).iter().any(|l| l.starts_with("Unburial Rites: Evil Twin (#")
+            && l.ends_with(") returned to the battlefield")),
+        "{:?}", lines(&state));
+}
+
+/// Fiend Hunter's return is the same entry: an exiled Twin coming back is
+/// asked first and announced after (#1070).
+#[test]
+fn fiend_hunter_announces_a_returning_twin_once_it_has_entered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+    let card = reg.get_id_by_name("Evil Twin").unwrap();
+    let twin = state.create_object(card, P1, Zone::Exile, Some(0), Some(0));
+    state.get_object_mut(twin).unwrap().name = "Evil Twin".into();
+    state.get_object_mut(hunter).unwrap().card_state.insert("exiled_creature".into(), twin);
+    state.game_log.clear();
+
+    let behavior = reg.get(state.get_object(hunter).unwrap().card_id).unwrap();
+    behavior.on_leave_battlefield(&mut state, hunter, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+
+    assert_eq!(asked(&state), Some(P1), "the Twin's owner is asked (CR 110.2)");
+    assert!(!lines(&state).iter().any(|l| l.contains("returned")), "{:?}", lines(&state));
+    let state = answer(&state, &reg, bear);
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(twin).unwrap().controller, P1);
+    assert!(lines(&state).iter().any(|l| l.starts_with("Fiend Hunter: Evil Twin (#")
+            && l.ends_with(") returned to the battlefield")),
+        "{:?}", lines(&state));
+}
