@@ -11124,6 +11124,14 @@ fn on_damage_to_player(w2: &mut World, a: ObjectId, attacker: &Model, dealt: u32
                         }
                     }
                 }
+                // And each token a trigger above this one made (a Doomed
+                // Traveler's Spirit, its death in the same step resolved
+                // first as the other player's).
+                for token in w2.tokens.iter_mut().filter(|t| t.controller == P1 && t.is_creature()) {
+                    if !protected(token, attacker) && deal(token, dealt) {
+                        token.deathtouched |= has(attacker, Keyword::Deathtouch);
+                    }
+                }
             }
         }
     }
