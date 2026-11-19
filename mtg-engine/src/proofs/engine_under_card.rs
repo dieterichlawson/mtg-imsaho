@@ -5700,6 +5700,195 @@ fn taps_for((card, mana, n): (Box<dyn CardBehavior>, ManaType, u32)) {
     std::mem::forget((registry, state));
 }
 
+// ---- Permanents that enter otherwise than a card does, and what
+// replaces an event. The card is put onto the battlefield from its
+// owner's hand by the engine's own zone change, which asks the board
+// what replaces the entry (CR 614.1c, 614.12); a token is made, damage
+// dealt and protection asked by the engine's own. ----
+
+/// A card of `card` in the first player's hand, at the power and
+/// toughness it prints.
+fn in_hand(state: &mut GameState, registry: &crate::cards::CardRegistry, card: CardId) -> ObjectId {
+    let (power, toughness) = registry.printed_pt(card, false).expect("its face");
+    state.create_object(card, PlayerId(0), Zone::Hand, power, toughness)
+}
+
+/// Diregraf Ghoul ("This creature enters tapped.") put onto the
+/// battlefield from its owner's hand: it is there tapped, under its
+/// owner (CR 614.1c).
+fn diregraf_ghoul(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::diregraf_ghoul::DiregrafGhoul));
+    let ghoul = in_hand(&mut state, &registry, card);
+
+    state.move_object(ghoul, Zone::Battlefield, &registry);
+
+    let o = state.get_object(ghoul).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped && o.controller == PlayerId(0));
+    std::mem::forget((registry, state));
+}
+
+/// A land that "enters tapped unless you control a [type] or a [type]"
+/// put onto the battlefield from its owner's hand beside a basic land of
+/// one of the two types, its controller's (`yours`) or the other
+/// player's: untapped beside its controller's own, tapped beside the
+/// other player's (CR 614.1c).
+fn check_land((card, basic, yours): (Box<dyn CardBehavior>, Box<dyn CardBehavior>, bool)) {
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let basic = registry.register(basic);
+    state.create_object(basic, PlayerId(u8::from(!yours)), Zone::Battlefield, None, None);
+    let land = in_hand(&mut state, &registry, card);
+
+    state.move_object(land, Zone::Battlefield, &registry);
+
+    let o = state.get_object(land).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped != yours && o.controller == PlayerId(0));
+    std::mem::forget((registry, state));
+}
+
+/// "Morbid — This creature enters with two +1/+1 counters on it if a
+/// creature died this turn." (Festerhide Boar, Somberwald Spider) put
+/// onto the battlefield from its owner's hand, a creature having died
+/// this turn or not: with two +1/+1 counters and that much more than it
+/// prints, read back through the engine's layers, or with none (CR
+/// 614.1c, 122.1a).
+fn morbid_counters((card, died): (Box<dyn CardBehavior>, bool)) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(card);
+    let creature = in_hand(&mut state, &registry, card);
+    state.creature_died_this_turn = died;
+
+    state.move_object(creature, Zone::Battlefield, &registry);
+
+    let more = if died { 2 } else { 0 };
+    let o = state.get_object(creature).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == more);
+    let printed = registry.printed_pt(card, false).expect("its face");
+    let more = i32::try_from(more).expect("0 or 2");
+    assert!(state.effective_power(creature, &registry) == printed.0.map(|p| p + more));
+    assert!(state.effective_toughness(creature, &registry) == printed.1.map(|t| t + more));
+    std::mem::forget((registry, state));
+}
+
+/// Unbreathing Horde ("This creature enters with a +1/+1 counter on it
+/// for each other Zombie you control and each Zombie card in your
+/// graveyard.") put onto the battlefield from its owner's hand, a Zombie
+/// of theirs and one of the other player's on the battlefield and a
+/// Zombie card (Walking Corpse) and another card in their graveyard: it
+/// has two +1/+1 counters, the other player's Zombie and the other card
+/// not counted, and reads 2/2 (CR 614.1c, 122.1a).
+fn unbreathing_horde_enters(_: ()) {
+    let (mut registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::unbreathing_horde::UnbreathingHorde));
+    let corpse = registry.register(Box::new(WalkingCorpse));
+    for who in [0, 1] {
+        let zombie = a_creature_of(&mut state, blank, PlayerId(who), PlayerId(who));
+        state.get_object_mut(zombie).expect("just created").subtypes = vec!["Zombie".to_string()];
+    }
+    a_card_in(&mut state, corpse, 0, Zone::Graveyard, true);
+    a_card_in(&mut state, blank, 0, Zone::Graveyard, true);
+    let horde = in_hand(&mut state, &registry, card);
+
+    state.move_object(horde, Zone::Battlefield, &registry);
+
+    let o = state.get_object(horde).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == 2);
+    assert!(state.effective_power(horde, &registry) == Some(2) && state.effective_toughness(horde, &registry) == Some(2));
+    std::mem::forget((registry, state));
+}
+
+/// Unbreathing Horde ("If this creature would be dealt damage, prevent
+/// that damage and remove a +1/+1 counter from it.") on the battlefield
+/// with two +1/+1 counters, dealt 3 damage by the engine's own: no
+/// damage is marked on it, and it has one counter (CR 615.1, 614.1a).
+fn unbreathing_horde_prevents(_: ()) {
+    use crate::damage::DamageKind;
+    use crate::events::DamageTarget;
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::unbreathing_horde::UnbreathingHorde));
+    let source = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let horde = state.create_object(card, PlayerId(0), Zone::Battlefield, Some(0), Some(0));
+    state.get_object_mut(horde).expect("just created").counters.insert(CounterType::PlusOnePlusOne, 2);
+
+    crate::damage::deal_damage(&mut state, source, DamageTarget::Object(horde), 3, DamageKind::NonCombat, &registry);
+
+    let o = state.get_object(horde).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.damage_marked == 0 && o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == 1);
+    std::mem::forget((registry, state));
+}
+
+/// Dearly Departed ("As long as this creature is in your graveyard, each
+/// Human creature you control enters with an additional +1/+1 counter on
+/// it.") in a graveyard, the first player's (`yours`) or the other
+/// player's, and a creature card of the first player's put onto the
+/// battlefield from their hand, a Human or not: it has one +1/+1 counter
+/// exactly when it is a Human and the Departed is in its controller's
+/// graveyard (CR 614.1c, 614.12).
+fn dearly_departed((yours, human): (bool, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::dearly_departed::DearlyDeparted));
+    a_card_in(&mut state, card, u8::from(!yours), Zone::Graveyard, true);
+    let entering = state.create_object(blank, PlayerId(0), Zone::Hand, Some(2), Some(2));
+    let o = state.get_object_mut(entering).expect("just created");
+    o.card_types = vec![CardType::Creature];
+    if human {
+        o.subtypes = vec!["Human".to_string()];
+    }
+
+    state.move_object(entering, Zone::Battlefield, &registry);
+
+    let o = state.get_object(entering).expect("still an object");
+    assert!(o.zone == Zone::Battlefield);
+    assert!(o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0) == u32::from(yours && human));
+    std::mem::forget((registry, state));
+}
+
+/// Parallel Lives ("If an effect would create one or more tokens under
+/// your control, it creates twice that many of those tokens instead.")
+/// under the first player, and the engine making one 1/1 token for the
+/// player `who` names: two for its controller, one for the other player
+/// (CR 614.1a, 111.2).
+fn parallel_lives(who: u8) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::parallel_lives::ParallelLives));
+    a_source(&mut state, card, PlayerId(0));
+    let before = state.objects.len();
+
+    let made = state.create_token_with_subtypes("", PlayerId(who), 1, 1, vec![Color::White], vec![CardType::Creature], vec![], vec!["Spirit".to_string()], &registry);
+
+    let n = if who == 0 { 2 } else { 1 };
+    assert!(state.objects.len() == before + n && made.len() == n);
+    for id in &made {
+        let t = state.get_object(*id).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == PlayerId(who));
+    }
+    std::mem::forget((made, registry, state));
+}
+
+/// Stony Silence ("Activated abilities of artifacts can't be
+/// activated.") on the battlefield under either player, or in a
+/// graveyard (`there` false): the engine forbids an artifact's ability
+/// exactly while it is on the battlefield (CR 604.1).
+fn stony_silence(there: bool) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::stony_silence::StonySilence));
+    if there {
+        a_source(&mut state, card, PlayerId(u8::from(kani::any::<bool>())));
+    } else {
+        a_card_in(&mut state, card, 0, Zone::Graveyard, false);
+    }
+
+    assert!(crate::engine::prevents_artifact_abilities(&state, &registry) == there);
+    std::mem::forget((registry, state));
+}
+
+/// "Protection from [subtype]" (Elite Inquisitor's from Vampires, from
+/// Werewolves and from Zombies; Grave Bramble's from Zombies): the
+/// engine says the creature is protected from a source of the subtype
+/// `from` exactly when the text names it (CR 702.16a).
+fn protected_from((card, from, named): (Box<dyn CardBehavior>, &str, bool)) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(card);
+    let source = a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    state.get_object_mut(source).expect("just created").subtypes = vec![from.to_string()];
+    let creature = printed_creature(&mut state, &registry, card, PlayerId(0));
+
+    assert!(state.has_protection_from(creature, source, &registry) == named);
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -6484,4 +6673,52 @@ engine_under_card! {
     laboratory_maniac_leaves_the_other_player_to_draw_from_an_empty_library: laboratory_maniac((0, 1));
     laboratory_maniac_leaves_a_draw_from_a_library_with_a_card_alone: laboratory_maniac((1, 0));
     avacyns_pilgrim_taps_for_white: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), ManaType::White, 1));
+}
+
+use crate::cards::isd::{clifftop_retreat::ClifftopRetreat, hinterland_harbor::HinterlandHarbor, isolated_chapel::IsolatedChapel,
+    sulfur_falls::SulfurFalls, woodland_cemetery::WoodlandCemetery};
+use crate::cards::{forest::Forest, island::Island, mountain::Mountain, plains::Plains, swamp::Swamp};
+
+// Permanents that enter otherwise than a card does, and what replaces an event.
+engine_under_card! {
+    diregraf_ghoul_enters_tapped: diregraf_ghoul(());
+    clifftop_retreat_enters_untapped_beside_your_mountain: check_land((Box::new(ClifftopRetreat), Box::new(Mountain), true));
+    clifftop_retreat_enters_untapped_beside_your_plains: check_land((Box::new(ClifftopRetreat), Box::new(Plains), true));
+    clifftop_retreat_enters_tapped_beside_their_mountain: check_land((Box::new(ClifftopRetreat), Box::new(Mountain), false));
+    hinterland_harbor_enters_untapped_beside_your_forest: check_land((Box::new(HinterlandHarbor), Box::new(Forest), true));
+    hinterland_harbor_enters_untapped_beside_your_island: check_land((Box::new(HinterlandHarbor), Box::new(Island), true));
+    hinterland_harbor_enters_tapped_beside_their_forest: check_land((Box::new(HinterlandHarbor), Box::new(Forest), false));
+    isolated_chapel_enters_untapped_beside_your_plains: check_land((Box::new(IsolatedChapel), Box::new(Plains), true));
+    isolated_chapel_enters_untapped_beside_your_swamp: check_land((Box::new(IsolatedChapel), Box::new(Swamp), true));
+    isolated_chapel_enters_tapped_beside_their_plains: check_land((Box::new(IsolatedChapel), Box::new(Plains), false));
+    sulfur_falls_enters_untapped_beside_your_island: check_land((Box::new(SulfurFalls), Box::new(Island), true));
+    sulfur_falls_enters_untapped_beside_your_mountain: check_land((Box::new(SulfurFalls), Box::new(Mountain), true));
+    sulfur_falls_enters_tapped_beside_their_island: check_land((Box::new(SulfurFalls), Box::new(Island), false));
+    woodland_cemetery_enters_untapped_beside_your_swamp: check_land((Box::new(WoodlandCemetery), Box::new(Swamp), true));
+    woodland_cemetery_enters_untapped_beside_your_forest: check_land((Box::new(WoodlandCemetery), Box::new(Forest), true));
+    woodland_cemetery_enters_tapped_beside_their_swamp: check_land((Box::new(WoodlandCemetery), Box::new(Swamp), false));
+    festerhide_boar_enters_with_two_counters_after_a_death: morbid_counters((Box::new(crate::cards::isd::festerhide_boar::FesterhideBoar), true));
+    festerhide_boar_enters_with_none_without_one: morbid_counters((Box::new(crate::cards::isd::festerhide_boar::FesterhideBoar), false));
+    somberwald_spider_enters_with_two_counters_after_a_death: morbid_counters((Box::new(crate::cards::isd::somberwald_spider::SomberwaldSpider), true));
+    somberwald_spider_enters_with_none_without_one: morbid_counters((Box::new(crate::cards::isd::somberwald_spider::SomberwaldSpider), false));
+    unbreathing_horde_enters_with_a_counter_for_each_of_your_zombies: unbreathing_horde_enters(());
+    unbreathing_horde_loses_a_counter_in_place_of_damage: unbreathing_horde_prevents(());
+    dearly_departed_in_your_graveyard_gives_your_human_a_counter: dearly_departed((true, true));
+    dearly_departed_in_your_graveyard_gives_another_creature_none: dearly_departed((true, false));
+    dearly_departed_in_their_graveyard_gives_your_human_none: dearly_departed((false, true));
+    parallel_lives_makes_two_tokens_for_its_controller: parallel_lives(0);
+    parallel_lives_makes_one_token_for_the_other_player: parallel_lives(1);
+    stony_silence_on_the_battlefield_forbids_artifact_abilities: stony_silence(true);
+    stony_silence_in_a_graveyard_forbids_nothing: stony_silence(false);
+    elite_inquisitor_is_protected_from_vampires: protected_from((Box::new(crate::cards::isd::elite_inquisitor::EliteInquisitor), "Vampire", true));
+    elite_inquisitor_is_protected_from_werewolves: protected_from((Box::new(crate::cards::isd::elite_inquisitor::EliteInquisitor), "Werewolf", true));
+    elite_inquisitor_is_protected_from_zombies: protected_from((Box::new(crate::cards::isd::elite_inquisitor::EliteInquisitor), "Zombie", true));
+    elite_inquisitor_is_not_protected_from_humans: protected_from((Box::new(crate::cards::isd::elite_inquisitor::EliteInquisitor), "Human", false));
+    grave_bramble_is_protected_from_zombies: protected_from((Box::new(crate::cards::isd::grave_bramble::GraveBramble), "Zombie", true));
+    grave_bramble_is_not_protected_from_vampires: protected_from((Box::new(crate::cards::isd::grave_bramble::GraveBramble), "Vampire", false));
+    forest_taps_for_green: taps_for((Box::new(Forest), ManaType::Green, 1));
+    island_taps_for_blue: taps_for((Box::new(Island), ManaType::Blue, 1));
+    mountain_taps_for_red: taps_for((Box::new(Mountain), ManaType::Red, 1));
+    plains_taps_for_white: taps_for((Box::new(Plains), ManaType::White, 1));
+    swamp_taps_for_black: taps_for((Box::new(Swamp), ManaType::Black, 1));
 }
