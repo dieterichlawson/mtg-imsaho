@@ -357,8 +357,21 @@ about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 
-**What it has found so far.** No engine defect yet; sixteen gaps of the
-reference, each on a board nobody wrote and in each the engine right:
+**What it has found so far.** One engine defect, and seventeen gaps of
+the reference, each on a board nobody wrote.
+
+The defect (48 in `formal-verification.md`): two triggers of one ability
+of one source went on the stack front first, their controller not asked,
+also where each names a different creature to damage. An Ashmouth Hound
+blocked by an Unruly Mob and a Voiceless Spirit lives if the Mob is dealt
+its 1 damage first and dies if the Spirit is (the Mob, grown by the
+Spirit's death, survives its own and trades with the Hound), and the
+engine played only the second game; CR 603.3b gives the order to the
+Hound's controller. Combat on three pieces found it, in the sixth share
+of sixty, as 2 of 746,372 combats. The reference had the step wrong too,
+another way, which is the last gap below.
+
+The gaps, in each of which the engine was right:
 
 - the legend rule (CR 704.5j): two Grimgrin, Corpse-Born returned
   together by Moldgraf Monstrosity (two pieces);
@@ -420,7 +433,12 @@ reference, each on a board nobody wrote and in each the engine right:
 - "each creature that player controls" is read as the trigger resolves:
   Balefire Dragon's damage reaches the Spirit of a Doomed Traveler that
   died in the same step, its trigger the other player's and resolved
-  first (combat, three pieces).
+  first (combat, three pieces);
+- block triggers resolve one at a time, the state-based actions and what
+  a death sets off between them (CR 603.3b, 704.3): the reference
+  resolved them all and then looked for the dead, so that two blockers an
+  Ashmouth Hound damaged died together and nothing saw the first die
+  (combat, three pieces; the board of defect 48).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
