@@ -11462,26 +11462,51 @@ fn combat_endings(state: &GameState, registry: &CardRegistry, world: &World, com
 }
 
 /// Every game a combat can end in: each damage assignment it asks for
-/// answered every way, replayed from the start for each.
+/// answered every way, replayed from the start for each. One game is kept
+/// of those that end alike as observed, so that what is held is the
+/// endings and not the ways to them: a player with seven triggers to
+/// order has 5,040 (Falkenrath Marauders attacking beside two Rakish
+/// Heirs, each Heir triggering for each of the three Vampires), nearly
+/// all of them one ending.
 fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Combat) -> Result<Vec<GameState>, String> {
-    every_scene_ending(state, registry, Scene::Combat(combat))
+    scene_endings(state, registry, Scene::Combat(combat), true)
 }
 
 /// Every game `scene` can end in, played on from `state` with no cast:
 /// each question answered every way, replayed from the start for each.
 fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) -> Result<Vec<GameState>, String> {
+    scene_endings(state, registry, scene, false)
+}
+
+/// [`every_scene_ending`]; with `distinct`, one game of those that end
+/// alike as observed ([`observe`]), and as many ways played as it takes
+/// short of [`WAYS`].
+fn scene_endings(state: &GameState, registry: &CardRegistry, scene: Scene, distinct: bool) -> Result<Vec<GameState>, String> {
+    /// The ways a scene's questions may be answered before it is given
+    /// up: nine triggers of one player's to order are 362,880.
+    const WAYS: usize = 400_000;
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
+    let mut seen: BTreeSet<Observed> = BTreeSet::new();
+    let mut played = 0;
     while let Some(script) = todo.pop() {
         // A combat's divisions multiply (two blockers, a trampler of
         // thirteen, triggers to order), and so do piles: nine permanents
         // divided and a pile chosen are 1,024 ways.
         let room = 1100;
-        if done.len() + todo.len() > room {
+        if !distinct && done.len() + todo.len() > room {
             return Err(format!("more than {room} ways to answer"));
         }
+        played += 1;
+        if played + todo.len() > WAYS {
+            return Err(format!("more than {WAYS} ways to answer"));
+        }
         match play_from(state, registry, None, Vec::new(), None, scene, &script)? {
-            Played::Done(s) => done.push(*s),
+            Played::Done(s) => {
+                if !distinct || seen.insert(observe(&s, registry)) {
+                    done.push(*s);
+                }
+            }
             Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
         }
     }
