@@ -1061,6 +1061,87 @@ fn sever_the_bloodline(_: ()) {
     std::mem::forget((registry, state));
 }
 
+/// Rolling Temblor ("Rolling Temblor deals 2 damage to each creature
+/// without flying.") resolving on a board of one creature, under either
+/// player, and nothing else: the creature has 2 more damage marked on it
+/// than before if it has no flying and as much as before if it has (CR
+/// 120.3e). Proved of the creature without flying; with flying it ran
+/// out of memory at 8 GB. The creature alone: the card asks of each
+/// permanent whether it is a creature and has flying before it queues
+/// the damage, and with a second permanent there, a creature or not and
+/// nothing about either left open, the harness ran out of memory at 5
+/// and at 8 GB; a board of two is the small boards'.
+fn rolling_temblor(flying: bool) {
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::rolling_temblor::RollingTemblor));
+    let creature = a_permanent(&mut state, blank, Permanent::Creature);
+    if flying {
+        state.until_end_of_turn.push(TemporaryEffect::GrantKeyword { target: creature, keyword: Keyword::Flying });
+    }
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    let before = state.get_object(creature).expect("just created");
+    let (tapped, damage) = (before.tapped, before.damage_marked);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    let o = state.get_object(creature).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.tapped == tapped && o.damage_marked == damage + if flying { 0 } else { 2 });
+    std::mem::forget((registry, state));
+}
+
+/// Tribute to Hunger ("Target opponent sacrifices a creature. You gain
+/// life equal to that creature's toughness.") resolving for the first
+/// player at the second, who controls two creatures, the first player
+/// one; and then the effect its question holds, applied by the engine at
+/// the `pick`th option. The opponent is asked, and must answer,
+/// among exactly the creatures they control (CR 701.21a: the player
+/// sacrificing chooses); the one chosen is in their graveyard, the other
+/// and the first player's are where they were, and the first player has
+/// life more by its toughness (119.3).
+///
+/// Between the two is the engine's answering of a choice
+/// (`engine::actions::choices::resolve_choice`), which checks the answer
+/// is one of the options and applies that effect to it; with the engine
+/// itself under it that dispatcher ran out of memory at 5 GB on a board
+/// with nothing open, as the stack's resolution does, and it is proved of
+/// itself (`proofs::actions::answering`).
+fn tribute_to_hunger(pick: usize) {
+    use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::tribute_to_hunger::TributeToHunger));
+    let theirs = [a_permanent(&mut state, blank, Permanent::Creature), a_permanent(&mut state, blank, Permanent::Creature)];
+    let yours = a_permanent(&mut state, blank, Permanent::Creature);
+    for id in theirs {
+        state.get_object_mut(id).expect("just created").controller = PlayerId(1);
+    }
+    state.get_object_mut(yours).expect("just created").controller = PlayerId(0);
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    let life = [state.players[0].life, state.players[1].life];
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[Target::Player(PlayerId(1))], &registry);
+
+    // Read where it lies: taken out or cloned, the question is one CBMC
+    // copies whole (`engine::actions::choices` says the same of itself).
+    match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, optional, effect, .. }, .. }) => {
+            assert!(*player == PlayerId(1) && !*optional);
+            assert!(options.len() == 2 && options[0] == Target::Object(theirs[0]) && options[1] == Target::Object(theirs[1]));
+            assert!(matches!(effect, PendingEffect::CardEffect { source_id, key } if *source_id == spell && key.is_empty()));
+        }
+        _ => panic!("the opponent is asked which creature"),
+    }
+    crate::proofs::cards::clear_prompt(&mut state);
+    let effect = PendingEffect::CardEffect { source_id: spell, key: String::new() };
+    let chosen = theirs[pick];
+    let toughness = state.effective_toughness(chosen, &registry).expect("a creature");
+    crate::engine::apply_pending_effect(&mut state, &Target::Object(chosen), &effect, &registry);
+
+    assert!(state.awaiting_action.is_none());
+    assert!(state.get_object(chosen).expect("still an object").zone == Zone::Graveyard);
+    assert!(state.get_object(theirs[1 - pick]).expect("still an object").zone == Zone::Battlefield);
+    assert!(state.get_object(yours).expect("still an object").zone == Zone::Battlefield);
+    assert!(state.players[0].life == life[0] + toughness && state.players[1].life == life[1]);
+    std::mem::forget((registry, state, effect));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -1284,10 +1365,7 @@ engine_under_card! {
     spider_spawning_with_two_creature_cards_makes_two_spiders: spider_spawning(2);
 }
 
-// Damage to each creature, and from what a cost exiled. Not Rolling
-// Temblor ("2 damage to each creature without flying"), yet: it asks of
-// each creature whether it has flying before it queues the damage, and
-// with the creatures' scalars open both rows ran out of memory at 7 GB.
+// Damage to each creature, and from what a cost exiled.
 engine_under_card! {
     blasphemous_act_deals_thirteen_damage_to_each_creature: deals_to_each_creature((Box::new(BlasphemousAct), 13, false, false));
     blasphemous_act_deals_thirteen_damage_to_a_flier_too: deals_to_each_creature((Box::new(BlasphemousAct), 13, false, true));
@@ -1317,14 +1395,23 @@ engine_under_card! {
     paraselene_spares_an_indestructible_enchantment_and_gains_one_life: paraselene(true);
 }
 
-// More spells of their own: counted from a graveyard, and by name. Not
-// yet, each out of memory at 8 GB as first written: Spare from Evil
-// (three creatures and the engine's protection read back), and Tribute to
-// Hunger, the first spell here to ask a question and have the engine's
-// own answering (`engine::actions::choices::resolve_choice`) resolve it.
+// More spells of their own: counted from a graveyard, and by name.
 engine_under_card! {
     wreath_of_geists_with_no_creature_card_gives_nothing: wreath_of_geists(0);
     wreath_of_geists_with_one_creature_card_gives_one_and_one: wreath_of_geists(1);
     wreath_of_geists_with_two_creature_cards_gives_two_and_two: wreath_of_geists(2);
     sever_the_bloodline_exiles_every_creature_of_its_targets_name: sever_the_bloodline(());
+}
+
+// Each reshaped after it ran out of memory as first written: one creature
+// alone for Rolling Temblor, and for Tribute to Hunger, the first spell
+// here that asks a question, the effect its question holds applied by the
+// engine without the answer's dispatcher. Not yet, each out of memory at
+// 8 GB: Rolling Temblor beside a creature that has flying
+// (`rolling_temblor(true)`), and Spare from Evil, with one creature of
+// yours and one other and the engine's protection read back.
+engine_under_card! {
+    rolling_temblor_deals_two_damage_to_a_creature_without_flying: rolling_temblor(false);
+    tribute_to_hunger_has_the_opponent_sacrifice_their_first_creature: tribute_to_hunger(0);
+    tribute_to_hunger_has_the_opponent_sacrifice_their_second_creature: tribute_to_hunger(1);
 }

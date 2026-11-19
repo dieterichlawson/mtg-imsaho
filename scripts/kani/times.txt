@@ -1521,3 +1521,6 @@ SUCCESSFUL     162s  proofs::engine_under_card::wreath_of_geists_with_no_creatur
 SUCCESSFUL     197s  proofs::engine_under_card::wreath_of_geists_with_one_creature_card_gives_one_and_one
 SUCCESSFUL     222s  proofs::engine_under_card::wreath_of_geists_with_two_creature_cards_gives_two_and_two
 SUCCESSFUL      78s  proofs::engine_under_card::sever_the_bloodline_exiles_every_creature_of_its_targets_name
+SUCCESSFUL      71s  proofs::engine_under_card::rolling_temblor_deals_two_damage_to_a_creature_without_flying
+SUCCESSFUL     151s  proofs::engine_under_card::tribute_to_hunger_has_the_opponent_sacrifice_their_first_creature
+SUCCESSFUL     145s  proofs::engine_under_card::tribute_to_hunger_has_the_opponent_sacrifice_their_second_creature
