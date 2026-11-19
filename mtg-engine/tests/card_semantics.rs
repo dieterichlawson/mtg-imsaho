@@ -8883,7 +8883,17 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
                 let made = small_board(&on, small.registry, small.cache, small.vocabulary, small.pool, false);
                 stood += usize::from(made.is_some());
                 let before = failures.len();
-                check(small, &on, &format!(" on small board {board:?}"), &mut failures, &mut checked);
+                // A check that gives up (the reference meeting what it does
+                // not play) is a failure of its board, named like any other.
+                let played = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    check(small, &on, &format!(" on small board {board:?}"), &mut failures, &mut checked);
+                }));
+                if let Err(why) = played {
+                    let why = why.downcast_ref::<String>().cloned()
+                        .or_else(|| why.downcast_ref::<&str>().map(|s| (*s).to_string()))
+                        .unwrap_or_default();
+                    failures.push(format!("the check gave up on small board {board:?}: {}", why.chars().take(300).collect::<String>()));
+                }
                 if failures.len() > before {
                     let world = made.or_else(|| small_board(&on, small.registry, small.cache, small.vocabulary, small.pool, true))
                         .map_or_else(|| "not a board of the family".to_string(), |(_, w)| described(&w));
