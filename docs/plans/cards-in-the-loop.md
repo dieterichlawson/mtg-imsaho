@@ -495,7 +495,7 @@ the family, in 40 shares:
 | cast watchers | 3,910,656 | the same |
 | loyalty abilities | 3,584,768 | all agree, a search's shuffle now played under a board's death trigger (3,541,144 before that cut was lifted) |
 | upkeeps | 8,921,612 | the same |
-| flashback | 10,376,473 | the same |
+| flashback | 10,376,473 | the same, and again whole against the reference as changed for a shuffled library |
 | combat | 94,552, and 1,441,016 on the 2,052,641 boards of two worn pieces | all agree |
 | activated abilities | 17,923,840 | the same, once three gaps above were closed |
 | casts | 91,095,375 | the same, once the gap above was closed |
