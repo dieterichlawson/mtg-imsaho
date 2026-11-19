@@ -9,7 +9,7 @@ proofs that a card works when it resolves: the 715 harnesses that
 claimed that by asserting a record of the calls a card made, with
 recorders standing in for the engine, were removed (2026-11-18).
 
-**With the engine** (`proofs::engine_under_card`, 368): the card's own
+**With the engine** (`proofs::engine_under_card`, 379): the card's own
 hook run with the engine's own actions under it and no recorder, the
 board afterwards asserted against the card's text. 73 of the 88 spells,
 and permanents' hooks: enters, death, combat-damage, upkeep, end-step,
@@ -25,14 +25,14 @@ part B).
 
 Each harness's last result (`scripts/kani/times.txt`). The 285 declared
 ones are as the last run of every harness left them, 49 run again after
-the removal; the 368 with the engine were each run at the code as
+the removal; the 379 with the engine were each run at the code as
 committed, between 2026-11-18 and 2026-11-20, on a machine busy with
 other runs (their times are upper bounds: 9.2 hours of solver time in
 all, the longest 12 minutes).
 
-653 harnesses over 230 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 368 of 165 cards resolving with the engine itself under them. 40 cards have none.
+664 harnesses over 233 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 379 of 170 cards resolving with the engine itself under them. 37 cards have none.
 
-- SUCCESSFUL: 653
+- SUCCESSFUL: 664
 
 | card | declared | with the engine | proved | not proved |
 |---|---|---|---|---|
@@ -46,6 +46,7 @@ all, the longest 12 minutes).
 | avacynian_priest | 2 | 1 | 3 |  |
 | avacyns_pilgrim | 1 | 0 | 1 |  |
 | back_from_the_brink | 8 | 0 | 8 |  |
+| balefire_dragon | 0 | 2 | 2 |  |
 | battleground_geist | 1 | 0 | 1 |  |
 | bitterheart_witch | 2 | 0 | 2 |  |
 | blasphemous_act | 0 | 2 | 2 |  |
@@ -59,6 +60,7 @@ all, the longest 12 minutes).
 | bramblecrush | 1 | 4 | 5 |  |
 | brimstone_volley | 1 | 6 | 7 |  |
 | bump_in_the_night | 0 | 1 | 1 |  |
+| burning_vengeance | 0 | 3 | 3 |  |
 | butchers_cleaver | 2 | 2 | 4 |  |
 | cellar_door | 0 | 5 | 5 |  |
 | champion_of_the_parish | 0 | 2 | 2 |  |
@@ -71,6 +73,7 @@ all, the longest 12 minutes).
 | corpse_lunge | 0 | 3 | 3 |  |
 | counterspell | 1 | 2 | 3 |  |
 | creeping_renaissance | 1 | 0 | 1 |  |
+| creepy_doll | 0 | 1 | 1 |  |
 | crossway_vampire | 1 | 1 | 2 |  |
 | curiosity | 1 | 6 | 7 |  |
 | curse_of_deaths_hold | 0 | 1 | 1 |  |
@@ -80,7 +83,7 @@ all, the longest 12 minutes).
 | curse_of_the_nightly_hunt | 0 | 1 | 1 |  |
 | curse_of_the_pierced_heart | 0 | 5 | 5 |  |
 | darkthicket_wolf | 2 | 1 | 3 |  |
-| daybreak_ranger | 3 | 3 | 6 |  |
+| daybreak_ranger | 3 | 4 | 7 |  |
 | dead_weight | 1 | 1 | 2 |  |
 | dearly_departed | 1 | 0 | 1 |  |
 | demonmail_hauberk | 2 | 1 | 3 |  |
@@ -183,7 +186,7 @@ all, the longest 12 minutes).
 | nevermore | 6 | 0 | 6 |  |
 | night_revelers | 1 | 0 | 1 |  |
 | nightbirds_clutches | 1 | 3 | 4 |  |
-| olivia_voldaren | 1 | 0 | 1 |  |
+| olivia_voldaren | 1 | 1 | 2 |  |
 | one_eyed_scarecrow | 1 | 0 | 1 |  |
 | orchard_spirit | 1 | 0 | 1 |  |
 | pacifism | 1 | 1 | 2 |  |
@@ -264,7 +267,7 @@ all, the longest 12 minutes).
 | witchbane_orb | 1 | 0 | 1 |  |
 | wooden_stake | 2 | 3 | 5 |  |
 | woodland_cemetery | 2 | 0 | 2 |  |
-| woodland_sleuth | 1 | 0 | 1 |  |
+| woodland_sleuth | 1 | 3 | 4 |  |
 | wreath_of_geists | 2 | 3 | 5 |  |
 
 ## Tables of cards
@@ -280,5 +283,5 @@ all, the longest 12 minutes).
 
 What these do is the engine's, played with it by `tests/card_semantics.rs`, or printed data alone.
 
-abbey_griffin, ambush_viper, army_of_the_damned, balefire_dragon, burning_vengeance, cackling_counterpart, caravan_vigil, chapel_geist, coral_merfolk, creepy_doll, delver_of_secrets, desperate_ravings, divine_reckoning, forbidden_alchemy, fortress_crab, geist_of_saint_traft, goblin_piker, grizzly_bears, kalonian_tusker, kindercatch, laboratory_maniac, make_a_wish, makeshift_mauler, markov_patrician, memorys_journey, moldgraf_monstrosity, moon_heron, moonmist, mulch, night_terrors, riot_devils, rotting_fensnake, savannah_lions, skaab_goliath, spectral_rider, stitched_drake, thraben_purebloods, typhoid_rats, voiceless_spirit, walking_corpse
+abbey_griffin, ambush_viper, army_of_the_damned, cackling_counterpart, caravan_vigil, chapel_geist, coral_merfolk, delver_of_secrets, desperate_ravings, divine_reckoning, forbidden_alchemy, fortress_crab, geist_of_saint_traft, goblin_piker, grizzly_bears, kalonian_tusker, kindercatch, laboratory_maniac, make_a_wish, makeshift_mauler, markov_patrician, memorys_journey, moldgraf_monstrosity, moon_heron, moonmist, mulch, night_terrors, riot_devils, rotting_fensnake, savannah_lions, skaab_goliath, spectral_rider, stitched_drake, thraben_purebloods, typhoid_rats, voiceless_spirit, walking_corpse
 

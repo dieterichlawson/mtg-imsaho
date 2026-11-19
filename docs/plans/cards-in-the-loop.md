@@ -578,9 +578,9 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 368
-harnesses over 165 cards, every one proved: 147 over 73 of the 88
-spells, and 221 over the hooks of 92 permanents (below); 9 hours of
+**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 379
+harnesses over 170 cards, every one proved: 147 over 73 of the 88
+spells, and 232 over the hooks of 97 permanents (below); 9 hours of
 solver time in all on this machine while it was busy, the longest 12
 minutes and most a minute or two. The spells, By family, each a function of what the text
 says and a row for each card and case:
@@ -634,7 +634,7 @@ Caravan Vigil, Mulch, Moonmist, Desperate Ravings), Cackling Counterpart
 (a copy needs a printed creature to copy) and Army of the Damned
 (thirteen tokens).
 
-**Permanents.** 221 harnesses over 92 cards, each the card's own hook as
+**Permanents.** 232 harnesses over 97 cards, each the card's own hook as
 its trigger or ability resolves, for a source still on the battlefield
 and, where the text does not need it there, for one gone from it by
 then (a counter then lands nowhere, CR 121.1; a drain, a draw, a token
@@ -643,16 +643,16 @@ or damage happens all the same, for the player who last controlled it,
 
 | What sets it off | Cards |
 |---|---|
-| entering | Armored Skaab, Claustrophobia, Crossway Vampire, Geist-Honored Monk, Hollowhenge Scavenger, Morkrut Banshee, Village Bell-Ringer; Slayer of the Wicked and Geistcatcher's Rig ask |
+| entering | Armored Skaab, Claustrophobia, Crossway Vampire, Geist-Honored Monk, Hollowhenge Scavenger, Morkrut Banshee, Village Bell-Ringer, Woodland Sleuth; Slayer of the Wicked and Geistcatcher's Rig ask |
 | a death, its own or one it watches | Doomed Traveler, Mausoleum Guard, Elder Cathar, Pitchburn Devils, Rage Thrower, Falkenrath Noble, Selhoff Occultist, Abattoir Ghoul, Galvanic Juggernaut, Gutter Grime, Lumberknot, Unruly Mob, Village Cannibals; Thraben Sentry and Murder of Crows ask |
-| combat damage | Bloodcrazed Neonate, Falkenrath Marauders, Stromkirk Noble, Stromkirk Patrol, Rakish Heir, Curse of Stalked Prey, Sturmgeist; Curiosity asks |
+| combat damage | Bloodcrazed Neonate, Falkenrath Marauders, Stromkirk Noble, Stromkirk Patrol, Rakish Heir, Curse of Stalked Prey, Sturmgeist, Balefire Dragon, Creepy Doll (its coin either way); Curiosity asks |
 | an upkeep | the twelve Werewolves, each face; Splinterfright, Curse of the Bloody Tome, Bloodgift Demon, Angel of Flight Alabaster, Curse of the Pierced Heart and its question, Endless Ranks of the Dead; Cloistered Youth asks |
-| an end step, a spell cast, a creature entering, a card milled | Unholy Fiend, Howlpack Alpha (gone), Reaper from the Abyss; Charmbreaker Devils; Champion of the Parish; Undead Alchemist |
+| an end step, a spell cast, a creature entering, a card milled | Unholy Fiend, Howlpack Alpha (gone), Reaper from the Abyss; Charmbreaker Devils, Burning Vengeance; Champion of the Parish; Undead Alchemist |
 | an attack or a block | Ashmouth Hound, Wooden Stake, Hamlet Captain, Grimgrin, Kessig Cagebreakers (with nothing to count) |
 | equip | the eleven Equipment, each read back through the layers, at a Human where the text says more of one |
-| an activated ability that asks nothing | Darkthicket Wolf, Feral Ridgewolf, Kessig Wolf, Avacynian Priest, Bloodline Keeper (both), Skirsdag High Priest, Nephalia Drownyard, Ghoulcaller's Bell, Stensia Bloodhall, Lantern Spirit, Elder of Laurels, Gavony Township, Manor Skeleton, Ulvenwald Primordials, Manor Gargoyle, Mikaeus (both), Selfless Cathar, Silverchase Fox, Skirsdag Cultist, Daybreak Ranger's damage, Kessig Wolf Run, Disciple of Griselbrand, Tree of Redemption, Deranged Assistant, Cellar Door, Ludevic's Test Subject, Full Moon's Rise, Grimgrin, Moorland Haunt, Evil Twin |
+| an activated ability that asks nothing | Darkthicket Wolf, Feral Ridgewolf, Kessig Wolf, Avacynian Priest, Bloodline Keeper (both), Skirsdag High Priest, Nephalia Drownyard, Ghoulcaller's Bell, Stensia Bloodhall, Lantern Spirit, Elder of Laurels, Gavony Township, Manor Skeleton, Ulvenwald Primordials, Manor Gargoyle, Mikaeus (both), Selfless Cathar, Silverchase Fox, Skirsdag Cultist, Daybreak Ranger's damage and Nightfall Predator's fight, Olivia Voldaren's first, Kessig Wolf Run, Disciple of Griselbrand, Tree of Redemption, Deranged Assistant, Cellar Door, Ludevic's Test Subject, Full Moon's Rise, Grimgrin, Moorland Haunt, Evil Twin |
 
-Five more things that put a harness out of reach, each measured:
+Six more things that put a harness out of reach, each measured:
 
 - A zone change for an owner the solver leaves open is a graveyard it
   leaves open (4 GB): a source that has left is one player's card under
@@ -677,19 +677,24 @@ Five more things that put a harness out of reach, each measured:
 - A token put onto the battlefield attacking (Geist of Saint Traft's
   Angel, Kessig Cagebreakers' Wolves): out of memory at 7 GB. The
   engine's own proofs take it in two halves.
+- A card picked at random and then moved, the random numbers left open:
+  the card moved is one the solver leaves open (Woodland Sleuth, 7 GB).
+  A harness for each of two states of the random numbers, one picking
+  the first card and one the second, proves in two minutes with the
+  engine's own shuffle under it. A coin with the numbers open fits
+  (Creepy Doll, both ways reached).
 
-Not yet, of permanents: those just named; the hooks that choose at
-random or flip a coin (Ghoulraiser, Woodland Sleuth, Moldgraf
-Monstrosity, Charmbreaker Devils' upkeep, Creepy Doll, Mirror-Mad
-Phantasm); those that search, pay or pick a card (Bitterheart Witch,
+Not yet, of permanents: those just named; the other hooks that choose
+at random, which the two seeds will do for (Ghoulraiser, Moldgraf
+Monstrosity, Charmbreaker Devils' upkeep, Mirror-Mad Phantasm); those
+that search, pay or pick a card (Bitterheart Witch,
 Mentor of the Meek, Screeching Bat, Delver of Secrets, Curse of
 Oblivion, Traveler's Amulet, Ghost Quarter, Graveyard Shovel, Brain
 Weevil, Civilized Scholar, Stitcher's Apprentice, Back from the Brink,
 Grimoire of the Dead); Fiend Hunter, Nevermore, Snapcaster Mage,
-Witchbane Orb, Balefire Dragon, Burning Vengeance, Trepanation Blade's
-trigger, Blazing Torch's sacrifice, Heretic's Punishment, Mindshrieker,
-Olivia Voldaren, Daybreak Ranger's fight, Skeletal Grimace; and the two
-planeswalkers.
+Witchbane Orb, Trepanation Blade's trigger, Blazing Torch's sacrifice,
+Heretic's Punishment, Mindshrieker, Olivia Voldaren's second, Skeletal
+Grimace; and the two planeswalkers.
 
 These harnesses are also the first proofs of the engine's actions
 composed with nothing stood in for: `try_destroy` over the real
