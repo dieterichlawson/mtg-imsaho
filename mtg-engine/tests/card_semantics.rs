@@ -6233,11 +6233,76 @@ fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: Player
     ways
 }
 
+/// `cards` with each ordered choice of `k` of them first, the rest after
+/// in the order they were; each list once.
+fn tops(cards: &[String], k: usize) -> Vec<Vec<String>> {
+    if k == 0 {
+        return vec![cards.to_vec()];
+    }
+    let mut out = Vec::new();
+    for i in 0..cards.len() {
+        let mut rest = cards.to_vec();
+        let first = rest.remove(i);
+        for tail in tops(&rest, k - 1) {
+            out.push(std::iter::once(first.clone()).chain(tail).collect());
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Every way the top of a shuffled library can lie for what `spec` takes
+/// from it as it resolves. A library that has been shuffled is in an order
+/// nobody knows (CR 701.20a), so the card a mill or a draw takes from it
+/// afterwards is any card of it: a Selhoff Occultist's trigger milling a
+/// library a Memory's Journey has just shuffled, set off by the Boneyard
+/// Wurm that died of losing its last creature card to that library (found
+/// by flashback on three pieces; two pieces never held the three). Each
+/// ordered choice of as many cards as `spec` reads from a library is put
+/// on top of each shuffled one, the rest under them and still not
+/// compared; the world as it was when `spec` reads none or none was
+/// shuffled.
+fn tops_of_shuffled_libraries(spec: &Spec, world: World) -> Vec<World> {
+    let reads: usize = spec.effects.iter()
+        .map(|e| match e {
+            Effect::Mill { n, .. } | Effect::MillYou { n } | Effect::MillEach { n } | Effect::Draw { n } | Effect::PlayerDraws { n, .. }
+            | Effect::RevealTopSplit { n, .. } | Effect::LookTopPickOne { n } => *n,
+            Effect::RevealTopTransformIf { .. } => 1,
+            _ => 0,
+        })
+        .sum();
+    if reads == 0 {
+        return vec![world];
+    }
+    let mut ways = vec![world];
+    for p in 0..2 {
+        ways = ways.into_iter()
+            .flat_map(|w| {
+                if !w.shuffled[p] || w.library[p].len() < 2 {
+                    return vec![w];
+                }
+                tops(&w.library[p], reads.min(w.library[p].len())).into_iter()
+                    .map(|library| {
+                        let mut way = World { randomized: true, ..w.clone() };
+                        way.library[p] = library;
+                        way
+                    })
+                    .collect()
+            })
+            .collect();
+    }
+    ways
+}
+
 /// Every way `spec` can resolve at `targets` on `world`, as the world to
-/// apply it on: each way its random effects can go, each choice another
-/// player makes, each card a search can find.
+/// apply it on: each way its random effects can go, each card that can be
+/// on top of a library shuffled before it, each choice another player
+/// makes, each card a search can find.
 fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
-    let mut ways = random_choices(spec, world, caster);
+    let mut ways: Vec<World> = random_choices(spec, world, caster).into_iter()
+        .flat_map(|w| tops_of_shuffled_libraries(spec, w))
+        .collect();
     if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature
         | Effect::PlayerExilesFromGraveyard { .. } | Effect::PilesSacrificed { .. } | Effect::ExileFromGraveyard { .. }))
     {
@@ -6414,7 +6479,19 @@ fn asks_as_it_resolves(spec: &Spec) -> bool {
 
 /// How many distinct endings `worlds` are, as the engine's are observed.
 fn distinct(worlds: &[World]) -> usize {
-    worlds.iter().map(World::observed).collect::<BTreeSet<_>>().len()
+    // With a shuffled library's order left out, as `disagreement` leaves
+    // it out.
+    let shuffled: Vec<usize> = (0..2).filter(|p| worlds.iter().any(|w| w.shuffled[*p])).collect();
+    worlds.iter()
+        .map(|w| {
+            let mut o = w.observed();
+            for p in &shuffled {
+                o.library[*p].sort();
+            }
+            o
+        })
+        .collect::<BTreeSet<_>>()
+        .len()
 }
 
 /// Whether `spec` does something at random.
@@ -6434,19 +6511,29 @@ fn is_random(spec: &Spec) -> bool {
 fn over_seeds(state: &GameState, registry: &CardRegistry, ways: usize, play: impl Fn(&GameState) -> Result<Vec<GameState>, String>) -> Result<Vec<GameState>, String> {
     let mut all = Vec::new();
     let mut seen: BTreeSet<Observed> = BTreeSet::new();
+    // The endings told apart by more than the order of a library: a
+    // shuffle leaves a different order at every seed, which is not a
+    // different ending (`disagreement` does not compare it), and counted
+    // as one the seeds stopped at 32 with every order new and a card a
+    // shuffled library could have had on top not yet seen there.
+    let mut apart: BTreeSet<Observed> = BTreeSet::new();
     let mut quiet = 0;
     for seed in 0..2048u64 {
         let mut s = state.clone();
         s.rng_state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03;
         let mut new = false;
         for ending in play(&s)? {
-            if seen.insert(observe(&ending, registry)) {
-                new = true;
+            let mut o = observe(&ending, registry);
+            if seen.insert(o.clone()) {
                 all.push(ending);
             }
+            for library in &mut o.library {
+                library.sort();
+            }
+            new |= apart.insert(o);
         }
         quiet = if new { 0 } else { quiet + 1 };
-        if seed >= 31 && (seen.len() >= ways || quiet >= 96) {
+        if seed >= 31 && (apart.len() >= ways || quiet >= 96) {
             break;
         }
     }
@@ -6994,9 +7081,19 @@ fn native_outcomes(native: &Native, w: &World) -> Vec<World> {
             vec![after]
         }
         Native::Draw(p) => {
-            let card = after.library[p.0 as usize].remove(0);
-            after.hand[p.0 as usize].push(card);
-            vec![after]
+            // Any card of a library shuffled before it (CR 701.20a).
+            let p = p.0 as usize;
+            let tops = if after.shuffled[p] && after.library[p].len() > 1 { tops(&after.library[p], 1) } else { vec![after.library[p].clone()] };
+            let random = tops.len() > 1;
+            tops.into_iter()
+                .map(|library| {
+                    let mut drawn = World { randomized: after.randomized || random, ..after.clone() };
+                    drawn.library[p] = library;
+                    let card = drawn.library[p].remove(0);
+                    drawn.hand[p].push(card);
+                    drawn
+                })
+                .collect()
         }
         Native::BlockDamage { source, as_it_was, other, n } => {
             let from = after.permanents.get(source).cloned().unwrap_or_else(|| (**as_it_was).clone());
@@ -9130,14 +9227,34 @@ fn every_readable_activated_ability_does_what_its_text_says_on_every_small_board
 /// the card in that graveyard already casts that one.
 #[test]
 fn every_flashback_spell_does_what_its_text_says_on_every_small_board() {
-    on_every_small_board("flashback casts", &|small, on, which, failures, casts| {
-        let flashbacks = small.cards.iter()
-            .filter(|(_, s)| s.flashback.is_some() && s.additional.is_none() && !s.slots.iter().any(|s| matches!(s, Slot::Spell(_))));
-        for (card, spec) in flashbacks {
-            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
-            check_flashback_on(card, spec, spec.flashback.as_ref().expect("filtered"), which, made, small.registry, small.cache, failures, casts);
-        }
-    });
+    on_every_small_board("flashback casts", &check_flashback_spells_on);
+}
+
+/// Every flashback spell cast by flashback on the board `on`, as
+/// [`every_flashback_spell_does_what_its_text_says_on_every_small_board`]
+/// plays each board.
+fn check_flashback_spells_on(small: &Small, on: &[Piece], which: &str, failures: &mut Vec<String>, casts: &mut usize) {
+    let flashbacks = small.cards.iter()
+        .filter(|(_, s)| s.flashback.is_some() && s.additional.is_none() && !s.slots.iter().any(|s| matches!(s, Slot::Spell(_))));
+    for (card, spec) in flashbacks {
+        let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+        check_flashback_on(card, spec, spec.flashback.as_ref().expect("filtered"), which, made, small.registry, small.cache, failures, casts);
+    }
+}
+
+/// The board of three pieces on which a flashback spell once disagreed
+/// (`docs/plans/cards-in-the-loop.md`, "What it has found so far"), every
+/// flashback spell cast on it again. A Selhoff Occultist, the other
+/// player's Boneyard Wurm and the one creature card in that player's
+/// graveyard: Memory's Journey shuffles the card into their library, the
+/// Wurm dies a 0/0, and the Occultist's trigger mills a library whose top
+/// card is then any card of it (CR 701.20a).
+#[test]
+fn flashback_agrees_on_the_three_piece_board_that_once_did_not() {
+    let boards = [vec![Named::Permanent("Selhoff Occultist", P0), Named::Permanent("Boneyard Wurm", P1), Named::Yard("Reckless Waif", P1)]];
+    let (failures, checked) = on_named_boards(&boards, &check_flashback_spells_on);
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} flashback casts on the board that once disagreed do again:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// One permanent with an upkeep trigger, or that keeps something tapped,
@@ -9582,6 +9699,21 @@ fn loyalty_abilities_agree_on_the_three_piece_boards_that_once_did_not() {
 /// `boards`: a board named by its permanents' cards and whose they are,
 /// each as it entered. What it reports and how much it checked.
 fn on_named_small_boards(boards: &[[(&str, PlayerId); 3]], check: &dyn Fn(&Small, &[Piece], &str, &mut Vec<String>, &mut usize)) -> (Vec<String>, usize) {
+    let boards: Vec<Vec<Named>> = boards.iter().map(|board| board.iter().map(|(name, side)| Named::Permanent(name, *side)).collect()).collect();
+    on_named_boards(&boards, check)
+}
+
+/// A piece of a board named by hand: a permanent of the boards' vocabulary
+/// as it entered, or a card of the pool in a graveyard, each with whose.
+#[derive(Clone, Copy, Debug)]
+enum Named<'a> {
+    Permanent(&'a str, PlayerId),
+    Yard(&'a str, PlayerId),
+}
+
+/// [`on_named_small_boards`] for boards that may hold a card in a
+/// graveyard as well.
+fn on_named_boards(boards: &[Vec<Named>], check: &dyn Fn(&Small, &[Piece], &str, &mut Vec<String>, &mut usize)) -> (Vec<String>, usize) {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
@@ -9591,10 +9723,16 @@ fn on_named_small_boards(boards: &[[(&str, PlayerId); 3]], check: &dyn Fn(&Small
     let small = Small { registry: &registry, cache: &cache, cards: &cards, vocabulary: &vocabulary, pool: &pool };
     let (mut failures, mut checked) = (Vec::new(), 0);
     for board in boards {
-        let on: Vec<Piece> = board.iter().map(|(name, side)| {
-            let card = vocabulary.iter().position(|(printed, _)| printed.name == *name)
-                .unwrap_or_else(|| panic!("{name} is a permanent of the boards' vocabulary"));
-            Piece::Permanent { card, side: *side, wear: 0 }
+        let on: Vec<Piece> = board.iter().map(|piece| match piece {
+            Named::Permanent(name, side) => {
+                let card = vocabulary.iter().position(|(printed, _)| printed.name == *name)
+                    .unwrap_or_else(|| panic!("{name} is a permanent of the boards' vocabulary"));
+                Piece::Permanent { card, side: *side, wear: 0 }
+            }
+            Named::Yard(name, side) => {
+                let card = pool.iter().position(|n| n == name).unwrap_or_else(|| panic!("{name} is a card of the pool"));
+                Piece::Yard { card, side: *side }
+            }
         }).collect();
         check(&small, &on, &format!(" on {board:?}"), &mut failures, &mut checked);
     }
