@@ -200,6 +200,14 @@ random game happened to reach.
   the perm badge strip and `drawStrip`'s `parts` loop, which both lay out
   left-to-right with no bound; a 6-colour floating mana pool was not enough to
   push `parts` past 480.
+  [2026-11-20] Re-run at the worst case the pool has for names: the 26- and
+  25-character names (Curse of the Pierced Heart, Endless Ranks of the
+  Dead, Angel of Flight Alabaster, Moan of the Unhallowed) and Evil Twin
+  copies, 5 games through `autoplay.js`'s `step` with every hand, perm,
+  stack and player hit hovered every 4th decision: 277 decisions, 433
+  frames, 1,539 hover frames, **zero strings past 640 or across 480**.
+  `drawStrip`'s parts and the badge strip are both bounded now (#832,
+  #995, #603). Don't re-sweep live games again without a new text site.
 
 - G15 [proposed 2026-09-17, from the G5 runs] the window that is
   too small: `index.html` sets `body { overflow: hidden }` and `fitCanvas`
@@ -219,6 +227,12 @@ random game happened to reach.
   The half still worth probing is what a *shorter* window does to a prompt
   with rows: at 1600x300 only Concede had left the bottom, and no prompt with
   a long row list was on screen at the time.
+  [2026-11-20] Re-run after #569's fix (`fitCanvas` scales below 1). At
+  1280x720, 620x700, 500x700, 390x844, 320x240, 844x390 and 2000x300 the
+  whole canvas is on screen and Pass and Concede map inside the window; at
+  390x844 a hand card, its popover row and Pass all answer through the
+  scaled rectangle. Holds. Below 640 wide the text is ~5px and hard to read,
+  which `fitCanvas`'s comment accepts on purpose (blurry over unanswerable).
 
 **The Fumbler** clicks the wrong things.
 
