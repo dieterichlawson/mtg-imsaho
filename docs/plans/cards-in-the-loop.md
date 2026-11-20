@@ -582,7 +582,8 @@ boards of two worn pieces that hold each (100,270 combats, counted the
 same way), which is what `prove.sh exhaustive` plays. On three pieces: combat on every
 board that holds each of the five, 5,991,243 of the family counted the
 same way and 3,571,653 combats, agrees once the last two gaps above
-were closed (4 combats, on two boards, had not), so combat on three
+were closed (the few shares run before that had found 4 combats, on two
+boards, that did not, and were stopped there), so combat on three
 pieces is whole with them on the boards; and one in 240 of those boards
 agrees in the other nine checks (25,003 of the family: 7,698,504 casts,
 1,367,912 activated abilities, 917,382 flashback casts, 698,774
