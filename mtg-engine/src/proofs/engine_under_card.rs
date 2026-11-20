@@ -5938,6 +5938,92 @@ fn essence_of_the_wild(yours: bool) {
     std::mem::forget((registry, state));
 }
 
+// ---- What a spell costs beside a permanent that says so, and a spell
+// whose whole effect is a filter's. ----
+
+/// Rooftop Storm ("You may pay {0} rather than pay the mana cost for
+/// Zombie creature spells you cast.") under the first player: the engine
+/// offers the player `caster` names, casting a creature card that is a
+/// Zombie (Walking Corpse) or one that is not (Doomed Traveler), one
+/// other cost, {0}, exactly for its controller's Zombie (CR 118.9), and
+/// none otherwise.
+fn rooftop_storm((zombie, caster): (bool, u8)) {
+    use crate::types::ManaCost;
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::rooftop_storm::RooftopStorm));
+    let corpse = registry.register(Box::new(WalkingCorpse));
+    let traveler = registry.register(Box::new(crate::cards::isd::doomed_traveler::DoomedTraveler));
+    a_source(&mut state, card, PlayerId(0));
+
+    let offered = crate::engine::costs::alternative_costs(&state, &registry, if zombie { corpse } else { traveler }, PlayerId(caster));
+
+    if zombie && caster == 0 {
+        assert!(offered.len() == 1 && offered[0] == ManaCost::free());
+    } else {
+        assert!(offered.is_empty());
+    }
+    std::mem::forget((offered, registry, state));
+}
+
+/// Heartless Summoning ("Creature spells you cast cost {2} less to
+/// cast.") under the first player, and what the engine says a spell
+/// costs to cast (CR 601.2f): its controller's Kindercatch, {3}{G}{G}{G}
+/// as printed, costs {1}{G}{G}{G}; their Walking Corpse, {1}{B}, costs
+/// {B}, the reduction taking generic mana and no more than there is;
+/// the other player's Kindercatch costs what it prints; and their own
+/// Lightning Bolt, no creature spell, costs {R}.
+fn heartless_summoning_costs(which: u8) {
+    use crate::engine::costs::{cost_to_cast, CastMethod};
+    use crate::types::{ManaCost, ManaSymbol};
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::heartless_summoning::HeartlessSummoning));
+    let big = registry.register(Box::new(Kindercatch));
+    let small = registry.register(Box::new(WalkingCorpse));
+    let bolt = registry.register(Box::new(LightningBolt));
+    a_source(&mut state, card, PlayerId(0));
+    let green = || ManaSymbol::Colored(Color::Green);
+    let (spell, caster, costs) = match which {
+        0 => (big, 0, vec![ManaSymbol::Generic(1), green(), green(), green()]),
+        1 => (small, 0, vec![ManaSymbol::Colored(Color::Black)]),
+        2 => (big, 1, vec![ManaSymbol::Generic(3), green(), green(), green()]),
+        _ => (bolt, 0, vec![ManaSymbol::Colored(Color::Red)]),
+    };
+
+    let cost = cost_to_cast(&state, &registry, spell, PlayerId(caster), &CastMethod::Normal);
+
+    let want = ManaCost::new(costs);
+    assert!(cost.mana == want && cost.x_discount == 0);
+    std::mem::forget((cost, want, registry, state));
+}
+
+/// Spare from Evil ("Creatures you control gain protection from
+/// non-Human creatures until end of turn.") resolving for the first
+/// player with a creature of theirs and one of the other player's: the
+/// turn holds one effect, protection for their creature, from whatever
+/// is a creature and not a Human, and none for the other player's.
+/// What the effect is, not what the engine then reads of it: read back
+/// through the engine's protection it ran out of memory at 8 GB, the
+/// filter being one the card builds of two questions. What that filter
+/// matches is proved of the engine (`proofs::actions::filters`).
+fn spare_from_evil(_: ()) {
+    use crate::types::CreatureFilter;
+    let (registry, mut state, blank, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::spare_from_evil::SpareFromEvil));
+    let yours = a_creature_of(&mut state, blank, PlayerId(0), PlayerId(0));
+    a_creature_of(&mut state, blank, PlayerId(1), PlayerId(1));
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    assert!(state.until_end_of_turn.len() == 1);
+    match &state.until_end_of_turn[0] {
+        TemporaryEffect::GrantProtection { target, filter: CreatureFilter::And(parts) } => {
+            assert!(*target == yours && parts.len() == 2);
+            assert!(matches!(&parts[0], CreatureFilter::HasCardType(CardType::Creature)));
+            assert!(matches!(&parts[1], CreatureFilter::Not(inner) if matches!(&**inner, CreatureFilter::HasSubtype(s) if s == "Human")));
+        }
+        _ => panic!("protection for their creature from non-Human creatures"),
+    }
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -6818,4 +6904,16 @@ engine_under_card! {
     essence_of_the_wild_makes_your_creature_enter_as_a_copy: essence_of_the_wild(true);
     essence_of_the_wild_leaves_their_creature_as_it_is: essence_of_the_wild(false);
     shimmering_grotto_taps_for_colorless: taps_for((Box::new(crate::cards::isd::shimmering_grotto::ShimmeringGrotto), ManaType::Colorless, 1));
+}
+
+// What a spell costs beside a permanent that says so, and a spell whose effect is a filter's.
+engine_under_card! {
+    rooftop_storm_offers_its_controller_a_zombie_for_nothing: rooftop_storm((true, 0));
+    rooftop_storm_offers_nothing_for_a_creature_that_is_no_zombie: rooftop_storm((false, 0));
+    rooftop_storm_offers_the_other_player_nothing: rooftop_storm((true, 1));
+    heartless_summoning_takes_two_generic_from_your_creature_spell: heartless_summoning_costs(0);
+    heartless_summoning_takes_no_more_generic_than_there_is: heartless_summoning_costs(1);
+    heartless_summoning_leaves_the_other_players_creature_spell: heartless_summoning_costs(2);
+    heartless_summoning_leaves_a_spell_that_is_no_creature: heartless_summoning_costs(3);
+    spare_from_evil_gives_your_creature_protection_from_non_human_creatures: spare_from_evil(());
 }
