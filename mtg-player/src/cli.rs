@@ -659,8 +659,12 @@ pub fn sanitize_for_display(s: &str) -> String {
 /// the card search and the library filter printed theirs as they came, so
 /// pasted coloured output cleared the screen and painted over the frame
 /// (#1052, #282's shape). Taken at the source, no echo of it can run one.
+/// A tab is a space: a typed one separates (#1051), and a pasted
+/// "1<TAB>3" read as "1·3" and was refused (#1052's review). A filter's
+/// typed character comes through here too: a C1 control (U+009B, CSI)
+/// arrives as a `Char`, not a key.
 fn pasted_line(pasted: &str) -> String {
-    sanitize_for_display(pasted.split(['\r', '\n']).next().unwrap_or(""))
+    sanitize_for_display(&pasted.split(['\r', '\n']).next().unwrap_or("").replace('\t', " "))
 }
 
 /// The user's input, quoted for an error notice: sanitised so a pasted
@@ -3741,7 +3745,7 @@ impl CliPlayer {
                     // A chord the UI doesn't bind (Ctrl-A, Alt-x, ...) is
                     // ignored, never inserted as its bare character (#51).
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                        card_filter.push(c);
+                        card_filter.push_str(&pasted_line(&c.to_string()));
                     }
                     _ => {}
                 }
@@ -9282,7 +9286,7 @@ impl CliPlayer {
                         quit_at_prompt();
                     }
                     KeyCode::Char(c) if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
-                        filter.push(c);
+                        filter.push_str(&pasted_line(&c.to_string()));
                         selected = 0;
                     }
                     KeyCode::Esc => {
@@ -10047,7 +10051,8 @@ pub(crate) mod tests {
     #[test]
     fn a_pasted_escape_sequence_reaches_no_filter_or_input_as_bytes() {
         let line = pasted_line("\u{1b}[2J\u{1b}[1;1HPWN\u{1b}[41mX\tY\r\nsecond line");
-        assert_eq!(line, "\u{b7}[2J\u{b7}[1;1HPWN\u{b7}[41mX\u{b7}Y");
+        assert_eq!(line, "\u{b7}[2J\u{b7}[1;1HPWN\u{b7}[41mX Y", "a tab is a space");
+        assert_eq!(pasted_line("\u{9b}2J"), "\u{b7}2J", "a C1 CSI is shown, not run");
         assert!(!line.chars().any(char::is_control));
         let src = include_str!("cli.rs");
         let sites = src.matches("if let Event::Paste(pasted) = &ev {").count();
