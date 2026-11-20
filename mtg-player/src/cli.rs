@@ -1135,6 +1135,19 @@ struct OrderingPrompt<'a> {
     details: &'a [mtg_engine::state::TriggerOrderOption],
 }
 
+/// One line of input at the X prompt, read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum XInput {
+    /// A payable X.
+    Value(u32),
+    /// Back out of the cast or activation.
+    Cancel,
+    /// One of the info panes (#1054).
+    Pane(char),
+    /// Refused, with the reason to show.
+    Invalid(String),
+}
+
 /// One line of input at the combat damage division prompt, read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum AmountInput {
@@ -7747,6 +7760,61 @@ impl CliPlayer {
     /// cancellable (#123, #290), and what cancelling abandons is named for
     /// what it is: Kessig Wolf Run's `{X}{R}{G}, {T}` is an activation, and
     /// the engine logs it as one — the prompt called it a cast (#613).
+    /// One line of input at the X prompt, read.
+    fn parse_x_input(input: &str, fundable: &[u32], max_x: u32) -> XInput {
+        let input = input.trim();
+        if input == "c" || input == "cancel" {
+            return XInput::Cancel;
+        }
+        // The panes, as every other question mid-cast opens them: how big
+        // X should be depends on the board, the graveyards and the log, and
+        // the only way to look was to cancel the cast (#1054).
+        if let Some(c) = Self::pane_key(input) {
+            return XInput::Pane(c);
+        }
+        // Everywhere else in this CLI the idle key is the SAFE key; bare
+        // Enter used to commit the cast for X=0, burning the card on a
+        // stray keypress (issue #123). It re-prompts now — X=0 is still
+        // available by typing 0. The refusal names the token that was
+        // typed. This prompt used to name neither it nor the parsed value,
+        // so `0x2`, `2.0`, `-0` and `hello` were one sentence (issue #562).
+        XInput::Invalid(match input.parse::<u32>() {
+            Ok(n) if fundable.binary_search(&n).is_ok() => return XInput::Value(n),
+            // In range and unpayable: the sources cannot sum to it, so say
+            // which values they can. This used to be accepted, funded lower
+            // and committed (#595).
+            Ok(n) if n <= max_x => format!(
+                "  X = {n} is not payable with these sources — payable X: {}.",
+                describe_fundable_x(fundable)),
+            _ if input.is_empty() => "  Enter a value for X.".to_string(),
+            // The keys are named here, as the prompt line has no room to;
+            // past " — " is what a narrow pane keeps (`notice_rows`).
+            _ => format!("  Invalid input '{}' — enter X from 0 to {max_x}, or s i g e l d to look.",
+                quote_input(input)),
+        })
+    }
+
+    /// A line that is one of the pane keys every mid-cast question takes:
+    /// s(tack), i(nspector), g(raveyards), e(xile), l(og), d(eck).
+    fn pane_key(input: &str) -> Option<char> {
+        match input.trim() {
+            t @ ("s" | "i" | "g" | "e" | "l" | "d") => t.chars().next(),
+            _ => None,
+        }
+    }
+
+    /// Open the pane a pane key names; back at the question when it closes.
+    fn show_pane(view: &GameView, c: char) {
+        match c {
+            's' => Self::show_stack(view),
+            'i' => Self::show_battlefield_inspector(view),
+            'g' => Self::show_graveyards(view),
+            'e' => Self::show_exile(view),
+            'l' => Self::show_log(&view.display_log),
+            _ => Self::show_deck_browser(view),
+        }
+    }
+
     fn x_funding_hint(max_x: u32, is_ability: bool) -> String {
         let what = if is_ability { "activation" } else { "cast" };
         format!("  X (0-{max_x}, c = cancel the {what}, or concede) = ")
@@ -7935,33 +8003,19 @@ impl CliPlayer {
         let x: u32 = loop {
             paint(notice.as_deref());
             let input = Self::read_line_live(&hint, &|| paint(unheld(notice.as_deref())), Some(&plan));
-            let input = input.trim();
-            // Cancelling a spell's X prompt backs out of the whole cast —
-            // the engine un-stashes it with nothing spent (issue #123).
-            if input == "c" || input == "cancel" {
-                return Action::ResolveChoice {
+            match Self::parse_x_input(&input, &fundable, options.max_announceable_x()) {
+                XInput::Value(n) => break n,
+                // Cancelling a spell's X prompt backs out of the whole cast —
+                // the engine un-stashes it with nothing spent (issue #123).
+                XInput::Cancel => return Action::ResolveChoice {
                     choice: ResolvedChoice::ChosenTarget(None),
-                };
+                },
+                XInput::Pane(c) => {
+                    Self::show_pane(view, c);
+                    notice = None;
+                }
+                XInput::Invalid(why) => notice = Some(why),
             }
-            // Everywhere else in this CLI the idle key is the SAFE key;
-            // bare Enter used to commit the cast for X=0, burning the card
-            // on a stray keypress (issue #123). It re-prompts now — X=0 is
-            // still available by typing 0.
-            // The refusal names the token that was typed. This prompt
-            // used to name neither it nor the parsed value, so `0x2`,
-            // `2.0`, `-0` and `hello` were one sentence (issue #562).
-            notice = Some(match input.parse::<u32>() {
-                Ok(n) if fundable.binary_search(&n).is_ok() => break n,
-                // In range and unpayable: the sources cannot sum to it, so
-                // say which values they can. This used to be accepted,
-                // funded lower and committed (#595).
-                Ok(n) if n <= options.max_announceable_x() => format!(
-                    "  X = {n} is not payable with these sources — payable X: {}.",
-                    describe_fundable_x(&fundable)),
-                _ if input.is_empty() => "  Enter a value for X.".to_string(),
-                _ => format!("  Invalid input '{}' — enter an integer between 0 and {}.",
-                    quote_input(input), options.max_announceable_x()),
-            });
         };
 
         // Distribute X: drain from pool (larger color buckets first), then
@@ -8242,14 +8296,7 @@ impl CliPlayer {
                         choice: mtg_engine::actions::ResolvedChoice::ChosenOrder(order),
                     };
                 }
-                OrderInput::Pane(c) => match c {
-                    's' => Self::show_stack(view),
-                    'i' => Self::show_battlefield_inspector(view),
-                    'g' => Self::show_graveyards(view),
-                    'e' => Self::show_exile(view),
-                    'l' => Self::show_log(&view.display_log),
-                    _ => Self::show_deck_browser(view),
-                },
+                OrderInput::Pane(c) => Self::show_pane(view, c),
                 OrderInput::NextPage => offset = page.next_offset(),
                 OrderInput::PrevPage => offset = page.prev_offset(),
                 OrderInput::Invalid(why) => notice = Some(why),
@@ -8297,14 +8344,7 @@ impl CliPlayer {
                             index, options.get(index).cloned().unwrap_or_default()),
                     };
                 }
-                AmountInput::Pane(c) => match c {
-                    's' => Self::show_stack(view),
-                    'i' => Self::show_battlefield_inspector(view),
-                    'g' => Self::show_graveyards(view),
-                    'e' => Self::show_exile(view),
-                    'l' => Self::show_log(&view.display_log),
-                    _ => Self::show_deck_browser(view),
-                },
+                AmountInput::Pane(c) => Self::show_pane(view, c),
                 AmountInput::Invalid(why) => notice = Some(why),
             }
         }
@@ -8579,14 +8619,7 @@ impl CliPlayer {
                     }
                     return Some(chosen);
                 }
-                SetInput::Pane(c) => match c {
-                    's' => Self::show_stack(view),
-                    'i' => Self::show_battlefield_inspector(view),
-                    'g' => Self::show_graveyards(view),
-                    'e' => Self::show_exile(view),
-                    'l' => Self::show_log(&view.display_log),
-                    _ => Self::show_deck_browser(view),
-                },
+                SetInput::Pane(c) => Self::show_pane(view, c),
                 SetInput::NextPage => offset = Self::next_menu_offset(page.offset, page.shown, pick.rows.len()),
                 SetInput::PrevPage => offset = Self::prev_menu_offset_lines(
                     &page.heights, page.avail, page.offset, page.marker_h),
@@ -9989,6 +10022,24 @@ impl CliPlayer {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// #1054: the X prompt refused every pane key, so looking at the board
+    /// before choosing X meant cancelling the cast.
+    #[test]
+    fn the_x_prompt_takes_the_pane_keys_and_names_them_when_refusing() {
+        let fundable = [0, 1, 2, 3, 5];
+        for key in ["s", "i", "g", "e", "l", "d", " l "] {
+            assert_eq!(CliPlayer::parse_x_input(key, &fundable, 5), XInput::Pane(key.trim().chars().next().unwrap()));
+        }
+        assert_eq!(CliPlayer::parse_x_input("3", &fundable, 5), XInput::Value(3));
+        assert_eq!(CliPlayer::parse_x_input("cancel", &fundable, 5), XInput::Cancel);
+        assert!(matches!(CliPlayer::parse_x_input("4", &fundable, 5), XInput::Invalid(w) if w.contains("payable X")));
+        assert!(matches!(CliPlayer::parse_x_input("", &fundable, 5), XInput::Invalid(w) if w.contains("Enter a value")));
+        let XInput::Invalid(why) = CliPlayer::parse_x_input("x", &fundable, 5) else { panic!("x is refused") };
+        assert!(why.contains("from 0 to 5") && why.contains("s i g e l d to look"), "{why}");
+        // Whole in the middle pane of a 120-column terminal, quoted input and all.
+        assert_eq!(CliPlayer::notice_rows(&why, 70, 1), vec![why.clone()], "{why}");
+    }
 
     /// #1052: the card search and the library filter took a bracketed
     /// paste's bytes as they came and printed them, so a pasted ESC[2J
