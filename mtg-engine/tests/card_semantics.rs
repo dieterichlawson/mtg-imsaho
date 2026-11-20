@@ -4527,9 +4527,7 @@ impl Seeded {
 /// for a permanent put there.
 ///
 /// Left out, each for a reason the reference does not yet carry to a
-/// board it did not write: a death trigger that searches or shuffles a
-/// library (what is drawn or milled after it is any card, which the
-/// reference plays over seeds only on its fixed boards); a watcher of casts
+/// board it did not write: a watcher of casts
 /// or entries; an upkeep or end
 /// step trigger, and a creature that attacks each combat if able, which
 /// the turn played on after a spell that lasts the turn reaches (the
@@ -4548,8 +4546,6 @@ fn board_vocabulary(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
                 && !card.type_line.contains("Legendary")
                 && spec.on_cast.is_none() && spec.on_enter.is_none()
                 && spec.upkeep.is_none() && spec.end_step.is_none() && !spec.combat.attacks_each_combat
-                && !format!("{:?}", (&spec.dies, &spec.watch)).contains("Search")
-                && !format!("{:?}", (&spec.dies, &spec.watch)).contains("Shuffle")
                 && spec.creature_spells_cost_less.is_none() && spec.zero_instead_for.is_none()
                 && !spec.grants_flashback_to_your_graveyard && !spec.bans_a_chosen_name && !spec.may_enter_as_a_copy
                 && spec.statics.iter().all(|s| matches!(s,
@@ -8538,7 +8534,13 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
                             w.graveyard[0].push(card.name.clone());
                             return vec![w];
                         }
-                        settle_triggers(resolve(spec, &paid, &targets, P0, card, spell))
+                        // A library that what the cost set off has shuffled
+                        // (a Bitterheart Witch sacrificed, her search made)
+                        // is in no order anyone knows as the spell takes
+                        // from it (CR 701.20a).
+                        tops_of_shuffled_libraries(spec, paid).iter()
+                            .flat_map(|top| settle_triggers(resolve(spec, top, &targets, P0, card, spell)))
+                            .collect()
                     })
                     .collect();
                 let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
@@ -9197,12 +9199,36 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
 /// in held to the games the text allows.
 #[test]
 fn every_readable_card_does_what_its_text_says_on_every_small_board() {
-    on_every_small_board("casts", &|small, on, which, failures, casts| {
-        for (card, spec) in small.cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
-            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
-            check_cast_on(card, spec, which, made, small.registry, small.cache, failures, casts);
-        }
-    });
+    on_every_small_board("casts", &check_casts_on);
+}
+
+/// Every card the grammar reads cast on the board `on`, as
+/// [`every_readable_card_does_what_its_text_says_on_every_small_board`]
+/// plays each board.
+fn check_casts_on(small: &Small, on: &[Piece], which: &str, failures: &mut Vec<String>, casts: &mut usize) {
+    for (card, spec) in small.cards.iter().filter(|(_, s)| s.land.is_none() && !s.bans_a_chosen_name) {
+        let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+        check_cast_on(card, spec, which, made, small.registry, small.cache, failures, casts);
+    }
+}
+
+/// The board on which a spell once drew from a library in the order it
+/// had before a shuffle (`docs/plans/cards-in-the-loop.md`, "What it has
+/// found so far"), every card cast on it again and every watcher of casts
+/// placed on it. A Bitterheart Witch alone: sacrificed to Altar's Reap,
+/// or dead of a Burning Vengeance that a Think Twice cast by flashback
+/// set off, she searches her controller's library and shuffles it before
+/// the spell resolves, and the cards it draws are then any of that
+/// library (CR 701.20a). Her search kept her off every board until the
+/// reference played that.
+#[test]
+fn casts_agree_where_a_death_shuffles_the_library_before_the_spell_draws_from_it() {
+    let boards = [vec![Named::Permanent("Bitterheart Witch", P0)]];
+    let (mut failures, cast) = on_named_boards(&boards, &check_casts_on);
+    let (watched_failures, watched) = on_named_boards(&boards, &check_cast_watchers_on);
+    failures.extend(watched_failures);
+    assert!(cast > 0 && watched > 0);
+    assert!(failures.is_empty(), "{} of {} casts beside a Bitterheart Witch disagree:\n  {}", failures.len(), cast + watched, failures.join("\n  "));
 }
 
 /// Every activated ability the grammar reads, its permanent placed on
@@ -9987,9 +10013,15 @@ fn check_cast_watcher_on(card: &Printed, spec: &Spec, (cast, borrowed): (CastBes
                 (spell_in_hand(&mut state, &registry, "Think Twice", P0), None)
             };
             fund(&mut state, P0, cost.as_ref().unwrap_or(&mana_cost(&twice.mana_cost).expect("a cost")), 0);
-            let want = triggered(&world, names(twice, flashback)).iter()
+            // The watcher's trigger resolves above the spell, and what it
+            // set off with it: a library a death it caused has shuffled (a
+            // Bitterheart Witch dead of Burning Vengeance, her search
+            // made) is in no order anyone knows as the spell draws from
+            // it (CR 701.20a).
+            let want: Vec<World> = triggered(&world, names(twice, flashback)).into_iter()
+                .flat_map(|w| tops_of_shuffled_libraries(&twice_spec, w))
                 .map(|w| {
-                    let mut after = resolve(&twice_spec, w, &[], P0, twice, spell);
+                    let mut after = resolve(&twice_spec, &w, &[], P0, twice, spell);
                     if flashback {
                         let last = after.graveyard[0].pop().expect("the spell");
                         after.exile[0].push(last);
@@ -9999,7 +10031,11 @@ fn check_cast_watcher_on(card: &Printed, spec: &Spec, (cast, borrowed): (CastBes
                 .flat_map(settle_triggers)
                 .collect();
             let first = cast_for(spell, Vec::new(), cost.as_ref());
-            let (got, asked) = questions_asked(|| every_ending_casting(&state, &registry, spell, &[], Some(first.clone())));
+            let (got, asked) = questions_asked(|| if want.iter().any(|w| w.randomized) {
+                over_seeds(&state, &registry, distinct(&want), |s| every_ending_casting(s, &registry, spell, &[], Some(first.clone())))
+            } else {
+                every_ending_casting(&state, &registry, spell, &[], Some(first.clone()))
+            });
             (want, got, asked)
         }
         CastBeside::GrizzlyBears => {
@@ -10043,19 +10079,24 @@ fn check_cast_watcher_on(card: &Printed, spec: &Spec, (cast, borrowed): (CastBes
 /// ([`check_cast_watcher_on`]).
 #[test]
 fn every_cast_watcher_sees_what_its_text_says_on_every_small_board() {
-    on_every_small_board("casts beside a cast watcher", &|small, on, which, failures, casts| {
-        for (card, spec) in small.cards.iter().filter(|(_, s)| s.on_cast.is_some()) {
-            let cases = [
-                (CastBeside::ThinkTwice { flashback: false }, false), (CastBeside::ThinkTwice { flashback: true }, false),
-                (CastBeside::ThinkTwice { flashback: false }, true), (CastBeside::ThinkTwice { flashback: true }, true),
-                (CastBeside::GrizzlyBears, false), (CastBeside::TheOpponents, false),
-            ];
-            for case in cases {
-                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
-                check_cast_watcher_on(card, spec, case, which, made, small.registry, small.cache, failures, casts);
-            }
+    on_every_small_board("casts beside a cast watcher", &check_cast_watchers_on);
+}
+
+/// Every watcher of casts placed on the board `on`, as
+/// [`every_cast_watcher_sees_what_its_text_says_on_every_small_board`]
+/// plays each board.
+fn check_cast_watchers_on(small: &Small, on: &[Piece], which: &str, failures: &mut Vec<String>, casts: &mut usize) {
+    for (card, spec) in small.cards.iter().filter(|(_, s)| s.on_cast.is_some()) {
+        let cases = [
+            (CastBeside::ThinkTwice { flashback: false }, false), (CastBeside::ThinkTwice { flashback: true }, false),
+            (CastBeside::ThinkTwice { flashback: false }, true), (CastBeside::ThinkTwice { flashback: true }, true),
+            (CastBeside::GrizzlyBears, false), (CastBeside::TheOpponents, false),
+        ];
+        for case in cases {
+            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+            check_cast_watcher_on(card, spec, case, which, made, small.registry, small.cache, failures, casts);
         }
-    });
+    }
 }
 
 /// A combat on one board in P0's turn, every way it can be declared: the
