@@ -9103,6 +9103,9 @@ struct Small<'a> {
 /// shared out among the machine's cores. A failure names its board by its
 /// pieces, and `CARD_SEMANTICS_SMALL_BOARD=I,J` (with the same
 /// `CARD_SEMANTICS_SMALL`) plays that board alone.
+/// `CARD_SEMANTICS_SMALL_WITH=NAME` plays only the boards that hold a card
+/// of that name, on the battlefield or in a graveyard: every board a card
+/// new to the boards is on, without the rest again.
 ///
 /// `check` is given a board's pieces and what names the board in a
 /// failure, and pushes its disagreements and counts what it checked.
@@ -9124,6 +9127,13 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
         let (k, n) = v.split_once('/').expect("K/N");
         (k.parse::<usize>().expect("a share"), n.parse::<usize>().expect("a number of shares"))
     });
+    // Only the boards that hold a card of one name.
+    let with: Option<String> = std::env::var("CARD_SEMANTICS_SMALL_WITH").ok();
+    let holds = |board: &[usize]| with.as_deref().is_none_or(|name| board.iter().any(|&i| match pieces[i] {
+        Piece::Permanent { card, .. } => vocabulary[card].0.name == name,
+        Piece::Yard { card, .. } => pool[card] == name,
+        Piece::Token { .. } => false,
+    }));
     // Without the variable, a sample: every hundredth board.
     let stride = if size == 0 { 100 } else { 1 };
     // This share's boards, in the order of all of them: each worker walks
@@ -9138,12 +9148,12 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
     };
     let workers = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
     let small = Small { registry: &registry, cache: &cache, cards: &cards, vocabulary: &vocabulary, pool: &pool };
-    let (small, pieces, mine) = (&small, &pieces, &mine);
+    let (small, pieces, mine, holds) = (&small, &pieces, &mine, &holds);
     let results: Vec<(Vec<String>, usize, usize, usize)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers).map(|worker| scope.spawn(move || {
             let mut failures = Vec::new();
             let (mut checked, mut stood, mut played) = (0, 0, 0);
-            for board in mine().skip(worker).step_by(workers) {
+            for board in mine().skip(worker).step_by(workers).filter(|b| holds(b)) {
                 played += 1;
                 let on: Vec<Piece> = board.iter().map(|&i| pieces[i]).collect();
                 let made = small_board(&on, small.registry, small.cache, small.vocabulary, small.pool, false);
