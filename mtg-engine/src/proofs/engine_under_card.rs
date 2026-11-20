@@ -5975,17 +5975,16 @@ fn heartless_summoning_costs(which: u8) {
     use crate::engine::costs::{cost_to_cast, CastMethod};
     use crate::types::{ManaCost, ManaSymbol};
     let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::heartless_summoning::HeartlessSummoning));
-    let big = registry.register(Box::new(Kindercatch));
-    let small = registry.register(Box::new(WalkingCorpse));
-    let bolt = registry.register(Box::new(LightningBolt));
     a_source(&mut state, card, PlayerId(0));
     let green = || ManaSymbol::Colored(Color::Green);
-    let (spell, caster, costs) = match which {
-        0 => (big, 0, vec![ManaSymbol::Generic(1), green(), green(), green()]),
-        1 => (small, 0, vec![ManaSymbol::Colored(Color::Black)]),
-        2 => (big, 1, vec![ManaSymbol::Generic(3), green(), green(), green()]),
-        _ => (bolt, 0, vec![ManaSymbol::Colored(Color::Red)]),
+    // The one card the row casts: the registry has room for no more.
+    let (spell, caster, costs): (Box<dyn CardBehavior>, u8, Vec<ManaSymbol>) = match which {
+        0 => (Box::new(Kindercatch), 0, vec![ManaSymbol::Generic(1), green(), green(), green()]),
+        1 => (Box::new(WalkingCorpse), 0, vec![ManaSymbol::Colored(Color::Black)]),
+        2 => (Box::new(Kindercatch), 1, vec![ManaSymbol::Generic(3), green(), green(), green()]),
+        _ => (Box::new(LightningBolt), 0, vec![ManaSymbol::Colored(Color::Red)]),
     };
+    let spell = registry.register(spell);
 
     let cost = cost_to_cast(&state, &registry, spell, PlayerId(caster), &CastMethod::Normal);
 
