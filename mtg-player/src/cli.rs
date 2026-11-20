@@ -653,6 +653,16 @@ pub fn sanitize_for_display(s: &str) -> String {
     s.chars().map(|c| if c.is_control() { '\u{00b7}' } else { c }).collect()
 }
 
+/// What a bracketed paste adds to a line being typed: its first line, with
+/// every control character shown as `·`. A paste is the one way raw bytes
+/// reach an input (crossterm parses a typed ESC sequence into keys), and
+/// the card search and the library filter printed theirs as they came, so
+/// pasted coloured output cleared the screen and painted over the frame
+/// (#1052, #282's shape). Taken at the source, no echo of it can run one.
+fn pasted_line(pasted: &str) -> String {
+    sanitize_for_display(pasted.split(['\r', '\n']).next().unwrap_or(""))
+}
+
 /// The user's input, quoted for an error notice: sanitised so a pasted
 /// escape sequence is not re-executed on every render (#282), and clipped so
 /// one long entry cannot wrap over the whole frame and splice the prompt row
@@ -3701,8 +3711,7 @@ impl CliPlayer {
             // A paste lands in the filter as one event — only its first line,
             // and its newlines never act as Enter (issue #106).
             if let Event::Paste(pasted) = &ev {
-                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                card_filter.push_str(first);
+                card_filter.push_str(&pasted_line(pasted));
                 continue;
             }
             if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
@@ -5417,8 +5426,7 @@ impl CliPlayer {
                 continue;
             }
             if let Event::Paste(pasted) = &ev {
-                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                buf.push_str(first);
+                buf.push_str(&pasted_line(pasted));
                 if let Some(f) = on_edit { f(&buf); }
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
@@ -5656,8 +5664,7 @@ impl CliPlayer {
                 continue;
             }
             if let Event::Paste(pasted) = &ev {
-                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                buf.push_str(first);
+                buf.push_str(&pasted_line(pasted));
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
@@ -9200,8 +9207,7 @@ impl CliPlayer {
             // Only the paste's first line reaches the filter; its newlines
             // never act as Enter (issue #106).
             if let Event::Paste(pasted) = &ev {
-                let first = pasted.split(['\r', '\n']).next().unwrap_or("");
-                filter.push_str(first);
+                filter.push_str(&pasted_line(pasted));
                 selected = 0;
                 continue;
             }
@@ -9983,6 +9989,21 @@ impl CliPlayer {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// #1052: the card search and the library filter took a bracketed
+    /// paste's bytes as they came and printed them, so a pasted ESC[2J
+    /// cleared the terminal. Every paste site takes `pasted_line`.
+    #[test]
+    fn a_pasted_escape_sequence_reaches_no_filter_or_input_as_bytes() {
+        let line = pasted_line("\u{1b}[2J\u{1b}[1;1HPWN\u{1b}[41mX\tY\r\nsecond line");
+        assert_eq!(line, "\u{b7}[2J\u{b7}[1;1HPWN\u{b7}[41mX\u{b7}Y");
+        assert!(!line.chars().any(char::is_control));
+        let src = include_str!("cli.rs");
+        let sites = src.matches("if let Event::Paste(pasted) = &ev {").count();
+        assert!(sites >= 4, "the paste sites moved: {sites}");
+        assert_eq!(src.matches(".push_str(&pasted_line(pasted));").count(), sites,
+            "every paste site pushes its text through pasted_line");
+    }
     use mtg_engine::engine::LegalActions;
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
