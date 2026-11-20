@@ -6055,6 +6055,20 @@ fn army_of_the_damned(_: ()) {
     std::mem::forget((registry, state));
 }
 
+/// One-Eyed Scarecrow ("Defender. Creatures with flying your opponents
+/// control get -1/-0.") under the first player beside the other player's
+/// Chapel Geist, a 2/3 that prints flying: the Geist reads 1/3 through
+/// the engine's layers (CR 613.4c).
+fn one_eyed_scarecrow(_: ()) {
+    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::one_eyed_scarecrow::OneEyedScarecrow));
+    let geist = registry.register(Box::new(ChapelGeist));
+    let flier = printed_creature(&mut state, &registry, geist, PlayerId(1));
+    a_source(&mut state, card, PlayerId(0));
+
+    assert!(state.effective_power(flier, &registry) == Some(1) && state.effective_toughness(flier, &registry) == Some(3));
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -6959,4 +6973,9 @@ engine_under_card! {
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 fn army_of_the_damned_makes_thirteen_tapped_zombies() {
     army_of_the_damned(());
+}
+
+// A filter of two questions read back from its card, at the memory this machine has.
+engine_under_card! {
+    one_eyed_scarecrow_takes_a_power_from_an_opponents_flier: one_eyed_scarecrow(());
 }
