@@ -553,7 +553,7 @@ machine's hours allows:
 |---|---|---|
 | end steps | 11,707,160 | all agree |
 | werewolves | 17,560,740 | all agree |
-| loyalty abilities | 15,813,161 | 8 disagreed, one gap of the reference (what watches a death, above), the engine right; against it as fixed all agree, and all on two pieces |
+| loyalty abilities | 16,097,345 | all agree, a search's shuffle played under a board's death trigger (284,184 more than the 15,813,161 before that cut was lifted, of which 8 had disagreed: one gap of the reference, what watches a death, above, the engine right) |
 | upkeeps | 40,720,744 | all agree |
 | a permanent entering beside a watcher | 8,780,370 | all agree |
 | a spell cast beside a watcher of casts | 17,560,740 | all agree |
