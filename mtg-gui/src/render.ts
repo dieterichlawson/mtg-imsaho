@@ -8,6 +8,7 @@ import { drawArt, frameColor, darker, uiImage } from "./assets.js";
 import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds, stackChipKey, stackChipsShown, handCardsShown, HAND_ROW, ZONE_OVERLAY_PAGE } from "./prompts.js";
 import type { CardView, Color, FaceText, GameView, ManaCost, ManaPool, ObjectId, PermanentView, PlayerId, Step, ViewObject } from "./protocol.js";
 import type { Hit, IndexEntry, LiveState, Row, State, Ui } from "./state.js";
+import { closedHeadline } from "./state.js";
 
 export const W = 640, H = 360;
 export const PANEL_X = 480;
@@ -1321,7 +1322,7 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   if (state.closed) {
     // The reason is the host's or the signal's words: what room the panel has (#1034's review).
     const room = Math.max(4, Math.floor((y + h - 6 - ty) / 9));
-    for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, w - 8, "8px Silkscreen", room)) { text(ctx, l, x + 4, ty, { color: "#ff9080" }); ty += 9; }
+    for (const l of wrapCapped(ctx, `${closedHeadline(state.closedOver)}: ${state.closed}.`, w - 8, "8px Silkscreen", room)) { text(ctx, l, x + 4, ty, { color: "#ff9080" }); ty += 9; }
     return;
   }
   if (state.gameOver) {
@@ -1721,7 +1722,7 @@ export function render(ctx: Ctx, state: State): Hit[] {
     if (state.closed) {
       let ty = 12;
       // The whole board is free: the reason, the host's words, is not cut.
-      for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", Math.floor((H - 24) / 10))) { text(ctx, l, 12, ty, { color: "#ff9080" }); ty += 10; }
+      for (const l of wrapCapped(ctx, `${closedHeadline(state.closedOver)}: ${state.closed}.`, BOARD_W - 24, "8px Silkscreen", Math.floor((H - 24) / 10))) { text(ctx, l, 12, ty, { color: "#ff9080" }); ty += 10; }
       return hits;
     }
     text(ctx, state.connected ? "Waiting for the game…" : "Connecting to the runner…", 12, 12, { font: "8px PressStart", color: "#ffe080" });

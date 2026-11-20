@@ -11,3 +11,9 @@ export function noticeAtNewDecision(notice, waiting) {
         return waiting.after;
     return notice;
 }
+/** What a closed page says has ended: the table unless the server said
+ *  otherwise. "The table is closed" over a finished match's page, while
+ *  the table ran on, was false (#1033's review). */
+export function closedHeadline(over) {
+    return over === "match" ? "This match is over" : over === "game" ? "This game is over" : "The table is closed";
+}

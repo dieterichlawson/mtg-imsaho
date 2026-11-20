@@ -143,6 +143,8 @@ export interface State {
   opponentAway?: string | null;
   /** The host ended the table, and why (#824): the page stops reconnecting. */
   closed?: string | null;
+  /** What `closed` ended when it was not the table (#1033). */
+  closedOver?: "match" | "game" | null;
   /** Where the modal painted its text field last frame, in canvas
    *  coordinates; the DOM input is placed over it (issue #531). */
   fieldRect?: { x: number; y: number; w: number; h: number } | null;
@@ -178,4 +180,11 @@ export type LiveState = State & { view: GameView };
 export function noticeAtNewDecision(notice: string | null, waiting: { text: string; after: string | null } | null | undefined): string | null {
   if (waiting && notice === waiting.text) return waiting.after;
   return notice;
+}
+
+/** What a closed page says has ended: the table unless the server said
+ *  otherwise. "The table is closed" over a finished match's page, while
+ *  the table ran on, was false (#1033's review). */
+export function closedHeadline(over: "match" | "game" | null | undefined): string {
+  return over === "match" ? "This match is over" : over === "game" ? "This game is over" : "The table is closed";
 }

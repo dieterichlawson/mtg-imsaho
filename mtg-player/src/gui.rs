@@ -79,8 +79,36 @@ enum Outbound<'a> {
     Table { match_line: Option<String>, opponent: Option<String> },
     /// The seat's host has ended the table: stop reconnecting and say why.
     /// A deliberate stop used to look like a dropped network, a page
-    /// retrying for ever (#824).
-    Closed { reason: String },
+    /// retrying for ever (#824). `over` says what ended when it is not the
+    /// table: a finished match's page while the table runs on, or a
+    /// runner's one game. The page read every reason after "The table is
+    /// closed:", which was false of both (#1033's review).
+    Closed {
+        reason: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        over: Option<&'static str>,
+    },
+}
+
+/// What a `closed` page is told has ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Over {
+    /// The table (a hosted draft) the page is part of: the stop, or `quit`.
+    Table,
+    /// This page's match; the table may be running on.
+    Match,
+    /// This page's game, whose runner has stopped (no table around it).
+    Game,
+}
+
+impl Over {
+    fn word(self) -> Option<&'static str> {
+        match self {
+            Self::Table => None,
+            Self::Match => Some("match"),
+            Self::Game => Some("game"),
+        }
+    }
 }
 
 /// A message from the page to the seat.
@@ -127,7 +155,7 @@ struct Shared {
     /// that connects after they were said.
     table: Mutex<(Option<String>, Option<String>)>,
     /// Set when the host ends the table: every page is told why and closed.
-    closing: Mutex<Option<String>>,
+    closing: Mutex<Option<(String, Over)>>,
     /// When set, the page is served only under `/<key>/`: a hosted table's
     /// game link carries it, and a request without it reaches nothing —
     /// neither the person's hand nor their decisions (#872).
@@ -162,6 +190,10 @@ impl Shared {
     }
 
     fn closing(&self) -> Option<String> {
+        self.closing_as().map(|(reason, _)| reason)
+    }
+
+    fn closing_as(&self) -> Option<(String, Over)> {
         self.closing.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
@@ -249,9 +281,15 @@ impl PageHandle {
     /// The table is over: every page attached is told why and closed, and
     /// a page that connects from now on is told the same.
     pub fn close(&self, reason: &str) {
+        self.close_as(Over::Table, reason);
+    }
+
+    /// As [`PageHandle::close`], saying what is over when it is not the
+    /// table.
+    pub fn close_as(&self, over: Over, reason: &str) {
         let mut closing = self.0.closing.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if closing.is_none() {
-            *closing = Some(reason.to_string());
+            *closing = Some((reason.to_string(), over));
         }
     }
 }
@@ -903,8 +941,8 @@ fn pump_websocket(
                 return;
             }
         }
-        if let Some(reason) = shared.closing() {
-            close_page(ws, &reason);
+        if let Some((reason, over)) = shared.closing_as() {
+            close_page_as(ws, over, &reason);
             return;
         }
         match ws.read() {
@@ -985,7 +1023,12 @@ pub fn nothing_to_read(e: &tungstenite::Error) -> bool {
 /// give it a moment to answer: a socket the process simply drops is a reset
 /// to the page, which reads it as a network to reconnect to for ever (#824).
 pub fn close_page(ws: &mut tungstenite::WebSocket<TcpStream>, reason: &str) {
-    if let Ok(msg) = serde_json::to_string(&Outbound::Closed { reason: reason.to_string() }) {
+    close_page_as(ws, Over::Table, reason);
+}
+
+/// As [`close_page`], saying what is over when it is not the table.
+pub fn close_page_as(ws: &mut tungstenite::WebSocket<TcpStream>, over: Over, reason: &str) {
+    if let Ok(msg) = serde_json::to_string(&Outbound::Closed { reason: reason.to_string(), over: over.word() }) {
         let _ = ws.send(tungstenite::Message::Text(msg.into()));
     }
     let _ = ws.close(None);

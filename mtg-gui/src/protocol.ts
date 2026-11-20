@@ -374,8 +374,10 @@ export type ServerMessage =
    *  best-of-3 · you 1, them 0" (#855) — and on the opponent when it is not
    *  thinking but has closed its page (#822). Either may be null. */
   | { type: "table"; match_line: string | null; opponent: string | null }
-  /** The host ended the table: nothing to reconnect to (#824). */
-  | { type: "closed"; reason: string };
+  /** The host ended the table: nothing to reconnect to (#824). `over` is
+   *  what ended when it is not the table: a finished match's page while the
+   *  table runs on, or a runner's one game (#1033). */
+  | { type: "closed"; reason: string; over?: "match" | "game" };
 
 export type ClientMessage =
   | { type: "hello" }

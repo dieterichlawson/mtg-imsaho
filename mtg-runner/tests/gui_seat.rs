@@ -146,7 +146,8 @@ fn a_gui_seats_page_is_told_the_runner_has_stopped_after_the_result() {
                 .to_string().into())).unwrap();
         }
         if kind == "closed" {
-            assert_eq!(msg["reason"], "the game is over and the runner serving this page has stopped");
+            assert_eq!(msg["reason"], "the runner serving this page has stopped");
+            assert_eq!(msg["over"], "game", "the page says the game is over, not a table: {msg}");
             assert!(kinds.iter().any(|k| k == "game_over"), "the result came first: {kinds:?}");
             let _ = std::fs::remove_dir_all(&dir);
             return;

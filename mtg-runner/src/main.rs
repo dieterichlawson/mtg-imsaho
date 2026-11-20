@@ -1447,7 +1447,7 @@ use --save if you need a resumable file.");
         if let PlayerKind::Gui(gui) = player {
             let page = gui.page_handle();
             if page.connected() > 0 {
-                page.close("the game is over and the runner serving this page has stopped");
+                page.close_as(mtg_player::gui::Over::Game, "the runner serving this page has stopped");
                 open = true;
             }
         }

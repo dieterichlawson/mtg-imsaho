@@ -148,11 +148,15 @@ fn a_finished_matchs_page_reconnecting_is_told_the_match_is_over() {
     // The table is still up: both pages come back to a match that is over.
     let mut g1 = game_page(&u1);
     let closed = message_until(&mut g1, "closed", Duration::from_secs(10), |_| true);
-    assert_eq!(closed["reason"], "this match is over; the draft page has the link to your next game", "{closed}");
+    // Not "the table is closed", which it is not, and no next game is
+    // promised: this one's table is done.
+    assert_eq!(closed["reason"], "the draft page says where the table stands", "{closed}");
+    assert_eq!(closed["over"], "match", "{closed}");
     let mut g0 = game_page(&u0);
     let closed = message_until(&mut g0, "closed", Duration::from_secs(10), |_| true);
     assert!(closed["reason"].as_str().is_some_and(|r| r.contains("handed your seat to the table")),
         "the kicked seat is told it has no next game: {closed}");
+    assert_eq!(closed["over"], "match", "{closed}");
     assert!(server.child.try_wait().expect("the server's status").is_none(), "the table is still up");
     server.type_line("quit");
     server.child.wait().expect("the server exits");

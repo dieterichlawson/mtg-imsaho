@@ -1946,6 +1946,22 @@ async function main() {
       if (after.decision || after.ui || after.rowHits) fail(`closed table still draws its question: ${JSON.stringify(after)} (#1034)`);
       else ok("closed table: no question drawn");
     }
+    // #1033's review: a finished match's page, closed while the table runs
+    // on, read "The table is closed"; what ended is said as sent.
+    {
+      const titles = await page.evaluate(() => {
+        const seen = {};
+        for (const over of ["match", "game", undefined]) {
+          window.mtgDebug.message({ type: "closed", reason: "the draft page says where the table stands", over });
+          seen[String(over)] = document.title;
+        }
+        return seen;
+      });
+      const want = { match: "This match is over", game: "This game is over", undefined: "The table is closed" };
+      const wrong = Object.entries(want).filter(([k, v]) => !titles[k].startsWith(v));
+      if (wrong.length) fail(`closed page's title does not say what ended: ${JSON.stringify(titles)}`);
+      else ok("closed page: title says the match, the game or the table");
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

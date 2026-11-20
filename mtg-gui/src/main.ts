@@ -5,7 +5,7 @@ import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapC
 import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State, Ui } from "./state.js";
-import { noticeAtNewDecision } from "./state.js";
+import { closedHeadline, noticeAtNewDecision } from "./state.js";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
@@ -234,13 +234,14 @@ function onMessage(msg: ServerMessage): void {
       break;
     case "closed":
       state.closed = msg.reason;
+      state.closedOver = msg.over ?? null;
       // Nothing can be answered now: the question's modal and its buttons
       // stayed drawn over the board beside "The table is closed" (#1034).
       state.decision = null; state.ui = null; state.popover = null;
       hideField();
       // The tab's title said the last match line ("Before game 1: ...")
       // under a closed table (#1034's review).
-      document.title = "The table is closed — mtg-imsaho";
+      document.title = `${closedHeadline(state.closedOver)} — mtg-imsaho`;
       break;
     default:
       console.warn("unknown message", msg);

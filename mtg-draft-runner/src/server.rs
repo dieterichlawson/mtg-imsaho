@@ -1253,11 +1253,11 @@ fn proxy_game_page(mut client: TcpStream, request: &RequestHead, shared: &Shared
         let reason = if shared.lobby().is_kicked(seat) {
             "the host has handed your seat to the table, which plays its games no more; the draft page says where the table stands"
         } else {
-            "this match is over; the draft page has the link to your next game"
+            "the draft page says where the table stands"
         };
         if let Some(mut ws) = mtg_player::gui::accept_websocket(client, request) {
             let _ = ws.get_ref().set_read_timeout(Some(Duration::from_millis(50)));
-            mtg_player::gui::close_page(&mut ws, reason);
+            mtg_player::gui::close_page_as(&mut ws, mtg_player::gui::Over::Match, reason);
         }
         return;
     }
