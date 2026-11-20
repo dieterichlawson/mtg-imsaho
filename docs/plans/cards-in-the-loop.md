@@ -541,8 +541,10 @@ of the family, 874,799 combats), so that combat on three pieces is whole
 with her on the boards as it was without. So does combat on the 34,840
 boards of two worn pieces that hold her (26,316 combats), which
 `prove.sh exhaustive` now plays with the rest: that run whole, as CI
-makes it, is 2,078,639 boards of the family and 1,466,263 combats, all
-agreeing, in seven minutes here. Her boards of one and
+makes it, was 2,078,639 boards of the family and 1,466,263 combats, all
+agreeing, in seven minutes here, and with the legendary permanents
+(below) is 2,182,100 boards and 1,559,983 combats, all agreeing, in
+eight. Her boards of one and
 three pieces that disagreed are in
 `cargo test`
 (`casts_agree_where_a_death_shuffles_the_library_before_the_spell_draws_from_it`,
