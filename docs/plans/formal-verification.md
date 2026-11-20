@@ -2259,10 +2259,11 @@ the trigger, its source and its target, where the source is, which face,
 whether it targets, and the dead creature's data) and is not helped by
 fixing any of it: with every one of those a constant, and with all but
 one, each of the thirteen in turn, it ran out of memory at 6 GB in
-under a minute, the symbolic execution done in eighteen seconds. Its
-cost is the dead creature's record carried on the trigger through the
-stack, which the other kinds of trigger do not have; none of the twelve
-is a matter of cases.) No
+under a minute, the symbolic execution done in eighteen seconds. A
+likely reason, not measured: the dead creature's record, with its lists,
+carried on the trigger through the stack, which is what this kind of
+trigger has and the kinds that prove do not. None of the twelve is a
+matter of cases.) No
 harness failed but Mentor of the Meek's two may-pay proofs, which still
 asserted the question is always asked, where master's #940 asks it only
 when a payment can be planned: their proof now holds the question to the
