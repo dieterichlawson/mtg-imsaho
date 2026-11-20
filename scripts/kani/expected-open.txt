@@ -6,8 +6,6 @@ proofs::actions::cast_answers::one_target_offered_is_cast_after_the_fixed_ones  
 proofs::actions::cast_answers::two_targets_offered_are_cast_in_the_order_chosen  # OOM
 proofs::actions::cast_answers::three_targets_for_an_up_to_two_slot_cancel_the_cast  # OOM
 proofs::actions::cast_answers::a_target_not_offered_cancels_the_cast  # OOM
-proofs::actions::paying::one_is_planned_with_an_untapped_forest_for_the_second_player  # OOM
-proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player  # OOM
 proofs::actions::trigger_order::the_order_given_is_the_order_the_triggers_go_on  # OOM
 proofs::actions::trigger_order::the_order_given_reversed_is_the_order_the_triggers_go_on  # OOM
 proofs::actions::trigger_order::an_order_naming_a_trigger_twice_is_refused  # OOM

@@ -384,7 +384,6 @@ macro_rules! each_forest {
 
 each_forest! {
     one_is_planned_with_an_untapped_forest_for_the_first_player: planning_with_a_forest(0, 0, None, true);
-    one_is_planned_with_an_untapped_forest_for_the_second_player: planning_with_a_forest(0, 1, None, true);
     one_is_planned_with_a_tapped_forest_for_the_first_player: planning_with_a_forest(0, 0, None, false);
     one_is_planned_with_a_tapped_forest_for_the_second_player: planning_with_a_forest(0, 1, None, false);
     green_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(0), true);
@@ -446,7 +445,6 @@ each_forest! {
     green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(1), true);
     green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(1), true);
     green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(2), true);
-    green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(2), true);
     green_is_paid_with_a_tapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(0), false);
     green_is_paid_with_a_tapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(0), false);
     green_is_paid_with_a_tapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(1), false);
@@ -631,7 +629,8 @@ each_holding! {
 /// Over a pool the solver chose whole, the plan for `{1}` proves for the
 /// first player (25 minutes) and ran out of memory at 12 GB for the
 /// second; a harness for each amount of green the pool holds is the
-/// same pools, a third at a time.
+/// same pools, a third at a time, and each proves in six to ten minutes
+/// under 11 GB.
 fn planning_with_a_forest_holding(which: u8, who: PlayerId, held: &[(ManaType, u32)]) {
     let (registry, mut state, blank, forest_card) = board(Box::new(crate::cards::forest::Forest));
     let forest = state.create_object(forest_card, who, Zone::Battlefield, None, None);
@@ -675,8 +674,9 @@ macro_rules! each_planning_holding {
     )*};
 }
 
-// The plan for {1} with an untapped Forest, for the second player: the
-// one harness over every pool, by how much green the pool holds.
+// The plan for {1} with an untapped Forest, for the second player, by how
+// much green the pool holds: in place of the one harness over every pool
+// (`each_forest`'s row for the first player), which did not fit.
 each_planning_holding! {
     one_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player: (0, 1, [(ManaType::Green, 0)]);
     one_is_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player: (0, 1, [(ManaType::Green, 1)]);
@@ -684,7 +684,9 @@ each_planning_holding! {
 }
 
 // {G} paid with an untapped Forest and two green floating, for the second
-// player: the one harness over every such pool, by how much white it holds.
+// player, by how much white the pool holds: in place of the one harness
+// over every such pool (`each_forest`'s row for the first player), which
+// did not fit. Each proves in six minutes.
 each_holding! {
     green_is_paid_with_an_untapped_forest_two_green_and_no_white_floating_for_the_second_player: (1, 1, [(ManaType::Green, 2), (ManaType::White, 0)]);
     green_is_paid_with_an_untapped_forest_two_green_and_one_white_floating_for_the_second_player: (1, 1, [(ManaType::Green, 2), (ManaType::White, 1)]);

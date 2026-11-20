@@ -2239,14 +2239,22 @@ in 557 to 772 s. The 16 open are engine actions that ran out of memory
 at 12 GB: the trigger order
 question's seven, a creature's dying trigger resolving, four answers of
 a cast's targets, two cast costs of a creature spell and two Forest
-payments. (Fourteen since 2026-11-20: the two cast costs, Heartless
-Summoning's reduction of {3}{B} and of {1}{B}, are proved a case at a
-time. With who controls the Summoning, where it is and who casts all
-fixed the proof takes half a minute; with any of them open where the
-cost is reduced the solver ran out of memory at 7 GB. Five harnesses for
-each cost are every case the one harness left open: each player casting
-beside each player's Summoning on the battlefield, and either beside
-either's off it; ten proved, 28 to 37 s each.) No
+payments. (Twelve since 2026-11-20, each of four proved a case at a
+time, the cases together every one the harness left open. The two cast
+costs, Heartless Summoning's reduction of {3}{B} and of {1}{B}: with
+who controls the Summoning, where it is and who casts all fixed the
+proof takes half a minute, and with any of them open where the cost is
+reduced the solver ran out of memory at 7 GB; five harnesses for each
+cost, each player casting beside each player's Summoning on the
+battlefield and either beside either's off it, ten proved, 28 to 37 s
+each. The two Forest payments for the second player, the plan for {1}
+and {G} paid with two green floating, each over a pool the solver
+chose: three harnesses for each, by how much green the pool holds for
+the plan and how much white for the payment, six proved alone under
+11 GB, six to ten minutes each. What is left open is the trigger order
+question's seven, a creature's dying trigger resolving and four answers
+of a cast's targets, none of which has anything left to fix: each is one
+case already.) No
 harness failed but Mentor of the Meek's two may-pay proofs, which still
 asserted the question is always asked, where master's #940 asks it only
 when a payment can be planned: their proof now holds the question to the

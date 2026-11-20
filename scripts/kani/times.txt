@@ -577,7 +577,6 @@ SUCCESSFUL     274s  proofs::actions::paying::two_green_are_paid_from_the_pool_e
 SUCCESSFUL     341s  proofs::actions::paying::colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player
 SUCCESSFUL     333s  proofs::actions::paying::colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player
 SUCCESSFUL    1510s  proofs::actions::paying::one_is_planned_with_an_untapped_forest_for_the_first_player
-OOM            806s  proofs::actions::paying::one_is_planned_with_an_untapped_forest_for_the_second_player
 SUCCESSFUL     472s  proofs::actions::paying::one_is_planned_with_a_tapped_forest_for_the_first_player
 SUCCESSFUL     399s  proofs::actions::paying::one_is_planned_with_a_tapped_forest_for_the_second_player
 SUCCESSFUL     462s  proofs::actions::paying::green_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_first_player
@@ -639,7 +638,6 @@ SUCCESSFUL    1471s  proofs::actions::paying::green_is_paid_with_an_untapped_for
 SUCCESSFUL     839s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player
 SUCCESSFUL     861s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player
 SUCCESSFUL     855s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player
-OOM            522s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player
 SUCCESSFUL     232s  proofs::actions::paying::green_is_paid_with_a_tapped_forest_and_no_green_floating_for_the_first_player
 SUCCESSFUL     229s  proofs::actions::paying::green_is_paid_with_a_tapped_forest_and_no_green_floating_for_the_second_player
 SUCCESSFUL     288s  proofs::actions::paying::green_is_paid_with_a_tapped_forest_and_one_green_floating_for_the_first_player
@@ -682,6 +680,12 @@ SUCCESSFUL     245s  proofs::actions::paying::two_green_are_paid_with_a_tapped_f
 SUCCESSFUL     250s  proofs::actions::paying::two_green_are_paid_with_a_tapped_forest_and_one_green_floating_for_the_second_player
 SUCCESSFUL     281s  proofs::actions::paying::two_green_are_paid_with_a_tapped_forest_and_two_green_floating_for_the_first_player
 SUCCESSFUL     285s  proofs::actions::paying::two_green_are_paid_with_a_tapped_forest_and_two_green_floating_for_the_second_player
+SUCCESSFUL     380s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_two_green_and_no_white_floating_for_the_second_player
+SUCCESSFUL     383s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_two_green_and_one_white_floating_for_the_second_player
+SUCCESSFUL     377s  proofs::actions::paying::green_is_paid_with_an_untapped_forest_two_green_and_two_white_floating_for_the_second_player
+SUCCESSFUL     582s  proofs::actions::paying::one_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player
+SUCCESSFUL     374s  proofs::actions::paying::one_is_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player
+SUCCESSFUL     375s  proofs::actions::paying::one_is_planned_with_an_untapped_forest_and_two_green_floating_for_the_second_player
 SUCCESSFUL     119s  proofs::actions::pending_effects::damage_to_a_target_is_noncombat_damage_from_its_source
 SUCCESSFUL      93s  proofs::actions::pending_effects::a_pending_destruction_destroys_its_target
 SUCCESSFUL      92s  proofs::actions::pending_effects::a_pending_creature_destruction_destroys_its_target
