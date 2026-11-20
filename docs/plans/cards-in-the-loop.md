@@ -558,6 +558,7 @@ machine's hours allows:
 | a permanent entering beside a watcher | 8,780,370 | all agree |
 | a spell cast beside a watcher of casts | 17,560,740 | all agree |
 | flashback, one board in 480 | 6,668,805 | 1 disagreed, the gap of the shuffled library (the last above), the engine right; against it as fixed all agree |
+| activated abilities, one board in 240 | 20,122,410 | all agree |
 
 Whole, on these four cores, end steps on three pieces are about 22
 hours, upkeeps about 85 and the loyalty abilities about 60.
