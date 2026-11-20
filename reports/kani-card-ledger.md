@@ -9,15 +9,15 @@ proofs that a card works when it resolves: the 715 harnesses that
 claimed that by asserting a record of the calls a card made, with
 recorders standing in for the engine, were removed (2026-11-18).
 
-**With the engine** (`proofs::engine_under_card`, 595): the card's own
+**With the engine** (`proofs::engine_under_card`, 603): the card's own
 hook run with the engine's own actions under it and no recorder, the
 board afterwards asserted against the card's text; or, for a permanent
 with no hook to run, the card on the battlefield and the board read
 back through the engine's own layers and queries, or the event its
-text replaces run through the engine. 86 of the 88 spells and 180 of
-the 182 permanents (2026-11-19). What is left out of a harness, and
+text replaces run through the engine. 87 of the 88 spells and 181 of
+the 182 permanents (2026-11-20). What is left out of a harness, and
 why, is said where the harness stands; `docs/plans/cards-in-the-loop.md`
-(B2) lists the four cards with no such harness and those whose harness
+(B2) lists the two cards with no such harness and those whose harness
 is of part of their text.
 
 What a card does through cast, stack, resolution, state-based actions
@@ -27,14 +27,14 @@ part B).
 
 Each harness's last result (`scripts/kani/times.txt`). The 285 declared
 ones are as the last run of every harness left them, 49 run again after
-the removal; the 595 with the engine were each run at the code as
-committed, on 2026-11-18 and 2026-11-19, on a machine busy with other
-runs (their times are upper bounds: 15.6 hours of solver time in all,
+the removal; the 603 with the engine were each run at the code as
+committed, from 2026-11-18 to 2026-11-20, on a machine busy with other
+runs (their times are upper bounds: 15.9 hours of solver time in all,
 the longest 12 minutes).
 
-880 harnesses over 269 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 595 of 266 cards resolving with the engine itself under them. 1 cards have none.
+888 harnesses over 269 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 603 of 268 cards resolving with the engine itself under them. 1 cards have none.
 
-- SUCCESSFUL: 880
+- SUCCESSFUL: 888
 
 | card | declared | with the engine | proved | not proved |
 |---|---|---|---|---|
@@ -155,7 +155,7 @@ the longest 12 minutes).
 | hamlet_captain | 18 | 4 | 22 |  |
 | hanweir_watchkeep | 0 | 4 | 4 |  |
 | harvest_pyre | 0 | 2 | 2 |  |
-| heartless_summoning | 1 | 1 | 2 |  |
+| heartless_summoning | 1 | 5 | 6 |  |
 | heretics_punishment | 1 | 1 | 2 |  |
 | hinterland_harbor | 2 | 3 | 5 |  |
 | hollowhenge_scavenger | 1 | 2 | 3 |  |
@@ -234,7 +234,7 @@ the longest 12 minutes).
 | reckless_waif | 0 | 2 | 2 |  |
 | riot_devils | 0 | 1 | 1 |  |
 | rolling_temblor | 0 | 1 | 1 |  |
-| rooftop_storm | 1 | 0 | 1 |  |
+| rooftop_storm | 1 | 3 | 4 |  |
 | rotting_fensnake | 0 | 1 | 1 |  |
 | runechanters_pike | 3 | 1 | 4 |  |
 | runic_repetition | 0 | 1 | 1 |  |
@@ -260,7 +260,7 @@ the longest 12 minutes).
 | snapcaster_mage | 2 | 1 | 3 |  |
 | sol_ring | 1 | 1 | 2 |  |
 | somberwald_spider | 1 | 2 | 3 |  |
-| spare_from_evil | 1 | 0 | 1 |  |
+| spare_from_evil | 1 | 1 | 2 |  |
 | spectral_flight | 1 | 1 | 2 |  |
 | spectral_rider | 0 | 1 | 1 |  |
 | spider_spawning | 0 | 3 | 3 |  |

@@ -1947,6 +1947,14 @@ SUCCESSFUL      79s  proofs::engine_under_card::geist_of_saint_traft_is_a_two_tw
 SUCCESSFUL     236s  proofs::engine_under_card::essence_of_the_wild_makes_your_creature_enter_as_a_copy
 SUCCESSFUL      97s  proofs::engine_under_card::essence_of_the_wild_leaves_their_creature_as_it_is
 SUCCESSFUL     195s  proofs::engine_under_card::shimmering_grotto_taps_for_colorless
+SUCCESSFUL      55s  proofs::engine_under_card::rooftop_storm_offers_nothing_for_a_creature_that_is_no_zombie
+SUCCESSFUL      60s  proofs::engine_under_card::rooftop_storm_offers_its_controller_a_zombie_for_nothing
+SUCCESSFUL      55s  proofs::engine_under_card::rooftop_storm_offers_the_other_player_nothing
+SUCCESSFUL      47s  proofs::engine_under_card::spare_from_evil_gives_your_creature_protection_from_non_human_creatures
+SUCCESSFUL      75s  proofs::engine_under_card::heartless_summoning_takes_no_more_generic_than_there_is
+SUCCESSFUL     261s  proofs::engine_under_card::heartless_summoning_leaves_the_other_players_creature_spell
+SUCCESSFUL     403s  proofs::engine_under_card::heartless_summoning_takes_two_generic_from_your_creature_spell
+SUCCESSFUL      65s  proofs::engine_under_card::heartless_summoning_leaves_a_spell_that_is_no_creature
 SUCCESSFUL       3s  proofs::kind_map::the_kinds_are_in_their_types_order
 SUCCESSFUL     118s  proofs::kind_map::inserting_counters_is_inserting_into_an_ordered_map
 SUCCESSFUL     126s  proofs::kind_map::removing_counters_is_removing_from_an_ordered_map
