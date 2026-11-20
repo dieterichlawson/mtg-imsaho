@@ -5496,7 +5496,10 @@ fn printed_creature(state: &mut GameState, registry: &crate::cards::CardRegistry
 /// creatures you control" and One-Eyed Scarecrow's "creatures with
 /// flying your opponents control" each ran out of memory at 7 GB in
 /// symbolic execution, on a board of the card and one creature with
-/// nothing open. Those three have no harness here: what each filter
+/// nothing open; and the Scarecrow again at 10 GB (2026-11-20), beside
+/// the other player's Chapel Geist, a creature that prints flying, the
+/// Geist's power the one thing read: out of memory in symbolic execution
+/// after ten minutes. Those three have no harness here: what each filter
 /// matches is proved of the engine with the filter built where it is
 /// matched (`proofs::actions::filters`), and that the card prints that
 /// filter and that change is its declared harness (`proofs::cards`).
@@ -6052,20 +6055,6 @@ fn army_of_the_damned(_: ()) {
         assert!(state.is_creature(id, &registry));
         assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
     }
-    std::mem::forget((registry, state));
-}
-
-/// One-Eyed Scarecrow ("Defender. Creatures with flying your opponents
-/// control get -1/-0.") under the first player beside the other player's
-/// Chapel Geist, a 2/3 that prints flying: the Geist reads 1/3 through
-/// the engine's layers (CR 613.4c).
-fn one_eyed_scarecrow(_: ()) {
-    let (mut registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::one_eyed_scarecrow::OneEyedScarecrow));
-    let geist = registry.register(Box::new(ChapelGeist));
-    let flier = printed_creature(&mut state, &registry, geist, PlayerId(1));
-    a_source(&mut state, card, PlayerId(0));
-
-    assert!(state.effective_power(flier, &registry) == Some(1) && state.effective_toughness(flier, &registry) == Some(3));
     std::mem::forget((registry, state));
 }
 
@@ -6973,9 +6962,4 @@ engine_under_card! {
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 fn army_of_the_damned_makes_thirteen_tapped_zombies() {
     army_of_the_damned(());
-}
-
-// A filter of two questions read back from its card, at the memory this machine has.
-engine_under_card! {
-    one_eyed_scarecrow_takes_a_power_from_an_opponents_flier: one_eyed_scarecrow(());
 }

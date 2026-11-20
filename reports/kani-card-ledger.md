@@ -29,9 +29,8 @@ Each harness's last result (`scripts/kani/times.txt`). The 285 declared
 ones are as the last run of every harness left them, 49 run again after
 the removal; the 604 with the engine were each run at the code as
 committed, from 2026-11-18 to 2026-11-20, on a machine busy with other
-runs (their times are upper bounds: 16.3 hours of solver time in all,
-the longest 22 minutes, Army of the Damned's thirteen tokens, and the
-rest 12 minutes or less).
+runs (their times are upper bounds: 16.1 hours of solver time in all,
+the longest 12 minutes).
 
 889 harnesses over 270 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 604 of 269 cards resolving with the engine itself under them. 0 cards have none.
 

@@ -654,10 +654,9 @@ of a spell is out of reach whatever is open, and stays the engine's proof
 
 **Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 604
 harnesses over 269 of the 270 cards, every one proved: 204 over all 88
-spells, and 400 over 181 of the 182 permanents (below); 16.3
+spells, and 400 over 181 of the 182 permanents (below); 16.1
 hours of solver time in all on this machine while it was busy, the
-longest 22 minutes (Army of the Damned), the rest 12 minutes or less
-and most a minute or two. They were proved a group at
+longest 12 minutes and most a minute or two. They were proved a group at
 a time, each against the loop bounds its own run learned; so that the
 fortnightly run of every harness meets nothing new, the slowest row of
 each of the 199 functions the tables then called was proved again
@@ -750,7 +749,8 @@ amounts symbolic execution knows, and its harness alone leaves the
 allocator's growing in place, unwound to 16: thirteen tapped 2/2 black
 Zombie tokens under the caster, the first and last read back through
 the layers, in 22 minutes over two rounds (one learning a loop bound),
-8.6 GB at the most seen.
+8.6 GB at the most seen; and again in one round against the bounds as
+the repository now keeps them, 12 minutes under a 10 GB cap.
 
 **Permanents.** 393 harnesses over 180 cards. For a card with a hook,
 the hook as its trigger or ability resolves, for a source still on the
@@ -853,7 +853,10 @@ is given, Liliana's piles, a discard chosen from a hand), each proved of
 the engine's own answer (`proofs::actions`).
 
 Of the 270 cards, 269 have a harness with the engine under them. The
-one that does not is One-Eyed Scarecrow (its filter, above). And for
+one that does not is One-Eyed Scarecrow (its filter, above; tried
+again on 2026-11-20 at 10 GB, beside a Chapel Geist, whose printed
+flying the filter reads, with the Geist's power the one thing asserted:
+out of memory in symbolic execution after ten minutes). And for
 some the harness is of part of
 the text, the rest being
 the engine's own path: the additional cost of Skaab Goliath, Makeshift

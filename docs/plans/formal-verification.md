@@ -1227,7 +1227,7 @@ asserted is the board afterwards, read back through the engine's own
 characteristics, against the card's text. Only `format!`, the log and
 allocator growth and freeing are taken out (growth left in for Army of
 the Damned's thirteen tokens alone). 604 harnesses over 269 of
-the 270 cards, each proved, 27 s to 22 minutes and mostly a minute or
+the 270 cards, each proved, 27 s to 12 minutes and mostly a minute or
 two: 204 over all 88 spells, and 400 over 181 of the 182
 permanents (enters, death, combat-damage, upkeep, end-step, attack and
 block triggers, Equipment, activated and loyalty abilities, and the

@@ -1967,7 +1967,7 @@ SUCCESSFUL      75s  proofs::engine_under_card::heartless_summoning_takes_no_mor
 SUCCESSFUL     261s  proofs::engine_under_card::heartless_summoning_leaves_the_other_players_creature_spell
 SUCCESSFUL     403s  proofs::engine_under_card::heartless_summoning_takes_two_generic_from_your_creature_spell
 SUCCESSFUL      65s  proofs::engine_under_card::heartless_summoning_leaves_a_spell_that_is_no_creature
-SUCCESSFUL    1313s  proofs::engine_under_card::army_of_the_damned_makes_thirteen_tapped_zombies
+SUCCESSFUL     732s  proofs::engine_under_card::army_of_the_damned_makes_thirteen_tapped_zombies
 SUCCESSFUL       3s  proofs::kind_map::the_kinds_are_in_their_types_order
 SUCCESSFUL     118s  proofs::kind_map::inserting_counters_is_inserting_into_an_ordered_map
 SUCCESSFUL     126s  proofs::kind_map::removing_counters_is_removing_from_an_ordered_map
