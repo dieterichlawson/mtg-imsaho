@@ -559,7 +559,7 @@ which is what a share of this machine's hours allows:
 | a spell cast beside a watcher of casts | 17,560,740 | all agree |
 | flashback, one board in 480 | 6,668,805 | 1 disagreed, the gap of the shuffled library (the last above), the engine right; against it as fixed all agree |
 | activated abilities, one board in 240 | 20,122,410 | all agree |
-| casts, one board in 2,400 | 10,946,496 | all agree |
+| casts, five boards in 2,400 (shares 0 to 4, 182,910 boards of the family) | 54,726,249 | all agree |
 
 Whole, on these four cores, each from its share's own time: end steps
 on three pieces are about 22 hours and upkeeps about 85; and, from
