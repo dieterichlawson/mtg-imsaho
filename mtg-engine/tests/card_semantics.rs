@@ -10352,12 +10352,16 @@ fn every_combat_ends_as_the_rules_say_on_every_small_board() {
 /// a library is shuffled under a draw: a Bitterheart Witch dies blocked
 /// as a Sturmgeist beside her deals its damage, and with her search
 /// resolved first the card the Sturmgeist's trigger draws is any of the
-/// library (CR 701.20a). Three creatures is the least
+/// library (CR 701.20a). The last is an attacker gone before blockers are
+/// declared: Grimgrin's trigger destroys a Pitchburn Devils, whose 3
+/// damage kills the Elder of Laurels attacking beside him, and the Elder
+/// is out of the combat (506.4), which the reference gave up on. Three
+/// creatures is the least
 /// board that shows any of it, and those are otherwise reached only with
 /// `CARD_SEMANTICS_SMALL=3`.
 #[test]
 fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
-    let boards: [[(&str, PlayerId); 3]; 16] = [
+    let boards: [[(&str, PlayerId); 3]; 17] = [
         [("Stromkirk Patrol", P0), ("Typhoid Rats", P0), ("Pitchburn Devils", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Gallows Warden", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Skaab Goliath", P1)],
@@ -10374,6 +10378,7 @@ fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
         [("Skaab Goliath", P0), ("Creepy Doll", P1), ("Selhoff Occultist", P1)],
         [("Ashmouth Hound", P0), ("Unruly Mob", P1), ("Voiceless Spirit", P1)],
         [("Bitterheart Witch", P0), ("Sturmgeist", P0), ("Kessig Cagebreakers", P1)],
+        [("Elder of Laurels", P0), ("Grimgrin, Corpse-Born", P0), ("Pitchburn Devils", P1)],
     ];
     let (failures, combats) = on_named_small_boards(&boards, &|small, on, which, failures, combats| {
         let made = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false).expect("a board of the family");
@@ -11165,8 +11170,12 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
     // 509.1): a creature it destroyed (Grimgrin's, at the one creature the
     // defending player has) is not there to block, one that regenerated
     // from it is tapped and may not (701.19c, 509.1a), and the attacker
-    // either was to block is unblocked.
+    // either was to block is unblocked. An attacker gone by then is out
+    // of the combat with it (506.4): Grimgrin's trigger destroys a
+    // Pitchburn Devils, whose 3 damage kills the Elder of Laurels
+    // attacking beside him.
     let attacks: Vec<Attack> = attacks.iter()
+        .filter(|t| w.permanents.contains_key(&t.attacker))
         .map(|t| Attack {
             attacker: t.attacker,
             blockers: t.blockers.iter().copied().filter(|b| w.permanents.get(b).is_some_and(|m| !m.tapped)).collect(),
