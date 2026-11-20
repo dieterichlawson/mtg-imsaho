@@ -546,8 +546,8 @@ are fought again in `cargo test`
 (`combat_agrees_on_the_three_piece_boards_that_once_did_not`).
 
 **Three pieces, the other checks, sampled.** One board in sixty (share 0
-of 60: 1,463,395 boards of the family), which is what a share of this
-machine's hours allows:
+of 60: 1,463,395 boards of the family) unless the row says fewer,
+which is what a share of this machine's hours allows:
 
 | Check | Plays | Result |
 |---|---|---|
@@ -559,15 +559,19 @@ machine's hours allows:
 | a spell cast beside a watcher of casts | 17,560,740 | all agree |
 | flashback, one board in 480 | 6,668,805 | 1 disagreed, the gap of the shuffled library (the last above), the engine right; against it as fixed all agree |
 | activated abilities, one board in 240 | 20,122,410 | all agree |
+| casts, one board in 2,400 | 10,946,496 | all agree |
 
-Whole, on these four cores, end steps on three pieces are about 22
-hours, upkeeps about 85 and the loyalty abilities about 60.
+Whole, on these four cores, each from its share's own time: end steps
+on three pieces are about 22 hours and upkeeps about 85; and, from
+shares run while the machine was shared with other runs, so upper
+bounds, the loyalty abilities about 115 hours, flashback about 270, the
+activated abilities about 350 and the casts about 830.
 
-**Next.** The cuts above; and three pieces for the other checks. Combat
-on three pieces was five hours of this machine. The casts are another
-matter: 88 million boards and about 25 billion casts, some 500 hours on
-these four cores, a day and a half on 64, which is what a larger machine
-would be asked for.
+**Next.** The cut above; and more of three pieces for the other checks,
+a share at a time. Combat on three pieces was five hours of this
+machine and is whole. The rest are another matter: the casts alone are
+88 million boards and about 25 billion casts, hundreds of hours on
+these four cores, which is what a larger machine would be asked for.
 
 ### B2. Kani with the engine under a card (under way)
 
