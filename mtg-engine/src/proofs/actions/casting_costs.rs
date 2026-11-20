@@ -64,11 +64,46 @@ fn reducing((cost, creature, reduced): (&'static [ManaSymbol], bool, &'static [M
 }
 
 case_by_case! { reducing;
-    a_creature_spell_of_three_and_black_costs_one_and_black_less_two: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], true, &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)]),
-    a_creature_spell_of_one_and_black_costs_black_less_two: (&[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], true, &[ManaSymbol::Colored(Color::Black)]),
     a_creature_spell_of_black_costs_black_less_two: (&[ManaSymbol::Colored(Color::Black)], true, &[ManaSymbol::Colored(Color::Black)]),
     a_creature_spell_of_two_costs_nothing_less_two: (&[ManaSymbol::Generic(2)], true, &[]),
     an_instant_of_three_and_black_costs_its_own_less_two_for_creatures: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], false, &[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)]),
+}
+
+/// [`reducing`] for a creature spell whose cost has generic mana left
+/// after the reduction or less than two to take, a case at a time: each
+/// player casting beside each player's Heartless Summoning on the
+/// battlefield, and either casting with either's off it. Together they
+/// are every case [`reducing`] leaves open. With any of the three open
+/// where the cost is reduced (who controls it, where it is, who casts)
+/// the solver ran out of memory at 7 GB, the symbolic execution done in
+/// twelve seconds; a case at a time each is half a minute.
+fn reducing_where((cost, reduced, controller, on, caster): (&'static [ManaSymbol], &'static [ManaSymbol], Option<u8>, Option<bool>, Option<u8>)) {
+    let either = |p: Option<u8>| PlayerId(p.unwrap_or_else(|| u8::from(kani::any::<bool>())));
+    let mut registry = CardRegistry::new();
+    let printer = registry.register(Box::new(HeartlessSummoning));
+    let spell = registry.register(Box::new(Spell { cost, creature: true, zombie: false }));
+    let mut state = crate::proofs::cards::new_game();
+    let controller = either(controller);
+    let on = on.unwrap_or_else(kani::any::<bool>);
+    state.create_object(printer, controller, if on { Zone::Battlefield } else { Zone::Graveyard }, None, None);
+    let caster = either(caster);
+    let paid = cost_to_cast(&state, &registry, spell, caster, &CastMethod::Normal);
+    let expected = if on && controller == caster { reduced } else { cost };
+    assert!(paid.mana.symbols == expected && paid.x_discount == 0);
+    std::mem::forget((registry, state, paid));
+}
+
+case_by_case! { reducing_where;
+    a_creature_spell_of_three_and_black_costs_one_and_black_for_the_first_player_beside_their_own: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], Some(0), Some(true), Some(0)),
+    a_creature_spell_of_three_and_black_costs_one_and_black_for_the_second_player_beside_their_own: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], Some(1), Some(true), Some(1)),
+    a_creature_spell_of_three_and_black_costs_its_own_for_the_second_player_beside_the_first_players: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], Some(0), Some(true), Some(1)),
+    a_creature_spell_of_three_and_black_costs_its_own_for_the_first_player_beside_the_second_players: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], Some(1), Some(true), Some(0)),
+    a_creature_spell_of_three_and_black_costs_its_own_with_it_off_the_battlefield: (&[ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], None, Some(false), None),
+    a_creature_spell_of_one_and_black_costs_black_for_the_first_player_beside_their_own: (&[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Colored(Color::Black)], Some(0), Some(true), Some(0)),
+    a_creature_spell_of_one_and_black_costs_black_for_the_second_player_beside_their_own: (&[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Colored(Color::Black)], Some(1), Some(true), Some(1)),
+    a_creature_spell_of_one_and_black_costs_its_own_for_the_second_player_beside_the_first_players: (&[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Colored(Color::Black)], Some(0), Some(true), Some(1)),
+    a_creature_spell_of_one_and_black_costs_its_own_for_the_first_player_beside_the_second_players: (&[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Colored(Color::Black)], Some(1), Some(true), Some(0)),
+    a_creature_spell_of_one_and_black_costs_its_own_with_it_off_the_battlefield: (&[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Black)], &[ManaSymbol::Colored(Color::Black)], None, Some(false), None),
 }
 
 /// Rooftop Storm's alternative cost: the controller of a Rooftop Storm on
