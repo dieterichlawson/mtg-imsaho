@@ -6023,6 +6023,38 @@ fn spare_from_evil(_: ()) {
     std::mem::forget((registry, state));
 }
 
+// ---- Thirteen tokens: lists that grow. ----
+
+/// Army of the Damned ("Create thirteen tapped 2/2 black Zombie creature
+/// tokens.") resolving for the first player on a board with nothing else
+/// on it: thirteen more objects, each a token on the battlefield under
+/// its caster, tapped, a black Zombie creature and nothing else, 2/2 as
+/// it is made; and the first and the last of them 2/2 as the engine's
+/// layers read them. Thirteen is more than the lists a proof here gives
+/// the engine have room for, so this harness alone lets them grow.
+fn army_of_the_damned(_: ()) {
+    let (registry, mut state, _, card) = crate::proofs::cards::board(Box::new(crate::cards::isd::army_of_the_damned::ArmyOfTheDamned));
+    let you = PlayerId(0);
+    let spell = state.create_object(card, you, Zone::Stack, None, None);
+    let before = state.objects.len();
+
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+
+    assert!(state.objects.len() == before + 13);
+    for k in 1..=13u64 {
+        let t = state.get_object(ObjectId(spell.0 + k)).expect("made");
+        assert!(t.is_token && t.zone == Zone::Battlefield && t.controller == you && t.owner == you && t.tapped);
+        assert!(t.colors == [Color::Black] && t.subtypes.len() == 1 && t.subtypes[0] == "Zombie");
+        assert!(t.card_types == [CardType::Creature] && t.power == Some(2) && t.toughness == Some(2));
+    }
+    for k in [1, 13u64] {
+        let id = ObjectId(spell.0 + k);
+        assert!(state.is_creature(id, &registry));
+        assert!(state.effective_power(id, &registry) == Some(2) && state.effective_toughness(id, &registry) == Some(2));
+    }
+    std::mem::forget((registry, state));
+}
+
 /// A harness for each row: the proof named, with what it is given. Every
 /// loop is unwound to 7, or to what a table says (`unwind(9)`) where its
 /// board holds more objects than that walks.
@@ -6915,4 +6947,16 @@ engine_under_card! {
     heartless_summoning_leaves_the_other_players_creature_spell: heartless_summoning_costs(2);
     heartless_summoning_leaves_a_spell_that_is_no_creature: heartless_summoning_costs(3);
     spare_from_evil_gives_your_creature_protection_from_non_human_creatures: spare_from_evil(());
+}
+
+// Thirteen tokens: the one harness whose lists may grow (`no_growing` is
+// not put in the allocator's place), at a loop bound that holds them.
+#[kani::proof]
+#[kani::unwind(16)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+fn army_of_the_damned_makes_thirteen_tapped_zombies() {
+    army_of_the_damned(());
 }
