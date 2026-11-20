@@ -326,8 +326,8 @@ vocabulary on either side in a state of wear (as it entered, tapped, the
 other player's card, 1 damage, a +1/+1 counter, a -1/-1 counter, a
 regeneration shield; the last four a creature's), a creature token on
 either side likewise (the nine kinds the set makes or nearly, and two of
-no colour or subtype), or a card of the pool in either graveyard: 2,184
-pieces, 810 of them as they entered. Boards of one piece wear every
+no colour or subtype), or a card of the pool in either graveyard: 2,246
+pieces, 820 of them as they entered. Boards of one piece wear every
 state; larger boards are as they entered unless asked otherwise
 (`CARD_SEMANTICS_SMALL_WORN`). Not boards of the family, and counted as
 such by each run: one whose permanent cannot be worn as asked or is left
@@ -337,22 +337,22 @@ permanents that trigger on deaths.
 **What is played on each board** (`on_every_small_board`), each through
 the same check as on the hand-made boards, now a function of the board:
 
-| | what | one piece (2,046 boards) |
+| | what | one piece (2,096 boards) |
 |---|---|---|
-| casts | every non-land card the grammar reads, cast at every target set and every answer (`check_cast_on`) | 571,759, 39 s |
-| activated abilities | every one read, of either face, its permanent placed under the player to act: offered at exactly its targets and sacrifices, paid, resolved every way (`check_activated_on`) | 112,530, 19 s |
-| flashback | every flashback read, cast from the graveyard (`check_flashback_on`) | 61,681, 10 s |
-| upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 55,760, 7 s |
-| end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,368, 1 s |
-| loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 22,506, 5 s |
-| werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 24,552, 1 s |
-| enter watchers | every "whenever ... enters" read, as each player casts a creature it may or may not name (`check_enter_watcher_on`) | 12,276, 1 s |
-| cast watchers | every "whenever you cast ..." read, as its controller casts an instant from their hand and by flashback and a creature, and as the other player casts an instant (`check_cast_watcher_on`) | 24,552, 3 s |
-| combat | in the first player's turn: the attackers offered and required, the blocks offered for each set of attackers, and each way of blocking fought to its end (`check_combat_on`) | 539 combats, under a second |
+| casts | every non-land card the grammar reads, cast at every target set and every answer (`check_cast_on`) | 586,577, 57 s |
+| activated abilities | every one read, of either face, its permanent placed under the player to act: offered at exactly its targets and sacrifices, paid, resolved every way (`check_activated_on`) | 115,251, 22 s |
+| flashback | every flashback read, cast from the graveyard (`check_flashback_on`) | 63,205, 12 s |
+| upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 57,134, 8 s |
+| end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,768, 1 s |
+| loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 23,056, 6 s |
+| werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 25,152, 2 s |
+| enter watchers | every "whenever ... enters" read, as each player casts a creature it may or may not name (`check_enter_watcher_on`) | 12,576, 1 s |
+| cast watchers | every "whenever you cast ..." read, as its controller casts an instant from their hand and by flashback and a creature, and as the other player casts an instant (`check_cast_watcher_on`) | 25,152, 2 s |
+| combat | in the first player's turn: the attackers offered and required, the blocks offered for each set of attackers, and each way of blocking fought to its end (`check_combat_on`) | 558 combats, a second |
 
 Every one of those agrees with its card's text. They run in
 `scripts/prove.sh exhaustive`, and so on every push and pull request.
-`CARD_SEMANTICS_SMALL=2` is every board of two pieces: 329,266 boards,
+`CARD_SEMANTICS_SMALL=2` is every board of two pieces: 337,431 boards,
 about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
@@ -360,8 +360,8 @@ names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 of that name, which is how a card new to the boards is checked on every
 board it is on without the others being played again.
 
-**What it has found so far.** One engine defect, and nineteen gaps of
-the reference, each on a board nobody wrote.
+**What it has found so far.** One engine defect, and twenty-three gaps
+of the reference, each on a board nobody wrote.
 
 The defect (48 in `formal-verification.md`): two triggers of one ability
 of one source went on the stack front first, their controller not asked,
@@ -459,7 +459,26 @@ The gaps, in each of which the engine was right:
   way the top of a shuffled library can lie for what a resolution takes
   from it, chosen before anything that depends on the card taken (a
   card discarded after a draw), and counts endings, as it compares
-  them, without a shuffled library's order.
+  them, without a shuffled library's order;
+- a token that is a copy of a legendary permanent is that legend (CR
+  707.2), and its controller keeps one of the two (704.5j): Cackling
+  Counterpart on a Geist of Saint Traft. The reference's legend rule
+  read a card's name and not a copy's (casts and flashback, one piece,
+  once legendary permanents were on the boards);
+- "for as long as you control Olivia Voldaren" is of that Olivia and no
+  other (CR 201.5, 611.2b): she takes the other player's Olivia, the
+  legend rule leaves her controller one, and if that is the one taken,
+  the Olivia that took her is gone and she goes back. The reference
+  kept no duration, and left her with the player who still had an
+  Olivia (activated abilities, one piece);
+- blockers are declared once an attack trigger has resolved (CR 508.2,
+  509.1): the one creature Grimgrin's trigger destroys blocks nothing,
+  and one that regenerated from it is tapped and may not (701.19c). The
+  reference's combat kept the block it was handed (combat, two pieces);
+- a legend cast beside one of its name and alike (a second Grimoire of
+  the Dead) leaves a choice with one outcome, which the engine asks all
+  the same; the check of a plain permanent spell had no place for a
+  question, and plays the cast every way there now (casts, one piece).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -529,6 +548,28 @@ three pieces that disagreed are in
 (`casts_agree_where_a_death_shuffles_the_library_before_the_spell_draws_from_it`,
 and the sixteenth board of
 `combat_agrees_on_the_three_piece_boards_that_once_did_not`).
+
+A fourth cut is gone (2026-11-20). Five permanents were off the boards
+for nothing but being legendary: Geist of Saint Traft, Grimgrin,
+Grimoire of the Dead, Mikaeus and Olivia Voldaren. They are on them
+now. A board is not given two of one of them under one player, which
+the legend rule would not leave, and a check that puts its own card on
+the board is not run where that would make a second. Tried first with
+nothing else changed, four of the ten checks disagreed on the boards of
+one piece (22 casts, 27 activated abilities, 21 flashback casts, 14
+upkeeps) and combat on the boards of two worn pieces (3,246 combats,
+each a Grimgrin attacking), none of it the engine's: the last four gaps above, and the checks' own
+second legends. With those closed every check agrees on every board of
+one piece (the table above), and on the boards of two pieces that hold
+each of the five, 14,683 of the family counted once for each legend
+they hold: 4,205,782 casts, 803,413 activated abilities, 469,544
+flashback casts, 404,282 upkeeps, 117,464 end steps, 161,513 loyalty
+abilities, 176,196 werewolves, 88,098 casts beside a watcher of entries,
+176,196 beside a watcher of casts and 5,138 combats; and combat on the
+boards of two worn pieces that hold each (100,270 combats, counted the
+same way), which is what `prove.sh exhaustive` plays. One board of each kind is in
+`cargo test`
+(`legendary_permanents_agree_on_the_boards_that_once_did_not`).
 
 A check that gives up (the reference meeting what it does not play) no
 longer ends its share: it is reported as that board's failure, by name.
@@ -617,47 +658,12 @@ shares run while the machine was shared with other runs, so upper
 bounds, the loyalty abilities about 115 hours, flashback about 270, the
 activated abilities about 350 and the casts about 830.
 
-**Next.** The cut above; legendary permanents on the boards (below);
-and more of three pieces for the other checks,
-a share at a time. Combat on three pieces was five hours of this
+**Next.** The cut above; three pieces with the legendary permanents,
+which have not been sampled; and more of three pieces for the other
+checks, a share at a time. Combat on three pieces was five hours of this
 machine and is whole. The rest are another matter: the casts alone are
 88 million boards and about 25 billion casts, hundreds of hours on
 these four cores, which is what a larger machine would be asked for.
-
-Legendary permanents (tried 2026-11-20, not kept). Five permanents are
-off the boards for nothing but being legendary: Geist of Saint Traft,
-Grimgrin, Grimoire of the Dead, Mikaeus and Olivia Voldaren. Put on
-them, with a board that holds two of one of them under one player not
-of the family, six of the ten checks agree on every board of one piece
-and four do not: 22 casts, 27 activated abilities (9 of them boards the
-reference gave up on, a legend-rule choice left unmade), 21 flashback
-casts and 14 upkeeps. Read one kind at a time, none is the engine's:
-
-- three checks put their own card on the board, and where the board
-  holds that legend already it is a second (Olivia's and Grimgrin's
-  abilities, Grimgrin's upkeep, the Grimoire's ability): those boards
-  are not the card's to be checked on, and want leaving out;
-- a token that is a copy of a legend is the same legend (CR 707.2,
-  704.5j): Cackling Counterpart on a legendary creature leaves its
-  controller to choose one, which the engine asks and the reference,
-  whose legend rule reads cards and not tokens, does not play;
-- Grimoire of the Dead cast beside a Grimoire: the two are alike, so
-  the reference keeps one without a question, the engine asks all the
-  same, and the check of a plain permanent spell has no place for a
-  question;
-- Olivia Voldaren taking the other player's Olivia ("for as long as you
-  control Olivia Voldaren"): her controller then has two and keeps one.
-  Keeping the one taken puts the Olivia that took it into the graveyard,
-  and the engine gives the other back to its owner, the name on a card
-  meaning that card and no other of its name (CR 201.5, 611.2b). The
-  reference left it with the player who still "controls Olivia
-  Voldaren".
-
-The first is a few lines; the second is the reference's legend rule
-taught tokens; the third, the plain cast played every way where a
-legend arrives beside its like; the fourth, a duration that follows its
-source and not its name. Until then the five stay off the
-boards, and are checked on the hand-made ones.
 
 ### B2. Kani with the engine under a card (under way)
 
