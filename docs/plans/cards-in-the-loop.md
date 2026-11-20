@@ -629,7 +629,9 @@ off the boards for nothing but being legendary: Geist of Saint Traft,
 Grimgrin, Grimoire of the Dead, Mikaeus and Olivia Voldaren. Put on
 them, with a board that holds two of one of them under one player not
 of the family, six of the ten checks agree on every board of one piece
-and four do not, and none of what they disagree on is the engine's:
+and four do not: 22 casts, 27 activated abilities (9 of them boards the
+reference gave up on, a legend-rule choice left unmade), 21 flashback
+casts and 14 upkeeps. Read one kind at a time, none is the engine's:
 
 - three checks put their own card on the board, and where the board
   holds that legend already it is a second (Olivia's and Grimgrin's
@@ -642,11 +644,19 @@ and four do not, and none of what they disagree on is the engine's:
 - Grimoire of the Dead cast beside a Grimoire: the two are alike, so
   the reference keeps one without a question, the engine asks all the
   same, and the check of a plain permanent spell has no place for a
-  question.
+  question;
+- Olivia Voldaren taking the other player's Olivia ("for as long as you
+  control Olivia Voldaren"): her controller then has two and keeps one.
+  Keeping the one taken puts the Olivia that took it into the graveyard,
+  and the engine gives the other back to its owner, the name on a card
+  meaning that card and no other of its name (CR 201.5, 611.2b). The
+  reference left it with the player who still "controls Olivia
+  Voldaren".
 
 The first is a few lines; the second is the reference's legend rule
 taught tokens; the third, the plain cast played every way where a
-legend arrives beside its like. Until then the five stay off the
+legend arrives beside its like; the fourth, a duration that follows its
+source and not its name. Until then the five stay off the
 boards, and are checked on the hand-made ones.
 
 ### B2. Kani with the engine under a card (under way)
