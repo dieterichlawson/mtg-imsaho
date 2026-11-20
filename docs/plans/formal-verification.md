@@ -2252,9 +2252,12 @@ and {G} paid with two green floating, each over a pool the solver
 chose: three harnesses for each, by how much green the pool holds for
 the plan and how much white for the payment, six proved alone under
 11 GB, six to ten minutes each. What is left open is the trigger order
-question's seven, a creature's dying trigger resolving and four answers
-of a cast's targets, none of which has anything left to fix: each is one
-case already.) No
+question's seven and four answers of a cast's targets, each of which is
+one case already with nothing left to the solver, and a creature's
+dying trigger resolving, which leaves a good deal to it (who controls
+the trigger, its source and its target, where the source is, which face,
+whether it targets, and the dead creature's data) and is being taken
+the same way.) No
 harness failed but Mentor of the Meek's two may-pay proofs, which still
 asserted the question is always asked, where master's #940 asks it only
 when a payment can be planned: their proof now holds the question to the
