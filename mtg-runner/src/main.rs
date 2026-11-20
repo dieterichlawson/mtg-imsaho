@@ -1439,6 +1439,22 @@ use --save if you need a resumable file.");
             gui.game_over(&GameView::for_player(&state, seat, &registry), &summary);
         }
     }
+    // ...and that nothing more is coming: a page whose socket the exit just
+    // reset read it as a dropped network and retried for ever (#1033). Its
+    // thread sends the result first, then this, on its next beat.
+    let mut open = false;
+    for player in [&p1, &p2] {
+        if let PlayerKind::Gui(gui) = player {
+            let page = gui.page_handle();
+            if page.connected() > 0 {
+                page.close("the game is over and the runner serving this page has stopped");
+                open = true;
+            }
+        }
+    }
+    if open {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+    }
     mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 

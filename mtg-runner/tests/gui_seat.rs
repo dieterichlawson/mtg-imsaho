@@ -111,3 +111,47 @@ fn a_gui_seat_is_asked_at_priorities_where_it_can_only_pass() {
         the engine passed them before the seat was asked, so the page's `s` has nothing to \
         stop at. Decisions seen: {seen:?}");
 }
+
+/// #1033: the runner sent `game_over` and exited, and the page, its socket
+/// reset, read the exit as a dropped network and retried once a second for
+/// ever. After the result it is now told nothing more is coming.
+#[test]
+fn a_gui_seats_page_is_told_the_runner_has_stopped_after_the_result() {
+    let dir = std::env::temp_dir().join(format!("mtg-gui-seat-closed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = dir.join("deck.txt");
+    std::fs::write(&deck, "60 Mountain\n").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
+        .args(["--p1", "gui:0", "--p2", "random", "--seed", "11", "-q"])
+        .args(["--deck1", deck.to_str().unwrap(), "--deck2", deck.to_str().unwrap()])
+        .env("MTG_GUI_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn mtg-runner");
+    let stderr = child.stderr.take().expect("the runner's stderr");
+    let _child = KillOnDrop(child);
+    let mut ws = connect(&page_url(stderr));
+    ws.send(Message::Text(json!({"type": "hello"}).to_string().into())).unwrap();
+    let mut kinds = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while Instant::now() < deadline {
+        let Ok(Message::Text(text)) = ws.read() else { break };
+        let msg: Value = serde_json::from_str(&text).unwrap();
+        let kind = msg["type"].as_str().unwrap_or_default().to_string();
+        if kind == "decision" {
+            ws.send(Message::Text(json!({"type": "action", "seq": msg["seq"], "action": "Concede"})
+                .to_string().into())).unwrap();
+        }
+        if kind == "closed" {
+            assert_eq!(msg["reason"], "the game is over and the runner serving this page has stopped");
+            assert!(kinds.iter().any(|k| k == "game_over"), "the result came first: {kinds:?}");
+            let _ = std::fs::remove_dir_all(&dir);
+            return;
+        }
+        kinds.push(kind);
+    }
+    panic!("the page was never told the runner stopped; it got {kinds:?} and then its socket dropped");
+}
