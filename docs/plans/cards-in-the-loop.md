@@ -521,7 +521,9 @@ them (1,260,469
 of the family, 874,799 combats), so that combat on three pieces is whole
 with her on the boards as it was without. So does combat on the 34,840
 boards of two worn pieces that hold her (26,316 combats), which
-`prove.sh exhaustive` now plays with the rest. Her boards of one and
+`prove.sh exhaustive` now plays with the rest: that run whole, as CI
+makes it, is 2,078,639 boards of the family and 1,466,263 combats, all
+agreeing, in seven minutes here. Her boards of one and
 three pieces that disagreed are in
 `cargo test`
 (`casts_agree_where_a_death_shuffles_the_library_before_the_spell_draws_from_it`,
@@ -615,11 +617,37 @@ shares run while the machine was shared with other runs, so upper
 bounds, the loyalty abilities about 115 hours, flashback about 270, the
 activated abilities about 350 and the casts about 830.
 
-**Next.** The cut above; and more of three pieces for the other checks,
+**Next.** The cut above; legendary permanents on the boards (below);
+and more of three pieces for the other checks,
 a share at a time. Combat on three pieces was five hours of this
 machine and is whole. The rest are another matter: the casts alone are
 88 million boards and about 25 billion casts, hundreds of hours on
 these four cores, which is what a larger machine would be asked for.
+
+Legendary permanents (tried 2026-11-20, not kept). Five permanents are
+off the boards for nothing but being legendary: Geist of Saint Traft,
+Grimgrin, Grimoire of the Dead, Mikaeus and Olivia Voldaren. Put on
+them, with a board that holds two of one of them under one player not
+of the family, six of the ten checks agree on every board of one piece
+and four do not, and none of what they disagree on is the engine's:
+
+- three checks put their own card on the board, and where the board
+  holds that legend already it is a second (Olivia's and Grimgrin's
+  abilities, Grimgrin's upkeep, the Grimoire's ability): those boards
+  are not the card's to be checked on, and want leaving out;
+- a token that is a copy of a legend is the same legend (CR 707.2,
+  704.5j): Cackling Counterpart on a legendary creature leaves its
+  controller to choose one, which the engine asks and the reference,
+  whose legend rule reads cards and not tokens, does not play;
+- Grimoire of the Dead cast beside a Grimoire: the two are alike, so
+  the reference keeps one without a question, the engine asks all the
+  same, and the check of a plain permanent spell has no place for a
+  question.
+
+The first is a few lines; the second is the reference's legend rule
+taught tokens; the third, the plain cast played every way where a
+legend arrives beside its like. Until then the five stay off the
+boards, and are checked on the hand-made ones.
 
 ### B2. Kani with the engine under a card (under way)
 
