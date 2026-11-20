@@ -504,6 +504,15 @@ reference plays the source's own text for the turn's end and no other
 permanent's, and what a trigger brings may have some (a Reaper from the
 Abyss returned by a Moldgraf Monstrosity sacrificed).
 
+The same turn played on is why the two creatures that attack each
+combat if able (Bloodcrazed Neonate, Galvanic Juggernaut) are off the
+boards. Tried with them on (2026-11-20, one piece, not kept): seven of
+the ten checks agree, and 241 casts, 181 activated abilities and 16
+loyalty abilities do not, every one of the casts in the turn played on,
+where the engine has the Juggernaut attack as it must and the reference
+plays no combat between the main phase and the turn's end. That is the
+reference's turn to write, not a card's.
+
 A second cut is gone. A loyalty ability that searches a library
 shuffles it, and what a death trigger of the board's then mills or
 draws is any card of it; the reference did not play that, and such an
