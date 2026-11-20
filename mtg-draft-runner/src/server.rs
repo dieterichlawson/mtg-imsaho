@@ -1237,14 +1237,30 @@ fn redirect(stream: &mut TcpStream, to: &str) {
 /// request goes on with the prefix taken off, its bytes then passed both
 /// ways as they come, so the page's socket works through it as its fetches
 /// do.
-fn proxy_game_page(mut client: TcpStream, head: &RequestHead, shared: &Shared, port: u16, rest: &str) {
-    let head = &head.bytes;
+fn proxy_game_page(mut client: TcpStream, request: &RequestHead, shared: &Shared, port: u16, rest: &str) {
+    let head = &request.bytes;
     // A finished match's link is answered as one even when its port now
     // serves a later match, which would refuse the old key with a bare "not
     // found" (#1037's review).
     let key = rest.trim_start_matches('/').split('/').next().unwrap_or_default();
     let ended = shared.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter().find(|(p, k, _)| *p == port && k == key).map(|&(_, _, seat)| seat);
+    // A finished match's page reconnecting its socket — a tab that was
+    // between retries, or asleep, when the match ended — is told the match
+    // is over: a refused handshake is a dropped network to the page, which
+    // it retried once a second for as long as the table ran (#1033).
+    if let Some(seat) = ended.filter(|_| mtg_player::gui::is_websocket_upgrade(&request.text)) {
+        let reason = if shared.lobby().is_kicked(seat) {
+            "the host has handed your seat to the table, which plays its games no more; the draft page says where the table stands"
+        } else {
+            "this match is over; the draft page has the link to your next game"
+        };
+        if let Some(mut ws) = mtg_player::gui::accept_websocket(client, request) {
+            let _ = ws.get_ref().set_read_timeout(Some(Duration::from_millis(50)));
+            mtg_player::gui::close_page(&mut ws, reason);
+        }
+        return;
+    }
     let addr = shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter().filter(|_| ended.is_none()).map(|g| g.addr).find(|a| a.port() == port);
     let Some(mut addr) = addr else {

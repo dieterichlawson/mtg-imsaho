@@ -124,6 +124,40 @@ fn a_finished_matchs_game_pages_are_closed_with_the_table() {
     server.child.wait().expect("the server exits");
 }
 
+/// #1033: a finished match's page that reconnects — a tab between retries,
+/// or asleep, when its match ended — was refused with a 404, which the page
+/// reads as a dropped network and retried once a second for as long as the
+/// table ran. Its socket is now told the match is over, which stops it.
+#[test]
+fn a_finished_matchs_page_reconnecting_is_told_the_match_is_over() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut server = Server::start("reconnect-finished", "human,human", &["--pick-seconds", "1", "--build-seconds", "2"]);
+    let mut c0 = server.client(0);
+    let mut c1 = server.client(1);
+    let url = |v: &Value| v["matches"].as_array()
+        .and_then(|m| m.iter().find(|m| m["status"] == "playing"))
+        .and_then(|m| m["url"].as_str()).map(str::to_string);
+    let u0 = server.link(&url(&c0.view_until("seat 0's match is on", Duration::from_secs(240), |v| url(v).is_some())).unwrap());
+    let u1 = server.link(&url(&c1.view_until("seat 1's match is on", Duration::from_secs(30), |v| url(v).is_some())).unwrap());
+    server.type_line("kick 0");
+    server.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
+    c1.view_until("the table is done", Duration::from_secs(30), |v| v["phase"] == "done");
+    // The table is still up: both pages come back to a match that is over.
+    let mut g1 = game_page(&u1);
+    let closed = message_until(&mut g1, "closed", Duration::from_secs(10), |_| true);
+    assert_eq!(closed["reason"], "this match is over; the draft page has the link to your next game", "{closed}");
+    let mut g0 = game_page(&u0);
+    let closed = message_until(&mut g0, "closed", Duration::from_secs(10), |_| true);
+    assert!(closed["reason"].as_str().is_some_and(|r| r.contains("handed your seat to the table")),
+        "the kicked seat is told it has no next game: {closed}");
+    assert!(server.child.try_wait().expect("the server's status").is_none(), "the table is still up");
+    server.type_line("quit");
+    server.child.wait().expect("the server exits");
+}
+
 #[test]
 fn q_at_the_hosts_terminal_does_not_close_a_running_table() {
     if !lobby_support::python3_available() {

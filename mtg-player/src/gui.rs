@@ -984,7 +984,7 @@ pub fn nothing_to_read(e: &tungstenite::Error) -> bool {
 /// Tell a page the table is over, close its socket with a close frame, and
 /// give it a moment to answer: a socket the process simply drops is a reset
 /// to the page, which reads it as a network to reconnect to for ever (#824).
-fn close_page(ws: &mut tungstenite::WebSocket<TcpStream>, reason: &str) {
+pub fn close_page(ws: &mut tungstenite::WebSocket<TcpStream>, reason: &str) {
     if let Ok(msg) = serde_json::to_string(&Outbound::Closed { reason: reason.to_string() }) {
         let _ = ws.send(tungstenite::Message::Text(msg.into()));
     }
