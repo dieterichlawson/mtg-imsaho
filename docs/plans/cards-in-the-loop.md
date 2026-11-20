@@ -326,8 +326,8 @@ vocabulary on either side in a state of wear (as it entered, tapped, the
 other player's card, 1 damage, a +1/+1 counter, a -1/-1 counter, a
 regeneration shield; the last four a creature's), a creature token on
 either side likewise (the nine kinds the set makes or nearly, and two of
-no colour or subtype), or a card of the pool in either graveyard: 2,170
-pieces, 808 of them as they entered. Boards of one piece wear every
+no colour or subtype), or a card of the pool in either graveyard: 2,184
+pieces, 810 of them as they entered. Boards of one piece wear every
 state; larger boards are as they entered unless asked otherwise
 (`CARD_SEMANTICS_SMALL_WORN`). Not boards of the family, and counted as
 such by each run: one whose permanent cannot be worn as asked or is left
@@ -337,25 +337,28 @@ permanents that trigger on deaths.
 **What is played on each board** (`on_every_small_board`), each through
 the same check as on the hand-made boards, now a function of the board:
 
-| | what | one piece (2,032 boards) |
+| | what | one piece (2,046 boards) |
 |---|---|---|
-| casts | every non-land card the grammar reads, cast at every target set and every answer (`check_cast_on`) | 568,483, 37 s |
-| activated abilities | every one read, of either face, its permanent placed under the player to act: offered at exactly its targets and sacrifices, paid, resolved every way (`check_activated_on`) | 111,760, 24 s |
-| flashback | every flashback read, cast from the graveyard (`check_flashback_on`) | 61,226, 15 s |
-| upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 55,396, 5 s |
-| end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,256, 2 s |
-| loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 22,000, 5 s |
-| werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 24,384, 2 s |
-| enter watchers | every "whenever ... enters" read, as each player casts a creature it may or may not name (`check_enter_watcher_on`) | 12,192, 2 s |
-| cast watchers | every "whenever you cast ..." read, as its controller casts an instant from their hand and by flashback and a creature, and as the other player casts an instant (`check_cast_watcher_on`) | 24,384, 3 s |
-| combat | in the first player's turn: the attackers offered and required, the blocks offered for each set of attackers, and each way of blocking fought to its end (`check_combat_on`) | 533 combats, under a second |
+| casts | every non-land card the grammar reads, cast at every target set and every answer (`check_cast_on`) | 571,759, 39 s |
+| activated abilities | every one read, of either face, its permanent placed under the player to act: offered at exactly its targets and sacrifices, paid, resolved every way (`check_activated_on`) | 112,530, 19 s |
+| flashback | every flashback read, cast from the graveyard (`check_flashback_on`) | 61,681, 10 s |
+| upkeeps | every upkeep trigger and "doesn't untap" read, in each player's turn (`check_turn_begins_on`) | 55,760, 7 s |
+| end steps | every end step trigger read, in each player's turn (`check_turn_ends_on`) | 16,368, 1 s |
+| loyalty abilities | every one read, of either face, at its printed loyalty and at its cost (`check_loyalty_on`) | 22,506, 5 s |
+| werewolves | every werewolf read, transforming after a quiet turn and back after a turn of two spells (`check_werewolf_on`) | 24,552, 1 s |
+| enter watchers | every "whenever ... enters" read, as each player casts a creature it may or may not name (`check_enter_watcher_on`) | 12,276, 1 s |
+| cast watchers | every "whenever you cast ..." read, as its controller casts an instant from their hand and by flashback and a creature, and as the other player casts an instant (`check_cast_watcher_on`) | 24,552, 3 s |
+| combat | in the first player's turn: the attackers offered and required, the blocks offered for each set of attackers, and each way of blocking fought to its end (`check_combat_on`) | 539 combats, under a second |
 
 Every one of those agrees with its card's text. They run in
 `scripts/prove.sh exhaustive`, and so on every push and pull request.
-`CARD_SEMANTICS_SMALL=2` is every board of two pieces: 327,645 boards,
+`CARD_SEMANTICS_SMALL=2` is every board of two pieces: 329,266 boards,
 about 91 million casts and 18 million activations, some six hours for the
 five on four cores, run in shares (`CARD_SEMANTICS_SHARD=K/N`); a failure
 names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
+`CARD_SEMANTICS_SMALL_WITH=NAME` plays only the boards that hold a card
+of that name, which is how a card new to the boards is checked on every
+board it is on without the others being played again.
 
 **What it has found so far.** One engine defect, and nineteen gaps of
 the reference, each on a board nobody wrote.
@@ -481,11 +484,54 @@ there, the engine over seeds: 43,624 more abilities on the boards of
 two pieces, all agreeing, and two such boards in `cargo test`
 (`loyalty_abilities_agree_where_a_search_shuffles_under_a_trigger_that_reads_the_library`).
 
+A third cut is gone (2026-11-20). Bitterheart Witch's death trigger
+searches her controller's library and shuffles it, and she was the one
+permanent kept off the boards for that. Put on them, she showed the gap
+of the shuffled library at three more places, the engine right at each:
+
+- a spell whose cost set off the shuffle: Altar's Reap sacrifices her,
+  her trigger resolves above the spell, and the two cards the Reap then
+  draws are any two of the library (7 of 571,759 casts on the boards of
+  one piece, one on each board she is the first player's on);
+- a spell under a trigger that set it off: Burning Vengeance, triggered
+  by a Think Twice cast by flashback, kills her, and Think Twice draws
+  after her shuffle (10 of 24,552 casts beside a watcher of casts, on
+  the five of those boards where 2 damage kills her);
+- a draw set off by combat damage: she dies blocked by a Kessig
+  Cagebreakers in the step in which a Sturmgeist beside her deals its
+  damage, their controller puts her search on the stack to resolve
+  first, and the Sturmgeist's draw takes any card (1 of 15,577 combats
+  on one board in sixty of those of three pieces that hold her).
+
+The reference took the card its own list had on top at each. With the
+three closed every check agrees on every board of one piece and on the
+3,238 boards of two pieces that hold her, on the battlefield or in a
+graveyard, the 1,621 boards she adds among them: 810,361 casts, 174,515
+activated abilities, 106,635 flashback casts, 85,642 upkeeps, 25,384
+end steps, 34,903 loyalty abilities, 38,076 werewolves, 19,038 casts
+beside a watcher of entries, 38,076 beside a watcher of casts and 1,400
+combats. Of the boards of three pieces that hold her, one in sixty
+(22,884 of the family) agrees in every check but that one combat:
+6,273,062 casts, 1,258,620 activated abilities, 870,526 flashback casts,
+628,384 upkeeps, 183,072 end steps, 251,724 loyalty abilities, 274,608
+werewolves, 137,304 casts beside a watcher of entries and 274,608 beside
+a watcher of casts; and combat, fixed, agrees on all of them (1,260,469
+of the family, 874,799 combats), so that combat on three pieces is whole
+with her on the boards as it was without. So does combat on the 34,840
+boards of two worn pieces that hold her (26,316 combats), which
+`prove.sh exhaustive` now plays with the rest. Her boards of one and
+three pieces that disagreed are in
+`cargo test`
+(`casts_agree_where_a_death_shuffles_the_library_before_the_spell_draws_from_it`,
+and the sixteenth board of
+`combat_agrees_on_the_three_piece_boards_that_once_did_not`).
+
 A check that gives up (the reference meeting what it does not play) no
 longer ends its share: it is reported as that board's failure, by name.
 
 **Two pieces.** Every board of two pieces as they entered, 325,888 of
-the family, in 40 shares:
+the family before Bitterheart Witch joined the boards (hers are counted
+above), in 40 shares:
 
 | Check | Plays | Result |
 |---|---|---|
@@ -604,11 +650,22 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-19).** `proofs/engine_under_card.rs`: 595
-harnesses over 266 of the 270 cards, every one proved: 202 over 86 of
-the 88 spells, and 393 over 180 of the 182 permanents (below); 15.6
+**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 603
+harnesses over 268 of the 270 cards, every one proved: 203 over 87 of
+the 88 spells, and 400 over 181 of the 182 permanents (below); 15.9
 hours of solver time in all on this machine while it was busy, the
-longest 12 minutes and most a minute or two. The spells, by family, each a
+longest 12 minutes and most a minute or two. They were proved a group at
+a time, each against the loop bounds its own run learned; so that the
+fortnightly run of every harness meets nothing new, the slowest row of
+each of the 199 functions the tables then called was proved again
+against the bounds as the repository keeps them
+(`scripts/kani/loop-bounds.txt`), in batches of eight with thirty
+minutes a harness as that run has, and 7 GB for a harness alone where
+it allows 12 (2026-11-20): 199 of 199, 5.6 hours, the slowest 341 s, no
+bound learned that the file lacked, and one harness (Vampiric Fury)
+past 4 GB beside another and proved alone. The eight
+harnesses added since were run against that file, which has the four
+bounds they learned. The spells, by family, each a
 function of what the text says and a row for each card and case:
 
 | Family | Cards | What is asserted of the board afterwards |
@@ -673,10 +730,13 @@ Vigil's land with morbid, Divine Reckoning's kept creatures.
 **Not yet.** Rolling Temblor beside a creature that has flying, and
 Rolling Temblor beside any second permanent (one creature without
 flying, alone, proves in 71 s; each of the others ran out of memory at
-8 GB, nothing about the board left open). Spare from Evil: with one
-creature of yours and one other, the engine's protection read back ran
-out of memory at 8 GB. These three are what more memory would be tried
-on first. And Army of the Damned: thirteen tokens are more permanents
+8 GB, nothing about the board left open). Spare from Evil's protection
+read back through the engine: with one creature of yours and one other
+it ran out of memory at 8 GB. What is proved of it is the effect it
+leaves in force, protection for the caster's creature and not the other
+player's from what is a creature and not a Human (47 s), and, of the
+engine, what that filter matches (`proofs::actions::filters`). These
+three are what more memory would be tried on first. And Army of the Damned: thirteen tokens are more permanents
 than a list of the engine's has room for in a proof here (below).
 
 **Permanents.** 393 harnesses over 180 cards. For a card with a hook,
@@ -703,11 +763,12 @@ and queries, or the event its text replaces run through the engine:
 | how it enters, put onto the battlefield by the engine's own zone change | Diregraf Ghoul; Clifftop Retreat, Hinterland Harbor, Isolated Chapel, Sulfur Falls and Woodland Cemetery beside each basic land type they name and beside the other player's; Festerhide Boar and Somberwald Spider with and without a death; Unbreathing Horde; Dearly Departed from a graveyard; Essence of the Wild's copy |
 | an event it replaces, run through the engine | Laboratory Maniac under the engine's draw, Parallel Lives under its token making, Unbreathing Horde under its damage, Stony Silence |
 | a mana ability activated through the engine | Forest, Island, Mountain, Plains, Swamp, Avacyn's Pilgrim, Sol Ring, Shimmering Grotto's first |
+| what a spell costs beside it, asked of the engine | Rooftop Storm ({0} offered for its controller's Zombie creature card, nothing for another creature or the other player); Heartless Summoning ({2} generic less for its controller's creature spell, no more generic than the cost has, nothing off the other player's or a spell that is no creature) |
 | the creature it prints, the numbers and keywords the Oracle text's | the nineteen creatures with no ability or keywords alone; and the body of Skaab Goliath, Makeshift Mauler, Stitched Drake, Skaab Ruinator, Battleground Geist, Gallows Warden and Geist of Saint Traft, whose own ability is the engine's or is proved elsewhere (below) |
 | a loyalty ability | Garruk Relentless (the fight, the Wolf, the transformation at two loyalty or fewer) and Garruk, the Veil-Cursed (the Wolf, the sacrifice and search, the last); Liliana of the Veil (each player's discard, the sacrifice, the piles asked for) |
 | an activated ability that asks nothing | Darkthicket Wolf, Feral Ridgewolf, Kessig Wolf, Avacynian Priest, Bloodline Keeper (both), Skirsdag High Priest, Nephalia Drownyard, Ghoulcaller's Bell, Stensia Bloodhall, Lantern Spirit, Elder of Laurels, Gavony Township, Manor Skeleton, Ulvenwald Primordials, Manor Gargoyle, Mikaeus (both), Selfless Cathar, Silverchase Fox, Skirsdag Cultist, Daybreak Ranger's damage and Nightfall Predator's fight, Olivia Voldaren's first, Kessig Wolf Run, Disciple of Griselbrand, Tree of Redemption, Deranged Assistant, Cellar Door, Ludevic's Test Subject, Full Moon's Rise, Grimgrin, Moorland Haunt, Evil Twin |
 
-Nine more things that put a harness out of reach, each measured:
+Ten more things that put a harness out of reach, each measured:
 
 - A zone change for an owner the solver leaves open is a graveyard it
   leaves open (4 GB): a source that has left is one player's card under
@@ -758,6 +819,11 @@ Nine more things that put a harness out of reach, each measured:
   reads a card's keywords from its face, so that a transformed
   permanent keeps none of its front's). The harness now uses a creature
   that prints flying and one that prints reach.
+- More cards than the proof's registry has room for. Heartless
+  Summoning's cost harness registered three spells to cast beside the
+  Summoning and the blank creature, and failed before its assertion,
+  a list grown past its capacity; each row now registers the one card
+  it casts and proves in one to seven minutes.
 - A player left open, again, for a mana ability: a Plains tapped
   through the engine for either player proved alone under 7 GB and the
   other four basic lands and Sol Ring ran out of memory there; for the
@@ -773,16 +839,17 @@ does it (the card Forbidden Alchemy's chooser takes, the name Nevermore
 is given, Liliana's piles, a discard chosen from a hand), each proved of
 the engine's own answer (`proofs::actions`).
 
-Of the 270 cards, 266 have a harness with the engine under them. The
-four that do not: Army of the Damned (thirteen tokens, more permanents
-than a list of the engine's has room for in a proof here), Spare from
-Evil (the protection read back, above), One-Eyed Scarecrow (its filter,
-above) and Rooftop Storm, whose whole text is another cost for a spell,
-which is the engine's cast and not a hook of the card's or a board to
-read. And for some the harness is of part of the text, the rest being
+Of the 270 cards, 268 have a harness with the engine under them. The
+two that do not: Army of the Damned (thirteen tokens, more permanents
+than a list of the engine's has room for in a proof here) and One-Eyed
+Scarecrow (its filter, above). And for some the harness is of part of
+the text, the rest being
 the engine's own path: the additional cost of Skaab Goliath, Makeshift
 Mauler, Stitched Drake and Skaab Ruinator, and the Ruinator's cast from
-a graveyard; Heartless Summoning's cheaper spells; Shimmering Grotto's
+a graveyard; Spare from Evil (the effect it leaves, not the engine's
+read of it, above); Rooftop Storm and Heartless Summoning's cheaper
+spells (the cost the engine offers or asks, not the cast that pays it);
+Shimmering Grotto's
 second ability; the lord effects of Battleground Geist and Gallows
 Warden (their filter, proved of the engine); Geist of Saint Traft's
 Angel; Instigator Gang's bonus. All 270 are played with the engine on
