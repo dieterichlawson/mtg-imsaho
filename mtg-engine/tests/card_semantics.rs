@@ -9189,8 +9189,11 @@ fn on_every_small_board(what: &str, check: &(dyn Fn(&Small, &[Piece], &str, &mut
     println!("small boards: {} pieces, {boards} boards of at most {} of them, {played} in this share, {stood} of those boards of the family, {checked} {what}",
         pieces.len(), size.max(1));
     assert!(checked > 0);
-    assert!(failures.is_empty(), "{} of {checked} {what} on small boards, across the {} cards read, disagree with their text:\n  {}",
-        failures.len(), cards.len(), failures.join("\n  "));
+    // Each disagreement, not the line after a board's that says what the
+    // board is.
+    let disagreements = failures.iter().filter(|f| !f.starts_with("small board ")).count();
+    assert!(failures.is_empty(), "{disagreements} of {checked} {what} on small boards, across the {} cards read, disagree with their text:\n  {}",
+        cards.len(), failures.join("\n  "));
 }
 
 /// Every card the grammar reads, cast on every small board
