@@ -809,3 +809,25 @@ writing it up as the page's problem alone.
   `CanvasRenderingContext2D.prototype.fillText` in `addInitScript` and read
   the strings drawn at a strip's y. `hits` covers only what can be clicked,
   and the band's flags and the strip's parts are text.
+- G40 [proposed 2026-11-20, from #1061, #1068 and #1071] an entering copy
+  on the page. The copy choice (`ChooseTarget` with effect `EnterAsCopy`,
+  and the token's `EnterAsCopyToken`) is only reachable by a board that
+  has a creature to copy, which a seeded random game rarely builds. Place
+  one (the "Place a board" recipe in `playing.md`): Evil Twin in hand and
+  in the graveyard, Back from the Brink and a Boneyard Wurm in play. Cast
+  the Twin and pass; at its question check the stack chip is `R`, the
+  graveyard count does not include it, the Wurm's P/T does not count it,
+  and Escape, right-click and Enter each refuse out loud. Pick a target,
+  then hover the copy: the inspector should say `Copy`, show the copied
+  card's text, and the gained destroy ability. Then Back from the Brink on
+  the graveyard Twin, and Decline once.
+  [2026-11-20] First run, by a file-command driver (one `node` process
+  holding the page, a numbered `cN.js` file per step). **The page holds**:
+  the Twin waits on the stack as `R` with GY 3 and the Wurm 3/3, the
+  token's prompt reads `Evil Twin token: you may have it enter as a copy
+  …`, the log says `enters as a copy of Boneyard Wurm (3/3)` (#1071's
+  fix), every wrong key refuses and names Decline, and a Decline sends the
+  Twin in as 0/0 to die. It also works at 390x844, with clicks mapped
+  through the canvas's bounding rectangle. **The gained ability is cut
+  short as rules text** on the page, on the CLI and in the LLM board:
+  `… Destroy target creature with the same name` (#1072).
