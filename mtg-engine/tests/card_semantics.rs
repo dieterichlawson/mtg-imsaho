@@ -7068,8 +7068,27 @@ fn native_outcomes(native: &Native, w: &World) -> Vec<World> {
     let mut after = w.clone();
     match native {
         Native::DamagedPlayer { attacker, as_it_was, dealt } => {
-            on_damage_to_player(&mut after, *attacker, as_it_was, *dealt);
-            vec![after]
+            // The cards a "draw a card" of it takes are any of a library
+            // shuffled before it (CR 701.20a): a Bitterheart Witch that
+            // died in the same damage step, her search resolved above a
+            // Sturmgeist's draw.
+            let draws: usize = as_it_was.combat.on_damage_to_player.iter()
+                .map(|e| if let OnPlayerDamage::Draw(k) = e { *k } else { 0 })
+                .sum();
+            let libraries = if draws > 0 && after.shuffled[0] && after.library[0].len() > 1 {
+                tops(&after.library[0], draws.min(after.library[0].len()))
+            } else {
+                vec![after.library[0].clone()]
+            };
+            let random = libraries.len() > 1;
+            libraries.into_iter()
+                .map(|library| {
+                    let mut drawn = World { randomized: after.randomized || random, ..after.clone() };
+                    drawn.library[0] = library;
+                    on_damage_to_player(&mut drawn, *attacker, as_it_was, *dealt);
+                    drawn
+                })
+                .collect()
         }
         Native::CounterOn(src) => {
             if let Some(m) = src.model_mut(&mut after) {
@@ -10187,7 +10206,17 @@ fn check_combat_on(which: &str, (state, world): (GameState, World), registry: &C
             *combats += 1;
             let attacks: Vec<Attack> = attackers.iter().map(|a| Attack { attacker: *a, blockers: blockers_of(a), defender: Target::Player(P1) }).collect();
             let want = combat_of(&world, &attacks);
-            let endings = combat_endings(&state, registry, &world, &(attackers.iter().map(|a| (*a, Target::Player(P1))).collect(), blocks.clone()));
+            let declared = (attackers.iter().map(|a| (*a, Target::Player(P1))).collect(), blocks.clone());
+            // From 32 seeds where a trigger of the combat takes from a
+            // library another has shuffled.
+            // (A combat with a coin to flip is played from seeds already.)
+            let flips = attackers.iter().chain(blocks.iter().map(|(b, _)| b))
+                .any(|id| world.permanents.get(id).is_some_and(|m| m.combat.flips_to_destroy_what_it_damages));
+            let endings = if want.iter().any(|w| w.randomized) && !flips {
+                over_seeds(&state, registry, distinct(&want), |s| combat_endings(s, registry, &world, &declared))
+            } else {
+                combat_endings(&state, registry, &world, &declared)
+            };
             if let Some(why) = disagreement(&want, &endings, registry) {
                 failures.push(format!("{about}, blocked {:?}: {why}", blocks.iter().map(|(b, a)| (named(b), named(a))).collect::<Vec<_>>()));
             }
@@ -10212,14 +10241,18 @@ fn every_combat_ends_as_the_rules_say_on_every_small_board() {
 /// them (CR 603.3b, 101.4); a trigger whose every target is gone by then
 /// does nothing (608.2b); and a token one trigger made is there for the
 /// next (`docs/plans/cards-in-the-loop.md`, the gaps found by combat on
-/// three pieces). The last board is the one the engine had wrong too:
+/// three pieces). The last board but one is the one the engine had wrong too:
 /// the two triggers of an Ashmouth Hound that two creatures block are
-/// its controller's to order (defect 48). Three creatures is the least
+/// its controller's to order (defect 48); and the one after it is where
+/// a library is shuffled under a draw: a Bitterheart Witch dies blocked
+/// as a Sturmgeist beside her deals its damage, and with her search
+/// resolved first the card the Sturmgeist's trigger draws is any of the
+/// library (CR 701.20a). Three creatures is the least
 /// board that shows any of it, and those are otherwise reached only with
 /// `CARD_SEMANTICS_SMALL=3`.
 #[test]
 fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
-    let boards: [[(&str, PlayerId); 3]; 15] = [
+    let boards: [[(&str, PlayerId); 3]; 16] = [
         [("Stromkirk Patrol", P0), ("Typhoid Rats", P0), ("Pitchburn Devils", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Gallows Warden", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Skaab Goliath", P1)],
@@ -10235,6 +10268,7 @@ fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
         [("Selhoff Occultist", P0), ("Sturmgeist", P0), ("Kalonian Tusker", P1)],
         [("Skaab Goliath", P0), ("Creepy Doll", P1), ("Selhoff Occultist", P1)],
         [("Ashmouth Hound", P0), ("Unruly Mob", P1), ("Voiceless Spirit", P1)],
+        [("Bitterheart Witch", P0), ("Sturmgeist", P0), ("Kessig Cagebreakers", P1)],
     ];
     let (failures, combats) = on_named_small_boards(&boards, &|small, on, which, failures, combats| {
         let made = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false).expect("a board of the family");
