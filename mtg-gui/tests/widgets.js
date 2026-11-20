@@ -346,6 +346,9 @@ async function main() {
         } else {
           const notice = await page.evaluate(() => window.mtg.notice || null);
           if (!notice) fail(`x-refuses: ${JSON.stringify(token)} refused with no message`);
+          // A letter is refused here; the way back to the board is named,
+          // as the terminal names its pane keys (#1054's review).
+          else if (token === "2abc" && !/Esc to look at the board/.test(notice)) fail(`x-refuses: ${JSON.stringify(notice)} does not say how to look at the board`);
           else ok(`x-refuses ${JSON.stringify(token)} → ${JSON.stringify(notice)}`);
         }
       }

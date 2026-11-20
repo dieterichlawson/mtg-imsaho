@@ -7760,10 +7760,6 @@ impl CliPlayer {
         (all_chosen_cards && card_count > 3) || naming_cards
     }
 
-    /// The reader line of the X prompt. Both funding prompts are
-    /// cancellable (#123, #290), and what cancelling abandons is named for
-    /// what it is: Kessig Wolf Run's `{X}{R}{G}, {T}` is an activation, and
-    /// the engine logs it as one — the prompt called it a cast (#613).
     /// One line of input at the X prompt, read.
     fn parse_x_input(input: &str, fundable: &[u32], max_x: u32) -> XInput {
         let input = input.trim();
@@ -7819,6 +7815,10 @@ impl CliPlayer {
         }
     }
 
+    /// The reader line of the X prompt. Both funding prompts are
+    /// cancellable (#123, #290), and what cancelling abandons is named for
+    /// what it is: Kessig Wolf Run's `{X}{R}{G}, {T}` is an activation, and
+    /// the engine logs it as one — the prompt called it a cast (#613).
     fn x_funding_hint(max_x: u32, is_ability: bool) -> String {
         let what = if is_ability { "activation" } else { "cast" };
         format!("  X (0-{max_x}, c = cancel the {what}, or concede) = ")

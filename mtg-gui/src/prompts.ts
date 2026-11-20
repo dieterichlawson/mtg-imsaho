@@ -1366,7 +1366,9 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
     if (typed === "") { state.notice = "Enter a value for X."; return; }
     const x = /^\+?[0-9]+$/.test(typed) ? Number(typed) : NaN;
     if (!Number.isInteger(x) || x < 0 || x > maxX) {
-      refuse(`Invalid input '${clipToken(typed)}' — enter an integer between 0 and ${maxX}.`);
+      // The way back to the board is named, as the terminal's refusal names
+      // its pane keys (#1054's review): a letter typed here is refused.
+      refuse(`Invalid input '${clipToken(typed)}' — enter X from 0 to ${maxX}, or Esc to look at the board.`);
       return;
     }
     // In range and unpayable: say which values are, and keep asking. The
