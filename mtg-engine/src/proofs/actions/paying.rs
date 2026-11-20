@@ -624,3 +624,69 @@ each_holding! {
     one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
     one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
 }
+
+/// [`planning_with_a_forest`] with an untapped Forest, the pool holding
+/// the amounts `held` gives (`pool_holding`) and any of the rest. The
+/// board is [`paying_with_a_forest_holding`]'s, built as that one is.
+/// Over a pool the solver chose whole, the plan for `{1}` proves for the
+/// first player (25 minutes) and ran out of memory at 12 GB for the
+/// second; a harness for each amount of green the pool holds is the
+/// same pools, a third at a time.
+fn planning_with_a_forest_holding(which: u8, who: PlayerId, held: &[(ManaType, u32)]) {
+    let (registry, mut state, blank, forest_card) = board(Box::new(crate::cards::forest::Forest));
+    let forest = state.create_object(forest_card, who, Zone::Battlefield, None, None);
+    state.get_object_mut(forest).expect("just created").summoning_sick = kani::any();
+    state.create_object(blank, PlayerId(1 - who.0), Zone::Battlefield, None, None);
+    let cost = a_cost(which);
+    let pool = pool_holding(held);
+    state.players[usize::from(who.0)].mana_pool = pool.clone();
+    let mut with_forest = pool.clone();
+    with_forest.add(ManaType::Green, 1);
+    let alone = mana::can_pay(&pool, &cost);
+    let tap = !alone && mana::can_pay(&with_forest, &cost);
+    let plan = crate::engine::payment_plan_with_sources(&state, who, &cost, &registry);
+    let expected: Option<Vec<(ObjectId, usize)>> = if alone {
+        Some(Vec::new())
+    } else if tap {
+        Some(vec![(forest, 0)])
+    } else {
+        None
+    };
+    assert!(plan == expected);
+    std::mem::forget((registry, state, cost, pool, with_forest, plan, expected));
+}
+
+/// [`planning_with_a_forest_holding`] for each cost, player and pool
+/// amounts given, with [`each_forest`]'s stand-ins.
+macro_rules! each_planning_holding {
+    ($($name:ident: ($which:literal, $who:literal, $held:expr);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::engine::activate_mana_source_reserving, forest_activation)]
+        /// The proof above it, for one cost, one player and one pool.
+        fn $name() {
+            planning_with_a_forest_holding($which, PlayerId($who), &$held);
+        }
+    )*};
+}
+
+// The plan for {1} with an untapped Forest, for the second player: the
+// one harness over every pool, by how much green the pool holds.
+each_planning_holding! {
+    one_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player: (0, 1, [(ManaType::Green, 0)]);
+    one_is_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player: (0, 1, [(ManaType::Green, 1)]);
+    one_is_planned_with_an_untapped_forest_and_two_green_floating_for_the_second_player: (0, 1, [(ManaType::Green, 2)]);
+}
+
+// {G} paid with an untapped Forest and two green floating, for the second
+// player: the one harness over every such pool, by how much white it holds.
+each_holding! {
+    green_is_paid_with_an_untapped_forest_two_green_and_no_white_floating_for_the_second_player: (1, 1, [(ManaType::Green, 2), (ManaType::White, 0)]);
+    green_is_paid_with_an_untapped_forest_two_green_and_one_white_floating_for_the_second_player: (1, 1, [(ManaType::Green, 2), (ManaType::White, 1)]);
+    green_is_paid_with_an_untapped_forest_two_green_and_two_white_floating_for_the_second_player: (1, 1, [(ManaType::Green, 2), (ManaType::White, 2)]);
+}
