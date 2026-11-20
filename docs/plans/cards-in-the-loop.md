@@ -529,12 +529,12 @@ graveyard, the 1,621 boards she adds among them: 810,361 casts, 174,515
 activated abilities, 106,635 flashback casts, 85,642 upkeeps, 25,384
 end steps, 34,903 loyalty abilities, 38,076 werewolves, 19,038 casts
 beside a watcher of entries, 38,076 beside a watcher of casts and 1,400
-combats. Of the boards of three pieces that hold her, seven in sixty
-(150,691 of the family) agree in every check but that one combat:
-41,018,753 casts, 8,288,005 activated abilities, 5,750,466 flashback
-casts, 4,128,824 upkeeps, 1,205,528 end steps, 1,657,601 loyalty
-abilities, 1,808,292 werewolves, 904,146 casts beside a watcher of
-entries and 1,808,292 beside a watcher of casts; and combat, fixed,
+combats. Of the boards of three pieces that hold her, ten in sixty
+(209,748 of the family) agree in every check but that one combat:
+56,898,914 casts, 11,536,140 activated abilities, 8,010,931 flashback
+casts, 5,742,342 upkeeps, 1,677,984 end steps, 2,307,228 loyalty
+abilities, 2,516,976 werewolves, 1,258,488 casts beside a watcher of
+entries and 2,516,976 beside a watcher of casts; and combat, fixed,
 agrees on all of
 them (1,260,469
 of the family, 874,799 combats), so that combat on three pieces is whole
