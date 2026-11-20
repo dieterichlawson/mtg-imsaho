@@ -3404,6 +3404,11 @@ struct Model {
     /// Who controlled it before an effect that gives it back in the
     /// cleanup step took it (CR 514.2).
     stolen_from: Option<PlayerId>,
+    /// The permanent whose controller has this one "for as long as you
+    /// control" that one, and who had it before: it goes back when that
+    /// permanent leaves (CR 611.2b), the name on a card meaning that card
+    /// and no other of its name (201.5).
+    held_while: Option<(ObjectId, PlayerId)>,
     /// A token that entered attacking (CR 508.4), what it attacks, a
     /// player or a planeswalker, and whether its text exiles it at end of
     /// combat.
@@ -3457,6 +3462,7 @@ impl Model {
             token_name: None,
             temp_restricted: Vec::new(),
             stolen_from: None,
+            held_while: None,
             attacking: false,
             attacks: None,
             exile_at_end_of_combat: false,
@@ -3984,6 +3990,16 @@ impl World {
             self.left.push((id, last, self.deaths));
         }
         let Some(mut m) = self.permanents.remove(&id) else { return };
+        // What its controller had for as long as they controlled it goes
+        // back (CR 611.2b): an Olivia Voldaren taken by an Olivia that the
+        // legend rule then put into the graveyard.
+        for held in self.permanents.values_mut() {
+            if let Some((_, before)) = held.held_while.filter(|(source, _)| *source == id) {
+                held.controller = before;
+                held.held_while = None;
+            }
+        }
+        m.held_while = None;
         // Off the battlefield a double-faced card has only its front face
         // (CR 712.8a).
         if m.transformed {
@@ -4306,8 +4322,9 @@ impl World {
             // (one of them here before, tapped or with a counter), the
             // choice waits for [`settle_triggers`], which plays each.
             let mut legends: BTreeMap<(u8, &str), Vec<ObjectId>> = BTreeMap::new();
+            // A token that is a copy of one has its name (CR 707.2).
             for (id, m) in &self.permanents {
-                if let (true, Some(name)) = (m.types.iter().any(|t| t == "legendary"), &m.name) {
+                if let (true, Some(name)) = (m.types.iter().any(|t| t == "legendary"), m.name.as_ref().or(m.token_name.as_ref())) {
                     legends.entry((m.controller.0, name.as_str())).or_default().push(*id);
                 }
             }
@@ -4537,13 +4554,16 @@ impl Seeded {
 /// what); a static that
 /// changes a cost, a token, an entry, a mill, who may be targeted or
 /// which abilities may be activated; and a planeswalker.
+///
+/// A legendary permanent is one of them, and a board is not given two of
+/// one name under one player: the legend rule would take one at once (CR
+/// 704.5j), and what is left is another board.
 fn board_vocabulary(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
     cards.iter()
         .filter(|(card, spec)| {
             let kind = card.has_type("Creature") || card.has_type("Artifact") || card.has_type("Enchantment") || card.has_type("Land");
             kind && !card.has_type("Planeswalker") && card.back.is_none()
                 && !spec.enchants && !card.type_line.contains("Aura") && !card.type_line.contains("Equipment")
-                && !card.type_line.contains("Legendary")
                 && spec.on_cast.is_none() && spec.on_enter.is_none()
                 && spec.upkeep.is_none() && spec.end_step.is_none() && !spec.combat.attacks_each_combat
                 && spec.creature_spells_cost_less.is_none() && spec.zero_instead_for.is_none()
@@ -4700,6 +4720,12 @@ fn generated_board_watching(seed: u64, registry: &CardRegistry, cache: &BTreeMap
                 }
                 watching |= triggers_on_deaths(&picked.1);
                 let (card, spec) = picked;
+                // Not a second of a legendary permanent this player has.
+                if card.type_line.contains("Legendary")
+                    && world.permanents.values().any(|m| m.controller == side && m.name.as_deref() == Some(card.name.as_str()))
+                {
+                    continue;
+                }
                 let id = named_permanent(&mut state, registry, &card.name, side);
                 world.permanents.insert(id, model_of(spec, card, side));
                 id
@@ -5128,6 +5154,7 @@ fn copy_of(m: &Model, controller: PlayerId) -> Model {
         defined_power: None,
         temp_restricted: Vec::new(),
         stolen_from: None,
+        held_while: None,
         attacking: false,
         attacks: None,
         exile_at_end_of_combat: false,
@@ -5177,6 +5204,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         defined_power: None,
         temp_restricted: Vec::new(),
         stolen_from: None,
+        held_while: None,
         attacking: false,
         attacks: None,
         exile_at_end_of_combat: false,
@@ -5415,10 +5443,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 // says.
                 let lasts = *until_end_of_turn
                     || w.source.and_then(|s| w.permanents.get(&s)).is_some_and(|src| src.controller == caster);
+                let source = w.source;
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)).filter(|_| lasts) {
                     if m.controller != caster {
                         if *until_end_of_turn {
                             m.stolen_from = Some(m.controller);
+                        } else if let Some(source) = source {
+                            m.held_while = Some((source, m.controller));
                         }
                         m.controller = caster;
                     }
@@ -8652,7 +8683,12 @@ fn check_cast_on(card: &Printed, spec: &Spec, which: &str, (mut state, mut world
             // What entered as it resolved, and triggered: every way those
             // triggers go, against every way the engine's do.
             let settled = settle_triggers(resolved.clone());
-            if settled.len() != 1 || settled[0].triggered != resolved.triggered {
+            // A legend cast beside one of its name: its controller is asked
+            // which to keep even where the two are alike and either answer
+            // is the same game (CR 704.5j), so the cast is played every way.
+            let beside_its_like = spec.permanent && card.type_line.contains("Legendary")
+                && world.permanents.values().any(|m| m.controller == P0 && m.name.as_deref() == Some(card.name.as_str()));
+            if settled.len() != 1 || settled[0].triggered != resolved.triggered || beside_its_like {
                 let endings = if settled.iter().any(|w| w.randomized) {
                     over_seeds(&state, &registry, distinct(&settled), |s| every_ending_at(s, registry, spell, &targets))
                 } else {
@@ -8977,7 +9013,8 @@ fn small_pieces(vocabulary: &[(Printed, Spec)], pool: &[&str], worn: bool) -> Ve
 /// permanent that could not be worn as asked (a -1/-1 counter or a point of
 /// damage on a creature of toughness 1 is that creature dead, and the
 /// board without it is another of the family), a creature the board's
-/// statics leave with no toughness, more than one permanent whose text
+/// statics leave with no toughness, two of one legendary permanent under
+/// one player, more than one permanent whose text
 /// triggers on a death, or one at all when `watched` (the card cast is
 /// one, as on the generated boards).
 fn small_board(pieces: &[Piece], registry: &CardRegistry, cache: &BTreeMap<String, Printed>,
@@ -8992,6 +9029,14 @@ fn small_board(pieces: &[Piece], registry: &CardRegistry, cache: &BTreeMap<Strin
             Piece::Permanent { card, side, wear } => {
                 let (printed, spec) = &vocabulary[card];
                 watching += usize::from(spec.dies.is_some() || spec.watch.is_some());
+                // Two of one legendary permanent under one player: the
+                // legend rule takes one (CR 704.5j), and the board without
+                // it is another of the family.
+                if printed.type_line.contains("Legendary")
+                    && world.permanents.values().any(|m| m.controller == side && m.name.as_deref() == Some(printed.name.as_str()))
+                {
+                    return None;
+                }
                 let id = named_permanent(&mut state, registry, &printed.name, side);
                 world.permanents.insert(id, model_of(spec, printed, side));
                 placed.push((id, wears[wear]));
@@ -9025,6 +9070,15 @@ fn small_board(pieces: &[Piece], registry: &CardRegistry, cache: &BTreeMap<Strin
     let stands = world.permanents.values()
         .all(|m| !m.is_creature() || world.pt_of(m).1.is_some_and(|t| t > 0 && i64::from(t) > i64::from(m.damage)));
     stands.then_some((state, world))
+}
+
+/// Whether the board of `on` holds, under the first player, the legendary
+/// permanent `card` is: a check that puts the card there too would make
+/// two of it, which the legend rule does not leave (CR 704.5j), so that
+/// board is not one the card is checked on.
+fn second_legend(card: &Printed, on: &[Piece], small: &Small) -> bool {
+    card.type_line.contains("Legendary")
+        && on.iter().any(|piece| matches!(piece, Piece::Permanent { card: c, side, .. } if *side == P0 && small.vocabulary[*c].0.name == card.name))
 }
 
 /// [`small_board`] for a card of `spec`: none on a board that triggers on
@@ -9268,17 +9322,68 @@ fn every_readable_activated_ability_does_what_its_text_says_on_every_small_board
         back_faces(&readable(&registry, &cache).0)
     };
     on_every_small_board("abilities", &|small, on, which, failures, checked| {
-        for (card, spec) in small.cards.iter().chain(&backs) {
-            let abilities = spec.activated.iter()
-                .filter(|a| !a.pays_the_exiled_cards_cost && !a.spec.effects.contains(&Effect::ShuffleIntoLibraryRevealUntilNamed));
-            for ability in abilities {
-                let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
-                *checked += 1;
-                let name = format!("{}'s ability {}{which}", card.name, ability.index);
-                check_activated_on(card, spec, ability, None, None, false, &name, made, small.cards, small.registry, small.cache, failures);
-            }
-        }
+        check_activated_abilities_on(&backs, small, on, which, failures, checked);
     });
+}
+
+/// Every activated ability read, of the cards and of `backs`, on the
+/// board `on`, as
+/// [`every_readable_activated_ability_does_what_its_text_says_on_every_small_board`]
+/// plays each board.
+fn check_activated_abilities_on(backs: &[(Printed, Spec)], small: &Small, on: &[Piece], which: &str, failures: &mut Vec<String>, checked: &mut usize) {
+    for (card, spec) in small.cards.iter().chain(backs).filter(|(c, _)| !second_legend(c, on, small)) {
+        let abilities = spec.activated.iter()
+            .filter(|a| !a.pays_the_exiled_cards_cost && !a.spec.effects.contains(&Effect::ShuffleIntoLibraryRevealUntilNamed));
+        for ability in abilities {
+            let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
+            *checked += 1;
+            let name = format!("{}'s ability {}{which}", card.name, ability.index);
+            check_activated_on(card, spec, ability, None, None, false, &name, made, small.cards, small.registry, small.cache, failures);
+        }
+    }
+}
+
+/// The boards on which a legendary permanent once disagreed
+/// (`docs/plans/cards-in-the-loop.md`, "What it has found so far"), each
+/// played again. A Geist of Saint Traft, for Cackling Counterpart cast and
+/// cast by flashback: the token is a copy of a legend and so that legend
+/// (CR 707.2), and its controller keeps one of the two (704.5j). A
+/// Grimoire of the Dead, for a second cast beside it: the two alike, and
+/// the question asked all the same. The other player's Olivia Voldaren,
+/// for an Olivia's "gain control of target Vampire for as long as you
+/// control Olivia Voldaren": kept in place of the Olivia that took her,
+/// she goes back, that Olivia gone (201.5, 611.2b). And a Grimgrin
+/// attacking into one creature: his trigger destroys it before blockers
+/// are declared, so it blocks nothing (508.2, 509.1).
+#[test]
+fn legendary_permanents_agree_on_the_boards_that_once_did_not() {
+    let backs = {
+        let registry = registry();
+        let cache = oracle_cache();
+        back_faces(&readable(&registry, &cache).0)
+    };
+    let geist = [vec![Named::Permanent("Geist of Saint Traft", P0)]];
+    let grimoire = [vec![Named::Permanent("Grimoire of the Dead", P0)]];
+    let olivia = [vec![Named::Permanent("Olivia Voldaren", P1)]];
+    let grimgrin = [vec![Named::Permanent("Grimgrin, Corpse-Born", P0), Named::Permanent("Walking Corpse", P1)]];
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let mut played = |(f, n): (Vec<String>, usize)| {
+        assert!(n > 0);
+        failures.extend(f);
+        checked += n;
+    };
+    played(on_named_boards(&geist, &check_casts_on));
+    played(on_named_boards(&geist, &check_flashback_spells_on));
+    played(on_named_boards(&grimoire, &check_casts_on));
+    played(on_named_boards(&olivia, &|small, on, which, failures, checked| {
+        check_activated_abilities_on(&backs, small, on, which, failures, checked);
+    }));
+    played(on_named_boards(&grimgrin, &|small, on, which, failures, combats| {
+        let made = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false).expect("a board of the family");
+        check_combat_on(which, made, small.registry, failures, combats);
+    }));
+    assert!(failures.is_empty(), "{} of {checked} plays beside a legendary permanent disagree:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every instant and sorcery the grammar reads with flashback, cast from
@@ -9426,7 +9531,7 @@ fn every_turn_begins_as_its_text_says_on_every_small_board() {
     let keeps_tapped = |s: &Spec| s.statics.iter().any(|st| matches!(st,
         Static::Restricts { what, .. } | Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
     on_every_small_board("upkeeps", &|small, on, which, failures, upkeeps| {
-        for (card, spec) in small.cards.iter().chain(&backs).filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
+        for (card, spec) in small.cards.iter().chain(&backs).filter(|(c, s)| (s.upkeep.is_some() || keeps_tapped(s)) && !second_legend(c, on, small)) {
             for active in [P0, P1] {
                 let Some(made) = small_board_for(spec, on, small.registry, small.cache, small.vocabulary, small.pool) else { continue };
                 check_turn_begins_on(card, spec, active, false, which, made, small.cards, small.registry, failures, upkeeps);
@@ -9494,7 +9599,7 @@ fn every_turn_ends_as_its_text_says_on_every_small_board() {
         back_faces(&readable(&registry, &cache).0)
     };
     on_every_small_board("end steps", &|small, on, which, failures, ends| {
-        for (card, spec) in small.cards.iter().chain(&backs).filter(|(_, s)| s.end_step.is_some()) {
+        for (card, spec) in small.cards.iter().chain(&backs).filter(|(c, s)| s.end_step.is_some() && !second_legend(c, on, small)) {
             let front = cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name));
             let other: Option<Spec> = match front {
                 Some(f) => read_creature(f).ok(),
@@ -10561,6 +10666,11 @@ fn check_activated_on(card: &Printed, spec: &Spec, ability: &Activated, count: O
         // Monstrosity sacrificed), which this does not play.
         let quiet = !cost_set_off_a_trigger && ways.iter().cloned().all(|w| {
             let resolved = resolve(w);
+            // A legend-rule choice left to make is not a quiet resolution
+            // (Olivia Voldaren taking the other player's Olivia).
+            if !resolved.legend_choices.is_empty() {
+                return false;
+            }
             let seen = World { died: Vec::new(), entered: Vec::new(), left: Vec::new(), ..resolved.clone() }.observed();
             let settled = settle_triggers(resolved);
             settled.len() == 1 && settled[0].observed() == seen
@@ -11051,6 +11161,19 @@ fn combat_of(world: &World, attacks: &[Attack]) -> Vec<World> {
 /// [`combat_of`] from the attackers attacking, a targeted attack trigger
 /// resolved.
 fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
+    // Blockers are declared once an attack trigger has resolved (CR 508.2,
+    // 509.1): a creature it destroyed (Grimgrin's, at the one creature the
+    // defending player has) is not there to block, one that regenerated
+    // from it is tapped and may not (701.19c, 509.1a), and the attacker
+    // either was to block is unblocked.
+    let attacks: Vec<Attack> = attacks.iter()
+        .map(|t| Attack {
+            attacker: t.attacker,
+            blockers: t.blockers.iter().copied().filter(|b| w.permanents.get(b).is_some_and(|m| !m.tapped)).collect(),
+            defender: t.defender.clone(),
+        })
+        .collect();
+    let attacks = &attacks[..];
     for attack in attacks {
         let a = attack.attacker;
         // Its attack trigger: tokens that enter tapped and attacking, never
