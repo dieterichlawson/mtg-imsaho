@@ -3535,10 +3535,11 @@ fn woodland_sleuth((died, seed, pick): (bool, u64, usize)) {
 /// asked that as well ran out of memory at 7 GB, and so did the effect
 /// applied through the dispatch on a board with nothing open, room
 /// given to the Hunter's list first or not; the hook called directly
-/// and then read proves in 82 s. The dispatch picks the card's
-/// behaviour out of the registry by an id read back from the object,
-/// and what the card wrote is from then on written by either card of
-/// the registry or by neither.
+/// and then read proves in 82 s. The likely reason, not measured
+/// further: the dispatch picks the card's behaviour out of the registry
+/// by an id read back from the object, and to the solver what the card
+/// wrote is from then on written by either card of the registry or by
+/// neither.
 fn fiend_hunter(_: ()) {
     use crate::state::PendingEffect;
     let (registry, state, target, _) = may_do_to_its_target(Box::new(crate::cards::isd::fiend_hunter::FiendHunter), Permanent::Creature,
