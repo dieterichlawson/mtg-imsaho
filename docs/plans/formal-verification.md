@@ -2084,7 +2084,7 @@ for both players and boards as its doc comment states):
 | a creature's power and toughness from a setting, counters and a change at once (613.4b-c, 613.7a), none, one or two settings | proved, 48 to 75 s each |
 | what each static effect a card prints does once it reaches a creature, beyond those above: can't be blocked (509.1b), Ghostly Possession's prevention, Unbreathing Horde's, Inquisitor's Flail's doubling (615.1, 614.1a) | proved, 34 to 157 s each |
 | the scopes the Curses ("creatures enchanted player controls"), Instigator Gang ("attacking creatures you control") and the lords ("Vampire", "Werewolf", "Human", "Werewolf and Wolf creatures you control") print, for a card and a token | proved, 26 to 57 s each |
-| Heartless Summoning's reduction and Rooftop Storm's alternative cost (601.2f, 118.9), each the card itself | proved, 28 to 35 s each |
+| Heartless Summoning's reduction and Rooftop Storm's alternative cost (601.2f, 118.9), each the card itself; the reduction of a cost with generic mana left, or less than two to take, a case at a time (who controls it, where it is, who casts) | proved, 28 to 41 s each |
 | a mana cost as it is built (`ManaCost::new`, #978): every symbol but a `{0}` kept, in order, a cost of `{0}`s alone kept as it is, and the mana value unchanged, for costs of up to three symbols of every kind, a harness per length | proved, 2 to 4 s each |
 | "you may pay" (`helpers::ask_may_pay`, 117.3, #940), whether the cost can be paid any answer: asked yes or no by the source, in the tap plan's words, exactly when it can be, and otherwise nothing asked or changed | proved, 50 s |
 | who may block whom (`can_block_attacker`, 509.1a-b, 702.9b, 702.13b, 702.16b), every answer to every question it asks | proved, 30 s |
@@ -2239,7 +2239,14 @@ in 557 to 772 s. The 16 open are engine actions that ran out of memory
 at 12 GB: the trigger order
 question's seven, a creature's dying trigger resolving, four answers of
 a cast's targets, two cast costs of a creature spell and two Forest
-payments. No
+payments. (Fourteen since 2026-11-20: the two cast costs, Heartless
+Summoning's reduction of {3}{B} and of {1}{B}, are proved a case at a
+time. With who controls the Summoning, where it is and who casts all
+fixed the proof takes half a minute; with any of them open where the
+cost is reduced the solver ran out of memory at 7 GB. Five harnesses for
+each cost are every case the one harness left open: each player casting
+beside each player's Summoning on the battlefield, and either beside
+either's off it; ten proved, 28 to 37 s each.) No
 harness failed but Mentor of the Meek's two may-pay proofs, which still
 asserted the question is always asked, where master's #940 asks it only
 when a payment can be planned: their proof now holds the question to the
