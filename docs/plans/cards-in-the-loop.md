@@ -360,7 +360,7 @@ names its board, and `CARD_SEMANTICS_SMALL_BOARD=I,J` replays it alone.
 of that name, which is how a card new to the boards is checked on every
 board it is on without the others being played again.
 
-**What it has found so far.** One engine defect, and twenty-three gaps
+**What it has found so far.** One engine defect, and twenty-five gaps
 of the reference, each on a board nobody wrote.
 
 The defect (48 in `formal-verification.md`): two triggers of one ability
@@ -478,7 +478,17 @@ The gaps, in each of which the engine was right:
 - a legend cast beside one of its name and alike (a second Grimoire of
   the Dead) leaves a choice with one outcome, which the engine asks all
   the same; the check of a plain permanent spell had no place for a
-  question, and plays the cast every way there now (casts, one piece).
+  question, and plays the cast every way there now (casts, one piece);
+- an attacker gone before blockers are declared is out of the combat
+  (CR 506.4): Grimgrin's trigger destroys a Pitchburn Devils, and the
+  Devils' 3 damage kills the Elder of Laurels attacking beside him. The
+  reference went on to read the Elder as an attacker, and gave up
+  (combat, three pieces);
+- two attack triggers of one player resolve in the order that player
+  chooses (CR 603.3b): Geist of Saint Traft's Angel made before
+  Grimgrin's trigger destroys the Devils is there to be dealt their 3
+  damage. The reference resolved Grimgrin's first always (combat, three
+  pieces).
 
 And what the checks had taken from their hand-made boards and no longer
 do: a board's own triggers, set off by a cost or a resolution, settled
@@ -569,9 +579,19 @@ flashback casts, 404,282 upkeeps, 117,464 end steps, 161,513 loyalty
 abilities, 176,196 werewolves, 88,098 casts beside a watcher of entries,
 176,196 beside a watcher of casts and 5,138 combats; and combat on the
 boards of two worn pieces that hold each (100,270 combats, counted the
-same way), which is what `prove.sh exhaustive` plays. One board of each kind is in
-`cargo test`
-(`legendary_permanents_agree_on_the_boards_that_once_did_not`).
+same way), which is what `prove.sh exhaustive` plays. On three pieces: combat on every
+board that holds each of the five, 5,991,243 of the family counted the
+same way and 3,571,653 combats, agrees once the last two gaps above
+were closed (4 combats, on two boards, had not), so combat on three
+pieces is whole with them on the boards; and one in 240 of those boards
+agrees in the other nine checks (25,003 of the family: 7,698,504 casts,
+1,367,912 activated abilities, 917,382 flashback casts, 698,774
+upkeeps, 200,024 end steps, 275,033 loyalty abilities, 300,036
+werewolves, 150,018 casts beside a watcher of entries and 300,036
+beside a watcher of casts). One board of each kind is in `cargo test`
+(`legendary_permanents_agree_on_the_boards_that_once_did_not`, and the
+last two boards of
+`combat_agrees_on_the_three_piece_boards_that_once_did_not`).
 
 A check that gives up (the reference meeting what it does not play) no
 longer ends its share: it is reported as that board's failure, by name.
@@ -660,8 +680,7 @@ shares run while the machine was shared with other runs, so upper
 bounds, the loyalty abilities about 115 hours, flashback about 270, the
 activated abilities about 350 and the casts about 830.
 
-**Next.** The cut above; three pieces with the legendary permanents,
-which have not been sampled; and more of three pieces for the other
+**Next.** The cut above; and more of three pieces for the other
 checks, a share at a time. Combat on three pieces was five hours of this
 machine and is whole. The rest are another matter: the casts alone are
 88 million boards and about 25 billion casts, hundreds of hours on
