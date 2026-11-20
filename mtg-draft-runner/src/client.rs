@@ -359,9 +359,21 @@ fn sideboard_message(v: &Value, build: &Build) -> Value {
     serde_json::json!({"type": "sideboard", "main": deck["main"], "lands": deck["lands"]})
 }
 
+/// A line read from a cooked terminal, with every control character but
+/// whitespace shown as `·`. Read with `lines()`, a pasted escape sequence
+/// arrives as its raw bytes, and the replies that repeat a word typed
+/// ("'<word>'? type help", a land name the server refused) printed them
+/// as they came, so a pasted ESC[2J cleared the screen (#1052's review).
+/// Whitespace is kept: the line is split on it next.
+#[must_use]
+pub fn typed_line(line: &str) -> String {
+    line.chars().map(|c| if c.is_control() && !c.is_whitespace() { '\u{00b7}' } else { c }).collect()
+}
+
 /// `early` is set when the line was typed before the pack on screen had
 /// been up for `PICK_GRACE`: how much sooner than that.
 pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Duration>) -> Command {
+    let line = &typed_line(line);
     let words: Vec<&str> = line.split_whitespace().collect();
     let Some(first) = words.first() else { return Command::Nothing };
     let phase = view.map(|v| v["phase"].as_str().unwrap_or("")).unwrap_or("");
@@ -759,6 +771,18 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1052's review: a pasted escape sequence, read raw from a cooked
+    /// terminal, was repeated raw in the reply and run by the terminal.
+    #[test]
+    fn a_pasted_escape_is_not_repeated_raw_in_a_reply() {
+        let mut build = Build::default();
+        let Command::Print(text) = command("\u{1b}[2J\u{1b}[1;1HPWN", None, &mut build, None) else {
+            panic!("an unknown word is answered");
+        };
+        assert!(text.contains("\u{b7}[2J") && !text.contains('\u{1b}'), "{text:?}");
+        assert_eq!(typed_line("add\tX\u{1b}"), "add\tX\u{b7}", "whitespace is kept to split on");
+    }
 
     #[test]
     fn a_finished_match_is_its_result_and_a_live_one_is_its_link() {

@@ -644,6 +644,9 @@ fn host_loop(shared: &Arc<Shared>) {
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let typed_at = Instant::now();
+        // As the client reads its own: a pasted escape is not repeated raw
+        // in "'<word>': the commands are ..." (#1052's review).
+        let line = crate::client::typed_line(&line);
         let line = line.trim();
         let words: Vec<&str> = line.split_whitespace().collect();
         match words.first().copied() {
