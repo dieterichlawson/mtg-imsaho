@@ -1,0 +1,371 @@
+{
+ "night": "2026-11-20",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Do not play 15 cheap ground creatures without fliers: my WG with two Voiceless Spirits, Abbey Griffin and Somberwald Spiders still lost 1-2 to a WG that won with Festerhide Boar and Lumberknot, so draft a third evasive threat over a Villagers copy.",
+    "Your guide's BG/WG advice is incomplete: my WG went 1-2 against UB and WG, losing 15 and 11 turn games, so take Victim of Night or Dead Weight early and count fliers before ground filler.",
+    "The guide's 'take a third flier over a second Unruly Mob' advice held, but I took Villagers of Estwald third and Grave Bramble early, so commit to Spidery Grasp and Blazing Torch removal and keep a 10th-source main colour."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12402,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 277,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12402
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 277,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12402,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12402,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "I took Olivia Voldaren second, then left her out of my black deck while playing Butcher's Cleaver and Geistcatcher's Rig; play the bomb and cut the equipment first.",
+    "I lost 1-2 to WU fliers (Geist of Saint Traft, Moon Heron) with few cheap answers, so take flier-answering removal like Silent Departure and Sever the Bloodline earlier.",
+    "Blue-black creatures kept flowing (second Stitched Drake and two Rotting Fensnakes came late), so once the bodies are covered, prioritise removal over more bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3278,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1485,
+    "output_tokens_details": {
+     "thinking_tokens": 1277
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3278
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1485,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3278,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3278,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Don't hedge with Brimstone Volley: I took two in pack 2 while firmly WU, wasting picks that on-colour fliers or removal would have filled; commit by mid-pack 2.",
+    "Blazing Torch, colourless removal the guide ranks highly, never made my deck, and WU lacked cheap answers to the three Tormented Pariah that beat me 2-1 in round 3."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4985,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4035,
+    "output_tokens_details": {
+     "thinking_tokens": 3893
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4985
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4035,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4985,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4985,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Games ran 13 to 34 turns, so a sixteen-creature low curve needed late-game power and finishers, not just cheap bodies, to close out Round 3's grindy UB deck.",
+    "Against Round 3's Stitched Drake and Delver of Secrets, my green-white deck lacked enough flying defence and reach, so take flyer answers before extra two-drops.",
+    "Mulch and Spidery Grasp were filler; prioritise Boneyard Wurm-style value creatures and removal over tricks that only matter in combat."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3251,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1023,
+    "output_tokens_details": {
+     "thinking_tokens": 836
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3251
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1023,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3251,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3251,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "The guide's UB warnings held: my UB went 1-2 (2-5 in games) while running Delver of Secrets and Markov Patrician, both listed as skips, so leave them out and take a flier instead.",
+    "Against RG's Balefire Dragon, my UB had one Claustrophobia and one Sensory Deprivation and lost 0-2 in 18 and 22 turns; take a second flier answer before pack 3."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12390,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3946,
+    "output_tokens_details": {
+     "thinking_tokens": 3796
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12390
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3946,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12390,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12390,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Plan for long games: my 3-5 record came in 15-to-51-turn matches, so Moan of the Unhallowed and Stensia Bloodhall deserve more value than my quick-aggro notes assumed.",
+    "I lost 0-2 to the WG deck with Somberwald Spider, three Villagers of Estwald and Travel Preparations after my small BR creatures stalled, so prioritize removal and bigger bodies over Reckless Waif-type 1-drops."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3396,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2884,
+    "output_tokens_details": {
+     "thinking_tokens": 2716
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3396
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2884,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3396,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3396,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "RG",
+   "record": "3-0-0",
+   "lessons": [
+    "Brimstone Volley never showed up, so Harvest Pyre was my only real red removal; I took it fourth in pack 1 and second in pack 2, and it stayed in the deck. Take it early.",
+    "The guide calls Festerhide Boar filler, but it made my 3-0 deck. I also ran 17 lands where it suggests 16 for aggro, and the mana was fine, so 17 is a reasonable default.",
+    "Tormented Pariah carried the werewolf plan: I took three at picks 2, 5 and 9 of pack 3, alongside Darkthicket Wolf. Prioritise werewolves over vanilla two-drops in RG."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5022,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1824,
+    "output_tokens_details": {
+     "thinking_tokens": 1597
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5022
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1824,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5022,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5022,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Blue-black self-mill built on Skaab Ruinator and Stitcher's Apprentice stretched Round 2 games to 51 and 29 turns against BR, so add a faster clock or more evasive threats.",
+    "Round 1's RG Tormented Pariah aggro beat me 2-1, so prioritize cheap interaction like Sensory Deprivation and early blockers over late-game card advantage.",
+    "My only match win was 2-0 against UB, while RG aggro and BR attrition took the other two matches, so draft the early curve before the late-game engines."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3342,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2582,
+    "output_tokens_details": {
+     "thinking_tokens": 2387
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3342
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2582,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3342,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3342,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
