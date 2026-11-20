@@ -10352,16 +10352,19 @@ fn every_combat_ends_as_the_rules_say_on_every_small_board() {
 /// a library is shuffled under a draw: a Bitterheart Witch dies blocked
 /// as a Sturmgeist beside her deals its damage, and with her search
 /// resolved first the card the Sturmgeist's trigger draws is any of the
-/// library (CR 701.20a). The last is an attacker gone before blockers are
+/// library (CR 701.20a). The next is an attacker gone before blockers are
 /// declared: Grimgrin's trigger destroys a Pitchburn Devils, whose 3
 /// damage kills the Elder of Laurels attacking beside him, and the Elder
-/// is out of the combat (506.4), which the reference gave up on. Three
+/// is out of the combat (506.4), which the reference gave up on; and
+/// after it, two attack triggers of one player in either order (603.3b):
+/// Geist of Saint Traft's Angel made before Grimgrin's trigger destroys
+/// the Devils, whose 3 damage may then be dealt to the Angel. Three
 /// creatures is the least
 /// board that shows any of it, and those are otherwise reached only with
 /// `CARD_SEMANTICS_SMALL=3`.
 #[test]
 fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
-    let boards: [[(&str, PlayerId); 3]; 17] = [
+    let boards: [[(&str, PlayerId); 3]; 18] = [
         [("Stromkirk Patrol", P0), ("Typhoid Rats", P0), ("Pitchburn Devils", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Gallows Warden", P1)],
         [("Falkenrath Marauders", P0), ("Pitchburn Devils", P0), ("Skaab Goliath", P1)],
@@ -10379,6 +10382,7 @@ fn combat_agrees_on_the_three_piece_boards_that_once_did_not() {
         [("Ashmouth Hound", P0), ("Unruly Mob", P1), ("Voiceless Spirit", P1)],
         [("Bitterheart Witch", P0), ("Sturmgeist", P0), ("Kessig Cagebreakers", P1)],
         [("Elder of Laurels", P0), ("Grimgrin, Corpse-Born", P0), ("Pitchburn Devils", P1)],
+        [("Geist of Saint Traft", P0), ("Grimgrin, Corpse-Born", P0), ("Pitchburn Devils", P1)],
     ];
     let (failures, combats) = on_named_small_boards(&boards, &|small, on, which, failures, combats| {
         let made = small_board(on, small.registry, small.cache, small.vocabulary, small.pool, false).expect("a board of the family");
@@ -11152,20 +11156,52 @@ fn combat_of(world: &World, attacks: &[Attack]) -> Vec<World> {
         Some((a, trigger)) => {
             let mut put = w.clone();
             put.source = Some(a);
-            trigger_outcomes(&trigger, &put, P0).into_iter()
+            let mut out: Vec<World> = trigger_outcomes(&trigger, &put, P0).into_iter()
                 .flat_map(|mut after| {
                     after.source = w.source;
-                    combat_after_attacking(after, attacks)
+                    combat_after_attacking(after, attacks, false)
                 })
-                .collect()
+                .collect();
+            // Beside an attacker whose trigger makes tokens, their
+            // controller orders the two (CR 603.3b): the tokens first as
+            // well, there for what the targeted trigger sets off to find
+            // (Geist of Saint Traft's Angel, hit by the Pitchburn Devils
+            // that Grimgrin's trigger destroys).
+            if attacks.iter().any(|t| w.permanents[&t.attacker].combat.on_attack_tokens.is_some()) {
+                let mut put = w.clone();
+                make_attack_tokens(&mut put, attacks);
+                put.source = Some(a);
+                out.extend(trigger_outcomes(&trigger, &put, P0).into_iter()
+                    .flat_map(|mut after| {
+                        after.source = w.source;
+                        combat_after_attacking(after, attacks, true)
+                    }));
+            }
+            out
         }
-        None => combat_after_attacking(w, attacks),
+        None => combat_after_attacking(w, attacks, false),
+    }
+}
+
+/// Each attacker's tokens that enter tapped and attacking, never having
+/// been declared attackers (CR 508.4): its attack trigger's.
+fn make_attack_tokens(w: &mut World, attacks: &[Attack]) {
+    for attack in attacks {
+        let Some(t) = w.permanents.get(&attack.attacker).and_then(|m| m.combat.on_attack_tokens.clone()) else { continue };
+        let k = if t.per_creature_card { w.creature_cards_in_graveyard(P0) } else { 1 };
+        for _ in 0..k {
+            let token = creature_token((t.power, t.toughness), &t.colors, &t.subtypes, &t.keywords, P0);
+            let token = w.entering(Model { tapped: true, attacking: true, exile_at_end_of_combat: t.exile_at_end_of_combat, ..token });
+            w.tokens.push(token);
+        }
+        w.state_based_actions();
     }
 }
 
 /// [`combat_of`] from the attackers attacking, a targeted attack trigger
-/// resolved.
-fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
+/// resolved, and the tokens of an attack trigger made already if
+/// `tokens_made`.
+fn combat_after_attacking(mut w: World, attacks: &[Attack], tokens_made: bool) -> Vec<World> {
     // Blockers are declared once an attack trigger has resolved (CR 508.2,
     // 509.1): a creature it destroyed (Grimgrin's, at the one creature the
     // defending player has) is not there to block, one that regenerated
@@ -11183,19 +11219,11 @@ fn combat_after_attacking(mut w: World, attacks: &[Attack]) -> Vec<World> {
         })
         .collect();
     let attacks = &attacks[..];
+    if !tokens_made {
+        make_attack_tokens(&mut w, attacks);
+    }
     for attack in attacks {
         let a = attack.attacker;
-        // Its attack trigger: tokens that enter tapped and attacking, never
-        // having been declared attackers (CR 508.4).
-        if let Some(t) = w.permanents[&a].combat.on_attack_tokens.clone() {
-            let k = if t.per_creature_card { w.creature_cards_in_graveyard(P0) } else { 1 };
-            for _ in 0..k {
-                let token = creature_token((t.power, t.toughness), &t.colors, &t.subtypes, &t.keywords, P0);
-                let token = w.entering(Model { tapped: true, attacking: true, exile_at_end_of_combat: t.exile_at_end_of_combat, ..token });
-                w.tokens.push(token);
-            }
-            w.state_based_actions();
-        }
         // An Equipment's reveal as its creature attacks: the defending
         // player's cards from the top until a land, each +1/+0, all to
         // their graveyard.
