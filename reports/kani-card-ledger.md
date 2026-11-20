@@ -9,15 +9,15 @@ proofs that a card works when it resolves: the 715 harnesses that
 claimed that by asserting a record of the calls a card made, with
 recorders standing in for the engine, were removed (2026-11-18).
 
-**With the engine** (`proofs::engine_under_card`, 603): the card's own
+**With the engine** (`proofs::engine_under_card`, 604): the card's own
 hook run with the engine's own actions under it and no recorder, the
 board afterwards asserted against the card's text; or, for a permanent
 with no hook to run, the card on the battlefield and the board read
 back through the engine's own layers and queries, or the event its
-text replaces run through the engine. 87 of the 88 spells and 181 of
-the 182 permanents (2026-11-20). What is left out of a harness, and
+text replaces run through the engine. All 88 spells and 181 of the
+182 permanents (2026-11-20). What is left out of a harness, and
 why, is said where the harness stands; `docs/plans/cards-in-the-loop.md`
-(B2) lists the two cards with no such harness and those whose harness
+(B2) names the one card with no such harness and those whose harness
 is of part of their text.
 
 What a card does through cast, stack, resolution, state-based actions
@@ -27,14 +27,15 @@ part B).
 
 Each harness's last result (`scripts/kani/times.txt`). The 285 declared
 ones are as the last run of every harness left them, 49 run again after
-the removal; the 603 with the engine were each run at the code as
+the removal; the 604 with the engine were each run at the code as
 committed, from 2026-11-18 to 2026-11-20, on a machine busy with other
-runs (their times are upper bounds: 15.9 hours of solver time in all,
-the longest 12 minutes).
+runs (their times are upper bounds: 16.3 hours of solver time in all,
+the longest 22 minutes, Army of the Damned's thirteen tokens, and the
+rest 12 minutes or less).
 
-888 harnesses over 269 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 603 of 268 cards resolving with the engine itself under them. 1 cards have none.
+889 harnesses over 270 cards and 4 tables of cards: 285 of what a card declares or writes itself, and 604 of 269 cards resolving with the engine itself under them. 0 cards have none.
 
-- SUCCESSFUL: 888
+- SUCCESSFUL: 889
 
 | card | declared | with the engine | proved | not proved |
 |---|---|---|---|---|
@@ -46,6 +47,7 @@ the longest 12 minutes).
 | angel_of_flight_alabaster | 0 | 1 | 1 |  |
 | angelic_overseer | 1 | 2 | 3 |  |
 | armored_skaab | 1 | 6 | 7 |  |
+| army_of_the_damned | 0 | 1 | 1 |  |
 | ashmouth_hound | 0 | 2 | 2 |  |
 | avacynian_priest | 2 | 1 | 3 |  |
 | avacyns_pilgrim | 1 | 1 | 2 |  |
@@ -316,10 +318,4 @@ the longest 12 minutes).
 | `curses::the_static_curses_print_what_their_text_says` | SUCCESSFUL | 10s |
 | `curses::the_upkeep_curses_trigger_in_the_enchanted_players_upkeep` | SUCCESSFUL | 33s |
 | `targets::the_two_target_spells_accept_what_their_text_targets` | SUCCESSFUL | 31s |
-
-## Cards with no harness
-
-What these do is the engine's, played with it by `tests/card_semantics.rs`, or printed data alone.
-
-army_of_the_damned
 

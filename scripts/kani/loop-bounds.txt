@@ -195,6 +195,7 @@ proofs::counter_map::any_map 0
 proofs::decide::decided 0
 proofs::engine_under_card::a_library 0
 proofs::engine_under_card::armored_skaab 0
+proofs::engine_under_card::army_of_the_damned 0
 proofs::engine_under_card::endless_ranks_of_the_dead 0
 proofs::engine_under_card::forbidden_alchemy 0
 proofs::engine_under_card::forbidden_alchemy 1
@@ -221,6 +222,7 @@ state::GameState::all_ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_rec
 state::GameState::all_ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:151:13: 151:16}> 0
 state::GameState::all_objects_in_zone 0
 state::GameState::continuous_pt_mods 0
+state::GameState::create_tokens_inner 1
 state::GameState::creatures_controlled_snapshot 0
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:101:85: 101:88}> 1
 state::GameState::ids_in_zone::<{closure@mtg-engine/src/cards/isd/divine_reckoning.rs:107:85: 107:88}> 1

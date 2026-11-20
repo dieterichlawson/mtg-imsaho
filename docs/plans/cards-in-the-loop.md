@@ -652,11 +652,12 @@ card reaches into that player's library or hand. The stack's resolution
 of a spell is out of reach whatever is open, and stays the engine's proof
 (`proofs::actions::resolving`) and the small boards' check.
 
-**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 603
-harnesses over 268 of the 270 cards, every one proved: 203 over 87 of
-the 88 spells, and 400 over 181 of the 182 permanents (below); 15.9
+**Where it stands (2026-11-20).** `proofs/engine_under_card.rs`: 604
+harnesses over 269 of the 270 cards, every one proved: 204 over all 88
+spells, and 400 over 181 of the 182 permanents (below); 16.3
 hours of solver time in all on this machine while it was busy, the
-longest 12 minutes and most a minute or two. They were proved a group at
+longest 22 minutes (Army of the Damned), the rest 12 minutes or less
+and most a minute or two. They were proved a group at
 a time, each against the loop bounds its own run learned; so that the
 fortnightly run of every harness meets nothing new, the slowest row of
 each of the 199 functions the tables then called was proved again
@@ -676,7 +677,7 @@ function of what the text says and a row for each card and case:
 | "deals N damage to ..." | Geistflame, Lightning Bolt, Lava Axe, Brimstone Volley (with and without morbid), Devil's Play (X of 0, 1, 4), Corpse Lunge, Harvest Pyre, Blasphemous Act | N more damage marked on a creature, N life fewer for a player, N loyalty fewer for a planeswalker, each amount a harness |
 | pumps and until-end-of-turn effects | Giant Growth, Ranger's Guile, Moment of Heroism, Spidery Grasp, Travel Preparations, Feeling of Dread, Nightbird's Clutches, Rally the Peasants, Vampiric Fury, Hysterical Blindness, Traitorous Blood | power, toughness and keywords as the engine's layers read them back; each of up to two targets with none, one and two; each creature of the side named and no other |
 | draws and mills | Think Twice, Divination, Altar's Reap, Dream Twist | the top N in the hand or graveyard in order, the rest in order, the empty-library draw marked; each player and each library size a harness |
-| tokens | Midnight Haunting, Moan of the Unhallowed, Spider Spawning | that many tokens of that power, toughness, colour, subtype and keyword under the caster |
+| tokens | Midnight Haunting, Moan of the Unhallowed, Spider Spawning; Army of the Damned's thirteen, in the one harness whose lists may grow | that many tokens of that power, toughness, colour, subtype and keyword under the caster (tapped, for the Army) |
 | Auras and Curses | the twelve "enchant creature" Auras and Wreath of Geists, the six Curses | attached, and the creature (or the enchanted player's creatures) as the text says, read back through the engine's layers and its attack, block and untap queries |
 | moves between zones | Counterspell, Dissipate, Lost in the Mist, Silent Departure, Grasp of Phantoms, Swords to Plowshares, Purify the Grave, Runic Repetition, Unburial Rites, Ghoulcaller's Chant, Sever the Bloodline | where each card is, under whom, and what the list it left and the list it joined hold |
 | the rest | Bump in the Night, Infernal Plunge, Gnaw to the Bone, Prey Upon, Rolling Temblor (one creature without flying), Tribute to Hunger | life, mana, a fight's damage, and a question asked and its effect applied |
@@ -738,8 +739,18 @@ it ran out of memory at 8 GB. What is proved of it is the effect it
 leaves in force, protection for the caster's creature and not the other
 player's from what is a creature and not a Human (47 s), and, of the
 engine, what that filter matches (`proofs::actions::filters`). These
-three are what more memory would be tried on first. And Army of the Damned: thirteen tokens are more permanents
-than a list of the engine's has room for in a proof here (below).
+three are what more memory would be tried on first.
+
+Army of the Damned was on this list: thirteen tokens are more
+permanents than a list of the engine's has room for in a proof here,
+where a list that grows is counted a failure (`no_growing`: a push the
+solver cannot see lands in room is encoded as a reallocation of a size
+the data decides). Its board has nothing open, so its lists grow by
+amounts symbolic execution knows, and its harness alone leaves the
+allocator's growing in place, unwound to 16: thirteen tapped 2/2 black
+Zombie tokens under the caster, the first and last read back through
+the layers, in 22 minutes over two rounds (one learning a loop bound),
+8.6 GB at the most seen.
 
 **Permanents.** 393 harnesses over 180 cards. For a card with a hook,
 the hook as its trigger or ability resolves, for a source still on the
@@ -841,10 +852,9 @@ does it (the card Forbidden Alchemy's chooser takes, the name Nevermore
 is given, Liliana's piles, a discard chosen from a hand), each proved of
 the engine's own answer (`proofs::actions`).
 
-Of the 270 cards, 268 have a harness with the engine under them. The
-two that do not: Army of the Damned (thirteen tokens, more permanents
-than a list of the engine's has room for in a proof here) and One-Eyed
-Scarecrow (its filter, above). And for some the harness is of part of
+Of the 270 cards, 269 have a harness with the engine under them. The
+one that does not is One-Eyed Scarecrow (its filter, above). And for
+some the harness is of part of
 the text, the rest being
 the engine's own path: the additional cost of Skaab Goliath, Makeshift
 Mauler, Stitched Drake and Skaab Ruinator, and the Ruinator's cast from

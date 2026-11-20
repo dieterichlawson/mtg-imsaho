@@ -366,8 +366,8 @@ were not their controller's to order), which three creatures is the
 least board to show. Every check a fix touched was run again whole.
 And Kani runs a card's own hook with the engine's own actions
 under it, the board's numbers left open
-(`proofs/engine_under_card.rs`: 603 harnesses over 268 of the 270
-cards, 87 of the 88 spells and 181 of the 182 permanents, each a minute
+(`proofs/engine_under_card.rs`: 604 harnesses over 269 of the 270
+cards, all 88 spells and 181 of the 182 permanents, most a minute
 or two); the
 spell's trip through the stack does not fit in
 CBMC with the engine under it, and stays the engine's own proof. The 285
@@ -1225,9 +1225,10 @@ changes, damage, drawing, milling, token making, attachment, countering,
 control change, fight and continuous effects run under it, and what is
 asserted is the board afterwards, read back through the engine's own
 characteristics, against the card's text. Only `format!`, the log and
-allocator growth and freeing are taken out. 603 harnesses over 268 of
-the 270 cards, each proved, 27 s to 12 minutes and mostly a minute or
-two: 203 over 87 of the 88 spells, and 400 over 181 of the 182
+allocator growth and freeing are taken out (growth left in for Army of
+the Damned's thirteen tokens alone). 604 harnesses over 269 of
+the 270 cards, each proved, 27 s to 22 minutes and mostly a minute or
+two: 204 over all 88 spells, and 400 over 181 of the 182
 permanents (enters, death, combat-damage, upkeep, end-step, attack and
 block triggers, Equipment, activated and loyalty abilities, and the
 questions a hook asks, with the effect each holds applied; and, for a

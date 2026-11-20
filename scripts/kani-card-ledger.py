@@ -110,9 +110,12 @@ def main():
     for h in tables:
         r, t = status(h)
         out.append(f'| `{h.split("::", 2)[2]}` | {r} | {t} |')
-    out += ['', '## Cards with no harness', '',
-            'What these do is the engine\'s, played with it by `tests/card_semantics.rs`, or printed data alone.', '',
-            ', '.join(sorted(m for m in known if m not in per)), '']
+    none = sorted(m for m in known if m not in per)
+    if none:
+        out += ['', '## Cards with no harness', '',
+                'What these do is the engine\'s, played with it by `tests/card_semantics.rs`, or printed data alone.', '',
+                ', '.join(none)]
+    out.append('')
     print('\n'.join(out))
 
 
