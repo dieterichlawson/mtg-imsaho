@@ -92,6 +92,12 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   is. Then follow it downstream: does the log, the tournament, and the
   standings present that deck as a legitimately built one, and does a
   62-card off-colour deck even play?
+  (2026-11-21: the fallback now picks a colour pair, but it reads a card's
+  colour off its mana cost alone, so every land is "castable" by any pair and
+  fills a spell slot — #1075. Force it with a stub copy whose deck answer is
+  all zero counts, then read each `FALLBACK` deck for a land, an off-colour
+  artifact or any other cost-less card above the `Lands:` line. Check the
+  hosted table's "table's own" deck too, which is the same function.)
 - D4 [Rules Lawyer] deck legality and identity: every built deck legal for
   limited — size, only cards from that seat's own pool, basics unlimited,
   DFC and split names counted once — and the decklist that gets played in
