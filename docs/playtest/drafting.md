@@ -1079,6 +1079,12 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   refused without the lobby opening a connection anywhere (watch with `ss
   -tnp`), and that `netstat` shows the game pages listening on loopback
   only. `--direct-game-ports` must still hand out per-port links
+  (2026-11-21, held: a raw-socket driver of 22 requests and `/proc/net/tcp`
+  for the listeners is faster than a second namespace. What it found was
+  not in the proxy: stay on the game page through the match's LAST game
+  and read the game-over panel and the tab title, which kept the pre-game
+  score and no word that the match was over — #1074. Do the same for a
+  2-1 match, and for a page left open while the next round starts.)
 - D50 [proposed 2026-10-21, from the host's `cli` seat (`server.rs`
   `run`/`host_loop`, `client.rs`)] the host at the keyboard: host
   `--seats cli,human,ai,ai` (with and without `--quiet`) and play the cli
