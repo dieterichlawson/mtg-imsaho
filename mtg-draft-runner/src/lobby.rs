@@ -1218,6 +1218,20 @@ the order they happened, not in seat order", "");
         open(before) != open(pages) || before.is_some() != pages.is_some()
     }
 
+    /// The seat's match is over (`set_game_pages(seat, None)` has been
+    /// said). A seat whose draft page closed while it played was not said
+    /// to go — it was wherever its game page was — and if no draft page or
+    /// client is open now, `status` turned from "in game" to "away" with no
+    /// line saying so (#1039). It is said here, as `disconnected` says it,
+    /// and not while the table's own stop ends every match (`closing`).
+    pub fn match_left(&mut self, seat: usize, closing: bool) {
+        let s = &self.seats[seat];
+        if s.joined && s.connected == 0 && !closing && !s.kicked && s.kind == SeatKind::Human && !s.said_away {
+            self.event(format!("{} is away: no draft page or client is open for the seat", self.who(seat)));
+            self.seats[seat].said_away = true;
+        }
+    }
+
     /// Whether the seat's game page for its match has been open at all.
     #[must_use]
     pub fn game_page_opened(&self, seat: usize) -> bool {

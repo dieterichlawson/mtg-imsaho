@@ -937,6 +937,10 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                     let who = shared.lobby().who(seat);
                     shared.reply(&format!("WARN round {round}: no game page for {who}: {e}; \
 {who} forfeits the match"));
+                    // Seat a's page may already be served: it is let go
+                    // as at any match's end, or its seat read "in game"
+                    // until its next match (#1039's review).
+                    leave_match(shared, a, b);
                     let result = shared.lobby().forfeit_by(a, b, seat,
                         &format!("no game page for {who}: {e}"));
                     return finish(shared, round, a, b, result);
@@ -976,16 +980,25 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
             shared.notify();
         },
     );
-    shared.set_in_game(a, None);
-    shared.set_in_game(b, None);
-    {
-        let mut lobby = shared.lobby();
-        lobby.set_game_pages(a, None);
-        lobby.set_game_pages(b, None);
-    }
+    leave_match(shared, a, b);
     let next = shared.lobby().match_finished(round, a, b, result);
     shared.notify();
     next
+}
+
+/// Both seats' game pages are let go at a match's end, and a seat with no
+/// draft page or client open is said to be away (#1039).
+fn leave_match(shared: &Shared, a: usize, b: usize) {
+    shared.set_in_game(a, None);
+    shared.set_in_game(b, None);
+    let mut lobby = shared.lobby();
+    // Read with the lobby held: a stop that lands before this is the
+    // table's, and no seat went away.
+    let closing = shared.stop_reason().is_some();
+    lobby.set_game_pages(a, None);
+    lobby.set_game_pages(b, None);
+    lobby.match_left(a, closing);
+    lobby.match_left(b, closing);
 }
 
 /// Before a game of a hosted match: an AI seat sideboards and chooses

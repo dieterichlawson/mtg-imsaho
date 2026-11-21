@@ -648,6 +648,27 @@ fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     lobby.connected(0);
     assert!(!lobby.take_events().join("\n").contains("is back"));
     let _ = lobby.set_game_pages(0, None);
+    lobby.match_left(0, false);
+    assert!(lobby.take_events().is_empty(), "a seat with its draft page open is not away");
+    // A seat whose draft page closed during its match, and is still away
+    // when the match ends, went from "in game" to "away" in `status` with
+    // no line saying so (#1039).
+    let _ = lobby.set_game_pages(0, Some(1));
+    lobby.disconnected(0, false);
+    lobby.take_events();
+    let _ = lobby.set_game_pages(0, None);
+    lobby.match_left(0, false);
+    assert_eq!(lobby.take_events().join("\n"), "Cli (seat 0) is away: no draft page or client is open for the seat");
+    lobby.connected(0);
+    assert_eq!(lobby.take_events().join("\n"), "Cli (seat 0) is back");
+    // Not when the table's own stop is what ended the match.
+    let _ = lobby.set_game_pages(0, Some(1));
+    lobby.disconnected(0, false);
+    let _ = lobby.set_game_pages(0, None);
+    lobby.match_left(0, true);
+    assert!(lobby.take_events().is_empty());
+    lobby.connected(0);
+    assert!(!lobby.take_events().join("\n").contains("is back"));
     // A second tab while the first is open is not a return.
     lobby.connected(0);
     assert!(lobby.take_events().is_empty());
