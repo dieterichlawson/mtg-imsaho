@@ -1,5 +1,5 @@
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::types::{Color, ManaSymbol};
+use mtg_engine::types::{CardType, Color, ManaSymbol};
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -41,8 +41,9 @@ const MIN_DECK_SIZE: usize = 40;
 /// The colored mana a card's cost demands, or `None` for a card the
 /// registry does not know.
 ///
-/// A card with no cost (a land) and a card whose cost is all generic both
-/// come back as an empty set: castable in any deck.
+/// A card whose cost is all generic comes back as an empty set: castable
+/// in any deck. So would a land, which has no cost at all; the fallback
+/// asks `spell_requirement`, which leaves lands out.
 fn color_requirement(name: &str, registry: &CardRegistry) -> Option<Vec<Color>> {
     let id = registry.get_id_by_name(name)?;
     let data = registry.card_data(id)?;
@@ -72,6 +73,22 @@ fn color_requirement(name: &str, registry: &CardRegistry) -> Option<Vec<Color>> 
     Some(colors)
 }
 
+/// What a pool card demands as one of the fallback's spells: its colored
+/// pips, or `None` for a card the fallback does not play as a spell.
+///
+/// A land is not a spell. Its empty cost made every pair "able to cast"
+/// it, so every drafted land — an off-color dual, a utility land whose
+/// ability the deck can never pay, a drafted basic — took one of the 23
+/// spell slots on top of the 17 basics (#1075). The fallback's lands are
+/// the basics it adds.
+fn spell_requirement(name: &str, registry: &CardRegistry) -> Option<Vec<Color>> {
+    let id = registry.get_id_by_name(name)?;
+    if registry.card_data(id)?.card_types.contains(&CardType::Land) {
+        return None;
+    }
+    color_requirement(name, registry)
+}
+
 /// Build the deck the runner has to substitute when a seat never produced a
 /// valid one.
 ///
@@ -88,10 +105,11 @@ fn color_requirement(name: &str, registry: &CardRegistry) -> Option<Vec<Color>> 
 #[must_use]
 pub fn fallback_deck(pool: &[String], registry: &CardRegistry) -> DraftDeck {
     // What each pool card demands. A card the registry does not know is
-    // treated as unplayable rather than guessed at.
+    // treated as unplayable rather than guessed at, and a land is not a
+    // spell (#1075).
     let requirements: Vec<Option<Vec<Color>>> = pool
         .iter()
-        .map(|card| color_requirement(card, registry))
+        .map(|card| spell_requirement(card, registry))
         .collect();
 
     // The pair that can cast the most of the pool. Pairs are enumerated in
@@ -664,6 +682,27 @@ mod tests {
         let deck = fallback_deck(&pool, &registry);
         assert!(deck.total_cards() >= MIN_DECK_SIZE, "deck: {deck:?}");
         assert!(deck.maindeck.len() <= pool.len());
+    }
+
+    /// #1075: a land's empty cost made every pair "able to cast" it, so a
+    /// drafted dual, a utility land and a drafted basic each took a spell
+    /// slot, whatever their colors. The fallback's lands are its basics.
+    #[test]
+    fn fallback_deck_plays_no_drafted_land_as_a_spell() {
+        let registry = CardRegistry::with_all_cards();
+        let lands = ["Clifftop Retreat", "Nephalia Drownyard", "Kessig Wolf Run", "Island"];
+        let mut pool: Vec<String> = lands.iter().map(|s| (*s).to_string()).collect();
+        pool.extend(wide_pool());
+        let deck = fallback_deck(&pool, &registry);
+        for land in lands {
+            assert!(
+                !deck.maindeck.iter().any(|c| c == land),
+                "{land} was played in a spell slot: {:?}",
+                deck.maindeck
+            );
+            assert!(deck.sideboard.iter().any(|c| c == land), "{land} left the pool");
+        }
+        assert_eq!(deck.lands.values().sum::<u32>(), FALLBACK_LANDS);
     }
 
     /// Whatever the fallback leaves out is the sideboard, as for any deck.

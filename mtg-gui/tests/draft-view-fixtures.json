@@ -5,8 +5,8 @@
     "build_seconds": null,
     "deck": {
       "lands": {
-        "Mountain": 9,
-        "Plains": 8
+        "Mountain": 10,
+        "Plains": 9
       },
       "main": [
         "Balefire Dragon",
@@ -19,7 +19,6 @@
         "Burning Vengeance",
         "Elite Inquisitor",
         "Heretic's Punishment",
-        "Moorland Haunt",
         "Brimstone Volley",
         "Elder Cathar",
         "Harvest Pyre",
@@ -29,9 +28,8 @@
         "Kruin Outlaw",
         "Furor of the Bitten",
         "Cobbled Wings",
-        "Kessig Wolf Run",
-        "Clifftop Retreat",
-        "One-Eyed Scarecrow"
+        "One-Eyed Scarecrow",
+        "Nightbird's Clutches"
       ],
       "problem": null,
       "ready": false,
@@ -43,6 +41,7 @@
         "Manor Skeleton",
         "Armored Skaab",
         "Makeshift Mauler",
+        "Moorland Haunt",
         "Moon Heron",
         "Brain Weevil",
         "Hamlet Captain",
@@ -50,11 +49,12 @@
         "Dissipate",
         "Creeping Renaissance",
         "Parallel Lives",
+        "Kessig Wolf Run",
         "Frightful Delusion",
+        "Clifftop Retreat",
         "Kessig Cagebreakers",
         "Forbidden Alchemy",
-        "Civilized Scholar // Homicidal Brute",
-        "Nightbird's Clutches"
+        "Civilized Scholar // Homicidal Brute"
       ],
       "valid": true
     },
@@ -745,8 +745,8 @@
     "build_seconds": null,
     "deck": {
       "lands": {
-        "Mountain": 9,
-        "Plains": 8
+        "Mountain": 10,
+        "Plains": 9
       },
       "main": [
         "Balefire Dragon",
@@ -759,7 +759,6 @@
         "Burning Vengeance",
         "Elite Inquisitor",
         "Heretic's Punishment",
-        "Moorland Haunt",
         "Brimstone Volley",
         "Elder Cathar",
         "Harvest Pyre",
@@ -769,9 +768,8 @@
         "Kruin Outlaw",
         "Furor of the Bitten",
         "Cobbled Wings",
-        "Kessig Wolf Run",
-        "Clifftop Retreat",
-        "One-Eyed Scarecrow"
+        "One-Eyed Scarecrow",
+        "Nightbird's Clutches"
       ],
       "problem": null,
       "ready": true,
@@ -783,6 +781,7 @@
         "Manor Skeleton",
         "Armored Skaab",
         "Makeshift Mauler",
+        "Moorland Haunt",
         "Moon Heron",
         "Brain Weevil",
         "Hamlet Captain",
@@ -790,11 +789,12 @@
         "Dissipate",
         "Creeping Renaissance",
         "Parallel Lives",
+        "Kessig Wolf Run",
         "Frightful Delusion",
+        "Clifftop Retreat",
         "Kessig Cagebreakers",
         "Forbidden Alchemy",
-        "Civilized Scholar // Homicidal Brute",
-        "Nightbird's Clutches"
+        "Civilized Scholar // Homicidal Brute"
       ],
       "valid": true
     },
@@ -1913,8 +1913,8 @@
     "build_seconds": null,
     "deck": {
       "lands": {
-        "Mountain": 9,
-        "Plains": 8
+        "Mountain": 10,
+        "Plains": 9
       },
       "main": [
         "Balefire Dragon",
@@ -1927,7 +1927,6 @@
         "Burning Vengeance",
         "Elite Inquisitor",
         "Heretic's Punishment",
-        "Moorland Haunt",
         "Brimstone Volley",
         "Elder Cathar",
         "Harvest Pyre",
@@ -1937,9 +1936,8 @@
         "Kruin Outlaw",
         "Furor of the Bitten",
         "Cobbled Wings",
-        "Kessig Wolf Run",
-        "Clifftop Retreat",
-        "One-Eyed Scarecrow"
+        "One-Eyed Scarecrow",
+        "Nightbird's Clutches"
       ],
       "problem": null,
       "ready": true,
@@ -1951,6 +1949,7 @@
         "Manor Skeleton",
         "Armored Skaab",
         "Makeshift Mauler",
+        "Moorland Haunt",
         "Moon Heron",
         "Brain Weevil",
         "Hamlet Captain",
@@ -1958,11 +1957,12 @@
         "Dissipate",
         "Creeping Renaissance",
         "Parallel Lives",
+        "Kessig Wolf Run",
         "Frightful Delusion",
+        "Clifftop Retreat",
         "Kessig Cagebreakers",
         "Forbidden Alchemy",
-        "Civilized Scholar // Homicidal Brute",
-        "Nightbird's Clutches"
+        "Civilized Scholar // Homicidal Brute"
       ],
       "valid": true
     },
@@ -2738,7 +2738,7 @@
     "build_seconds": null,
     "deck": {
       "lands": {
-        "Island": 7,
+        "Island": 8,
         "Mountain": 10
       },
       "main": [
@@ -2748,7 +2748,6 @@
         "Geistcatcher's Rig",
         "Curse of the Nightly Hunt",
         "Armored Skaab",
-        "Ghost Quarter",
         "Grasp of Phantoms",
         "Battleground Geist",
         "Deranged Assistant",
@@ -2764,7 +2763,7 @@
         "Feral Ridgewolf",
         "Into the Maw of Hell",
         "Civilized Scholar",
-        "Isolated Chapel"
+        "Fortress Crab"
       ],
       "problem": null,
       "ready": true,
@@ -2775,6 +2774,7 @@
         "Ambush Viper",
         "Geist of Saint Traft",
         "Angel of Flight Alabaster",
+        "Ghost Quarter",
         "Darkthicket Wolf",
         "Disciple of Griselbrand",
         "Gruesome Deformity",
@@ -2787,7 +2787,7 @@
         "Falkenrath Noble",
         "Chapel Geist",
         "Fiend Hunter",
-        "Fortress Crab"
+        "Isolated Chapel"
       ],
       "valid": true
     },
@@ -3522,8 +3522,8 @@
     "build_seconds": null,
     "deck": {
       "lands": {
-        "Mountain": 9,
-        "Plains": 8
+        "Mountain": 10,
+        "Plains": 9
       },
       "main": [
         "Balefire Dragon",
@@ -3536,7 +3536,6 @@
         "Burning Vengeance",
         "Elite Inquisitor",
         "Heretic's Punishment",
-        "Moorland Haunt",
         "Brimstone Volley",
         "Elder Cathar",
         "Harvest Pyre",
@@ -3546,9 +3545,8 @@
         "Kruin Outlaw",
         "Furor of the Bitten",
         "Cobbled Wings",
-        "Kessig Wolf Run",
-        "Clifftop Retreat",
-        "One-Eyed Scarecrow"
+        "One-Eyed Scarecrow",
+        "Nightbird's Clutches"
       ],
       "problem": null,
       "ready": true,
@@ -3560,6 +3558,7 @@
         "Manor Skeleton",
         "Armored Skaab",
         "Makeshift Mauler",
+        "Moorland Haunt",
         "Moon Heron",
         "Brain Weevil",
         "Hamlet Captain",
@@ -3567,11 +3566,12 @@
         "Dissipate",
         "Creeping Renaissance",
         "Parallel Lives",
+        "Kessig Wolf Run",
         "Frightful Delusion",
+        "Clifftop Retreat",
         "Kessig Cagebreakers",
         "Forbidden Alchemy",
-        "Civilized Scholar // Homicidal Brute",
-        "Nightbird's Clutches"
+        "Civilized Scholar // Homicidal Brute"
       ],
       "valid": true
     },
@@ -3581,8 +3581,8 @@
           "deadline_ms": null,
           "deck": {
             "lands": {
-              "Mountain": 9,
-              "Plains": 8
+              "Mountain": 10,
+              "Plains": 9
             },
             "main": [
               "Balefire Dragon",
@@ -3595,7 +3595,6 @@
               "Burning Vengeance",
               "Elite Inquisitor",
               "Heretic's Punishment",
-              "Moorland Haunt",
               "Brimstone Volley",
               "Elder Cathar",
               "Harvest Pyre",
@@ -3605,9 +3604,8 @@
               "Kruin Outlaw",
               "Furor of the Bitten",
               "Cobbled Wings",
-              "Kessig Wolf Run",
-              "Clifftop Retreat",
-              "One-Eyed Scarecrow"
+              "One-Eyed Scarecrow",
+              "Nightbird's Clutches"
             ],
             "problem": null,
             "ready": false,
@@ -3619,6 +3617,7 @@
               "Manor Skeleton",
               "Armored Skaab",
               "Makeshift Mauler",
+              "Moorland Haunt",
               "Moon Heron",
               "Brain Weevil",
               "Hamlet Captain",
@@ -3626,11 +3625,12 @@
               "Dissipate",
               "Creeping Renaissance",
               "Parallel Lives",
+              "Kessig Wolf Run",
               "Frightful Delusion",
+              "Clifftop Retreat",
               "Kessig Cagebreakers",
               "Forbidden Alchemy",
-              "Civilized Scholar // Homicidal Brute",
-              "Nightbird's Clutches"
+              "Civilized Scholar // Homicidal Brute"
             ],
             "valid": true
           },
