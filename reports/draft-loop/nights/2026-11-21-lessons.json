@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-21",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Victim of Night was my pack 1 first pick, then I built red-white and never played it; take removal only in colours you will play, as the guide warns.",
+    "Smite the Monstrous hits only power 4+, so my two copies were dead against small fliers like Delver of Secrets and Stitched Drake; the guide's 'hold Smite for fliers' is wrong.",
+    "The WU beat me 2-1 with three Delver, Claustrophobia and Sensory Deprivation; my flier answers were Rebuke, Rolling Temblor and Into the Maw, so take a third over ground filler like Silverchase Fox."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12629,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3072,
+    "output_tokens_details": {
+     "thinking_tokens": 2859
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12629
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3072,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12629,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12629,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Think Twice (taken at P1p10 and P2p6) and Dissipate were filler I cut anyway; take a playable 2-3 drop creature over these marginal blue spells.",
+    "Keep taking cheap instant removal like Victim of Night early, but my 41- and 36-turn losses to WR show the deck needed faster evasive pressure, like Vampire Interloper, sooner.",
+    "I drafted without a guide, so nothing here contradicted one; expect Galvanic Juggernaut and Moon Heron to be contested, since UG seat 3 ran both."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3265,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2720,
+    "output_tokens_details": {
+     "thinking_tokens": 2522
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3265
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2720,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3265,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3265,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Traveler's Amulet took three of my picks (P1p11, P2p13, P3p12) and none made the WR deck; take playable creatures or removal over these dead picks in any colour pair.",
+    "The guide says fliers win and WU spirits lead; tonight WU seat 7 went 3-0 while my WR deck had only one flier, Voiceless Spirit, so prioritise Chapel Geist and Stitched Drake over Thraben Purebloods.",
+    "Both losses came to blue decks with Moon Heron, Stitched Drake and Spectral Flight, so save Rebuke and Brimstone Volley for fliers, not ground attackers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4978,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3271,
+    "output_tokens_details": {
+     "thinking_tokens": 3045
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4978
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3271,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4978,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4978,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UG",
+   "record": "2-1-0",
+   "lessons": [
+    "Expect Smite the Monstrous: the white deck that met me in round 2 ran two copies, and they answer power-4-plus creatures like my 5-power Galvanic Juggernaut, so don't rely on one big threat.",
+    "Claustrophobia and Sensory Deprivation were my cheap answers to big threats, so take cheap pacifism-style auras like these early over marginal creatures.",
+    "I took three Ranger's Guile late and still had extra copies to cut, so spend late picks on creatures or removal instead of fight tricks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3296,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1874,
+    "output_tokens_details": {
+     "thinking_tokens": 1687
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3296
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1874,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3296,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3296,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "RG",
+   "record": "1-2-0",
+   "lessons": [
+    "RG had one real red removal spell, Harvest Pyre, and lost 1-2 to WU's fliers in 20 to 21 turn games; take Brimstone Volley-style removal over extra red bodies.",
+    "Tonight contradicted the guide: RG, listed as the best pair at 56%, went 1-2 in matches and 3-5 in games, so treat that rate as a small-sample hypothesis.",
+    "Dead Weight, Infernal Plunge and two Altar's Reap went unplayed in RG; once red is set by mid pack 2, take red fliers or removal over black picks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12759,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3107,
+    "output_tokens_details": {
+     "thinking_tokens": 2902
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12759
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3107,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12759,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12759,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "Keep Spare from Evil in the main and cut a land: my 17-land WB deck stalled into 40- and 29-turn losses with too little late card advantage.",
+    "Plan for WR's two Rebukes and Fiend Hunter by holding back threats; my ground creatures like Unruly Mob ran out of pressure in the 40-turn game.",
+    "RG brought in Purify the Grave for game 3 against my graveyard-dependent cards, so avoid building around recursion alone unless you have a second plan."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3330,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1986,
+    "output_tokens_details": {
+     "thinking_tokens": 1809
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3330
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1986,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3330,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3330,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Fliers win, as the guide says: our ground-bound BR aggro lost 1-2 and 0-2 to WU and WB decks with Stitched Drake and Screeching Bat; I took Abbey Griffin but cut it.",
+    "Bloodcrazed Neonate is poor, as the guide says; I still ran two in a deck short of evasion. Cut them for any playable flier or removal spell.",
+    "The guide says 16 lands for low-curve aggro, but I ran 17 (8 Swamp, 9 Mountain) with a cheap curve; cut one land for a two-drop."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5003,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3743,
+    "output_tokens_details": {
+     "thinking_tokens": 3538
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5003
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3743,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5003,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5003,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "WU",
+   "record": "3-0-0",
+   "lessons": [
+    "Take removal early and build blue-white around it: Claustrophobia, Fiend Hunter, Grasp of Phantoms and Sensory Deprivation answered the threats that decided the 6-3 game record.",
+    "Round 3's games ran 46 and 47 turns, so value evasive threats like Stitched Drake and Delver of Secrets over Dissipate, Lost in the Mist and filler.",
+    "Three Delver of Secrets plus Snapcaster Mage gave this deck cheap tempo, so take extra cheap blue threats over Intangible Virtue, which I cut."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3289,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1919,
+    "output_tokens_details": {
+     "thinking_tokens": 1715
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3289
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1919,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3289,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3289,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
