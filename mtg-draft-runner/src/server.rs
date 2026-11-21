@@ -24,7 +24,7 @@ use crate::deck::build_deck_with_llm;
 use crate::deck::{sideboard_with_llm, BetweenGames};
 use crate::game::{last_game_line, make_game_player, match_seed, play_match, BeforeGame, GameSeat, GameSetup, MatchSeat};
 use crate::llm_client::{DraftLlmClient, Table};
-use crate::lobby::{Lobby, Phase, Refused, Request, SeatKind};
+use crate::lobby::{EndedLink, Lobby, Phase, Refused, Request, SeatKind};
 use crate::log_system_prompt;
 use crate::pick::parse_pick_response;
 
@@ -77,10 +77,6 @@ pub struct Shared {
     /// match's page sits on its game-over screen in its own tab, and is told
     /// the table is closed with the rest, or it retried for ever (#1033).
     finished_pages: Mutex<Vec<PageHandle>>,
-    /// The game links of matches that are over, by port and key, and the
-    /// seat each was: what an old link is answered with depends on whose
-    /// it was (#1037).
-    ended_links: Mutex<Vec<(u16, String, usize)>>,
     /// Where the next game page's port search starts: past the last one
     /// handed out, so a finished match's port, let go when its seat is
     /// dropped (#853), is not the next match's while the range has others.
@@ -147,7 +143,6 @@ impl Shared {
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
             finished_pages: Mutex::new(Vec::new()),
-            ended_links: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
             cli_lines: Mutex::new(None),
         })
@@ -202,8 +197,9 @@ impl Shared {
             in_game.push(page);
         }
         drop(in_game);
-        self.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-            .extend(gone.iter().map(|p| (p.addr.port(), p.key.clone(), p.seat)));
+        // What an old link is answered with depends on whose it was, and it
+        // is in the snapshot, so it holds after a resume too (#1037).
+        self.lobby().end_links(gone.iter().map(|p| EndedLink { port: p.addr.port(), key: p.key.clone(), seat: p.seat }));
         let mut finished = self.finished_pages.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         // A page no longer attached cannot come back: its seat's listener
         // closed with the match.
@@ -1246,8 +1242,7 @@ fn proxy_game_page(mut client: TcpStream, request: &RequestHead, shared: &Shared
     // serves a later match, which would refuse the old key with a bare "not
     // found" (#1037's review).
     let key = rest.trim_start_matches('/').split('/').next().unwrap_or_default();
-    let ended = shared.ended_links.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter().find(|(p, k, _)| *p == port && k == key).map(|&(_, _, seat)| seat);
+    let ended = shared.lobby().ended_link_seat(port, key);
     // A finished match's page reconnecting its socket — a tab that was
     // between retries, or asleep, when the match ended — is told the match
     // is over: a refused handshake is a dropped network to the page, which

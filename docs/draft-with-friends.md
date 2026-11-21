@@ -281,7 +281,9 @@ a crash, Ctrl-C, a reboot — start it again with `--resume <snapshot>`
 their join links are the ones everybody already has, every pick, deck and
 finished match is replayed onto packs dealt again from the same seed, the
 AI seats keep their notes, and the draft or the tournament carries on. A
-match that was in progress is played again from its first game, and the
+match that was in progress is played again from its first game, under a
+new game link; a finished match's old game link is still answered as
+ended (a kicked seat's as handed to the table), and the
 resume's first line names the matches still to play in that round by seat. The
 snapshot's seed, set, seats and match length win over the flags, and are
 checked as the flags would be. `--guide` and the `MTG_LLM_HISTORY`,

@@ -252,7 +252,7 @@ fn a_resume_names_the_matches_it_plays_again_and_only_those() {
         sideboard: Vec::new(), fallback: false, ready };
     let mut save = TableSave { version: 1, set: "ISD".to_string(), seed: 5101, best_of: 1,
         seats: vec![seat("human"), seat("ai:x"), seat("ai:x")], picks: Vec::new(),
-        decks: vec![deck(1, true), deck(2, true)], matches: Vec::new(), deal: None, prompt: None };
+        decks: vec![deck(1, true), deck(2, true)], matches: Vec::new(), deal: None, prompt: None, ended_links: Vec::new() };
     // Still building: the human seat has no deck.
     assert_eq!(save.resumed_matches_clause(), None);
     // A deck sent and not final is still building too.

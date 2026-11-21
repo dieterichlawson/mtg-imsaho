@@ -70,6 +70,21 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
     let (status, body) = server.http_get(path);
     assert_eq!(status, 404, "{body}");
     assert!(body.contains("handed your seat to the table") && !body.contains("has the link to your game"), "{body}");
+    // #1037's review: and after a resume, which did not carry the ended
+    // links, so the old link was a link the table never knew again.
+    let snapshot = server.dir.join("table.save.json");
+    let kill = std::process::Command::new("kill").args(["-INT", &server.child.id().to_string()]).status().unwrap();
+    assert!(kill.success());
+    server.child.wait().unwrap();
+    let kept = server.dir.with_extension("save.json");
+    std::fs::copy(&snapshot, &kept).expect("a snapshot was written");
+    let resumed = Server::start("kick-mid-match-resumed", "human,ai", &["--resume", kept.to_str().unwrap(),
+        "--pick-seconds", "1", "--build-seconds", "2"]);
+    let (status, body) = resumed.http_get(path);
+    assert_eq!(status, 404, "{body}");
+    assert!(body.contains("handed your seat to the table") && !body.contains("has the link to your game"),
+        "the resumed table answers the kicked seat's old link as the first did: {body}");
+    let _ = std::fs::remove_file(&kept);
 }
 
 /// The seat whose game page holds the decision, read off both pages.

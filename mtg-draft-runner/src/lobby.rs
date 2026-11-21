@@ -513,6 +513,21 @@ pub struct TableSave {
     /// snapshot written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<TablePrompt>,
+    /// The game links of finished matches, and whose each was: an old link
+    /// opened after a resume was answered as a link the table never knew,
+    /// "the draft page has the link to your game", to a kicked seat whose
+    /// draft page has none (#1037). Absent in a snapshot written before it
+    /// was recorded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ended_links: Vec<EndedLink>,
+}
+
+/// A finished match's game link: its port, its key, and the seat it was.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndedLink {
+    pub port: u16,
+    pub key: String,
+    pub seat: usize,
 }
 
 /// What a resumed draft still asks its seats under their guide, which is
@@ -943,6 +958,8 @@ pub struct Lobby {
     pick_log: Vec<SavedPick>,
     /// Each AI seat's notes from its last pick, for the snapshot.
     ai_notes: Vec<Option<String>>,
+    /// The game links of finished matches, for the snapshot (#1037).
+    ended_links: Vec<EndedLink>,
     /// [`mtg_draft::pack::deal_digest`] of the packs dealt, for the snapshot.
     deal: String,
     /// [`crate::llm_client::reference_digest`] of the set the AI seats are
@@ -1029,6 +1046,7 @@ the order they happened, not in seat order", "");
             started_pool_log: false,
             pick_log: Vec::new(),
             ai_notes: vec![None; pod],
+            ended_links: Vec::new(),
             deal,
             reference,
         })
@@ -2275,7 +2293,21 @@ for the seat from here, and its games are forfeit"), ""));
             deal: Some(self.deal.clone()),
             prompt: Some(TablePrompt::live(&self.config.seats, self.config.guide_path.as_deref(),
                 self.config.guide_hash.as_deref(), &self.reference)),
+            ended_links: self.ended_links.clone(),
         }
+    }
+
+    /// A finished match's game links: answered as ended, by whose they
+    /// were, for as long as the table runs and after a resume (#1037).
+    pub fn end_links(&mut self, links: impl IntoIterator<Item = EndedLink>) {
+        self.ended_links.extend(links);
+    }
+
+    /// The seat whose finished match's game link `port` and `key` were,
+    /// if they were one.
+    #[must_use]
+    pub fn ended_link_seat(&self, port: u16, key: &str) -> Option<usize> {
+        self.ended_links.iter().find(|l| l.port == port && l.key == key).map(|l| l.seat)
     }
 
     /// Carry on from `save`: the seats as they were (names, keys, kicks),
@@ -2315,6 +2347,7 @@ for the seat from here, and its games are forfeit"), ""));
             s.auto = saved.kicked || saved.gave_up;
             self.ai_notes[i].clone_from(&saved.notes);
         }
+        self.ended_links.clone_from(&save.ended_links);
         if !save.picks.is_empty() {
             self.phase = Phase::Drafting;
         }
