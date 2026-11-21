@@ -2,7 +2,7 @@
 import { loadManifest, fontsReady, artNames } from "./assets.js";
 import { render, inspecting, inspectorFacts, inspectorPt, otherFace, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X, WAITING_LINES, PROMPT_TEXT_W } from "./render.js";
 import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
-import { closedHeadline, noticeAtNewDecision } from "./state.js";
+import { closedHeadline, noticeAtNewDecision, unreachableReason, UNREACHABLE_RETRY_MS } from "./state.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const field = document.getElementById("field");
@@ -21,6 +21,8 @@ function live() {
     return state.view ? state : null;
 }
 // ---------------------------------------------------------------- socket
+/** Connects in a row that closed without opening (#1033). */
+let failedConnects = 0;
 function connect() {
     // Beside the page, wherever it is served: at a host's lobby the page is
     // `/game/<port>/<key>/` on the lobby's own port, and its socket
@@ -29,10 +31,20 @@ function connect() {
     where.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(where.href);
     state.ws = ws;
-    ws.onopen = () => { state.connected = true; settingsKnown = false; echoesDue = 0; sendRaw({ type: "hello" }); draw(); };
-    // A table the host has closed has nothing to reconnect to (#824).
-    ws.onclose = () => { state.connected = false; draw(); if (!state.closed)
-        setTimeout(connect, 1000); };
+    let opened = false;
+    ws.onopen = () => { opened = true; failedConnects = 0; state.unreachable = null; state.connected = true; settingsKnown = false; echoesDue = 0; sendRaw({ type: "hello" }); draw(); };
+    // A table the host has closed has nothing to reconnect to (#824). A
+    // finished game no connect has reached for a while says so and slows
+    // down, but keeps trying: a match's next game may yet come (#1033).
+    ws.onclose = () => {
+        state.connected = false;
+        if (!opened)
+            failedConnects++;
+        state.unreachable = unreachableReason(state.gameOver, failedConnects);
+        draw();
+        if (!state.closed)
+            setTimeout(connect, state.unreachable ? UNREACHABLE_RETRY_MS : 1000);
+    };
     ws.onerror = () => { ws.close(); };
     ws.onmessage = (ev) => { try {
         onMessage(JSON.parse(ev.data));

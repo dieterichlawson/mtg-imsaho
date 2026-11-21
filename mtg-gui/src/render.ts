@@ -1337,6 +1337,12 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
     // lines: with the table's line above it, eight ran into the log.
     const room = Math.max(1, Math.min(8, Math.floor((y + h - 6 - ty) / 9)));
     for (const l of wrapCapped(ctx, engineLine(state, state.gameOver), w - 8, "8px Silkscreen", room)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
+    // The server stopped answering after the game (#1033): said under it.
+    if (state.unreachable) {
+      const left = Math.max(1, Math.floor((y + h - 6 - ty - 2) / 8));
+      ty += 2;
+      for (const l of wrapCapped(ctx, state.unreachable, w - 8, "7px Silkscreen", Math.min(5, left))) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
+    }
     return;
   }
   if (!state.decision) {

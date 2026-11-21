@@ -1485,6 +1485,15 @@ function promptArea(ctx, hits, state, x, y, w, h) {
             text(ctx, l, x + 4, ty, { color: "#ffe080" });
             ty += 9;
         }
+        // The server stopped answering after the game (#1033): said under it.
+        if (state.unreachable) {
+            const left = Math.max(1, Math.floor((y + h - 6 - ty - 2) / 8));
+            ty += 2;
+            for (const l of wrapCapped(ctx, state.unreachable, w - 8, "7px Silkscreen", Math.min(5, left))) {
+                text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" });
+                ty += 8;
+            }
+        }
         return;
     }
     if (!state.decision) {
