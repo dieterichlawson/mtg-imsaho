@@ -625,6 +625,30 @@ fn a_bad_seat_out_of_a_save_says_it_came_from_the_save() {
     let _ = std::fs::remove_file(&save);
 }
 
+/// Each seat's own record (`seat_notes`, `seat_rng`, `seat_memory`) is
+/// two entries or none, as `seats` is: a short `seat_rng` reseeded the
+/// seat it missed from `--seed` with no word (#1048's review).
+#[test]
+fn a_per_seat_record_that_is_neither_two_nor_none_is_malformed() {
+    let base = a_save_file("shortrng");
+    for field in ["seat_notes", "seat_rng", "seat_memory"] {
+        let mut data: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&base).unwrap()).unwrap();
+        data[field] = serde_json::json!([null]);
+        let save = base.with_extension(format!("{field}.save"));
+        std::fs::write(&save, serde_json::to_string(&data).unwrap()).unwrap();
+        let output = runner_at_root()
+            .args(["--resume", &save.to_string_lossy(), "--quiet"])
+            .output()
+            .expect("failed to run");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "{field}: stderr: {stderr}");
+        assert!(stderr.contains(&format!("its {field} holds 1 entry, not 2")), "{field}:\n{stderr}");
+        let _ = std::fs::remove_file(&save);
+    }
+    let _ = std::fs::remove_file(&base);
+}
+
 /// `seats` is two entries or none. Anything else is a malformed file, and
 /// calling it a save that "predates seat recording" is a false statement
 /// about a save written five minutes ago (issue #314).

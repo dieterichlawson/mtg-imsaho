@@ -717,6 +717,16 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
                 "save file '{path}' is not a valid game save: it records {} seats, not 2",
                 save.seats.len()));
         }
+        // Each seat's own record is indexed like `seats`: two entries or
+        // none (a save written before it). A short one was read with
+        // `.get(i)`, so a random seat it missed was reseeded from `--seed`
+        // and an LLM seat lost its notes, in silence (#1048's review).
+        for (field, len) in [("seat_notes", save.seat_notes.len()), ("seat_rng", save.seat_rng.len()),
+                             ("seat_memory", save.seat_memory.len())] {
+            if len != 0 && len != 2 {
+                die(&format!("save file '{path}' is not a valid game save: its {field} holds {len} {}, not 2", if len == 1 { "entry" } else { "entries" }));
+            }
+        }
         // Every other save/flag disagreement on this path is announced, and
         // this is the one that loses work: the save path is not part of the
         // save, so `--resume X` alone reads X and never writes to it again.
