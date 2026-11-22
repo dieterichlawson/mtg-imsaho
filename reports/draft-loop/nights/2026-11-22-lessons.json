@@ -1,0 +1,372 @@
+{
+ "night": "2026-11-22",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight's WR went 2-1 with only three real removal spells (two Rebuke, Brimstone Volley) plus narrow Urgent Exorcism, below the guide's five or six; take a second removal over Silverchase Fox or Night Revelers.",
+    "Round 1's 0-2 loss to BR came with thin evasion (Abbey Griffin, Falkenrath Marauders) against Bloodline Keeper, two Screeching Bat and Falkenrath Noble; take a third flier over ground filler.",
+    "Tonight contradicted the guide's WR warning: our 9 Mountain/8 Plains build went 2-1, winning 2-0 vs UB and G with Bonds of Faith and two Rebuke."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 13495,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 6398,
+    "output_tokens_details": {
+     "thinking_tokens": 6146
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 13495
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 6398,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 13495,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 13495,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Black was the deep colour in this pod, and a black-based deck of cheap creatures with two Victim of Night and Tribute to Hunger went 6-0 in games.",
+    "Take removal early: two Victim of Night made my deck, but seat 3 also ran Victim of Night and Claustrophobia, so removal was contested.",
+    "My six-Mountain splash for Geistflame, Bloodcrazed Neonate and Riot Devils went 6-0, but no game tested colour screw, so check the splash count before copying it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3285,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1807,
+    "output_tokens_details": {
+     "thinking_tokens": 1626
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3285
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1807,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3285,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3285,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "G",
+   "record": "0-3-0",
+   "lessons": [
+    "Fliers win this format, as the guide says: our flierless mono-green deck lost all three matches, while our pack 2 first pick Murder of Crows and pack 3 Geist-Honored Monk went unplayed.",
+    "Contradicting the guide, Spider Spawning was dead in our mono-green deck with no self-mill enablers; don't count it as late-game value without Armored Skaab or Grasp of Phantoms.",
+    "Festerhide Boar, filler per the guide, filled our 23 in mono-green; with no evasion, our 18-28 turn games stalled, so take a second colour with fliers over green filler."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4938,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3506,
+    "output_tokens_details": {
+     "thinking_tokens": 3292
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4938
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3506,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4938,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4938,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "In round 3, the WR deck answered my fliers with Rebuke, Bonds of Faith and Urgent Exorcism, so in UB, prioritize ground blockers and a real finisher over more low-impact fliers or sorceries.",
+    "Keeping the curve low left my UB deck stalling into 18\u201326 turn games; Dissipate, Fortress Crab and the second Lost in the Mist stalled rather than closed, so take threats or removal instead.",
+    "Seat 1's BR deck went 3-0 on Victim of Night, Falkenrath Noble, Markov Patrician and Ghoulcaller's Chant, the same black core I drafted; with black contested, lock in removal early."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3223,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3106,
+    "output_tokens_details": {
+     "thinking_tokens": 2867
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3223
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3106,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3223,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3223,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight's WR went 2-1 with five fliers but only three real removal spells (Harvest Pyre, Into the Maw of Hell, Blazing Torch); take a third removal spell over Unruly Mob.",
+    "Tonight contradicted the guide's stranded-pick warning: Into the Maw of Hell was played, but Disciple of Griselbrand and Vampire Interloper were dead picks; stop taking black once red-white is set.",
+    "Round 3's 0-2 to BR in 24- and 26-turn games, facing Bloodline Keeper and two Screeching Bat, showed WR lacked card advantage beyond Rally the Peasants; take Mentor of the Meek over a ground body."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 13547,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4069,
+    "output_tokens_details": {
+     "thinking_tokens": 3824
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 13547
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4069,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 13547,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 13547,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight's grindy 18-to-28-turn games exposed my 11-creature WR deck: prioritize evasive threats and card advantage, like Midnight Haunting, over extra Moment of Heroism tricks.",
+    "My 0-2 loss to Voiceless Spirit, Chapel Geist and Spectral Rider showed spirit fliers beat me, so value Urgent Exorcism and Geistcatcher's Rig highly as my cleanest flier answers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3375,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3209,
+    "output_tokens_details": {
+     "thinking_tokens": 3041
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3375
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3209,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3375,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3375,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Skip self-mill cards outside UG: my UB deck played Armored Skaab, Stitcher's Apprentice and Skaab Goliath with no Spider Spawning, and its 29-, 17- and 29-turn games contradicted the guide's tempo advice.",
+    "Take cheap evasive creatures over speculative card-advantage like Think Twice or Curse of Oblivion; my slow UB deck dropped 1-2 to WG and 0-2 to WR without enough early pressure."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4996,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2467,
+    "output_tokens_details": {
+     "thinking_tokens": 2293
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4996
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2467,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4996,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4996,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Pack 2's early picks Geist of Saint Traft, Snapcaster Mage and Forbidden Alchemy went unplayed; commit to two colours by mid pack 2 instead of hedging across blue and black.",
+    "Round 2's 0-2 loss came to flier-heavy WR (Voiceless Spirit x2, Spectral Rider, Chapel Geist); my W/G had only Fiend Hunter and Smite the Monstrous as removal, so prioritise removal over filler.",
+    "Green was thin beyond Garruk Relentless, so take second-colour playables over speculative red like Ashmouth Hound and Scourge of Geier Reach, both unplayed."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3405,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3471,
+    "output_tokens_details": {
+     "thinking_tokens": 3234
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3405
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3471,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3405,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3405,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
