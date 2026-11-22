@@ -271,6 +271,10 @@ fn stream_game_log(state: &GameState, from: usize) -> usize {
 /// pid so two writers can't braid the temp either — the last rename wins
 /// whole, which is the most a shared path can promise.
 fn write_save_atomically(path: &str, json: &str) -> std::io::Result<()> {
+    // Checked at every write, not only at the start: the path is the
+    // operator's, and a FIFO or a device put there mid-game is replaced
+    // as surely as one there at the start (#1079).
+    mtg_player::kept_file::check_replaceable(Path::new(path))?;
     let tmp = format!("{}.{}.tmp", path, std::process::id());
     let write = write_file(&tmp, json).and_then(|()| fs::rename(&tmp, path));
     if write.is_err() {
@@ -573,8 +577,10 @@ fn main() {
         // directly (the later rename would only fail mid-game), and
         // writability is proven on the same temp sibling the atomic write
         // uses, which also catches a missing parent and bad permissions.
-        if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
-            die(&format!("cannot write save file '{path}': Is a directory"));
+        // A FIFO or a device is refused as a directory is: the rename
+        // replaced it with the save (#1079).
+        if let Err(e) = mtg_player::kept_file::check_replaceable(Path::new(path)) {
+            die(&format!("cannot write save file '{path}': {e}"));
         }
         let probe = format!("{}.{}.tmp", path, std::process::id());
         fs::write(&probe, b"")

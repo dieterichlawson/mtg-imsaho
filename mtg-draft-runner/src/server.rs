@@ -307,7 +307,10 @@ impl Shared {
         let Some(path) = &self.config.save else { return Ok(()) };
         let json = serde_json::to_string(&self.lobby().snapshot()).map_err(|e| e.to_string())?;
         let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, path))
+        // The rename replaced a FIFO or a device at the path (#1079).
+        mtg_player::kept_file::check_replaceable(path)
+            .and_then(|()| std::fs::write(&tmp, json))
+            .and_then(|()| std::fs::rename(&tmp, path))
             .map_err(|e| format!("the snapshot cannot be written to {}: {e}", path.display()))
     }
 

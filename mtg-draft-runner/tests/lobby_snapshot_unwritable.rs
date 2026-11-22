@@ -58,3 +58,28 @@ fn a_write_that_fails_later_is_said_and_so_is_its_recovery() {
     server.wait_for_stderr("NOTE the snapshot is written again", Duration::from_secs(30));
     assert!(save.exists());
 }
+
+/// #1079: the snapshot's rename replaced whatever was at `--save`, so a
+/// FIFO there (run as root, a device) became a regular file holding the
+/// table. It is refused at start-up and left as it was.
+#[test]
+fn a_save_that_is_a_fifo_is_refused_not_replaced() {
+    use std::os::unix::fs::FileTypeExt;
+    let (dir, bin) = lobby_support::scratch("save-fifo");
+    let port = lobby_support::free_port().to_string();
+    let save = dir.join("t.json");
+    assert!(Command::new("mkfifo").arg(&save).status().expect("run mkfifo").success());
+    let out = Command::new(env!("CARGO_BIN_EXE_mtg-draft-server"))
+        .args(["--seats", "ai,ai", "--best-of", "1", "--seed", "5", "--port", &port])
+        .args(["--game-ports", "40100-40140"])
+        .arg("--log").arg(dir.join("draft.log"))
+        .arg("--save").arg(&save)
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &bin)
+        .stdin(Stdio::null())
+        .output().expect("the server runs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "refused: {stderr}");
+    assert!(stderr.contains("is a FIFO, not a regular file"), "{stderr}");
+    assert!(std::fs::symlink_metadata(&save).unwrap().file_type().is_fifo(), "the FIFO is left a FIFO");
+}

@@ -935,6 +935,22 @@ fn an_unwritable_save_or_positions_file_is_refused_before_drafting() {
         .output().expect("failed to run");
     assert_clean_refusal(&out, "a --save that is a directory");
     assert!(stderr(&out).contains(&format!("{} is a directory", dir.display())), "{}", stderr(&out));
+    // #1079: a FIFO passed too, and the rename replaced it with the snapshot.
+    let fifo = dir.join("fifo");
+    assert!(std::process::Command::new("mkfifo").arg(&fifo).status().expect("run mkfifo").success());
+    let mut cmd = runner();
+    let out = cmd.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null").env_remove("MTG_DRAFT_POSITIONS")
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q", "--log", "/dev/null"])
+        .arg("--save").arg(&fifo)
+        .output().expect("failed to run");
+    assert_clean_refusal(&out, "a --save that is a FIFO");
+    assert!(stderr(&out).contains("is a FIFO, not a regular file"), "{}", stderr(&out));
+    {
+        use std::os::unix::fs::FileTypeExt;
+        assert!(std::fs::symlink_metadata(&fifo).unwrap().file_type().is_fifo(), "the FIFO is left a FIFO");
+    }
+    let _ = std::fs::remove_file(&fifo);
     // The probe touches neither the save nor the `.tmp` it is written
     // through, which may hold the only copy of a snapshot being resumed:
     // a real snapshot at X.tmp, resumed with --save X by a run the log

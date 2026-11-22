@@ -540,3 +540,27 @@ assert reason("something else\nlast") == "last"
         .output().expect("python3 runs");
     assert!(py.status.success(), "{}", String::from_utf8_lossy(&py.stderr));
 }
+
+/// Issue #1079: the atomic write's rename replaces whatever is at the
+/// path, so a FIFO (run as root, a device: `--save /dev/full` turned the
+/// box's /dev/full into a JSON file) became a regular file holding the
+/// save, with no word. It is refused before the game, as a directory is,
+/// and through a symlink too.
+#[test]
+fn a_save_path_that_is_a_fifo_is_refused_not_replaced() {
+    use std::os::unix::fs::FileTypeExt;
+    let scratch = Scratch::new("fifo");
+    let fifo = scratch.path("fifo1");
+    let made = Command::new("mkfifo").arg(&fifo).status().expect("run mkfifo");
+    assert!(made.success(), "mkfifo {fifo}");
+    let link = scratch.path("link1");
+    std::os::unix::fs::symlink(&fifo, &link).unwrap();
+    for save in [&fifo, &link] {
+        let out = play_a_game(&scratch, save);
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "--save {save} is refused: {err}");
+        assert!(err.contains("is a FIFO, not a regular file"), "and says why: {err}");
+        assert!(std::fs::symlink_metadata(&fifo).unwrap().file_type().is_fifo(),
+            "--save {save} left the FIFO a FIFO");
+    }
+}
