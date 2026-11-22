@@ -1623,6 +1623,11 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
         Some((k, m)) => (k, Some(m)),
         None => (spec, None),
     };
+    if matches!(kind, "ai" | "llm" | "claude" | "gemini" | "claude-code" | "cc") {
+        if let Err(e) = mtg_player::llm::check_model_named(spec) {
+            die(&format!("{origin} {e}"));
+        }
+    }
 
     match kind {
         // A cli seat with no usable terminal (stdin redirected AND no

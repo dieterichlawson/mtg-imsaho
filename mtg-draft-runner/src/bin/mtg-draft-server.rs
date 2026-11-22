@@ -206,6 +206,10 @@ fn check_models(seats: &[SeatKind]) {
     })).count();
     for (seat, kind) in seats.iter().enumerate() {
         let SeatKind::Ai(spec) = kind else { continue };
+        // `ai:cc:` was sent as `--model ""` on every call (#1080).
+        if let Err(e) = mtg_player::llm::check_model_named(spec) {
+            die(&format!("seat {seat} {e}"));
+        }
         let provider = spec.split(':').next().unwrap_or("");
         match provider {
             "claude" | "gemini" => if let Some(var) = llm_client::missing_api_key(provider) {

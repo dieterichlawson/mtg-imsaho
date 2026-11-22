@@ -2493,6 +2493,25 @@ pub struct LlmPlayer {
     attack_plan: Option<AttackPlan>,
 }
 
+/// Refuse a model spec that names no model after its colon: `cc:`,
+/// `gemini:`, `claude:` — most likely `cc:$MODEL` with `MODEL` unset.
+/// The empty name was sent as `--model ""` (or as the API's model id),
+/// every call failed, and the seat was handed empty answers for the rest
+/// of the game, where `gui:` is refused at once (#1080). Shared by
+/// mtg-runner's `--p1`/`--p2`, mtg-draft-runner's `--model` and the hosted
+/// table's `ai:<spec>`, so the three cannot disagree.
+///
+/// # Errors
+/// The spec and what to write instead.
+pub fn check_model_named(spec: &str) -> Result<(), String> {
+    let Some((provider, rest)) = spec.split_once(':') else { return Ok(()) };
+    if rest.split(':').next().is_some_and(|m| !m.trim().is_empty()) {
+        return Ok(());
+    }
+    Err(format!("'{spec}' names no model after the colon: write {provider} for its default model, \
+or {provider}:<model>"))
+}
+
 /// The model a metered `claude` seat runs when its spec names none, in the
 /// games and in the draft. The cheapest current model: replayed over the
 /// kept positions of real games, it chose the reference's action more often
@@ -7390,6 +7409,17 @@ pub(crate) fn follows_preposition(before: &str) -> bool {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    #[test]
+    fn a_model_spec_with_nothing_after_its_colon_is_refused() {
+        for bad in ["cc:", "claude-code:", "gemini:", "claude:", "cc: ", "gemini::high"] {
+            let e = super::check_model_named(bad).expect_err(bad);
+            assert!(e.contains("names no model after the colon"), "{bad}: {e}");
+        }
+        for good in ["cc", "cc:sonnet", "gemini:gemini-2.5-flash:low", "random", "gui:0"] {
+            assert_eq!(super::check_model_named(good), Ok(()), "{good}");
+        }
+    }
+
     use super::*;
 
     /// #911's review: an on-or-off setting is on only for `1`; anything

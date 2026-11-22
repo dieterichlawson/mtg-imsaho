@@ -73,6 +73,10 @@ fn main() {
     let get = |flag: &str| args.iter().rposition(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let positions = get("--positions").unwrap_or_else(|| die("--positions <file> is required"));
     let model = get("--model").unwrap_or_else(|| die("--model <spec> is required"));
+    // `cc:` was sent as `--model ""` on every call (#1080).
+    if let Err(e) = mtg_player::llm::check_model_named(&model) {
+        die(&format!("--model {e}"));
+    }
     // A provider the runner does not know is named as one, before the
     // metered check: "CC is a metered seat; pass --metered" sent a typo to
     // the wrong fix, which then failed only after the positions were read

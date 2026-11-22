@@ -41,6 +41,26 @@ fn assert_clean_refusal(output: &std::process::Output, what: &str) {
          stdout: {stdout}");
 }
 
+// ── issue #1080: an empty model after the colon ─────────────────────
+
+/// `--p1 cc:` was sent as `--model ""`: every call failed 400 and the seat
+/// was handed empty answers, where `gui:` is refused at once. Refused
+/// before anything is called, for each seat that takes a model; no key is
+/// set, so a metered one is refused for its empty model first.
+#[test]
+fn an_empty_model_after_the_colon_is_refused() {
+    for spec in ["cc:", "claude-code:", "claude:", "gemini:"] {
+        let output = runner()
+            .env_remove("ANTHROPIC_API_KEY").env_remove("GEMINI_API_KEY")
+            .args(["--p1", spec, "--p2", "random", "-q", "--seed", "3"])
+            .output()
+            .expect("failed to run");
+        assert_clean_refusal(&output, spec);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(&format!("--p1 '{spec}' names no model after the colon")), "{spec}: {stderr}");
+    }
+}
+
 // ── issue #70: unknown player type ──────────────────────────────────
 
 #[test]

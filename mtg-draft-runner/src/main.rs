@@ -737,6 +737,10 @@ fn validate_model_specs(models: &[String]) {
     let valid_levels = ["minimal", "low", "medium", "high"];
 
     for (i, spec) in models.iter().enumerate() {
+        // `cc:` was sent as `--model ""` on every call (#1080).
+        if let Err(e) = mtg_player::llm::check_model_named(spec) {
+            die(&format!("seat {i} model {e}"));
+        }
         let parts: Vec<&str> = spec.split(':').collect();
         let provider = parts[0];
         match provider {
