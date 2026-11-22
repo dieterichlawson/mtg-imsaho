@@ -381,6 +381,15 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   assignment, trigger ordering, "may" yes/no, mulligan bottoming, concede
   confirmation — and verify a pane opened inside a nested prompt returns
   to that same prompt with the same state
+  - **Read the refusals, not only the re-ask** (2026-11-22): the
+    behaviour held everywhere, and every finding was a refusal's or a
+    heading's wording — "mark at most 2 cards" over creature targets
+    (#1081), a hint split mid-bracket (#1082), "first of two targets" for
+    up to four (#1083). Grep each string in `mtg-gui/src/prompts.ts` and
+    `llm.rs` too: two of the three had copies. A board with Feeling of
+    Dread, Memory's Journey and Devil's Play reaches the up-to-N, the
+    player-then-cards and the X screens on turn 2. Blocker assignment,
+    trigger ordering and a "may" were not reached, so start there.
 - V22 marathon: drive one game past turn 150 with both seats durdling;
   watch the turn counter and step header, the log panel and `l` view at
   extreme length, 40+ card graveyard panes, save-file growth, RSS and CPU
