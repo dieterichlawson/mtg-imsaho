@@ -2275,6 +2275,8 @@ impl GeminiBackend {
                         let msg = format!("Gemini config error: {}", text.chars().take(300).collect::<String>());
                         crate::stderr_line!("{}FATAL: {msg}", seat_tag(&seat));
                         crate::game_log::write(file!(), line!(), &api_label("API_FATAL", &seat), &msg);
+                        crate::gui::close_pages_on_exit(crate::gui::Over::Stopped,
+                            "the runner serving this page stopped: a seat's model is misconfigured");
                         std::process::exit(1);
                     }
                     classify_http_status(code, format!(

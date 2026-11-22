@@ -237,6 +237,9 @@ fn quit_at_prompt() -> ! {
     // reset rather than the async-signal-safe subset.
     reset_terminal_for_exit();
     unlink_scratch_file();
+    // A gui seat across the table is told (#1033's review).
+    crate::gui::close_pages_on_exit(crate::gui::Over::Stopped,
+        "the runner serving this page stopped: the other seat quit at its prompt");
     std::process::exit(INTERRUPTED_EXIT_CODE);
 }
 
@@ -328,6 +331,8 @@ fn read_event_guarded() -> Option<Event> {
             if n >= 200 {
                 reset_terminal_for_exit();
                 crate::stderr_line!("Error: cannot read terminal input (terminal gone?); exiting");
+                crate::gui::close_pages_on_exit(crate::gui::Over::Stopped,
+                    "the runner serving this page stopped: the other seat's terminal is gone");
                 std::process::exit(1);
             }
             std::thread::sleep(std::time::Duration::from_millis(25));

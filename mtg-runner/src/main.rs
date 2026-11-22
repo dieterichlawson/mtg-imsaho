@@ -196,7 +196,7 @@ static TUI_FRAME_UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 /// was written into the frame, the shell then painted over the board, and
 /// the snapshot stayed in /tmp until some later run swept it (#868). A
 /// no-op before the game starts: no frame is up and no snapshot is
-/// registered.
+/// registered, and no page attached.
 ///
 /// `why` is what a gui seat's page is told: a page whose socket the exit
 /// reset read it as a dropped network and retried once a second for ever,
@@ -206,29 +206,9 @@ fn leave_game(why: &str) {
         mtg_player::cli::reset_terminal_for_exit();
     }
     mtg_player::cli::unlink_scratch_file();
-    close_pages(mtg_player::gui::Over::Stopped, &format!("the runner serving this page stopped: {why}"));
+    mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Stopped, &format!("the runner serving this page stopped: {why}"));
 }
 
-/// The gui seats' pages, for the exits that do not hold the seats.
-static GUI_PAGES: std::sync::Mutex<Vec<mtg_player::gui::PageHandle>> = std::sync::Mutex::new(Vec::new());
-
-/// Tell every page attached to a gui seat that nothing more is coming and
-/// why, and give it the moment `close_everything` gives a hosted table's
-/// pages: its thread sends the frame on its next beat. Once: a page
-/// already told keeps the first word. A no-op with no page attached.
-fn close_pages(over: mtg_player::gui::Over, reason: &str) {
-    let pages = GUI_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
-    let mut open = false;
-    for page in pages {
-        if page.connected() > 0 {
-            page.close_as(over, reason);
-            open = true;
-        }
-    }
-    if open {
-        std::thread::sleep(std::time::Duration::from_millis(600));
-    }
-}
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
@@ -485,6 +465,15 @@ fn flag_value<'a>(values: &'a [(String, String)], flag: &str) -> Option<&'a Stri
 }
 
 fn main() {
+    // A panic unwinds past the gui seat's page as an exit does: it is told
+    // the runner stopped, after the panic's own report (#1033's review).
+    // A cli concede unwinds by `resume_unwind`, which runs no hook.
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        report(info);
+        mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Stopped,
+            "the runner serving this page stopped: it panicked (the terminal has the report)");
+    }));
     let args: Vec<String> = env::args().collect();
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
@@ -1375,7 +1364,7 @@ use --save if you need a resumable file.");
                     .args(&new_args)
                     .exec();
                 mtg_player::stderr_line!("Failed to exec: {err}");
-                close_pages(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's exec failed");
+                mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's exec failed");
                 std::process::exit(1);
             }
             Ok(s) => {
@@ -1389,7 +1378,7 @@ use --save if you need a resumable file.");
                 mtg_player::stderr_line!("Resume manually with: {}", resume_command(&kept));
             }
         }
-        close_pages(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's build failed");
+        mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's build failed");
         return;
     }
 
@@ -1482,7 +1471,7 @@ use --save if you need a resumable file.");
     // ...and that nothing more is coming: a page whose socket the exit just
     // reset read it as a dropped network and retried for ever (#1033). Its
     // thread sends the result first, then this, on its next beat.
-    close_pages(mtg_player::gui::Over::Game, "the runner serving this page has stopped");
+    mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Game, "the runner serving this page has stopped");
     mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
@@ -1633,7 +1622,7 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
                 "{origin} gui takes a port number after the colon, got '{m}'"))));
             match GuiPlayer::new(name, port) {
                 Ok(p) => {
-                    GUI_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(p.page_handle());
+                    mtg_player::gui::close_on_exit(p.page_handle());
                     mtg_player::stderr_line!("{origin} gui: open {}", p.url);
                     PlayerKind::Gui(p)
                 }

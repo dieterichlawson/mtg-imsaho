@@ -299,6 +299,37 @@ impl PageHandle {
     }
 }
 
+/// The pages of the seats a process serves outside a hosted table, for the
+/// exits that do not hold the seats: a fatal, a signal, a cli seat's quit
+/// at its prompt, a panic (#1033). A hosted table registers none: its
+/// pages are told by the table's own close.
+static EXIT_PAGES: std::sync::Mutex<Vec<PageHandle>> = std::sync::Mutex::new(Vec::new());
+
+/// Register `page` to be told by [`close_pages_on_exit`].
+pub fn close_on_exit(page: PageHandle) {
+    EXIT_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(page);
+}
+
+/// Tell every page registered by [`close_on_exit`] and attached now that
+/// nothing more is coming and why, and give it the moment a hosted table's
+/// close gives its pages: its thread sends the frame on its next beat. A
+/// page already told keeps the first word; a no-op with none attached. A
+/// page whose socket the exit just reset read it as a dropped network and
+/// retried once a second for ever.
+pub fn close_pages_on_exit(over: Over, reason: &str) {
+    let pages = EXIT_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let mut open = false;
+    for page in pages {
+        if page.connected() > 0 {
+            page.close_as(over, reason);
+            open = true;
+        }
+    }
+    if open {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+    }
+}
+
 /// Takes a page's seat out of its game from another thread: a hosted
 /// table's host kicking a person mid-match (#821). Once withdrawn, the
 /// seat answers its pending and every later decision with a forfeit and
