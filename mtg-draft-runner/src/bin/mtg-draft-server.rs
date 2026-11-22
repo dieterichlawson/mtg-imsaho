@@ -359,7 +359,10 @@ and {} replayed{matches}",
 record, so what its AI seats' replayed picks were made under is unknown"));
         }
     }
-    let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"), PathBuf::from);
+    // `rename(2)` replaced a symlink instead of writing through it, as
+    // mtg-runner's did before #215 (#1079's review).
+    let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"),
+        |p| PathBuf::from(mtg_player::kept_file::resolve_symlink("--save", p)));
 
     let advertise = server::advertised_host(&args.bind);
     let host = advertise.clone().unwrap_or_else(|| args.bind.clone());

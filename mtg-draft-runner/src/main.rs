@@ -71,9 +71,13 @@ fn check_kept_files(save: Option<&str>, positions: Option<&str>) -> Result<(), S
                 return Err(refused(&format!("{p} is a directory")));
             }
         }
-        // The rename replaced a FIFO or a device at the path (#1079).
-        mtg_player::kept_file::check_replaceable(std::path::Path::new(path))
-            .map_err(|e| refused(&format!("{path} {e}")))?;
+        // The rename replaced a FIFO or a device at the path (#1079), and
+        // one at the `.tmp` was written into and renamed over it, or hung
+        // the open below.
+        for p in [path, tmp.as_str()] {
+            mtg_player::kept_file::check_replaceable(std::path::Path::new(p))
+                .map_err(|e| refused(&format!("{p} {e}")))?;
+        }
         if fs::metadata(&tmp).is_ok() {
             fs::OpenOptions::new().write(true).open(&tmp).map_err(|e| refused(&e))?;
         }
@@ -1107,6 +1111,9 @@ resume with the --best-of its run was played at)", args.best_of) };
 
     // After every check a resume makes, so a refused run touches no file,
     // and before the log: nothing is spent until both can be kept.
+    // `rename(2)` replaced a symlink instead of writing through it, as
+    // mtg-runner's did before #215 (#1079's review).
+    args.save = args.save.take().map(|p| mtg_player::kept_file::resolve_symlink("--save", &p));
     if let Err(e) = check_kept_files(args.save.as_deref(), env::var(POSITIONS_ENV).ok().as_deref()) {
         die(&e);
     }
@@ -1223,7 +1230,8 @@ resume with the --best-of its run was played at)", args.best_of) };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
         let tmp = format!("{path}.tmp");
-        match mtg_player::kept_file::check_replaceable(std::path::Path::new(path)).map_err(|e| e.to_string())
+        match mtg_player::kept_file::check_replaceable(std::path::Path::new(path))
+            .and_then(|()| mtg_player::kept_file::check_replaceable(std::path::Path::new(&tmp))).map_err(|e| e.to_string())
             .and_then(|()| serde_json::to_string(&save).map_err(|e| e.to_string()))
             .and_then(|text| fs::write(&tmp, text).map_err(|e| e.to_string()))
             .and_then(|()| fs::rename(&tmp, path).map_err(|e| e.to_string()))

@@ -309,6 +309,7 @@ impl Shared {
         let tmp = path.with_extension("tmp");
         // The rename replaced a FIFO or a device at the path (#1079).
         mtg_player::kept_file::check_replaceable(path)
+            .and_then(|()| mtg_player::kept_file::check_replaceable(&tmp))
             .and_then(|()| std::fs::write(&tmp, json))
             .and_then(|()| std::fs::rename(&tmp, path))
             .map_err(|e| format!("the snapshot cannot be written to {}: {e}", path.display()))

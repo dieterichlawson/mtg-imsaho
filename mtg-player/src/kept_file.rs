@@ -33,6 +33,42 @@ pub fn check_replaceable(path: &Path) -> std::io::Result<()> {
     Err(std::io::Error::other(what))
 }
 
+/// Resolve a `--save` path that is a symlink to the file it points at.
+///
+/// mtg-runner's since #215; the draft runner's and the hosted table's
+/// snapshot writes replaced the link the same way (#1079's review).
+///
+/// The atomic write renames onto the path, and `rename(2)` does not follow
+/// a final symlink: every save landed *next to* the link and destroyed the
+/// link on the first write, while the target the operator pointed at stayed
+/// empty. `--log`, which opens rather than renames, followed the link as
+/// anyone would expect (issue #215). Following it here restores the
+/// atomicity guarantee (the rename happens in the target's own directory)
+/// and makes the startup writability probe test the directory that will
+/// actually be written.
+pub fn resolve_symlink(flag: &str, path: &str) -> String {
+    use std::path::PathBuf;
+    let mut current = PathBuf::from(path);
+    // Bounded, so a symlink loop is a refusal rather than a hang.
+    for _ in 0..8 {
+        let Ok(meta) = std::fs::symlink_metadata(&current) else { break };
+        if !meta.file_type().is_symlink() {
+            break;
+        }
+        let Ok(target) = std::fs::read_link(&current) else { break };
+        current = if target.is_absolute() {
+            target
+        } else {
+            current.parent().unwrap_or(Path::new(".")).join(target)
+        };
+    }
+    let resolved = current.to_string_lossy().into_owned();
+    if resolved != path {
+        crate::stderr_line!("note: {flag} '{path}' is a symlink; writing through it to '{resolved}'");
+    }
+    resolved
+}
+
 #[cfg(test)]
 mod tests {
     use super::check_replaceable;

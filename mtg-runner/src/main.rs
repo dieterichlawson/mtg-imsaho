@@ -1,7 +1,7 @@
 use std::env;
 use std::fmt::Write;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
@@ -286,6 +286,9 @@ fn write_save_atomically(path: &str, json: &str) -> std::io::Result<()> {
     // as surely as one there at the start (#1079).
     mtg_player::kept_file::check_replaceable(Path::new(path))?;
     let tmp = format!("{}.{}.tmp", path, std::process::id());
+    // A device at the temp name is written into and then renamed over the
+    // save, and a FIFO there hangs the write (#1079's review).
+    mtg_player::kept_file::check_replaceable(Path::new(&tmp))?;
     let write = write_file(&tmp, json).and_then(|()| fs::rename(&tmp, path));
     if write.is_err() {
         // The failure path used to be what stranded a partial temp file —
@@ -312,38 +315,6 @@ fn write_file(path: &str, json: &str) -> std::io::Result<()> {
     options.write(true).create(true).truncate(true).mode(0o600);
     let mut file = options.open(path)?;
     file.write_all(json.as_bytes())
-}
-
-/// Resolve a `--save` path that is a symlink to the file it points at.
-///
-/// The atomic write renames onto the path, and `rename(2)` does not follow
-/// a final symlink: every save landed *next to* the link and destroyed the
-/// link on the first write, while the target the operator pointed at stayed
-/// empty. `--log`, which opens rather than renames, followed the link as
-/// anyone would expect (issue #215). Following it here restores the
-/// atomicity guarantee (the rename happens in the target's own directory)
-/// and makes the startup writability probe test the directory that will
-/// actually be written.
-fn resolve_save_symlink(path: &str) -> String {
-    let mut current = PathBuf::from(path);
-    // Bounded, so a symlink loop is a refusal rather than a hang.
-    for _ in 0..8 {
-        let Ok(meta) = fs::symlink_metadata(&current) else { break };
-        if !meta.file_type().is_symlink() {
-            break;
-        }
-        let Ok(target) = fs::read_link(&current) else { break };
-        current = if target.is_absolute() {
-            target
-        } else {
-            current.parent().unwrap_or(Path::new(".")).join(target)
-        };
-    }
-    let resolved = current.to_string_lossy().into_owned();
-    if resolved != path {
-        mtg_player::stderr_line!("note: --save '{path}' is a symlink; writing through it to '{resolved}'");
-    }
-    resolved
 }
 
 /// Delete hot-reload snapshots left by runs that are no longer running.
@@ -572,7 +543,7 @@ fn main() {
     }
     // `rename(2)` would replace a symlink instead of writing through it, so
     // resolve it before anything (including the probe below) uses the path.
-    let save_file = save_file.map(|p| resolve_save_symlink(&p));
+    let save_file = save_file.map(|p| mtg_player::kept_file::resolve_symlink("--save", &p));
     if let Some(ref path) = save_file {
         // A path that already holds something is overwritten from the first
         // decision on. That is what "write a save to this file" means, but

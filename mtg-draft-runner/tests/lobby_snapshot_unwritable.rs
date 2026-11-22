@@ -83,3 +83,44 @@ fn a_save_that_is_a_fifo_is_refused_not_replaced() {
     assert!(stderr.contains("is a FIFO, not a regular file"), "{stderr}");
     assert!(std::fs::symlink_metadata(&save).unwrap().file_type().is_fifo(), "the FIFO is left a FIFO");
 }
+
+/// #1079's review: the snapshot's rename replaced a symlinked `--save`
+/// with a file beside it and left its target unwritten — mtg-runner's
+/// #215, which the hosted table never had the fix for. It is written
+/// through the link, and a FIFO at the `.tmp` the write goes through is
+/// refused, not written into (where it hung) and renamed over the save.
+#[test]
+fn a_symlinked_save_is_written_through_and_a_fifo_tmp_is_refused() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let (dir, _) = lobby_support::scratch("save-link");
+    let target = dir.join("real.json");
+    let link = dir.join("link.json");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let server = Server::start("save-link-table", "human,ai", &["--save", link.to_str().unwrap()]);
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "the link is left a link");
+    assert!(target.exists(), "the snapshot reached the link's target");
+    drop(server);
+
+    use std::os::unix::fs::FileTypeExt;
+    let (dir, bin) = lobby_support::scratch("save-fifo-tmp");
+    let save = dir.join("t.json");
+    let tmp = dir.join("t.tmp");
+    assert!(Command::new("mkfifo").arg(&tmp).status().expect("run mkfifo").success());
+    let port = lobby_support::free_port().to_string();
+    let out = Command::new(env!("CARGO_BIN_EXE_mtg-draft-server"))
+        .args(["--seats", "ai,ai", "--best-of", "1", "--seed", "5", "--port", &port])
+        .args(["--game-ports", "40100-40140"])
+        .arg("--log").arg(dir.join("draft.log"))
+        .arg("--save").arg(&save)
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &bin)
+        .stdin(Stdio::null())
+        .output().expect("the server runs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "refused: {stderr}");
+    assert!(stderr.contains("is a FIFO, not a regular file"), "{stderr}");
+    assert!(std::fs::symlink_metadata(&tmp).unwrap().file_type().is_fifo(), "the FIFO is left a FIFO");
+}
