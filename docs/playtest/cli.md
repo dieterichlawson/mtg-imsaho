@@ -354,6 +354,14 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   values, unknown flags, unknown player-type values, --resume on a
   missing file or a directory, and --log/--save pointed at unwritable
   paths, directories and /dev/full
+  - **Write failures after the open** (2026-11-22): a full disk is
+    `bash -c "trap '' XFSZ; ulimit -f 8; mtg-runner …"` — every write then
+    fails with EFBIG without killing the process. Compare what `--log`,
+    `--save`, `--decision-stats` and the hot-reload snapshot each say
+    (#1078: the log said nothing). Never aim `--save` at a real device as
+    root: the atomic rename replaces it (#1079). Use a `mkfifo` instead.
+  - **Empty suffixes:** `cc:`, `gui:` and `ai:cc:` at the hosted table —
+    every `kind:value` spec, on all three binaries (#1080).
 - V18 EOF, signals and terminal detach: Ctrl-D at every prompt type,
   SIGINT/SIGTSTP+CONT/SIGHUP mid-prompt, tmux detach and reattach with a
   prompt open; nothing may busy-loop, silently choose an action, leave
