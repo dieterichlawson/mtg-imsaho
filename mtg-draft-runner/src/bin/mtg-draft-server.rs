@@ -472,4 +472,9 @@ client still works", shared.config.web_dir.display(), server::PAGE);
     if let Some(sig) = mtg_player::llm::stop_signal() {
         std::process::exit(128 + sig);
     }
+    // A log cut by a full disk was said once when it was cut (#1078).
+    if let Some(why) = mtg_player::game_log::write_failure() {
+        mtg_player::stderr_line!("Error: {why}; the table's log is incomplete");
+        std::process::exit(1);
+    }
 }

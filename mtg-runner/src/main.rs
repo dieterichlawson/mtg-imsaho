@@ -1476,6 +1476,12 @@ use --save if you need a resumable file.");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
     print_token_usage();
+    // A log cut by a full disk was said once when it was cut; the run's
+    // record is incomplete, so the run does not end as if it were (#1078).
+    if let Some(why) = mtg_player::game_log::write_failure() {
+        mtg_player::stderr_line!("Error: {why}; the game finished but its log is incomplete");
+        std::process::exit(1);
+    }
 }
 
 /// What the seats spent, one line per model, on stdout and as the log's

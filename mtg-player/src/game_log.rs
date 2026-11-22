@@ -45,7 +45,13 @@ impl LogLevel {
 
 struct LogState {
     file: File,
+    path: String,
 }
+
+/// Why the log stopped accepting writes, once it has (#1078). Every write
+/// error was discarded, so a full disk or a file-size limit cut the log
+/// mid-line and the run played on and exited 0 with nothing said.
+static FAILED: Mutex<Option<String>> = Mutex::new(None);
 
 static LOG: Mutex<Option<LogState>> = Mutex::new(None);
 
@@ -154,8 +160,23 @@ fn emit(block: &str) {
         Err(e) => e.into_inner(),
     };
     let Some(state) = guard.as_mut() else { return };
-    let _ = state.file.write_all(block.as_bytes());
-    let _ = state.file.flush();
+    let Err(e) = state.file.write_all(block.as_bytes()).and_then(|()| state.file.flush()) else { return };
+    // The log is the run's record: said once, on stderr, the moment it is
+    // cut, and asked for by the binary at its end ([`write_failure`]). No
+    // more is written: what is there ends where the record stopped, not
+    // in a later fragment after a gap.
+    let why = format!("the log '{}' stopped accepting writes: {e}", state.path);
+    *guard = None;
+    drop(guard);
+    *FAILED.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(why.clone());
+    crate::stderr_line!("warning: {why}; it is incomplete from here on");
+}
+
+/// Why the log stopped accepting writes, if it has: a run whose record was
+/// cut says so at its end and does not exit 0 (#1078).
+#[must_use]
+pub fn write_failure() -> Option<String> {
+    FAILED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
 }
 
 /// Initialize the global log writer. Call once at startup.
@@ -181,7 +202,7 @@ pub fn init(path: &str) -> std::io::Result<()> {
         Ok(g) => g,
         Err(e) => e.into_inner(),
     };
-    *guard = Some(LogState { file });
+    *guard = Some(LogState { file, path: path.to_string() });
     INITIALIZED.store(true, Ordering::SeqCst);
     Ok(())
 }

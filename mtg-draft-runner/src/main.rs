@@ -1927,6 +1927,12 @@ deck and results are not a drafted one");
         mtg_player::stderr_line!("  (grep the log for WARN to see each one)");
     }
 
+    // A log cut by a full disk was said once when it was cut; "Log
+    // written" over it, and exit 0, said the record was whole (#1078).
+    if let Some(why) = mtg_player::game_log::write_failure() {
+        mtg_player::stderr_line!("\nError: {why}; the draft finished but its log is incomplete");
+        std::process::exit(1);
+    }
     if !args.quiet {
         mtg_player::stderr_line!("\nDone. Log written to {}", args.log);
     }
