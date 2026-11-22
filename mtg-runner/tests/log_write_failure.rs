@@ -19,3 +19,20 @@ fn a_log_cut_by_a_full_disk_is_said_and_the_run_does_not_exit_0() {
     assert!(stderr.contains("the game finished but its log is incomplete"), "and at the end: {stderr}");
     assert!(String::from_utf8_lossy(&out.stdout).contains("Game over!"), "the game still played out");
 }
+
+/// #1078's review: `--stop-after` exits 0 too, and the decision replay
+/// (scripts/decision-eval/replay.py) reads its prompt and usage from the
+/// log of exactly that run.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_stop_after_run_whose_log_was_cut_does_not_exit_0() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
+        .args(["--p1", "random", "--p2", "random", "--seed", "1", "-q", "--stop-after", "3", "--log", "/dev/full"])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("run mtg-runner");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr: {stderr}");
+    assert!(stderr.contains("the run stopped where --stop-after asked but its log is incomplete"), "{stderr}");
+}

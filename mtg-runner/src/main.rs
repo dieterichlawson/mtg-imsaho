@@ -210,6 +210,16 @@ fn leave_game(why: &str) {
 }
 
 
+/// A run that would end with exit 0 whose log a full disk cut: said again
+/// at its end, after the warning when it was cut, and exit 1, since the
+/// run's record is incomplete (#1078). `ended` is how the run ended.
+fn log_was_cut(ended: &str) {
+    if let Some(why) = mtg_player::game_log::write_failure() {
+        mtg_player::stderr_line!("Error: {why}; {ended} but its log is incomplete");
+        std::process::exit(1);
+    }
+}
+
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
     end_run(&format!("Error: {msg}"), &format!("FATAL {msg}"), 1)
@@ -1133,6 +1143,8 @@ stops here — pass --save {path} to keep writing it");
             mtg_player::game_log::write(file!(), line!(), "STOPPED",
                 &format!("--stop-after {}: p{} chose {json}", decisions_made.get(), acting_player.0));
             mtg_player::game_log::flush_all();
+            // A replay reads its prompt and usage from this log (#1078's review).
+            log_was_cut("the run stopped where --stop-after asked");
             std::process::exit(0);
         }
         // A seat whose backend spent its whole retry budget without an answer
@@ -1385,6 +1397,7 @@ use --save if you need a resumable file.");
             }
         }
         mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's build failed");
+        log_was_cut("the game is saved");
         return;
     }
 
@@ -1482,12 +1495,7 @@ use --save if you need a resumable file.");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
     print_token_usage();
-    // A log cut by a full disk was said once when it was cut; the run's
-    // record is incomplete, so the run does not end as if it were (#1078).
-    if let Some(why) = mtg_player::game_log::write_failure() {
-        mtg_player::stderr_line!("Error: {why}; the game finished but its log is incomplete");
-        std::process::exit(1);
-    }
+    log_was_cut("the game finished");
 }
 
 /// What the seats spent, one line per model, on stdout and as the log's
