@@ -1954,16 +1954,16 @@ async function main() {
     {
       const titles = await page.evaluate(() => {
         const seen = {};
-        for (const over of ["match", "game", undefined]) {
+        for (const over of ["match", "game", "stopped", undefined]) {
           window.mtgDebug.message({ type: "closed", reason: "the draft page says where the table stands", over });
           seen[String(over)] = document.title;
         }
         return seen;
       });
-      const want = { match: "This match is over", game: "This game is over", undefined: "The table is closed" };
+      const want = { match: "This match is over", game: "This game is over", stopped: "This game has stopped", undefined: "The table is closed" };
       const wrong = Object.entries(want).filter(([k, v]) => !titles[k].startsWith(v));
       if (wrong.length) fail(`closed page's title does not say what ended: ${JSON.stringify(titles)}`);
-      else ok("closed page: title says the match, the game or the table");
+      else ok("closed page: title says the match, the game, a stopped game or the table");
     }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {

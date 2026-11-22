@@ -156,3 +156,96 @@ fn a_gui_seats_page_is_told_the_runner_has_stopped_after_the_result() {
     }
     panic!("the page was never told the runner stopped; it got {kinds:?} and then its socket dropped");
 }
+
+/// A runner on `--p1 gui:0 --p2 random`, its stderr's page URL, and the
+/// guard that kills it.
+fn gui_runner(tag: &str, extra: &[&str]) -> (KillOnDrop, String, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("mtg-gui-seat-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = dir.join("deck.txt");
+    std::fs::write(&deck, "60 Mountain\n").unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
+        .args(["--p1", "gui:0", "--p2", "random", "--seed", "11", "-q"])
+        .args(["--deck1", deck.to_str().unwrap(), "--deck2", deck.to_str().unwrap()])
+        .args(extra)
+        .env("MTG_GUI_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn mtg-runner");
+    let stderr = child.stderr.take().expect("the runner's stderr");
+    let url = page_url(stderr);
+    (KillOnDrop(child), url, dir)
+}
+
+/// Read until `closed`, answering each decision with `answer` (once
+/// `on_decision` returns true it stops answering), and return the frame.
+fn read_until_closed(
+    ws: &mut WebSocket<tungstenite::stream::MaybeTlsStream<TcpStream>>,
+    mut on_decision: impl FnMut(&Value) -> Option<Value>,
+) -> Value {
+    let mut kinds = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while Instant::now() < deadline {
+        let Ok(Message::Text(text)) = ws.read() else { break };
+        let msg: Value = serde_json::from_str(&text).unwrap();
+        let kind = msg["type"].as_str().unwrap_or_default().to_string();
+        if kind == "closed" {
+            return msg;
+        }
+        if kind == "decision" {
+            if let Some(answer) = on_decision(&msg) {
+                ws.send(Message::Text(json!({"type": "action", "seq": msg["seq"], "action": answer})
+                    .to_string().into())).unwrap();
+            }
+        }
+        kinds.push(kind);
+    }
+    panic!("the page was never told the runner stopped; it got {kinds:?} and then its socket dropped");
+}
+
+/// #1033: `--stop-after` exited mid-game past the gui seat's page, which
+/// read the reset socket as a dropped network and retried for ever. It is
+/// told the runner stopped, and that the game is not over.
+#[test]
+fn a_gui_seats_page_is_told_when_stop_after_ends_the_run() {
+    // Far enough in that the seat, which waits on its page, has been asked.
+    let (_child, url, dir) = gui_runner("stop-after", &["--stop-after", "8"]);
+    let mut ws = connect(&url);
+    ws.send(Message::Text(json!({"type": "hello"}).to_string().into())).unwrap();
+    let msg = read_until_closed(&mut ws, |msg| {
+        let actions = msg["legal"]["actions"].as_array().cloned().unwrap_or_default();
+        actions.iter().find(|a| *a == "MulliganKeep")
+            .or_else(|| actions.iter().find(|a| a.get("PlayLand").is_some()))
+            .or_else(|| actions.iter().find(|a| *a == "PassPriority"))
+            .cloned()
+    });
+    assert_eq!(msg["over"], "stopped", "the page says the game stopped, not that it is over: {msg}");
+    assert_eq!(msg["reason"], "the runner serving this page stopped: --stop-after 8", "{msg}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1033: with only gui and random seats no stop handler was installed, so
+/// SIGTERM took the runner down by its default action and the page was
+/// told nothing.
+#[test]
+fn a_gui_seats_page_is_told_when_a_stop_signal_ends_the_run() {
+    let (child, url, dir) = gui_runner("sigterm", &[]);
+    let mut ws = connect(&url);
+    ws.send(Message::Text(json!({"type": "hello"}).to_string().into())).unwrap();
+    let pid = child.0.id().to_string();
+    let mut sent = false;
+    let msg = read_until_closed(&mut ws, |_| {
+        if !sent {
+            sent = true;
+            let status = Command::new("kill").args(["-TERM", &pid]).status().expect("run kill");
+            assert!(status.success(), "kill -TERM {pid}");
+        }
+        None
+    });
+    assert_eq!(msg["over"], "stopped", "{msg}");
+    assert_eq!(msg["reason"], "the runner serving this page stopped: stopped by SIGTERM", "{msg}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

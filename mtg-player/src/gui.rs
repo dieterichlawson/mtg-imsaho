@@ -99,6 +99,10 @@ pub enum Over {
     Match,
     /// This page's game, whose runner has stopped (no table around it).
     Game,
+    /// This page's game, whose runner stopped before the game ended:
+    /// `--stop-after`, a stop signal, an invariant break, a fatal error
+    /// (#1033). The game is not over; a `--resume` can carry it on.
+    Stopped,
 }
 
 impl Over {
@@ -107,6 +111,7 @@ impl Over {
             Self::Table => None,
             Self::Match => Some("match"),
             Self::Game => Some("game"),
+            Self::Stopped => Some("stopped"),
         }
     }
 }

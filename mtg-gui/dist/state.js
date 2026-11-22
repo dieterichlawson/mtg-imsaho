@@ -15,6 +15,8 @@ export function noticeAtNewDecision(notice, waiting) {
  *  otherwise. "The table is closed" over a finished match's page, while
  *  the table ran on, was false (#1033's review). */
 export function closedHeadline(over) {
+    if (over === "stopped")
+        return "This game has stopped";
     return over === "match" ? "This match is over" : over === "game" ? "This game is over" : "The table is closed";
 }
 /** Connects in a row, one a second, that a page whose game has ended

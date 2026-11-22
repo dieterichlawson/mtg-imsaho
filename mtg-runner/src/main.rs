@@ -197,11 +197,37 @@ static TUI_FRAME_UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 /// the snapshot stayed in /tmp until some later run swept it (#868). A
 /// no-op before the game starts: no frame is up and no snapshot is
 /// registered.
-fn leave_game() {
+///
+/// `why` is what a gui seat's page is told: a page whose socket the exit
+/// reset read it as a dropped network and retried once a second for ever,
+/// its game not over (#1033).
+fn leave_game(why: &str) {
     if TUI_FRAME_UP.swap(false, std::sync::atomic::Ordering::SeqCst) {
         mtg_player::cli::reset_terminal_for_exit();
     }
     mtg_player::cli::unlink_scratch_file();
+    close_pages(mtg_player::gui::Over::Stopped, &format!("the runner serving this page stopped: {why}"));
+}
+
+/// The gui seats' pages, for the exits that do not hold the seats.
+static GUI_PAGES: std::sync::Mutex<Vec<mtg_player::gui::PageHandle>> = std::sync::Mutex::new(Vec::new());
+
+/// Tell every page attached to a gui seat that nothing more is coming and
+/// why, and give it the moment `close_everything` gives a hosted table's
+/// pages: its thread sends the frame on its next beat. Once: a page
+/// already told keeps the first word. A no-op with no page attached.
+fn close_pages(over: mtg_player::gui::Over, reason: &str) {
+    let pages = GUI_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    let mut open = false;
+    for page in pages {
+        if page.connected() > 0 {
+            page.close_as(over, reason);
+            open = true;
+        }
+    }
+    if open {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+    }
 }
 
 /// A user error: report it and exit without a Rust panic/backtrace.
@@ -220,7 +246,7 @@ fn end_run(said: &str, logged: &str, status: i32) -> ! {
         }
     }
     mtg_player::llm::claude_code_kill_live_calls();
-    leave_game();
+    leave_game(said.trim_start_matches("Error: ").trim_start_matches("Stopped: "));
     mtg_player::stderr_line!("{said}");
     print_token_usage();
     // The log is the run's record: a refused `--resume` or any later fatal
@@ -928,7 +954,9 @@ stops here — pass --save {path} to keep writing it");
     // shell (issue #78).
     // Only where a seat spends calls: a random-vs-random game (the fuzzer's,
     // under `timeout`) has nothing to account for and dies as it did.
-    if !has_human && (matches!(p1, PlayerKind::Llm(_)) || matches!(p2, PlayerKind::Llm(_))) {
+    // A gui seat's page is told the runner stopped, which the default
+    // action of the signal never says (#1033).
+    if !has_human && (has_gui || matches!(p1, PlayerKind::Llm(_)) || matches!(p2, PlayerKind::Llm(_))) {
         stop_on_signals();
     }
     if has_human {
@@ -1104,7 +1132,7 @@ stops here — pass --save {path} to keep writing it");
         }
         if !observed && stop_after == Some(decisions_made.get()) {
             let json = serde_json::to_string(&answer).unwrap_or_else(|e| format!("\"unserializable: {e}\""));
-            leave_game();
+            leave_game(&format!("--stop-after {}", decisions_made.get()));
             write_decision_stats();
             mtg_player::stdout_line!("DECISION {} p{} {json}", decisions_made.get(), acting_player.0);
             mtg_player::game_log::write(file!(), line!(), "STOPPED",
@@ -1228,7 +1256,7 @@ stops here — pass --save {path} to keep writing it");
 
             let all: Vec<String> = violations.into_iter().chain(extra).collect();
             if !all.is_empty() {
-                leave_game();
+                leave_game(&format!("an invariant violation at action {action_count}"));
                 write_decision_stats();
                 // The action count includes what the checker alone was
                 // shown; the decision count is the N `--stop-after` takes
@@ -1347,6 +1375,7 @@ use --save if you need a resumable file.");
                     .args(&new_args)
                     .exec();
                 mtg_player::stderr_line!("Failed to exec: {err}");
+                close_pages(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's exec failed");
                 std::process::exit(1);
             }
             Ok(s) => {
@@ -1360,6 +1389,7 @@ use --save if you need a resumable file.");
                 mtg_player::stderr_line!("Resume manually with: {}", resume_command(&kept));
             }
         }
+        close_pages(mtg_player::gui::Over::Stopped, "the runner serving this page stopped: a hot reload's build failed");
         return;
     }
 
@@ -1452,19 +1482,7 @@ use --save if you need a resumable file.");
     // ...and that nothing more is coming: a page whose socket the exit just
     // reset read it as a dropped network and retried for ever (#1033). Its
     // thread sends the result first, then this, on its next beat.
-    let mut open = false;
-    for player in [&p1, &p2] {
-        if let PlayerKind::Gui(gui) = player {
-            let page = gui.page_handle();
-            if page.connected() > 0 {
-                page.close_as(mtg_player::gui::Over::Game, "the runner serving this page has stopped");
-                open = true;
-            }
-        }
-    }
-    if open {
-        std::thread::sleep(std::time::Duration::from_millis(600));
-    }
+    close_pages(mtg_player::gui::Over::Game, "the runner serving this page has stopped");
     mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
@@ -1615,6 +1633,7 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
                 "{origin} gui takes a port number after the colon, got '{m}'"))));
             match GuiPlayer::new(name, port) {
                 Ok(p) => {
+                    GUI_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(p.page_handle());
                     mtg_player::stderr_line!("{origin} gui: open {}", p.url);
                     PlayerKind::Gui(p)
                 }

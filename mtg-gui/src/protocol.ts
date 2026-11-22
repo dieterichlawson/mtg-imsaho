@@ -376,8 +376,9 @@ export type ServerMessage =
   | { type: "table"; match_line: string | null; opponent: string | null }
   /** The host ended the table: nothing to reconnect to (#824). `over` is
    *  what ended when it is not the table: a finished match's page while the
-   *  table runs on, or a runner's one game (#1033). */
-  | { type: "closed"; reason: string; over?: "match" | "game" };
+   *  table runs on, a runner's one game, or a runner that stopped before
+   *  its game ended (#1033). */
+  | { type: "closed"; reason: string; over?: "match" | "game" | "stopped" };
 
 export type ClientMessage =
   | { type: "hello" }

@@ -147,7 +147,7 @@ export interface State {
    *  answering (#1033); cleared when a connect opens. */
   unreachable?: string | null;
   /** What `closed` ended when it was not the table (#1033). */
-  closedOver?: "match" | "game" | null;
+  closedOver?: "match" | "game" | "stopped" | null;
   /** Where the modal painted its text field last frame, in canvas
    *  coordinates; the DOM input is placed over it (issue #531). */
   fieldRect?: { x: number; y: number; w: number; h: number } | null;
@@ -188,7 +188,8 @@ export function noticeAtNewDecision(notice: string | null, waiting: { text: stri
 /** What a closed page says has ended: the table unless the server said
  *  otherwise. "The table is closed" over a finished match's page, while
  *  the table ran on, was false (#1033's review). */
-export function closedHeadline(over: "match" | "game" | null | undefined): string {
+export function closedHeadline(over: "match" | "game" | "stopped" | null | undefined): string {
+  if (over === "stopped") return "This game has stopped";
   return over === "match" ? "This match is over" : over === "game" ? "This game is over" : "The table is closed";
 }
 
