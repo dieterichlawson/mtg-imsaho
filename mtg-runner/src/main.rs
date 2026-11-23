@@ -577,7 +577,8 @@ fn main() {
         let refused = |e: &dyn std::fmt::Display| -> ! { die(&format!("cannot write --decision-stats '{path}': {e}")) };
         match fs::metadata(path) {
             Ok(m) if m.is_dir() => refused(&"Is a directory"),
-            Ok(_) => if let Err(e) = fs::OpenOptions::new().write(true).open(path) { refused(&e) },
+            Ok(_) => if let Err(e) = mtg_player::kept_file::check_openable_for_write(Path::new(path))
+                .and_then(|()| fs::OpenOptions::new().write(true).open(path).map(drop)) { refused(&e) },
             Err(_) => {
                 let probe = format!("{}.{}.tmp", path, std::process::id());
                 if let Err(e) = fs::write(&probe, b"") { refused(&e) }

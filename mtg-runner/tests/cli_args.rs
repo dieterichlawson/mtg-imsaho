@@ -125,6 +125,39 @@ fn unwritable_decision_stats_are_refused_before_the_game() {
     }
 }
 
+/// #1084's review: `--log` and `--decision-stats` naming a FIFO nothing
+/// reads hung the run in their open, at start-up, with nothing said. Each
+/// is refused by name, without waiting.
+#[cfg(unix)]
+#[test]
+fn a_log_or_decision_stats_fifo_with_no_reader_is_refused_not_waited_on() {
+    let dir = std::env::temp_dir().join(format!("mtg-runner-fifo-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fifo = dir.join("out.fifo");
+    let _ = std::fs::remove_file(&fifo);
+    assert!(Command::new("mkfifo").arg(&fifo).status().expect("run mkfifo").success());
+    let fifo = fifo.to_str().unwrap().to_string();
+    for (flag, said) in [("--log", "is a FIFO with no reader"), ("--decision-stats", "cannot write --decision-stats")] {
+        let mut child = runner()
+            .args(["--p1", "random", "--p2", "random", "-q", "--seed", "3", flag, &fifo])
+            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+            .spawn().expect("failed to run");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while child.try_wait().unwrap().is_none() {
+            if std::time::Instant::now() > deadline {
+                let _ = child.kill();
+                panic!("{flag} hung on the FIFO");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let output = child.wait_with_output().unwrap();
+        assert_clean_refusal(&output, &format!("{flag} naming a FIFO"));
+        let err = String::from_utf8_lossy(&output.stderr);
+        assert!(err.contains(said) && err.contains("FIFO with no reader"), "{flag}: {err}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ── issue #103: a cli seat with no terminal is refused, not spun ────
 
 /// With stdin redirected and no controlling terminal (setsid), a `cli`

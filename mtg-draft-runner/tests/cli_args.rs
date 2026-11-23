@@ -1099,7 +1099,7 @@ fn a_positions_file_that_is_a_fifo_is_refused_not_waited_on() {
     }
     let out = child.wait_with_output().unwrap();
     assert_clean_refusal(&out, "an MTG_DRAFT_POSITIONS that is a FIFO");
-    assert!(stderr(&out).contains("it is a FIFO, not a regular file"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("it is a FIFO with no reader"), "{}", stderr(&out));
     assert!(std::fs::symlink_metadata(&fifo).unwrap().file_type().is_fifo(), "the FIFO is left a FIFO");
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -194,6 +194,10 @@ pub fn write_failure() -> Option<String> {
 /// panicking (issue #69): the caller owns how a bad `--log` argument is
 /// reported.
 pub fn init(path: &str) -> std::io::Result<()> {
+    // A FIFO with no reader hung the open, and the run, with nothing said
+    // (#1084's review).
+    #[cfg(unix)]
+    crate::kept_file::check_openable_for_write(std::path::Path::new(path))?;
     let file = OpenOptions::new()
         .create(true)
         .append(true)

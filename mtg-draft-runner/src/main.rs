@@ -100,21 +100,12 @@ fn check_kept_files(save: Option<&str>, positions: Option<&str>) -> Result<(), S
     }
     if let Some(path) = positions {
         let refused = |e: &dyn std::fmt::Display| format!("{POSITIONS_ENV}: the pick positions cannot be kept in {path}: {e}");
-        // A FIFO's open below waits for a reader, and the run hung at
-        // start-up with nothing said (#1084); a socket cannot be opened at
-        // all. A device is appended to as asked: /dev/null keeps nothing
-        // on purpose, and one that refuses a write is said at the end.
-        #[cfg(unix)]
-        if let Ok(meta) = fs::metadata(path) {
-            use std::os::unix::fs::FileTypeExt as _;
-            let kind = meta.file_type();
-            if kind.is_fifo() {
-                return Err(refused(&"it is a FIFO, not a regular file, and the positions are appended to one"));
-            }
-            if kind.is_socket() {
-                return Err(refused(&"it is a socket, not a regular file, and the positions are appended to one"));
-            }
-        }
+        // A FIFO with no reader hung the open below, and the run, at
+        // start-up with nothing said (#1084). A FIFO something reads, and
+        // a device, are appended to as asked: /dev/null keeps nothing on
+        // purpose, and one that refuses a write is said at the end.
+        mtg_player::kept_file::check_openable_for_write(std::path::Path::new(path))
+            .map_err(|e| refused(&format!("it {e}")))?;
         if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
             return Err(refused(&"it is a directory"));
         }

@@ -1,5 +1,6 @@
 //! Files a run keeps by writing a temp sibling and renaming it over the
-//! path: a game's `--save`, the hot-reload snapshot, a draft's snapshot.
+//! path: a game's `--save`, the hot-reload snapshot, a draft's snapshot;
+//! and the checks a file opened for writing in place gets first.
 
 use std::path::Path;
 
@@ -31,6 +32,34 @@ pub fn check_replaceable(path: &Path) -> std::io::Result<()> {
         "is not a regular file; a save would replace it"
     };
     Err(std::io::Error::other(what))
+}
+
+/// Refuse a path whose open for writing would wait for ever, or cannot be
+/// made, before a run opens it: a FIFO with no reader (the open waits for
+/// one, and the run hung at start-up with nothing said, #1084) and a
+/// socket. A FIFO something reads is opened as asked; so is a device. The
+/// path is followed, as the open that comes after it follows it.
+///
+/// # Errors
+/// What is at the path, when opening it would hang or cannot work.
+pub fn check_openable_for_write(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+    let Ok(meta) = std::fs::metadata(path) else { return Ok(()) };
+    let kind = meta.file_type();
+    if kind.is_socket() {
+        return Err(std::io::Error::other("is a socket, not a file it can be written to"));
+    }
+    if kind.is_fifo() {
+        // A non-blocking open of a FIFO for writing fails at once with
+        // ENXIO when nothing has it open for reading.
+        return match std::fs::OpenOptions::new().write(true).custom_flags(libc::O_NONBLOCK).open(path) {
+            Ok(_) => Ok(()),
+            Err(e) if e.raw_os_error() == Some(libc::ENXIO) =>
+                Err(std::io::Error::other("is a FIFO with no reader; opening it would wait for one")),
+            Err(e) => Err(e),
+        };
+    }
+    Ok(())
 }
 
 /// Resolve a `--save` path that is a symlink to the file it points at.
@@ -85,6 +114,31 @@ mod tests {
         assert_eq!(check_replaceable(&dir).unwrap_err().to_string(), "Is a directory");
         let dev = check_replaceable(std::path::Path::new("/dev/null")).unwrap_err().to_string();
         assert!(dev.contains("is a device"), "{dev}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod openable_tests {
+    /// #1084: a FIFO nothing reads is refused at once; one something reads
+    /// is opened as asked; a device and a missing path pass.
+    #[test]
+    fn a_fifo_is_refused_only_when_nothing_reads_it() {
+        let dir = std::env::temp_dir().join(format!("mtg-kept-fifo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fifo = dir.join("f");
+        let _ = std::fs::remove_file(&fifo);
+        assert!(std::process::Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+        let err = super::check_openable_for_write(&fifo).unwrap_err();
+        assert!(err.to_string().contains("FIFO with no reader"), "{err}");
+        let reader = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(&fifo).unwrap()
+        };
+        super::check_openable_for_write(&fifo).expect("a FIFO something reads");
+        drop(reader);
+        super::check_openable_for_write(std::path::Path::new("/dev/null")).expect("a device");
+        super::check_openable_for_write(&dir.join("missing")).expect("nothing there");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
