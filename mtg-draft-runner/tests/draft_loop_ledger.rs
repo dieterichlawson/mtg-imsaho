@@ -680,6 +680,9 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         format!("{at}[Seat 2] DECK_RESPONSE attempt 2/3 (accepted)\t{{}}"),
         format!("{at}[Seat 4] DECK_RESPONSE attempt 1/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
         format!("{at}[Seat 4] DECK_RESPONSE attempt 2/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
+        // #1086: an answer that could not be played is asked again once,
+        // a re-ask with its reason.
+        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2 (asked again: `maindeck` has 35 counts and your pool has 37 numbered rows)\t{{\"maindeck\": [1]}}"),
         format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2\t{{\"thoughts\": \"bring in removal\", \"swap_in\": [\"Dead Weight\"]}}"),
         format!("{at}[Seat 3] SIDEBOARD before game 2: kept the deck (the answer's could not be played: Dead Weight is not in your pool)\t"),
     ].join("\n") + "\n").unwrap();
@@ -690,7 +693,7 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         .output().expect("python3 runs");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(h["reasks"], 5, "{h}");
+    assert_eq!(h["reasks"], 6, "{h}");
     // Neither a refused deck nor an unplayable sideboard answer is a game
     // answer the harness chose (#1024's second review).
     assert_eq!(h["harness_chose"], 0, "{h}");
@@ -708,6 +711,8 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         {"who": "sideboard", "reason": "Dead Weight is not in your pool", "count": 1,
          "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal",
          "settled": "not asked again: the deck was kept"},
+        {"who": "sideboard", "reason": "`maindeck` has 35 counts and your pool has 37 numbered rows", "count": 1,
+         "answer": "{\"maindeck\": [1]}"},
     ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }

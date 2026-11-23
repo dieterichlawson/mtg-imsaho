@@ -357,7 +357,7 @@ API failed, or the seat stopped answering in the format it is asked for", if *n 
 /// `send_deck_building` return the raw JSON response (pretty-printed)
 /// from the model, with the schema enforced via structured output on
 /// both Gemini and Anthropic.
-trait DraftBackend: Send {
+pub(crate) trait DraftBackend: Send {
     /// Send a draft pick message. `num_cards` is the number of cards in
     /// the current pack, used to build an enum-constrained `pick` index
     /// schema. Returns the raw JSON response text.
@@ -1658,6 +1658,12 @@ pub struct DraftLlmClient {
 }
 
 impl DraftLlmClient {
+    /// A client over a backend a test scripts.
+    #[cfg(test)]
+    pub(crate) fn with_backend(backend: Box<dyn DraftBackend>) -> Self {
+        Self { backend, notes: None, seat: 0 }
+    }
+
     /// Create a new `DraftLlmClient`.
     /// Model spec format: "`provider:model:draft_thinking:game_thinking`"
     pub fn new(

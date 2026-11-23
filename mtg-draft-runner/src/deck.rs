@@ -156,11 +156,27 @@ pub struct SideboardDecision {
     /// Why the answer's deck could not be played, when it could not: the
     /// deck stays as it is.
     pub error: Option<String>,
+    /// The first answer, when it could not be played and the seat was asked
+    /// again: its prompt, its response and why.
+    pub refused: Option<(String, String, String)>,
+}
+
+/// The deck a between-games answer plays: `Ok(None)` for the deck as it
+/// is, `Err` for why it could not be played.
+fn read_sideboard(response: &str, pool: &[String], current: &DraftDeck) -> Result<Option<DraftDeck>, String> {
+    let rows = deckbuilding::deck_rows(pool);
+    let deck = deckbuilding::parse_deck_response_by_rows(response, &rows)
+        .and_then(|(main, lands)| deckbuilding::validate_deck(pool, &main, &lands))?;
+    Ok((!same_deck(&deck, current)).then_some(deck))
 }
 
 /// Ask a seat between games: the deck for the next game, from its pool,
-/// and whether to play first when it chooses. One call, no retry: a deck
-/// the answer gets wrong is the deck it was already playing.
+/// and whether to play first when it chooses. An answer whose deck cannot
+/// be played is quoted its error and asked once more, as a deck build is;
+/// a second one that cannot is the deck it was already playing. Asked
+/// once, more than half the seats' answers were thrown away, mostly a
+/// count array a row or two short, and the land change they asked for
+/// with them (#1086).
 pub fn sideboard_with_llm(
     client: &mut DraftLlmClient,
     pool: &[String],
@@ -170,18 +186,26 @@ pub fn sideboard_with_llm(
 ) -> SideboardDecision {
     let prompt = DraftLlmClient::notes_section(client.notes())
         + &build_sideboard_prompt(pool, current, cards, situation);
-    let response = client.send_sideboard_message(&prompt, pool);
-    let rows = deckbuilding::deck_rows(pool);
-    let play_first = serde_json::from_str::<serde_json::Value>(&response).ok()
+    let play_first = |response: &str| serde_json::from_str::<serde_json::Value>(response).ok()
         .and_then(|v| v["play_first"].as_bool());
-    let parsed = deckbuilding::parse_deck_response_by_rows(&response, &rows)
-        .and_then(|(main, lands)| deckbuilding::validate_deck(pool, &main, &lands));
-    let (deck, error) = match parsed {
-        Ok(deck) if same_deck(&deck, current) => (None, None),
-        Ok(deck) => (Some(deck), None),
+    let response = client.send_sideboard_message(&prompt, pool);
+    let first_error = match read_sideboard(&response, pool, current) {
+        Ok(deck) => {
+            let play_first = play_first(&response);
+            return SideboardDecision { deck, play_first, prompt, response, error: None, refused: None };
+        }
+        Err(e) => e,
+    };
+    let again = format!("Your answer could not be played: {first_error}. Please answer again.\n\n{prompt}");
+    let second = client.send_sideboard_message(&again, pool);
+    let (deck, error) = match read_sideboard(&second, pool, current) {
+        Ok(deck) => (deck, None),
         Err(e) => (None, Some(e)),
     };
-    SideboardDecision { deck, play_first, prompt, response, error }
+    // The second answer's choice, or the first's when the second made none.
+    let play_first = play_first(&second).or_else(|| play_first(&response));
+    SideboardDecision { deck, play_first, prompt: again, response: second, error,
+                        refused: Some((prompt, response, first_error)) }
 }
 
 /// "in: Bloodcrazed Neonate; out: Moon Heron; Swamp +1, Island -1": what
@@ -224,6 +248,10 @@ pub fn deck_change(before: &DraftDeck, after: &DraftDeck) -> String {
 /// answer, and one line of what it did.
 pub fn log_sideboard(seat: usize, game: usize, before: &DraftDeck, decision: &SideboardDecision, chooses: bool) {
     let w = |label: &str, body: &str| mtg_player::game_log::write(file!(), line!(), label, body);
+    if let Some((prompt, response, why)) = &decision.refused {
+        w(&format!("[Seat {seat}] SIDEBOARD_PROMPT before game {game}"), prompt);
+        w(&format!("[Seat {seat}] SIDEBOARD_RESPONSE before game {game} (asked again: {why})"), response);
+    }
     w(&format!("[Seat {seat}] SIDEBOARD_PROMPT before game {game}"), &decision.prompt);
     w(&format!("[Seat {seat}] SIDEBOARD_RESPONSE before game {game}"), &decision.response);
     let change = match (&decision.deck, &decision.error) {
@@ -322,9 +350,10 @@ Playing first is the usual choice in Limited; drawing first suits a slow deck th
     }
     let playing = |name: &str| current.maindeck.iter()
         .filter(|c| mtg_draft::front_face(c) == mtg_draft::front_face(name)).count();
+    let rows = deckbuilding::deck_rows(pool);
     let _ = writeln!(prompt, "\nYour pool, each row with how many you are playing now ({} cards in the deck):",
         current.total_cards());
-    for (i, (name, copies)) in deckbuilding::deck_rows(pool).iter().enumerate() {
+    for (i, (name, copies)) in rows.iter().enumerate() {
         let _ = writeln!(prompt, "{i}: playing {} of {copies}x {}", playing(name), cards.pool_line(name));
     }
     let mut lands: Vec<(&String, &u32)> = current.lands.iter().filter(|(_, n)| **n > 0).collect();
@@ -333,10 +362,15 @@ Playing first is the usual choice in Limited; drawing first suits a slow deck th
     let _ = writeln!(prompt, "Basic lands now: {}", if lands.is_empty() { "none".to_string() } else { lands.join(", ") });
     prompt.push_str(
         "\n## Your answer\n\
-         - `maindeck` is one count per numbered row: the deck for the next game. Repeat the counts above to keep the deck as it is; a change lasts to the end of the match\n\
-         - `lands` is the basic lands for the next game\n\
+         - `maindeck` is one count per numbered row: the deck for the next game. Repeat the counts above to keep the deck as it is; a change lasts to the end of the match\n",
+    );
+    // How many: a seat that meant to keep its spells wrote the counts it
+    // was playing and left the zero rows off (#1086).
+    let _ = writeln!(prompt, "- There are {} rows, so `maindeck` holds {} counts, 0 for a row you are not playing", rows.len(), rows.len());
+    prompt.push_str(
+        "- `lands` is the basic lands for the next game\n\
          - `play_first`: true to play first, false to draw first; it is read only when you choose\n\
-         - The deck stays at least 40 cards; one that is not is ignored and the deck stays as it is\n",
+         - The deck stays at least 40 cards; an answer that cannot be played is asked again once, then the deck stays as it is\n",
     );
     prompt
 }
@@ -369,6 +403,77 @@ mod play_draw_tests {
         assert_eq!(play_draw_suffix(true, Some(true)), " | plays first");
         assert_eq!(play_draw_suffix(true, Some(false)), " | draws first");
         assert_eq!(play_draw_suffix(false, None), "");
+    }
+}
+
+#[cfg(test)]
+mod sideboard_reask_tests {
+    use super::{sideboard_with_llm, BetweenGames, CardLines, CardRegistry};
+    use crate::llm_client::{DraftBackend, DraftLlmClient};
+
+    /// Answers each between-games message with the next of `answers`, and
+    /// keeps what it was sent.
+    struct Scripted {
+        answers: Vec<String>,
+        sent: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl DraftBackend for Scripted {
+        fn send_pick(&mut self, _: &str, _: usize) -> String { unreachable!() }
+        fn send_deck_building(&mut self, _: &str, _: &[String]) -> String { unreachable!() }
+        fn send_sideboard(&mut self, message: &str, _: &[String]) -> String {
+            self.sent.lock().unwrap().push(message.to_string());
+            self.answers.remove(0)
+        }
+        fn system_prompt(&self) -> &str { "" }
+    }
+
+    /// #1086: a between-games answer a row short was thrown away in one
+    /// call, with the land change it asked for. It is quoted its error and
+    /// asked once more, and the prompt says how many counts it holds.
+    #[test]
+    fn an_answer_that_cannot_be_played_is_asked_again_once() {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"), "/../data/sets/isd.json"))).expect("ISD set data");
+        let registry = CardRegistry::with_all_cards();
+        let cards = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        // 24 spells over 3 rows, and a sideboard row the deck is not playing.
+        let mut pool: Vec<String> = Vec::new();
+        for _ in 0..8 { pool.extend(["Chapel Geist", "Doomed Traveler", "Voiceless Spirit"].map(String::from)); }
+        pool.push("Moon Heron".to_string());
+        let current = mtg_draft::deckbuilding::DraftDeck {
+            maindeck: pool[..24].to_vec(),
+            lands: [("Plains".to_string(), 16)].into_iter().collect(),
+            sideboard: vec!["Moon Heron".to_string()],
+        };
+        let situation = BetweenGames { game: 2, best_of: 3, your_wins: 0, their_wins: 1,
+            last: Some("you lost game 1 on turn 9".to_string()), chooses: true, last_no_winner: false, opponent_showed: &[] };
+        let ask = |answers: &[&str]| {
+            let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let mut client = DraftLlmClient::with_backend(Box::new(Scripted {
+                answers: answers.iter().map(|a| (*a).to_string()).collect(), sent: std::sync::Arc::clone(&sent) }));
+            let decision = sideboard_with_llm(&mut client, &pool, &current, &cards, &situation);
+            let sent = sent.lock().unwrap().clone();
+            (decision, sent)
+        };
+        // Rows sort by name: Chapel Geist, Doomed Traveler, Moon Heron, Voiceless Spirit.
+        let short = r#"{"maindeck":[8,8],"lands":{"Plains":15,"Island":1},"play_first":true}"#;
+        let whole = r#"{"maindeck":[8,8,0,8],"lands":{"Plains":15,"Island":1},"play_first":true}"#;
+        let (d, sent) = ask(&[short, whole]);
+        assert_eq!(sent.len(), 2, "asked again once");
+        assert!(sent[0].contains("There are 4 rows, so `maindeck` holds 4 counts"), "{}", sent[0]);
+        assert!(sent[1].starts_with("Your answer could not be played: `maindeck` has 2 counts"), "{}", sent[1]);
+        let deck = d.deck.expect("the second answer's deck is played");
+        assert_eq!(deck.lands.get("Island"), Some(&1), "the land change is kept");
+        assert!(d.error.is_none() && d.refused.is_some());
+        assert_eq!(d.play_first, Some(true));
+        // A good first answer is one call; two bad ones keep the deck.
+        let (d, sent) = ask(&[whole]);
+        assert_eq!(sent.len(), 1);
+        assert!(d.deck.is_some() && d.refused.is_none());
+        let (d, sent) = ask(&[short, short]);
+        assert_eq!(sent.len(), 2);
+        assert!(d.deck.is_none() && d.error.is_some() && d.refused.is_some());
     }
 }
 

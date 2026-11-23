@@ -279,6 +279,8 @@ def log_health(path):
             thoughts[bracket] = text
         elif kind == "SIDEBOARD_RESPONSE":
             sideboard[bracket] = text
+        elif kind == "SIDEBOARD_REASK":
+            note("sideboard", f"{who}: {text}" if text else who)
         elif kind == "DECK":
             # `who` carries the reason the deck was refused, and
             # `bracket` whether it was the last attempt.
@@ -305,6 +307,12 @@ def log_health(path):
             if m.group(2) != m.group(3):
                 h["reasks"] += 1
             pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(1), [m.group(5)])
+            continue
+        # A between-games answer that could not be played and was asked
+        # again with its error (#1086): a re-ask, with its reason.
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE before game \d+ \(asked again: (.*)\)\t(.*)", line)):
+            h["reasks"] += 1
+            pending = ("SIDEBOARD_REASK", m.group(2), m.group(1), [m.group(3)])
             continue
         if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE [^\t]*\t(.*)", line)):
             pending = ("SIDEBOARD_RESPONSE", None, m.group(1), [m.group(2)])
