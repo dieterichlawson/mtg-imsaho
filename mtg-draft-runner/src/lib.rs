@@ -63,7 +63,7 @@ pub fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 pub fn die(msg: &str) -> ! {
-    end_run(&format!("Error: {msg}"), &format!("FATAL {msg}"), 1)
+    end_run(msg, &format!("Error: {msg}"), &format!("FATAL {msg}"), 1)
 }
 
 /// Stop on Ctrl-C, SIGTERM or SIGHUP the way a fatal stops: the in-flight
@@ -79,14 +79,15 @@ pub fn stop_on_signals() {
         std::thread::sleep(std::time::Duration::from_millis(50));
         if let Some(sig) = mtg_player::llm::stop_signal() {
             let why = format!("stopped by {}", server::signal_name(sig));
-            end_run(&format!("Stopped: {why}"), &format!("NOTE {why}; the run is not finished"), 128 + sig);
+            end_run(&why, &format!("Stopped: {why}"), &format!("NOTE {why}; the run is not finished"), 128 + sig);
         }
     });
 }
 
-/// The end of a run that did not finish: `said` on stderr, the usage so
-/// far, the log flushed and `logged` as its last record, then `status`.
-fn end_run(said: &str, logged: &str, status: i32) -> ! {
+/// The end of a run that did not finish: a hosted table's pages told
+/// `why`, `said` on stderr, the usage so far, the log flushed and `logged`
+/// as its last record, then `status`.
+fn end_run(why: &str, said: &str, logged: &str, status: i32) -> ! {
     // Once: a seat's fatal and a signal can arrive together, from two
     // threads, and the run would print its account twice and end with
     // both reasons. The second waits for the first's exit.
@@ -110,6 +111,12 @@ fn end_run(said: &str, logged: &str, status: i32) -> ! {
     // never reached, and every other thread had already parked for good in
     // `report_worker_failure` — a run wedged at 0% CPU forever (#652).
     mtg_player::llm::claude_code_kill_live_calls();
+    // A hosted table's pages and clients are told it is closed and why:
+    // a seat's fatal ended the process with every socket reset, and each
+    // page read it as a dropped network and retried for ever (#1033). A
+    // no-op for the batch runner, which serves no page.
+    let _ = std::panic::catch_unwind(|| mtg_player::gui::close_pages_on_exit(
+        mtg_player::gui::Over::Stopped, &format!("the server stopped: {why}")));
     // Everything else is a report, and a report that cannot be written must
     // not stop the exit.
     let _ = std::panic::catch_unwind(|| {

@@ -101,6 +101,11 @@ impl Server {
     /// Start a server with `extra` flags past `--seats`, `--port`,
     /// `--log`, `--seed` and `--best-of 1`; wait for its join lines.
     pub fn start(name: &str, seats: &str, extra: &[&str]) -> Self {
+        Self::start_with_env(name, seats, extra, &[])
+    }
+
+    /// As [`Server::start`], with `env` set in the server's environment.
+    pub fn start_with_env(name: &str, seats: &str, extra: &[&str], env: &[(&str, &str)]) -> Self {
         let (dir, bin) = scratch(name);
         let port = free_port();
         let game_lo = free_port();
@@ -117,6 +122,7 @@ impl Server {
             .env("CLAUDE_CODE_BIN", &bin)
             .env("MTG_GAME_RETRY_BUDGET_SECS", "5")
             .env("MTG_DRAFT_RETRY_BUDGET_SECS", "5")
+            .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

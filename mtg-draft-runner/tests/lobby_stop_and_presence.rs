@@ -206,6 +206,59 @@ fn a_ctrl_c_ends_the_table_the_way_quit_does() {
         "{log}");
 }
 
+/// A Gemini endpoint on this machine that refuses every request as a
+/// misconfigured model: the answer the seat treats as fatal. Nothing is
+/// called off the machine and nothing is billed.
+fn misconfigured_gemini() -> String {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut got = Vec::new();
+            let mut buf = [0u8; 8192];
+            // The whole request, so the answer is not read as a reset.
+            loop {
+                let Ok(n) = stream.read(&mut buf) else { break };
+                if n == 0 { break; }
+                got.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&got).to_string();
+                if let Some(end) = text.find("\r\n\r\n") {
+                    let length = text[..end].lines()
+                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().to_string()))
+                        .and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
+                    if got.len() >= end + 4 + length { break; }
+                }
+            }
+            let body = r#"{"error":{"code":400,"message":"model 'x' is not a supported model"}}"#;
+            let _ = write!(stream, "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len());
+        }
+    });
+    url
+}
+
+/// #1033: a seat's fatal inside a hosted table (a misconfigured model)
+/// ended the process with every socket reset, so each page and client
+/// read the stop as a dropped network and retried for ever. It closes the
+/// table the way a quit does, saying why.
+#[test]
+fn a_seats_fatal_closes_the_table_the_way_quit_does() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let gemini = misconfigured_gemini();
+    let mut server = Server::start_with_env("stop-fatal", "human,ai:gemini:not-a-model", &["--pick-seconds", "30"],
+        &[("GEMINI_BASE_URL", &gemini), ("GEMINI_API_KEY", "dummy")]);
+    let mut c0 = server.client(0);
+    let closed = message_until(&mut c0, "closed", Duration::from_secs(60), |_| true);
+    let reason = closed["reason"].as_str().unwrap_or("");
+    assert!(reason.starts_with("the server stopped: Gemini config error"), "{closed}");
+    let status = server.child.wait().expect("the server exits");
+    assert_eq!(status.code(), Some(1), "a fatal's exit status: {status}");
+}
+
 #[test]
 fn a_kick_is_on_the_record_and_its_forfeits_say_so() {
     if !lobby_support::python3_available() {

@@ -302,8 +302,23 @@ impl PageHandle {
 /// The pages of the seats a process serves outside a hosted table, for the
 /// exits that do not hold the seats: a fatal, a signal, a cli seat's quit
 /// at its prompt, a panic (#1033). A hosted table registers none: its
-/// pages are told by the table's own close.
+/// pages are told by the table's own close, which it registers with
+/// [`on_exit`] for the exits that do not reach it.
 static EXIT_PAGES: std::sync::Mutex<Vec<PageHandle>> = std::sync::Mutex::new(Vec::new());
+
+/// What a process that holds pages of its own (a hosted table) runs on
+/// an exit that does not go through its own close.
+type ExitHook = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+static EXIT_HOOKS: std::sync::Mutex<Vec<ExitHook>> = std::sync::Mutex::new(Vec::new());
+
+/// Run `hook` with the reason on every [`close_pages_on_exit`]: a hosted
+/// table registers its own close here, so a fatal that ends the process
+/// from inside a seat (a misconfigured model) tells the table's pages it
+/// is closed, where they were reset and retried for ever (#1033).
+pub fn on_exit(hook: impl Fn(&str) + Send + Sync + 'static) {
+    EXIT_HOOKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(std::sync::Arc::new(hook));
+}
 
 /// Register `page` to be told by [`close_pages_on_exit`].
 pub fn close_on_exit(page: PageHandle) {
@@ -317,6 +332,12 @@ pub fn close_on_exit(page: PageHandle) {
 /// page whose socket the exit just reset read it as a dropped network and
 /// retried once a second for ever.
 pub fn close_pages_on_exit(over: Over, reason: &str) {
+    // A hosted table's own close first: it tells its draft pages, clients
+    // and game pages, and waits for them itself (#1033).
+    let hooks: Vec<ExitHook> = EXIT_HOOKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    for hook in hooks {
+        hook(reason);
+    }
     let pages = EXIT_PAGES.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     let mut open = false;
     for page in pages {

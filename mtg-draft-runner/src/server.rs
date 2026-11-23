@@ -508,6 +508,16 @@ pub fn bind(addr: &str, port: u16) -> Result<TcpListener, String> {
 /// # Errors
 /// A worker thread cannot be started.
 pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
+    // An exit that does not come back here — a seat's fatal, in the draft
+    // or in a game — closes the table as a quit does: every page and
+    // client was reset and retried for ever (#1033).
+    let closing = Arc::downgrade(shared);
+    mtg_player::gui::on_exit(move |reason| {
+        if let Some(shared) = closing.upgrade() {
+            shared.quit_because(reason);
+            shared.close_everything();
+        }
+    });
     let accept = Arc::clone(shared);
     thread::Builder::new().name("draft-accept".into()).spawn(move || {
         for stream in listener.incoming().flatten() {
