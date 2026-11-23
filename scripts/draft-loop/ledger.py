@@ -327,7 +327,7 @@ def log_health(path):
             # Its reason, not a count: "the harness chose" counts game
             # answers, and this is the deck kept between games.
             note("sideboard", f"{m.group(2)}: {sideboard.get(m.group(1), '')}".rstrip(": "),
-                 settled="not asked again: the deck was kept")
+                 settled="asked again once, then the deck was kept")
             continue
         if (m := re.search(r"\t(PROMPT|THOUGHT)( \[[^\]]*\])?(\t|$)(.*)", line)):
             if m.group(1) == "PROMPT":

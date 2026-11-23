@@ -1154,8 +1154,8 @@ say what your stub says.
   is hidden information leaked — and the seat's pool with the counts it is
   playing. The sent `--json-schema` must be the same bytes for every pool
   and key nothing by a card name; `play_first` is read only from the
-  chooser; an answer that makes no legal deck keeps the deck, and the log
-  says so. Then the cache: a stand-in CLI that records
+  chooser; an answer that makes no legal deck is asked again once with its
+  error, a second one keeps the deck, and the log says both (#1086). Then the cache: a stand-in CLI that records
   `FORCE_PROMPT_CACHING_5M` and `MTG_CLAUDE_CODE_CACHE_TTL` must see the
   hour on every sideboarding call and five minutes on every pick and deck
   build — a sideboarding call a game after the last one wrote the seat's

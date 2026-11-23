@@ -719,7 +719,7 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         {"who": "pick", "reason": "`pick` is 20; it must be 0 to 13", "count": 1, "answer": "{\"pick\":20}", "thought": long},
         {"who": "sideboard", "reason": "Dead Weight is not in your pool", "count": 1,
          "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal",
-         "settled": "not asked again: the deck was kept"},
+         "settled": "asked again once, then the deck was kept"},
         {"who": "sideboard", "reason": "`maindeck` has 35 counts and your pool has 37 numbered rows", "count": 1,
          "answer": "{ \"maindeck\": [1] }"},
     ]), "{h}");

@@ -1836,8 +1836,8 @@ back to you on your next pick"
     }
 
     /// Send a between-games message: the deck for the next game and the
-    /// play-or-draw choice. A bad answer keeps the deck as it is (the
-    /// caller reads it), so it is not asked again.
+    /// play-or-draw choice. The caller reads the answer, and asks once
+    /// more, with the error, when its deck cannot be played (#1086).
     pub fn send_sideboard_message(&mut self, user_message: &str, pool: &[String]) -> String {
         let response = self.backend.send_sideboard(user_message, pool);
         self.keep_notes(&response);

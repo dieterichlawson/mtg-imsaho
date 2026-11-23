@@ -535,9 +535,12 @@ is playing now. It answers in the deck build's shape plus `play_first`,
 which is read only when the choice is its own — the last game's loser
 chooses, and after a game with no winner (drawn or abandoned) whoever
 chose before. Repeating the counts
-keeps the deck; an answer that does not make a legal deck keeps it too,
-with no retry. The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
-`_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: A; B | out: C | Plains +1`
+keeps the deck; an answer that does not make a legal deck is quoted its
+error and asked once more, and a second that does not keeps the deck (the
+prompt says how many counts `maindeck` holds; asked once, more than half
+the answers were lost, #1086). The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
+`_RESPONSE` (a refused first answer's headed `_RESPONSE before game G
+(asked again: <why>)`, ahead of the second prompt and response), and one `[Seat N] SIDEBOARD before game G: in: A; B | out: C | Plains +1`
 line (or `no change`) with ` | plays first` or ` | draws first` for the
 chooser: card names are joined by `; `, since a name may hold a comma
 ("Grimgrin, Corpse-Born"), and the parts by ` | `. Game 1's player on the play is a coin flip's winner, who plays —
@@ -548,7 +551,8 @@ seat the table plays for (AI or person) or an AI seat whose model gave no
 answer, ` | plays first
 (no choice was made)` when the clock chose, and a game-1 line for the coin
 flip's winner. The question is one cached schema for every
-pool, like the deck build's, and costs at most two calls a seat a match;
+pool, like the deck build's, and costs at most two calls a seat a match
+(four when both of its answers had to be asked again);
 the usage summary counts it under `Draft`.
 
 `--seed <N>` fixes the packs, the shuffles and play/draw; a run without one

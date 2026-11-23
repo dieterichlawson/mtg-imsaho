@@ -1723,7 +1723,8 @@ and the FINAL STANDINGS below record none",
                         // name the per-seat tallies are read under.
                         // Between games each seat may sideboard from its
                         // pool, and the chooser decides to play or draw
-                        // (MTR 2.2, 2.4): one call a seat, with the seat's
+                        // (MTR 2.2, 2.4): one call a seat (two when the
+                        // first answer cannot be played), with the seat's
                         // draft rules and card reference as its system
                         // prompt, so a cached read. The coin flip's winner
                         // plays game 1 without a call.
