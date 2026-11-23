@@ -3805,9 +3805,9 @@ impl CliPlayer {
                 // is chosen now and the cards on the marking screen the cast
                 // then raises. Two slots that can both be described up front
                 // are `ChosenAtCast` and never reach this arm.
-                let _ = (second, second_min, second_max);
+                let _ = second;
                 vec![Self::prompt_target(view, first,
-                    &format!("{}: select first of two targets", spell.name), CANCEL_CAST)?]
+                    &crate::first_of_two_heading(&spell.name, *second_min, *second_max), CANCEL_CAST)?]
             }
             CastTargetSpec::ChosenAtCast => {
                 // The cast asks for these itself: submit it bare and answer

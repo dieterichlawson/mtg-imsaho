@@ -906,11 +906,29 @@ function castFlow(state, cs, send) {
         return;
     }
     if ("TwoTargets" in spec) {
-        beginPick(state, { title: `${cs.name}: choose the first target`, options: spec.TwoTargets.first,
+        beginPick(state, { title: firstOfTwoHeading(cs.name, spec.TwoTargets.second_min, spec.TwoTargets.second_max),
+            options: spec.TwoTargets.first,
             onPick: (_key, t) => withSacrifice([t]), onCancel: back });
         return;
     }
     withSacrifice([]);
+}
+/**
+ * A two-slot cast's first question, and how many the second slot takes,
+ * which is asked next: `first_of_two_heading` in mtg-player, the CLI's and
+ * the LLM seat's words, with the page's "choose" (#1083).
+ */
+export function firstOfTwoHeading(spell, secondMin, secondMax) {
+    let more;
+    if (secondMin === 1 && secondMax === 1)
+        more = "1 more";
+    else if (secondMin === 0)
+        more = `up to ${secondMax} more`;
+    else if (secondMin === secondMax)
+        more = `${secondMin} more`;
+    else
+        more = `${secondMin} to ${secondMax} more`;
+    return `${spell}: choose the first target (then ${more}, asked next)`;
 }
 function abilityFlow(state, ab, send) {
     const back = () => { beginDecision(state, send); };

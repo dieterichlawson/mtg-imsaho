@@ -114,6 +114,22 @@ pub fn cast_cost_note(cs: &CastableSpell) -> Option<String> {
     })
 }
 
+/// The heading of a two-slot cast's first question (`TwoTargets`): the
+/// first target now, and how many the second slot takes, which is asked
+/// next. "select first of two targets" told a person and a model one more
+/// target was coming, where Memory's Journey takes up to three more cards
+/// (#1083). The page builds the same sentence in `prompts.ts`.
+#[must_use]
+pub fn first_of_two_heading(spell: &str, second_min: usize, second_max: usize) -> String {
+    let more = match (second_min, second_max) {
+        (1, 1) => "1 more".to_string(),
+        (0, max) => format!("up to {max} more"),
+        (min, max) if min == max => format!("{min} more"),
+        (min, max) => format!("{min} to {max} more"),
+    };
+    format!("{spell}: select the first target (then {more}, asked next)")
+}
+
 /// The game-over headline: who won, named the way the caller names seats,
 /// and how every losing player lost (issue #86).
 ///
@@ -233,5 +249,19 @@ pub trait Player {
     /// (#587). Every other seat always answers.
     fn gave_up(&self) -> Option<String> {
         None
+    }
+}
+
+#[cfg(test)]
+mod first_of_two_tests {
+    /// #1083: Memory's Journey's player question said "select first of two
+    /// targets", where up to three cards follow it.
+    #[test]
+    fn the_first_of_two_says_how_many_follow() {
+        assert_eq!(super::first_of_two_heading("Memory's Journey", 0, 3),
+            "Memory's Journey: select the first target (then up to 3 more, asked next)");
+        assert_eq!(super::first_of_two_heading("X", 1, 1), "X: select the first target (then 1 more, asked next)");
+        assert_eq!(super::first_of_two_heading("X", 2, 2), "X: select the first target (then 2 more, asked next)");
+        assert_eq!(super::first_of_two_heading("X", 1, 3), "X: select the first target (then 1 to 3 more, asked next)");
     }
 }
