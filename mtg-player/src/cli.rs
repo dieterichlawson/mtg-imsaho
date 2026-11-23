@@ -1631,8 +1631,21 @@ impl CliPlayer {
             // "… on Olivia Voldaren (#101)" at 39 columns broke before
             // "Voldaren", which fitted (#705).
             let probe_end = prefix_end(remaining, width + 1);
-            let break_at = remaining[..probe_end].rfind(' ')
-                .filter(|&at| str_cols(&remaining[..at]) <= width)
+            let fits = |at: &usize| str_cols(&remaining[..*at]) <= width;
+            // A key hint is one unit: "[enter = done]" broke into "[enter"
+            // at one row's end and "= done]" at the next's start (#1082).
+            // A space inside an open bracket is passed over while another
+            // fits, and taken only when the hint alone is wider than the row.
+            let outside_brackets = remaining[..probe_end].char_indices()
+                .scan(0i32, |depth, (i, ch)| {
+                    match ch { '[' => *depth += 1, ']' => *depth -= 1, _ => {} }
+                    Some((i, ch, *depth))
+                })
+                .filter(|&(i, ch, depth)| ch == ' ' && depth <= 0 && fits(&i))
+                .map(|(i, ..)| i)
+                .last();
+            let break_at = outside_brackets
+                .or_else(|| remaining[..probe_end].rfind(' ').filter(fits))
                 .unwrap_or(hard_end); // no space — hard break
             if break_at == 0 {
                 // Edge case: space at position 0 or single huge word.
@@ -11629,6 +11642,21 @@ Wolves or Werewolves is prevented".into()];
             assert_eq!(lines.concat().split_whitespace().collect::<Vec<_>>(),
                 SET_HOW_TO.split_whitespace().collect::<Vec<_>>(),
                 "and every key survives at {width}");
+        }
+    }
+
+    /// #1082: "[enter = done]" has spaces inside its bracket, and the set
+    /// screen's how-to wrapped it in half at 140 columns. No hint of either
+    /// how-to is split, at any width it fits in.
+    #[test]
+    fn a_key_hint_is_never_wrapped_in_half() {
+        for text in [SET_HOW_TO, ORDER_HOW_TO, &SET_HOW_TO.replace("[a=all] ", "")] {
+            for width in 34usize..=220 {
+                for line in CliPlayer::wrap_indented(text, width) {
+                    assert_eq!(line.matches('[').count(), line.matches(']').count(),
+                        "at {width}, a hint is split: {line:?}");
+                }
+            }
         }
     }
 
