@@ -318,7 +318,7 @@ random game happened to reach.
   | `menu` | sends `PassPriority` | n/a |
   | `order` | confirms | n/a (#518) |
   | `number` | refuses | yes — "Enter a value for X." (#561) |
-  | `mark` (min 1) | refuses | yes — "0 marked — mark between 1 and 2 cards" |
+  | `mark` (min 1) | refuses | yes — "0 marked — mark between 1 and 2" |
   | `pick` | **nothing** | **no** |
   | `list` | **nothing** | **no** |
 

@@ -967,12 +967,13 @@ export function beginPick(state, { title, options, onPick, onCancel, declineLabe
  * is the same prompt asked on another surface.
  */
 function markCountError(have, min, max) {
-    const card = (n) => (n === 1 ? "card" : "cards");
+    // No noun: the rows may be targets, players or permanents, which the
+    // heading names; "cards" over creature targets was wrong (#1081).
     if (min === max)
-        return `${have} marked — mark exactly ${min} ${card(min)}`;
+        return `${have} marked — mark exactly ${min}`;
     if (min === 0)
-        return `${have} marked — mark at most ${max} ${card(max)}`;
-    return `${have} marked — mark between ${min} and ${max} cards`;
+        return `${have} marked — mark at most ${max}`;
+    return `${have} marked — mark between ${min} and ${max}`;
 }
 /** What the screen says when the idle key would commit an empty answer. */
 const NOTHING_MARKED = "nothing marked — mark what you want, or press Confirm none";

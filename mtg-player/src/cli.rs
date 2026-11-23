@@ -8707,13 +8707,15 @@ impl CliPlayer {
     }
 
     fn set_count_error(have: usize, min: usize, max: usize) -> String {
-        let card = |n: usize| if n == 1 { "card" } else { "cards" };
+        // No noun: the rows are cards, targets, players or permanents, and
+        // the heading above already names them; "mark at most 2 cards" over
+        // creature targets on the battlefield was wrong (#1081).
         if min == max {
-            format!("{have} marked — mark exactly {min} {}", card(min))
+            format!("{have} marked — mark exactly {min}")
         } else if min == 0 {
-            format!("{have} marked — mark at most {max} {}", card(max))
+            format!("{have} marked — mark at most {max}")
         } else {
-            format!("{have} marked — mark between {min} and {max} cards")
+            format!("{have} marked — mark between {min} and {max}")
         }
     }
 
@@ -11798,9 +11800,9 @@ Wolves or Werewolves is prevented".into()];
             SetInput::Invalid(why) => assert!(why.contains("numbered 0-2"), "{why}"),
             other => panic!("got {other:?}"),
         }
-        assert_eq!(CliPlayer::set_count_error(1, 2, 2), "1 marked — mark exactly 2 cards");
-        assert_eq!(CliPlayer::set_count_error(4, 0, 3), "4 marked — mark at most 3 cards");
-        assert_eq!(CliPlayer::set_count_error(1, 2, 5), "1 marked — mark between 2 and 5 cards");
+        assert_eq!(CliPlayer::set_count_error(1, 2, 2), "1 marked — mark exactly 2");
+        assert_eq!(CliPlayer::set_count_error(4, 0, 3), "4 marked — mark at most 3");
+        assert_eq!(CliPlayer::set_count_error(1, 2, 5), "1 marked — mark between 2 and 5");
         // #1020: a combat refusal wider than the pane is wrapped onto the
         // row under it, or, given one row, shortened with its instruction
         // kept: a bare clip ended the menace refusal at "— add".

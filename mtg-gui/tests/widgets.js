@@ -785,7 +785,7 @@ async function main() {
         await page.waitForTimeout(60);
         await expectNothingSent("mark-enter-below-min");
         const n = await notice();
-        if (!n || !/mark exactly 1 card/.test(n)) fail(`mark-enter-below-min: notice was ${JSON.stringify(n)}`);
+        if (!n || !/mark exactly 1(?!\d)/.test(n)) fail(`mark-enter-below-min: notice was ${JSON.stringify(n)}`);
         else ok(`mark-enter-below-min: said "${n}"`);
         // And it is still answerable by marking one.
         await clickHit(`(h) => h.kind === 'hand' && h.id === ${ids.hand[0]}`);

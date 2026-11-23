@@ -935,10 +935,11 @@ interface MarkArgs {
  * is the same prompt asked on another surface.
  */
 function markCountError(have: number, min: number, max: number): string {
-  const card = (n: number) => (n === 1 ? "card" : "cards");
-  if (min === max) return `${have} marked — mark exactly ${min} ${card(min)}`;
-  if (min === 0) return `${have} marked — mark at most ${max} ${card(max)}`;
-  return `${have} marked — mark between ${min} and ${max} cards`;
+  // No noun: the rows may be targets, players or permanents, which the
+  // heading names; "cards" over creature targets was wrong (#1081).
+  if (min === max) return `${have} marked — mark exactly ${min}`;
+  if (min === 0) return `${have} marked — mark at most ${max}`;
+  return `${have} marked — mark between ${min} and ${max}`;
 }
 
 /** What the screen says when the idle key would commit an empty answer. */
