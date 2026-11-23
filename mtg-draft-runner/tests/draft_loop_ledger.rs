@@ -30,6 +30,11 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         "  \"pick\": 20".to_string(),
         "}".to_string(),
         format!("{at}API_WARN\tclaude -p returned no structured object (attempt 1): I pick the {{G}} card."),
+        // #1087's review: a reply that ran to several lines is logged on
+        // the lines below a header with no tab.
+        format!("{at}API_WARN"),
+        "claude -p returned no structured object (attempt 2): I pick".to_string(),
+        "the {G} card.".to_string(),
         format!("{at}UNREADABLE [Seat0]\tno JSON object"),
         format!("{at}USAGE [Seat0]\tin 10 out 5 thinking n/a cache_read 7 cache_write 0"),
         format!("{at}USAGE [Seat1]\tin 10 out 6 thinking 3 cache_read 7 cache_write 2"),
@@ -50,7 +55,7 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(h["reasks"], 4, "{h}");
-    assert_eq!(h["unreadable"], 2, "{h}");
+    assert_eq!(h["unreadable"], 3, "{h}");
     assert_eq!(h["game_calls"], 2, "{h}");
     assert_eq!(h["out"], 11, "{h}");
     assert_eq!(h["thinking"], 3, "{h}");

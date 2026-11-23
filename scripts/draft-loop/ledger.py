@@ -279,6 +279,9 @@ def log_health(path):
             thoughts[bracket] = text
         elif kind == "SIDEBOARD_RESPONSE":
             sideboard[bracket] = text
+        elif kind == "API_WARN":
+            if "no structured object" in text:
+                h["unreadable"] += 1
         elif kind == "SIDEBOARD_REASK":
             note("sideboard", f"{who}: {text}" if text else who)
         elif kind == "DECK":
@@ -352,6 +355,11 @@ def log_health(path):
                 pending = ("REASK", who, m.group(1), [])
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
+        elif re.search(r"\tAPI_WARN( \[[^\]]*\])?$", line):
+            # A reply that ran to several lines puts the whole warning on
+            # the lines below a header with no tab, and was not counted
+            # (#1087's review): read there.
+            pending = ("API_WARN", None, None, [])
         # A worker's panic reaches the log as its `FATAL` line (the panic
         # text is stderr's), and so does a backend that gave up, after its
         # own `API_FATAL`, which is not counted again (#900's review).
