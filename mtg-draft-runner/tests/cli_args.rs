@@ -1069,3 +1069,58 @@ fn a_snapshot_recording_fewer_seats_than_players_is_refused() {
     let err = stderr(&out);
     assert!(err.contains("notes for 1 of 2 players"), "the refusal says why.\nstderr: {err}");
 }
+
+/// #1084: an `MTG_DRAFT_POSITIONS` naming a FIFO hung the run at start-up,
+/// in the pre-flight's open, with nothing said. It is refused by name, and
+/// left a FIFO.
+#[cfg(unix)]
+#[test]
+fn a_positions_file_that_is_a_fifo_is_refused_not_waited_on() {
+    use std::os::unix::fs::FileTypeExt;
+    let stub = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/llm-prompt-stub.py");
+    let dir = std::env::temp_dir().join(format!("mtg-positions-fifo-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fifo = dir.join("pos.fifo");
+    let _ = std::fs::remove_file(&fifo);
+    assert!(std::process::Command::new("mkfifo").arg(&fifo).status().expect("run mkfifo").success());
+    let mut child = runner().current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null")
+        .env("MTG_DRAFT_POSITIONS", &fifo)
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q", "--log", "/dev/null"])
+        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+        .spawn().expect("failed to run");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            let _ = child.kill();
+            panic!("the run hung on the FIFO");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let out = child.wait_with_output().unwrap();
+    assert_clean_refusal(&out, "an MTG_DRAFT_POSITIONS that is a FIFO");
+    assert!(stderr(&out).contains("it is a FIFO, not a regular file"), "{}", stderr(&out));
+    assert!(std::fs::symlink_metadata(&fifo).unwrap().file_type().is_fifo(), "the FIFO is left a FIFO");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #1085: a positions file that stopped accepting writes warned at every
+/// pick and the run exited 0, so the nightly loop kept a replay record
+/// with gaps. It is said once, and the finished run ends with an Error and
+/// exit 1, as a cut `--log` does (#1078).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_positions_file_that_stops_accepting_writes_is_said_once_and_fails_the_run() {
+    let stub = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/llm-prompt-stub.py");
+    let out = runner().current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null")
+        .env("MTG_DRAFT_POSITIONS", "/dev/full")
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q", "--log", "/dev/null"])
+        .output().expect("failed to run");
+    let err = stderr(&out);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert_eq!(err.matches("stopped accepting writes").count(), 2, "said once as it happens, once at the end: {err}");
+    assert!(err.contains("Error: the pick positions file /dev/full stopped accepting writes"), "{err}");
+    assert!(err.contains("the draft finished but its positions are incomplete"), "{err}");
+    assert!(!err.contains("panicked"), "{err}");
+}

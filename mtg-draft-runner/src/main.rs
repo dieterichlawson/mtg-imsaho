@@ -43,12 +43,26 @@ type PickInput = (usize, Vec<String>, Vec<String>);
 /// kept.
 const POSITIONS_ENV: &str = "MTG_DRAFT_POSITIONS";
 
+/// The first write the positions file refused, once one has: said once
+/// when it happened, nothing appended after it (a gap, then more picks,
+/// would read as a whole record), and the finished run ends with an Error
+/// and exit 1 for it, as a cut `--log` does (#1078, #1085). The file is
+/// the draft's replay record, and a run that warned at every pick and
+/// exited 0 sent the nightly loop on to ledger and keep a file with gaps.
+static POSITIONS_FAILURE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 fn append_position(path: &str, position: &serde_json::Value) {
     use std::io::Write as _;
+    let mut failure = POSITIONS_FAILURE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if failure.is_some() {
+        return;
+    }
     let written = fs::OpenOptions::new().create(true).append(true).open(path)
         .and_then(|mut f| writeln!(f, "{position}"));
     if let Err(e) = written {
-        mtg_player::stderr_line!("WARN: could not keep the pick position in {path}: {e}");
+        mtg_player::stderr_line!("WARN: the pick positions file {path} stopped accepting writes: {e}; \
+it is incomplete from here on");
+        *failure = Some(format!("the pick positions file {path} stopped accepting writes: {e}"));
     }
 }
 
@@ -85,8 +99,26 @@ fn check_kept_files(save: Option<&str>, positions: Option<&str>) -> Result<(), S
         fs::write(&probe, "").and_then(|()| fs::remove_file(&probe)).map_err(|e| refused(&e))?;
     }
     if let Some(path) = positions {
-        fs::OpenOptions::new().create(true).append(true).open(path)
-            .map_err(|e| format!("{POSITIONS_ENV}: the pick positions cannot be kept in {path}: {e}"))?;
+        let refused = |e: &dyn std::fmt::Display| format!("{POSITIONS_ENV}: the pick positions cannot be kept in {path}: {e}");
+        // A FIFO's open below waits for a reader, and the run hung at
+        // start-up with nothing said (#1084); a socket cannot be opened at
+        // all. A device is appended to as asked: /dev/null keeps nothing
+        // on purpose, and one that refuses a write is said at the end.
+        #[cfg(unix)]
+        if let Ok(meta) = fs::metadata(path) {
+            use std::os::unix::fs::FileTypeExt as _;
+            let kind = meta.file_type();
+            if kind.is_fifo() {
+                return Err(refused(&"it is a FIFO, not a regular file, and the positions are appended to one"));
+            }
+            if kind.is_socket() {
+                return Err(refused(&"it is a socket, not a regular file, and the positions are appended to one"));
+            }
+        }
+        if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
+            return Err(refused(&"it is a directory"));
+        }
+        fs::OpenOptions::new().create(true).append(true).open(path).map_err(|e| refused(&e))?;
     }
     Ok(())
 }
@@ -1947,6 +1979,11 @@ deck and results are not a drafted one");
     // written" over it, and exit 0, said the record was whole (#1078).
     if let Some(why) = mtg_player::game_log::write_failure() {
         mtg_player::stderr_line!("\nError: {why}; the draft finished but its log is incomplete");
+        std::process::exit(1);
+    }
+    let positions_failure = POSITIONS_FAILURE.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    if let Some(why) = positions_failure {
+        mtg_player::stderr_line!("\nError: {why}; the draft finished but its positions are incomplete");
         std::process::exit(1);
     }
     if !args.quiet {
