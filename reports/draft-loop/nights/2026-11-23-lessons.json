@@ -1,0 +1,372 @@
+{
+ "night": "2026-11-23",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "0-3-0",
+   "lessons": [
+    "Victim of Night p1p1 and Bloodline Keeper p3p1 were taken, then cut from a WR that never splashed; commit to two colours by mid pack 1 and stop taking off-colour bombs.",
+    "The guide's WR 52% figure didn't hold: my 0-3 WR had only two Voiceless Spirits and Midnight Haunting as fliers, and Smite the Monstrous was dead against UG's Stitched Drake and Moon Heron.",
+    "Five removal spells were not enough: my 1-6 WR filled slots with two Village Ironsmiths and two Selfless Cathars; take a third flier over those ground bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12385,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3260,
+    "output_tokens_details": {
+     "thinking_tokens": 3033
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12385
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3260,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12385,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12385,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't spend early picks on weak 1-drops: I took Brain Weevil twice and Typhoid Rats and Walking Corpse, then still played all three despite planning to cut them; take cheap removal or two-drops instead.",
+    "Draft more removal that answers fliers: my deck had just four answers (Harvest Pyre, Corpse Lunge, Night Terrors, Geistcatcher's Rig) against Voiceless Spirit, Vampire Interloper, Chapel Geist and Screeching Bat.",
+    "A bomb like Olivia Voldaren doesn't carry a 17-land midrange deck alone: I went 3-5 in games with her, so value playable 2-drops and removal after the first pick."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3328,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3735,
+    "output_tokens_details": {
+     "thinking_tokens": 3487
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3328
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3735,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3328,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3328,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Commit to white by pick six: my early Sensory Deprivation and Brimstone Volley went unused, and my GW deck had only one real flier, Chapel Geist, in its 1-2 loss to BG.",
+    "The guide's flier advice held: my 11-to-19-turn grinds lacked closers, so take evasive two-drops like Orchard Spirit over Thraben Sentry or a second Woodland Sleuth.",
+    "Take Thraben Sentry and Woodland Sleuth only as late filler; I spent mid-pack picks on Moorland Haunt and Murder of Crows, then played neither."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4981,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2775,
+    "output_tokens_details": {
+     "thinking_tokens": 2563
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4981
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2775,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4981,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4981,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Keep on-colour reach over marginal creatures: I cut Spidery Grasp for filler, then lost 0-2 to UR's fliers (Balefire Dragon, Stitched Drake) in games of 24 and 28 turns.",
+    "Draft evasive finishers over a third cheap body: my BG midrange won 13- to 19-turn games but stalled against UR's grinding 24- and 28-turn games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3363,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2140,
+    "output_tokens_details": {
+     "thinking_tokens": 1992
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3363
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2140,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3363,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3363,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Do not first-pick off-colour removal: my pack 1 first pick, Sever the Bloodline, never reached my WG main deck and sat in the sideboard until game 2 against WB.",
+    "Tonight's Round 2 UG losses ended at 22, 19 and 11 turns, contradicting the guide's 15-to-47-turn expectation; with only Abbey Griffin and two Somberwald Spiders as fliers, take a third flier.",
+    "Contradicting the guide's 10-source rule, my 9 Forest/8 Plains WG went 1-2; give the main colour 10 sources and count Avacyn's Pilgrim as fixing."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12429,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3817,
+    "output_tokens_details": {
+     "thinking_tokens": 3591
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12429
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3817,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12429,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12429,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "3-0-0",
+   "lessons": [
+    "Take Geistflame, Claustrophobia, Grasp of Phantoms and Devil's Play early: cheap removal plus 15 creatures carried U/R to 3-0 in matches, and I cut 6-drops like Geistcatcher's Rig and Rage Thrower.",
+    "Keep the curve low with cheap fliers like Stitched Drake, and cut filler like Rolling Temblor and Traitorous Blood rather than forcing them into the main deck.",
+    "I drafted without a guide, so nothing here contradicted one; my U/R plan went 3-0 in matches, but a single 6-2 game record is a small sample."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3368,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1909,
+    "output_tokens_details": {
+     "thinking_tokens": 1689
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3368
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1909,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3368,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3368,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WB",
+   "record": "1-2-0",
+   "lessons": [
+    "The 3-0 UR deck that beat me in round 2 ran Balefire Dragon, Devil's Play and two Geistflame; take those reach and bomb cards over mid-pack white or black filler.",
+    "The guide says fliers win, but round 3's WG deck (lost 0-2) ran two Somberwald Spider with reach, which walled my air plan; keep Rebuke or Slayer of the Wicked for reach blockers."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5058,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2946,
+    "output_tokens_details": {
+     "thinking_tokens": 2792
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5058
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2946,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5058,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5058,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UG",
+   "record": "2-1-0",
+   "lessons": [
+    "Prioritise blue's removal auras like Claustrophobia and Sensory Deprivation over Curse of the Bloody Tome, which I took twice in pack 1 and cut both times.",
+    "Late-pack picks went to dead cards: two Curse of the Bloody Tome, Mulch, and Fortress Crab, so take playable bodies over them when the pick is marginal.",
+    "Green 4-drops like Festerhide Boar and Boneyard Wurm plus Moldgraf Monstrosity carried my deck, but my 4-3 game record suggests securing cheap early plays before taking more top end."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3247,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2166,
+    "output_tokens_details": {
+     "thinking_tokens": 1956
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3247
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2166,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3247,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3247,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
