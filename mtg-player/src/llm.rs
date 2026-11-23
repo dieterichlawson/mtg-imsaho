@@ -5033,7 +5033,7 @@ impl LlmPlayer {
     /// seat (`mark_indices`, #398).
     ///
     /// `verb` is what picking an index does — "exile", "choose" — and
-    /// completes the instruction line "Name the cards to {verb}.", so it is
+    /// completes the instruction line "Name the {noun}s to {verb}.", so it is
     /// a bare verb phrase and not a whole clause: "exile this card" made
     /// that read "Name the cards to exile this card." (#492).
     fn choose_object_subset(
@@ -5051,9 +5051,22 @@ impl LlmPlayer {
         }
 
         let labels = Self::format_combat_creature_list(view, options);
-        let instruction = format!("Name the cards to {verb}.");
-        let picked = self.mark_indices(view, &labels, min, max, description, &instruction, "card", cancel)?;
+        let noun = Self::object_set_noun(view, options);
+        let instruction = format!("Name the {noun}s to {verb}.");
+        let picked = self.mark_indices(view, &labels, min, max, description, &instruction, noun, cancel)?;
         Some(picked.into_iter().filter_map(|i| options.get(i).copied()).collect())
+    }
+
+    /// What an object set's rows are, for its prompt: "permanent" when every
+    /// one is on the battlefield (the creatures a tap cost names, #670),
+    /// else "card". "Pick exactly 2 cards" over creatures to tap was wrong
+    /// (#1081's review).
+    fn object_set_noun(view: &GameView, options: &[mtg_engine::ids::ObjectId]) -> &'static str {
+        if options.iter().all(|id| view.battlefield.iter().any(|p| p.object_id == *id)) {
+            "permanent"
+        } else {
+            "card"
+        }
     }
 
     /// Exile-from-graveyard additional cost: mark the cards to exile.
@@ -10110,6 +10123,18 @@ would be dealt this turn by creatures other than Wolves or Werewolves is prevent
     }
 
     /// A Curse: an Aura attached to a *player* rather than an object.
+    /// #1081's review: an object set over creatures on the battlefield (a
+    /// tap cost) said "Pick exactly 2 cards"; a graveyard's set still does.
+    #[test]
+    fn an_object_set_names_its_rows_by_where_they_are() {
+        let mut view = empty_view();
+        view.battlefield.push(perm(7, "Chapel Geist", 2, 3, PlayerId(0)));
+        let on_bf = [mtg_engine::ids::ObjectId(7)];
+        assert_eq!(LlmPlayer::object_set_noun(&view, &on_bf), "permanent");
+        let elsewhere = [mtg_engine::ids::ObjectId(7), mtg_engine::ids::ObjectId(99)];
+        assert_eq!(LlmPlayer::object_set_noun(&view, &elsewhere), "card");
+    }
+
     fn curse(id: u64, name: &str, enchanted: PlayerId, controller: PlayerId, oracle: &str) -> PermanentView {
         let mut p = perm(id, name, 0, 0, controller);
         p.card_types = vec![CardType::Enchantment];

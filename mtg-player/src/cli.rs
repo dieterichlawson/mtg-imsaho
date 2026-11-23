@@ -1067,7 +1067,7 @@ const SET_HOW_TO: &str = " Type a number to mark or unmark it, several at once i
 /// What the screen says when the idle key would commit an empty answer
 /// nobody chose (issue #262).
 const SET_NOTHING_MARKED: &str =
-    "nothing marked — mark the cards you want, or press n for none and then enter";
+    "nothing marked — mark what you want, or press n for none and then enter";
 
 /// One "choose some of these" screen: what it is called, what it asks, the
 /// rows to mark, how many may be marked, and whether it can be abandoned.
