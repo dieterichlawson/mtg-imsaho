@@ -741,6 +741,21 @@ fn every_kind_of_empty_prompt_is_flagged() {
             "{what} with an empty list is a stuck game, got: {v:?}");
     }
 
+    // A combat damage amount prompt with no amounts is a combat damage step
+    // that cannot end. Its own clause flags it (one option per amount in
+    // min..=max), whichever words it uses (#1077).
+    let mut state = base.clone();
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0, source: src,
+        choice: K::AssignCombatDamage {
+            description: "assign".into(), attacker: src, blocker: src,
+            min: 1, max: 3, options: vec![], first_strike_only: false,
+        },
+    });
+    let v = check_settled(&state, &reg);
+    assert!(v.iter().any(|m| m.contains("combat-damage division prompt with 0 options")),
+        "an empty combat damage amount prompt is a stuck game, got: {v:?}");
+
     // The same prompts with something in them are fine.
     base.awaiting_action = Some(AwaitingAction::ResolutionChoice {
         player: P0, source: src,
@@ -788,6 +803,33 @@ fn an_ability_funding_prompt_without_its_stash_is_flagged() {
     assert!(!check_settled(&state, &reg).iter()
         .any(|m| m.contains("no pending_spell_cast stashed")),
         "an ability prompt is not missing a SPELL stash");
+}
+
+/// An activation's tap-cost prompt (Tap an untapped creature you control)
+/// is answered by paying out of the activation stashed when it was raised;
+/// without the stash, answering it has no ability to pay for. The ability
+/// X-funding guard was pinned and this one, beside it, was not (#1077).
+#[test]
+fn an_activation_cost_prompt_without_its_stash_is_flagged() {
+    use mtg_engine::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind as K};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let src = ready_creature(&mut state, P0, 1, 1);
+    let other = ready_creature(&mut state, P0, 1, 1);
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: P0,
+        source: src,
+        choice: K::ChooseObjectSet {
+            description: "tap an untapped creature you control".into(),
+            options: vec![other],
+            min: 1,
+            max: 1,
+            effect: PendingEffect::PayActivationTaps { source_id: src },
+        },
+    });
+    assert!(state.pending_ability_effect.is_none(), "setup: no stash");
+    assert_flags(&state, &reg, "activation cost prompt with no pending_ability_effect stashed");
 }
 
 /// Every prompt names the player who has to answer it, and a prompt

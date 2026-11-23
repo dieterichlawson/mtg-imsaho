@@ -355,7 +355,9 @@ pub fn check_core(state: &GameState, registry: &CardRegistry) -> Vec<String> {
                 K::ChooseCardFromHand { cards, .. } => cards.is_empty(),
                 K::ChooseTriggerOrder { options, .. } => options.is_empty(),
                 K::ChooseDamageAssignmentOrder { options, .. } => options.is_empty(),
-                K::AssignCombatDamage { options, .. } => options.is_empty(),
+                // AssignCombatDamage is not here: prompts.rs requires one
+                // option per amount in min..=max, and min < max, so an empty
+                // list is always flagged there (#1077).
                 K::ChooseDamageEffect { options, .. } => options.is_empty(),
                 K::DividePermanentsIntoPiles { permanents, .. } => permanents.is_empty(),
                 _ => false,

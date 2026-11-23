@@ -1596,3 +1596,22 @@ Accepted:
   list gains " x1" ("Forest x1, Island x2" for "Forest, Island x2"). The
   same cards are named in the same order with the same counts; only the
   phrasing of a log line changes. Display wording (bucket 5).
+
+## 2026-11-21 run 44921905485, shards 4 and 7 (issues #1077, #1076)
+
+Shard 4, `invariants/mod.rs` `check_core`, both oracle clauses:
+
+- `delete match arm K::AssignCombatDamage{options, ..}`: deleting the arm
+  changed nothing the checker reports, because the arm was a second copy.
+  `invariants/prompts.rs` requires one option per amount in `min..=max`
+  and `min < max`, so an empty list is always flagged there too. The arm
+  is deleted rather than tested. `every_kind_of_empty_prompt_is_flagged`
+  now asserts the property instead: an empty combat-damage amount prompt
+  is flagged, whatever the clause.
+- `replace match guard state.pending_ability_effect.is_none() with false`:
+  this is the `PayActivationTaps` cost prompt's guard. The ability
+  X-funding guard beside it was already pinned. With the guard blinded, a
+  tap-cost prompt raised without its stashed activation, which has
+  nothing to pay for when answered, goes unreported. It is killed by
+  `an_activation_cost_prompt_without_its_stash_is_flagged`, which I
+  watched fail under the mutant, applied by hand.
