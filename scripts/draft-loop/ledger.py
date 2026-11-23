@@ -301,21 +301,25 @@ def log_health(path):
         # A deck answer the validator refused: the seat is asked again with
         # the error, or, at its last attempt, the table builds the deck. Not
         # a `REASK` line, so the record had neither (#1024's review).
-        if (m := re.search(r"\[Seat (\d+)\] DECK_RESPONSE attempt (\d+)/(\d+) \(invalid: (.*)\)\t(.*)", line)):
+        if (m := re.search(r"\[Seat (\d+)\] DECK_RESPONSE attempt (\d+)/(\d+) \(invalid: ([^\t]*)\)(?:\t(.*))?$", line)):
             # The last attempt's deck is the fallback, which the seat's
             # `fallback_deck` already counts as a deck substituted.
             if m.group(2) != m.group(3):
                 h["reasks"] += 1
-            pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(1), [m.group(5)])
+            pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(1), [m.group(5) or ""])
             continue
+        # A response's header carries it after a tab only when it is one
+        # line; a pretty-printed one is on the lines below a header with no
+        # tab, which these patterns missed, so every sideboard reason was
+        # kept with no answer and no thoughts (#1087).
         # A between-games answer that could not be played and was asked
         # again with its error (#1086): a re-ask, with its reason.
-        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE before game \d+ \(asked again: (.*)\)\t(.*)", line)):
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE before game \d+ \(asked again: ([^\t]*)\)(?:\t(.*))?$", line)):
             h["reasks"] += 1
-            pending = ("SIDEBOARD_REASK", m.group(2), m.group(1), [m.group(3)])
+            pending = ("SIDEBOARD_REASK", m.group(2), m.group(1), [m.group(3) or ""])
             continue
-        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE [^\t]*\t(.*)", line)):
-            pending = ("SIDEBOARD_RESPONSE", None, m.group(1), [m.group(2)])
+        if (m := re.search(r"\[Seat (\d+)\] SIDEBOARD_RESPONSE [^\t]*(?:\t(.*))?$", line)):
+            pending = ("SIDEBOARD_RESPONSE", None, m.group(1), [m.group(2) or ""])
             continue
         # A between-games answer that could not be played: the deck is kept
         # in the seat's place, and why is the record's to keep.

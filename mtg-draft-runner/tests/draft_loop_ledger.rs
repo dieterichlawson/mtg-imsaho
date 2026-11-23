@@ -682,8 +682,17 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         format!("{at}[Seat 4] DECK_RESPONSE attempt 2/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
         // #1086: an answer that could not be played is asked again once,
         // a re-ask with its reason.
-        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2 (asked again: `maindeck` has 35 counts and your pool has 37 numbered rows)\t{{\"maindeck\": [1]}}"),
-        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2\t{{\"thoughts\": \"bring in removal\", \"swap_in\": [\"Dead Weight\"]}}"),
+        // #1087: as the log writes them, pretty-printed on the lines below
+        // a header with no tab; the answer and its thoughts were lost.
+        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2 (asked again: `maindeck` has 35 counts and your pool has 37 numbered rows)"),
+        "{".to_string(),
+        "  \"maindeck\": [1]".to_string(),
+        "}".to_string(),
+        format!("{at}[Seat 3] SIDEBOARD_RESPONSE before game 2"),
+        "{".to_string(),
+        "  \"thoughts\": \"bring in removal\",".to_string(),
+        "  \"swap_in\": [\"Dead Weight\"]".to_string(),
+        "}".to_string(),
         format!("{at}[Seat 3] SIDEBOARD before game 2: kept the deck (the answer's could not be played: Dead Weight is not in your pool)\t"),
     ].join("\n") + "\n").unwrap();
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop");
@@ -712,7 +721,7 @@ fn a_game_reask_keeps_what_the_seat_thought() {
          "answer": "{\"swap_in\":[\"Dead Weight\"]}", "thought": "bring in removal",
          "settled": "not asked again: the deck was kept"},
         {"who": "sideboard", "reason": "`maindeck` has 35 counts and your pool has 37 numbered rows", "count": 1,
-         "answer": "{\"maindeck\": [1]}"},
+         "answer": "{ \"maindeck\": [1] }"},
     ]), "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
