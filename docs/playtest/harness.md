@@ -1169,6 +1169,16 @@ say what your stub says.
   the sideboard prompt. A wrapper that answers `"Between games"` prompts
   badly reaches the keep-the-deck path in seconds. The match is 2-0 at
   `--seed 37`, so use another seed for a game 3
+  — **2026-11-23, the first run with a real seat:** the stub always
+  answers the right number of counts, so it can never show the failure
+  that matters. Send only the `Between games` calls to `claude -p --model
+  claude-haiku-5-5` through a wrapper that `grep`s stdin, and leave every
+  other call on the stub. 40 calls cost a few cents. 22/40 answers had the
+  wrong number of counts, mostly the current counts with the trailing zeros
+  left off, and the land change they asked for was dropped (#1086). Tally
+  each reply's `maindeck` against the prompt's `N: playing K of` rows. Do
+  not trust the night record for this, because it keeps no sideboard answer
+  (#1087)
 - H38 [proposed 2026-10-21, from 0ab9837, 0ff770c and the draft loop's
   "What went wrong" line] every re-ask has a cause: read the re-ask and
   unreadable counts of the latest nights in `reports/draft-loop/nights/`,
