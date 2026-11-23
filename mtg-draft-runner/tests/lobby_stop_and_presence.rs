@@ -257,6 +257,11 @@ fn a_seats_fatal_closes_the_table_the_way_quit_does() {
     assert!(reason.starts_with("the server stopped: Gemini config error"), "{closed}");
     let status = server.child.wait().expect("the server exits");
     assert_eq!(status.code(), Some(1), "a fatal's exit status: {status}");
+    // One ending, the fatal's: the table's own (a NOTE, a second summary,
+    // exit 0) raced it once the hook had ended the table.
+    let log = server.log_text();
+    assert!(log.contains("FATAL Gemini config error"), "{log}");
+    assert!(!log.contains("the table was drafting"), "{log}");
 }
 
 #[test]

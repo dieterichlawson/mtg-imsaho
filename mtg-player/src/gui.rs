@@ -312,6 +312,17 @@ type ExitHook = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
 static EXIT_HOOKS: std::sync::Mutex<Vec<ExitHook>> = std::sync::Mutex::new(Vec::new());
 
+static EXITING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a thread is in [`close_pages_on_exit`], on its way to ending
+/// the process. A hosted table's hook ends the table as a quit does, and
+/// the table's own ending must then leave the exit to that thread: the two
+/// raced for the exit status and the log's last record (#1033's review).
+#[must_use]
+pub fn exiting() -> bool {
+    EXITING.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 /// Run `hook` with the reason on every [`close_pages_on_exit`]: a hosted
 /// table registers its own close here, so a fatal that ends the process
 /// from inside a seat (a misconfigured model) tells the table's pages it
@@ -332,6 +343,7 @@ pub fn close_on_exit(page: PageHandle) {
 /// page whose socket the exit just reset read it as a dropped network and
 /// retried once a second for ever.
 pub fn close_pages_on_exit(over: Over, reason: &str) {
+    EXITING.store(true, std::sync::atomic::Ordering::SeqCst);
     // A hosted table's own close first: it tells its draft pages, clients
     // and game pages, and waits for them itself (#1033).
     let hooks: Vec<ExitHook> = EXIT_HOOKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();

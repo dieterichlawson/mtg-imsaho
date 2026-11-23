@@ -514,7 +514,11 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     let closing = Arc::downgrade(shared);
     mtg_player::gui::on_exit(move |reason| {
         if let Some(shared) = closing.upgrade() {
-            shared.quit_because(reason);
+            // A game seat's own exit says it as mtg-runner's gui pages
+            // read it; here it is the table's server that stops.
+            let reason = reason.strip_prefix("the runner serving this page stopped: ")
+                .map_or_else(|| reason.to_string(), |why| format!("the server stopped: {why}"));
+            shared.quit_because(&reason);
             shared.close_everything();
         }
     });

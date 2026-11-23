@@ -450,6 +450,12 @@ client still works", shared.config.web_dir.display(), server::PAGE);
     if let Err(e) = server::run(&shared, listener) {
         die(&e);
     }
+    // A seat's fatal ended the table through the exit hook, and its thread
+    // ends the process: its log record, its summary and its status are the
+    // run's, not a second ending's that exited 0 (#1033's review).
+    while mtg_player::gui::exiting() {
+        std::thread::park();
+    }
     // The log is the table's record: say who ended it, and where it was
     // (the first playtest's quit mid-match left the log ending in a usage
     // summary with no word of why).
