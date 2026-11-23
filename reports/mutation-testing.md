@@ -1615,3 +1615,15 @@ Shard 4, `invariants/mod.rs` `check_core`, both oracle clauses:
   nothing to pay for when answered, goes unreported. It is killed by
   `an_activation_cost_prompt_without_its_stash_is_flagged`, which I
   watched fail under the mutant, applied by hand.
+
+Shard 7, `invariants/objects.rs` `check_core` (#1076): `replace || with &&`.
+cargo-mutants was not installed on the fixer's machine, and the issue gives
+no line. I flipped each of the 14 `||` in `check_core` by hand and ran the
+engine's nine invariant test files against each. Only line 261 survived:
+the token-name clause of CR 111.4, `last != "Token" || types.len() !=
+printed.len()`. With `&&`, a name whose last word is not "Token" but which
+has the right number of other words ("Wolf Hound" for a Wolf) goes
+unreported, and so does one ending in "Token" with a subtype repeated
+("Wolf Wolf Token"). This is an oracle clause.
+`a_tokens_name_and_types_describe_what_it_is` now holds both names. I
+watched it fail under the mutant, applied by hand in a copy of the tree.

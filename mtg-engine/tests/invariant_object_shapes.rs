@@ -320,6 +320,14 @@ fn a_tokens_name_and_types_describe_what_it_is() {
     let mut s = state.clone();
     s.get_object_mut(wolf).unwrap().name = "Wolf".into();
     flags(&s, &reg, "is not its subtypes");
+    // Each part of the rule bites alone: the last word must be "Token"
+    // even when the count of the others is right, and the count must be
+    // right even when the last word is "Token" (#1076).
+    for wrong in ["Wolf Hound", "Wolf Wolf Token"] {
+        let mut s = state.clone();
+        s.get_object_mut(wolf).unwrap().name = wrong.into();
+        flags(&s, &reg, "is not its subtypes");
+    }
 
     // A token with subtypes and no creature type.
     let mut s = state.clone();
