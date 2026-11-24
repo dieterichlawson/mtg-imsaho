@@ -49,6 +49,7 @@ if args and args[0] == "--version":
 elif args:
     save = os.environ["EVAL_SAVE"]
     out = os.environ["EVAL_POSITIONS"]
+    tmp = None
     try:
         with open(save, "rb") as f:
             data = f.read()
@@ -62,5 +63,19 @@ elif args:
                 f.write(data)
             os.rename(tmp, path)
     except OSError as e:
-        print(f"capture-claude: could not keep the position: {e}", file=sys.stderr)
+        # A record with a gap in it is one `replay.py` would take for the
+        # whole game, so the call is not made: it fails, the seat retries it
+        # (each retry tries the copy again, so a disk that frees up loses
+        # nothing), with this line as its reason on the terminal and in
+        # --log, and a seat that gives up forfeits the game rather than play
+        # on with a gap in the record (#1088, #1085's game twin). Nothing of
+        # the failed copy is left behind.
+        if tmp is not None:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        print(f"capture-claude: could not keep the position, so the call is not made "
+              f"(the positions in {out!r} would be incomplete): {e}", file=sys.stderr)
+        sys.exit(1)
 os.execv(real, [real] + args)

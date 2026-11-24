@@ -477,6 +477,13 @@ scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/
 scripts/decision-eval/compare.py --out logs/eval/res --ref ref ref off
 ```
 
+A capture that cannot keep a position (a full disk, a directory that stops
+taking writes) does not make that call: the seat retries it, each retry
+trying the copy again, with the capture's reason on the terminal and in
+`--log` at every attempt; a seat that gives up forfeits the game (a
+`STALLED` record). Either way the record has no gap: every decision the
+game asked is a kept position (#1088).
+
 `compare.py` prints, per configuration, how often its action matches the
 reference's (on the positions where every reference sample agreed, and on all
 of them) and what a decision cost it in calls, output and thinking tokens and

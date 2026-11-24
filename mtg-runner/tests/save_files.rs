@@ -442,6 +442,59 @@ fn a_capture_that_cannot_keep_positions_is_refused_before_the_game() {
     assert!(!String::from_utf8_lossy(&out.stdout).contains("DECISION"), "no decision was asked");
 }
 
+/// #1088 (#1085's game twin): a position the capture cannot keep partway
+/// through a game is a call it does not make. It used to warn on a stderr
+/// nobody saw, hand the call on, and let the game exit 0 with a record
+/// `replay.py` takes for whole; and a failed copy left its `.save.tmp`.
+/// The wrapper is run as the seat runs it, under a file-size limit the
+/// save is over: the copy fails after its temp file was opened.
+#[test]
+fn a_position_the_capture_cannot_keep_fails_the_call_and_leaves_no_tmp() {
+    if !std::process::Command::new("sh").arg("-c").arg("command -v python3").output().is_ok_and(|o| o.status.success()) {
+        eprintln!("skipping: no python3 to run capture-claude.py with");
+        return;
+    }
+    let scratch = Scratch::new("capture-full");
+    let save = scratch.path("live.json");
+    std::fs::write(&save, "x".repeat(64 * 1024)).unwrap();
+    let positions = scratch.dir.join("positions");
+    std::fs::create_dir_all(&positions).unwrap();
+    let called = scratch.path("called");
+    let real = scratch.path("real.sh");
+    std::fs::write(&real, format!("#!/bin/sh\ntouch '{called}'\n")).unwrap();
+    std::fs::set_permissions(&real, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let capture = repo_root().join("scripts/decision-eval/capture-claude.py");
+    // `ulimit -f 16` is 16 KiB; with SIGXFSZ ignored a longer write is an
+    // EFBIG error, as a full disk's ENOSPC is.
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("trap '' XFSZ; ulimit -f 16; exec python3 '{}' -p", capture.display()))
+        .env("EVAL_REAL_BIN", &real)
+        .env("EVAL_SAVE", &save)
+        .env("EVAL_POSITIONS", &positions)
+        .output()
+        .expect("the capture runs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "the call fails: {stderr}");
+    assert!(stderr.contains("could not keep the position, so the call is not made"), "and says why: {stderr}");
+    assert!(!std::path::Path::new(&called).exists(), "the real claude was not asked");
+    let left: Vec<_> = std::fs::read_dir(&positions).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert!(left.is_empty(), "nothing of the failed copy is left: {left:?}");
+
+    // The same call with room to write keeps the position and hands on.
+    let out = std::process::Command::new("python3")
+        .arg(&capture).arg("-p")
+        .env("EVAL_REAL_BIN", &real)
+        .env("EVAL_SAVE", &save)
+        .env("EVAL_POSITIONS", &positions)
+        .output()
+        .expect("the capture runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(std::path::Path::new(&called).exists(), "the real claude was asked");
+    let kept: Vec<_> = std::fs::read_dir(&positions).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+    assert!(kept.len() == 1 && kept[0].ends_with(".save"), "{kept:?}");
+}
+
 /// #920's game twin: a save records the history, the answer format and the
 /// pass-until row (#931) an LLM seat's system prompt was made under, and a
 /// resume under others says
