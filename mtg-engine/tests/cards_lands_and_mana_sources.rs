@@ -783,11 +783,12 @@ fn runic_repetition_targets_only_your_own_exiled_flashback_cards() {
 /// the stack. The card won't have flashback while exiled and can't be the
 /// target of Runic Repetition (unless it naturally has flashback)."
 ///
-/// Snapcaster Mage's grant is a `TemporaryEffect::GrantFlashback`, which lives
-/// on `until_end_of_turn` and so is still in that list while the card sits in
-/// exile the same turn. Pushed directly here rather than played out through
-/// Snapcaster and a flashback cast, because what is being tested is which
-/// source of "has flashback" the targeting reads, not how the grant got there.
+/// Snapcaster Mage's grant is a `TemporaryEffect::GrantFlashback` on
+/// `until_end_of_turn`. The engine ends it as the card leaves the graveyard
+/// (CR 400.7, #1089), so this board — a grant on a card in exile — is one
+/// play cannot reach, and `check_settled` would flag it. It is pushed here
+/// anyway because what is being tested is which source of "has flashback"
+/// the targeting reads: the printed one, never the turn's grants.
 #[test]
 fn runic_repetition_ignores_flashback_that_was_only_granted() {
     let reg = registry();

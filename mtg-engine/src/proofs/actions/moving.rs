@@ -15,17 +15,20 @@
 //! stands in as the event unchanged, which is what it answers on such a
 //! board (`entering_with_nothing_to_replace_it_is_unchanged`, below): run
 //! through it here, the copy it might decide was one CBMC left open, and
-//! becoming a copy was two thirds of the proof's work. Combat and the
-//! turn's effects are empty here: `remove_from_combat` and the retain over
-//! `until_end_of_turn` are not reached with anything to remove.
+//! becoming a copy was two thirds of the proof's work. Combat is empty
+//! here: `remove_from_combat` is not reached with anything to remove. The
+//! turn's effects are one flashback grant on the card and one on another
+//! (CR 702.34a), which a card leaving the graveyard ends for itself alone
+//! (400.7, #1089); the battlefield's effects are another proof's
+//! (`pending_effects`' pruning).
 
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::PlayerId;
 use crate::proofs::cards::{blank_board, Snapshot};
 use crate::replacement::EnteringPermanent;
-use crate::state::{ControlEffect, EnterAsCopyChoice, GameState, SetPtEffect};
-use crate::types::{CardType, Color, CounterType, Zone};
+use crate::state::{ControlEffect, EnterAsCopyChoice, GameState, SetPtEffect, TemporaryEffect};
+use crate::types::{CardType, Color, CounterType, ManaCost, Zone};
 
 /// Stands in for `replacement::for_entering`: the event as it was.
 #[allow(dead_code)] // named only by `kani::stub`
@@ -127,6 +130,8 @@ fn moving(from: Zone, to: Zone, who: PlayerId) {
     state.control_effects = vec![control(id), control(below)];
     let set_pt = |object| SetPtEffect { object, power: Some(1), toughness: None, timestamp: 0 };
     state.set_pt_effects = vec![set_pt(id), set_pt(below)];
+    let grant = |target| TemporaryEffect::GrantFlashback { target, cost: ManaCost::free() };
+    state.until_end_of_turn = vec![grant(id), grant(under)];
 
     let entered = to == Zone::Battlefield && from != Zone::Battlefield;
     let under_control = (entered && kani::any::<bool>()).then(|| PlayerId(u8::from(kani::any::<bool>())));
@@ -154,7 +159,8 @@ fn moving(from: Zone, to: Zone, who: PlayerId) {
     if let Some(c) = under_control {
         expected = expected.with_controller(id, c);
     }
-    assert!(Snapshot::of(&state).without_events() == expected.without_events());
+    assert!(Snapshot::of(&state).without_events().without_until_end_of_turn()
+        == expected.without_events().without_until_end_of_turn());
 
     // What was announced, in order.
     let events = state.events.as_slice();
@@ -210,6 +216,9 @@ fn moving(from: Zone, to: Zone, who: PlayerId) {
     let lasting = if left { 1 } else { 2 };
     assert!(state.control_effects.len() == lasting && state.control_effects.last().is_some_and(|c| c.object == below));
     assert!(state.set_pt_effects.len() == lasting && state.set_pt_effects.last().is_some_and(|e| e.object == below));
+    let granted_still = if from == Zone::Graveyard && to != Zone::Graveyard { 1 } else { 2 };
+    assert!(state.until_end_of_turn.len() == granted_still
+        && matches!(state.until_end_of_turn.last(), Some(TemporaryEffect::GrantFlashback { target, .. }) if *target == under));
 
     kani::cover!(left && to == Zone::Graveyard && !token, "a card dies");
     kani::cover!(milled, "a creature card is milled");

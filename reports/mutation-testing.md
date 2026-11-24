@@ -604,7 +604,7 @@ tests those readings produced, **caught 132 and missed 83**.
 | `transition.rs::life_and_loss` / `mana_ledger` | a draw off the top of the player's own library; the life chain starting and ending where the player is, with an intermediate 0 still a loss (CR 704.5a is about the state, not the endpoints); each loss reason against what the state shows; mana appearing only through `ManaAdded` | `invariant_families.rs`: `the_life_and_loss_ledger_is_checked`, `the_mana_ledger_is_checked` |
 | `transition.rs::action_contract` | a land play that moved from hand to battlefield with its event, each half alone; a cast whose cost left the pool, generic part included, with mana tapped inside the same window counting as paid and mana added for the wrong player or colour not; a mana ability that leaves step, priority and stack alone; the hand-size discard moving exactly the cards it names; a mulligan that shuffles before it draws, moves its count, empties the old hand and draws the new one; a bottoming that bottoms exactly what was asked for | `invariant_families.rs`: `the_costs_an_action_pays_are_checked_against_the_pool`, `the_hand_shaping_actions_move_exactly_what_they_name` |
 | `legal.rs` / `prompts.rs` boundaries | the legal side of each boundary the earlier tests only broke: a menace prompt asking for exactly two blockers, a tap plan naming one source once, a land offered from the acting player's own hand, an exile cost asking for an exact number of cards, a spell paused off the stack list but still in the stack zone, mana added in a real amount, and combat damage in a combat damage step with a combat — each half of which alone is the violation | `invariant_prompt_shapes.rs::a_healthy_cast_time_prompt_is_not_flagged`, `invariant_event_window.rs::the_events_of_a_step_are_checked_against_the_step`, and new cases across `invariant_legal_offers.rs` |
-| `stack.rs::check_core` | the granted-flashback lookup: Past in Flames grants flashback to every instant and sorcery in a graveyard at once, so Devil's Play's `{X}{R}` grant sits beside a `{1}{R}{R}` one, and reading the wrong grant invents an X nobody announced | `invariant_families.rs::a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell` |
+| `stack.rs::check_core` | the granted-flashback lookup: Past in Flames grants flashback to every instant and sorcery in a graveyard at once, so Devil's Play's `{X}{R}` grant sits beside a `{1}{R}{R}` one, and reading the wrong grant invents an X nobody announced (since #1089 the grant ends as the card leaves the graveyard and the check reads the card's mana cost, so there is no lookup left to get wrong) | `invariant_families.rs::a_granted_flashback_cost_is_read_off_the_spell_cast_with_it` |
 
 The last row is the fifth pass, and it is also a correction: the granted-
 flashback lookup had been written up as *unreachable* in the accepted list
@@ -1153,7 +1153,10 @@ in that graveyard, hence `from == Some(Zone::Graveyard)`. The mutant cannot
 make the engine do anything the original does not; it can only make it do
 nothing more often. (`until_eot_object_target` returns `None` for
 `GrantFlashback` — the one temporary effect aimed at a card off the
-battlefield — and says so in a comment, which is what closes that hole.)
+battlefield — and says so in a comment, which is what closes that hole.
+Since #1089 `GrantFlashback` has a clause of its own in `move_object_inner`,
+ending it as its card leaves the graveyard; the same argument covers that
+guard's `&&`, recorded beside the accepted entry.)
 
 The accepted entry carries the function's normalized name, so it also
 suppresses any *future* `&&` in `move_object_inner` that survives. That is the

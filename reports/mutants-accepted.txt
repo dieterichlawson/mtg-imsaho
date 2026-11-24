@@ -382,18 +382,10 @@ mtg-engine/src/invariants/events.rs: replace match guard on_bf(state, *tid) with
 #     made?" block. Reaching it needs an activated ability with both an X in
 #     its cost and a sacrifice cost, and the pool's three sacrifice-cost
 #     abilities (Grimgrin, Skirsdag Cultist, Disciple of Griselbrand) have no
-#     X. (An earlier version of this note also claimed the granted-flashback
-#     lookup in the same function; that claim was wrong -- Past in Flames puts
-#     several grants side by side and reading the wrong one invents an X.
-#     `a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell`
-#     now kills that mutant and the guard-to-`true` one beside it.)
-#
-#   stack.rs guard `*target == obj.id` forced to `false`: the surviving third
-#     of that same site. It makes the granted-flashback lookup find nothing,
-#     which differs from finding the right grant only when a GRANTED flashback
-#     cost has an X. Devil's Play is the only card in the pool whose mana cost
-#     has an X, and it prints its own flashback cost, which is consulted first
-#     and short-circuits the lookup.
+#     X. (The granted-flashback lookup that once sat in the same function is
+#     gone: a grant ends as its card leaves the graveyard, #1089, so a spell
+#     cast with one is checked against its mana cost, and the accepted
+#     guard-to-`false` mutant of that lookup went with it.)
 #
 #   legal.rs `< with <=` in `loyalty`: `def.loyalty_change < 0` becomes
 #     `<= 0`, which lets a change of exactly 0 into the body -- where the test
@@ -414,7 +406,6 @@ mtg-engine/src/invariants/events.rs: replace + with * in untap_step_scope
 mtg-engine/src/invariants/events.rs: replace + with * in zone_changes
 mtg-engine/src/invariants/objects.rs: replace < with > in check_core
 mtg-engine/src/invariants/stack.rs: replace == with != in check_core
-mtg-engine/src/invariants/stack.rs: replace match guard *target == obj.id with false in check_core
 mtg-engine/src/invariants/legal.rs: replace < with <= in loyalty
 mtg-engine/src/invariants/transition.rs: replace + with - in mana_demanded
 mtg-engine/src/invariants/transition.rs: replace > with >= in action_contract
@@ -604,6 +595,12 @@ mtg-engine/src/cards/mod.rs: replace CardBehavior::token_pt_text -> Option<Strin
 # killed by `token_copy::a_token_copy_leaving_the_battlefield_is_still_what_it_was`;
 # the other three guard cleanups whose structures only ever name a battlefield
 # permanent, so loosening the guard runs a no-op on moves that need none.
+# The guard added for #1089 (`from == Some(Graveyard) && to != Graveyard`,
+# ending a flashback grant) is the same shape: under `||` it also runs on a
+# move out of some other zone or into a graveyard, where no grant names the
+# card (check_settled holds every grant to a card in a graveyard), so it
+# removes nothing; the leaving-the-graveyard half is pinned by
+# flashback::granted_flashback_ends_when_the_card_leaves_the_graveyard.
 # Reasons in reports/mutation-testing.md.
 mtg-engine/src/state.rs: replace && with || in GameState::move_object_inner
 
