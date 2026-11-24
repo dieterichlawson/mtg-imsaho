@@ -1564,3 +1564,14 @@ illegal or dubious resolutions do.
   Twin's Doomed Traveler copy are each +1/+1, and the Horde is 1/1. The copy
   line prints a `*/*` card's 0/0 (#1071). The Essence beforehand, two
   Essences, and Moldgraf are still unplayed
+- L72 [proposed 2026-11-24, from #1089, `state.rs` `until_eot_object_target`
+  and `move_object`] CR 400.7 off the battlefield. Object ids survive every
+  zone change, and `move_object` ends effects and clears marks only for some
+  moves: a permanent leaving the battlefield, and `cast_with_flashback` on a
+  move to hand or library. List every field on `GameObject` and every effect
+  list keyed by `ObjectId` (`until_end_of_turn`, `card_state`,
+  `abilities_activated_this_turn`, `chosen_mode`, counters, targets). For each
+  one, build a board that moves its card graveyard → hand → graveyard,
+  graveyard → library → graveyard (Memory's Journey, then Forbidden Alchemy),
+  or hand → stack → hand within one turn, and check that the card comes back
+  with none of it
