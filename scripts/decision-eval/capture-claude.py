@@ -7,7 +7,9 @@ the moment the seat calls the model the save holds that decision's
 position — the game, and the seat's memory (notes, how far into the log it
 has been shown, a pass-until in progress). This copies it into
 `$EVAL_POSITIONS` and then hands the call to `$EVAL_REAL_BIN` (the real
-`claude`, or `scripts/llm-prompt-stub.py`) unchanged.
+`claude`, or `scripts/llm-prompt-stub.py`) unchanged. A position it cannot
+copy is a call it does not make: it exits 1 with the reason, and the seat
+retries (#1088).
 
 A decision that takes two calls — a cast, then its target — is one
 position: copies are named by a hash of the save, so the second call finds
@@ -75,7 +77,8 @@ elif args:
                 os.remove(tmp)
             except OSError:
                 pass
-        print(f"capture-claude: could not keep the position, so the call is not made "
-              f"(the positions in {out!r} would be incomplete): {e}", file=sys.stderr)
+        # The reason first: the seat clips what it reports of a stderr.
+        print(f"capture-claude: could not keep the position, so the call is not made: {e} "
+              f"(EVAL_POSITIONS would be incomplete)", file=sys.stderr)
         sys.exit(1)
 os.execv(real, [real] + args)

@@ -482,7 +482,7 @@ taking writes) does not make that call: the seat retries it, each retry
 trying the copy again, with the capture's reason on the terminal and in
 `--log` at every attempt; a seat that gives up forfeits the game (a
 `STALLED` record). Either way the record has no gap: every decision the
-game asked is a kept position (#1088).
+seat answered is a kept position (#1088).
 
 `compare.py` prints, per configuration, how often its action matches the
 reference's (on the positions where every reference sample agreed, and on all
