@@ -474,6 +474,12 @@ illegal or dubious resolutions do.
   Vampire)
 - L5 cost edges: flashback from graveyard, X=0 and X=max, additional
   costs (sacrifice/exile), Snapcaster-granted flashback
+  [tried 2026-11-24 → #1089; printed and granted costs offered side by side,
+  granted `{X}{R}` X max, Past in Flames reading the graveyard at resolution
+  (611.2c), Harvest Pyre's X, cleanup expiry and a countered flashback spell
+  exiled all held] Next: X=0, a sacrifice additional cost on a flashback cast,
+  Burning Vengeance on a granted flashback. Make a Wish (return two at random)
+  with a two-card graveyard is the cheap way to move a card out and back
 - L6 copy/DFC: Evil Twin copies of transformed werewolves, token copies,
   legend-rule keep choices
   [tried 2026-11-17 → #1060, #1061; Evil Twin and Cackling Counterpart copying
