@@ -157,24 +157,25 @@ effect_proof! {
 }
 
 /// An until-end-of-turn effect of kind `kind` (one of nine) about
-/// `target`, and whether it is about that permanent: it gets +N/+N, gains
-/// or loses a keyword, can't block, has protection, or is controlled by
-/// another player (CR 611.2c), or gets +N/+N while a source stays; not a
-/// card given flashback in a graveyard (702.34), and not combat damage
+/// `target`, and the zone it is about that object in: the battlefield, if
+/// it gets +N/+N, gains or loses a keyword, can't block, has protection, or
+/// is controlled by another player (CR 611.2c), or gets +N/+N while a
+/// source stays; a graveyard, if it is a card given flashback there
+/// (702.34a, which ends as the card leaves, 400.7); none for combat damage
 /// prevented this turn, which is about no object.
-fn an_effect(kind: u8, target: crate::ids::ObjectId) -> (crate::state::TemporaryEffect, bool) {
+fn an_effect(kind: u8, target: crate::ids::ObjectId) -> (crate::state::TemporaryEffect, Option<Zone>) {
     use crate::state::TemporaryEffect as T;
     use crate::types::{CreatureFilter, Keyword, ManaCost};
     match kind % 9 {
-        0 => (T::ModifyPT { target, power_mod: 1, toughness_mod: -1 }, true),
-        1 => (T::GrantKeyword { target, keyword: Keyword::Flying }, true),
-        2 => (T::RemoveKeyword { target, keyword: Keyword::Defender }, true),
-        3 => (T::CantBlock { target }, true),
-        4 => (T::GrantProtection { target, filter: CreatureFilter::ControlledByOpponent }, true),
-        5 => (T::ChangeControl { target, controller: PlayerId(1), timestamp: 3 }, true),
-        6 => (T::ModifyPTWhileSourceInPlay { target, source: target, power_mod: 1, toughness_mod: 0 }, true),
-        7 => (T::GrantFlashback { target, cost: ManaCost::free() }, false),
-        _ => (T::PreventCombatDamageExcept { filter: CreatureFilter::ControlledByYou, source_name: String::new() }, false),
+        0 => (T::ModifyPT { target, power_mod: 1, toughness_mod: -1 }, Some(Zone::Battlefield)),
+        1 => (T::GrantKeyword { target, keyword: Keyword::Flying }, Some(Zone::Battlefield)),
+        2 => (T::RemoveKeyword { target, keyword: Keyword::Defender }, Some(Zone::Battlefield)),
+        3 => (T::CantBlock { target }, Some(Zone::Battlefield)),
+        4 => (T::GrantProtection { target, filter: CreatureFilter::ControlledByOpponent }, Some(Zone::Battlefield)),
+        5 => (T::ChangeControl { target, controller: PlayerId(1), timestamp: 3 }, Some(Zone::Battlefield)),
+        6 => (T::ModifyPTWhileSourceInPlay { target, source: target, power_mod: 1, toughness_mod: 0 }, Some(Zone::Battlefield)),
+        7 => (T::GrantFlashback { target, cost: ManaCost::free() }, Some(Zone::Graveyard)),
+        _ => (T::PreventCombatDamageExcept { filter: CreatureFilter::ControlledByYou, source_name: String::new() }, None),
     }
 }
 
@@ -225,13 +226,13 @@ fn pruning<const N: usize>(kinds: [u8; N], about: [u8; N]) {
 
     state.prune_effects_on_departed_objects();
 
-    // Kept, in order: each effect about no permanent, and each about one
-    // still on the battlefield.
+    // Kept, in order: each effect about no object, and each about one
+    // still in the zone it is about it in.
     let mut n = 0;
     for j in 0..N {
-        let (effect, about_a_permanent) = an_effect(kinds[j], target(j));
-        let on_battlefield = about[j] < 2 && on[usize::from(about[j])];
-        if !about_a_permanent || on_battlefield {
+        let (effect, home) = an_effect(kinds[j], target(j));
+        let zone = (about[j] < 2).then(|| if on[usize::from(about[j])] { Zone::Battlefield } else { Zone::Graveyard });
+        if home.is_none() || zone == home {
             assert!(state.until_end_of_turn.get(n).is_some_and(|t| is_effect(t, kinds[j], target(j))));
             n += 1;
         }

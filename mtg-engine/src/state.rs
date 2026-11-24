@@ -625,6 +625,22 @@ pub(crate) fn until_eot_object_target(effect: &TemporaryEffect) -> Option<Object
     }
 }
 
+/// The object an until-end-of-turn effect is about and the zone it is about
+/// it *in*: a permanent on the battlefield ([`until_eot_object_target`]),
+/// or a card in a graveyard given flashback (CR 702.34a: Snapcaster Mage,
+/// Past in Flames). Either way the effect ends when its object leaves that
+/// zone, since what is left is a new object with no memory of it (CR 400.7)
+/// — a granted flashback does not follow its card back to hand and into
+/// the graveyard again (#1089).
+///
+/// Exhaustive, as [`until_eot_object_target`] is.
+pub(crate) fn until_eot_object_and_zone(effect: &TemporaryEffect) -> Option<(ObjectId, Zone)> {
+    match effect {
+        TemporaryEffect::GrantFlashback { target, .. } => Some((*target, Zone::Graveyard)),
+        _ => until_eot_object_target(effect).map(|t| (t, Zone::Battlefield)),
+    }
+}
+
 /// The seed a game starts from when nobody chose one.
 ///
 /// Any fixed value would do; this one is arbitrary. What matters is that it
@@ -736,9 +752,13 @@ impl GameState {
     /// effects of a permanent as it leaves; this drops the ones an ability
     /// creates *after* its source has already left (Feral Ridgewolf's pump
     /// resolving after the wolf died in response — found by fuzzing).
+    ///
+    /// The same of flashback granted to a card that has left its graveyard
+    /// by then: Snapcaster Mage's trigger resolving after its target was
+    /// exiled in response gives nothing ([`until_eot_object_and_zone`]).
     pub fn prune_effects_on_departed_objects(&mut self) {
-        self.until_end_of_turn.retain(|e| match until_eot_object_target(e) {
-            Some(id) => self.objects.get(&id).is_some_and(|o| o.zone == Zone::Battlefield),
+        self.until_end_of_turn.retain(|e| match until_eot_object_and_zone(e) {
+            Some((id, zone)) => self.objects.get(&id).is_some_and(|o| o.zone == zone),
             None => true,
         });
     }
@@ -2033,6 +2053,16 @@ impl GameState {
             // it (CR 400.7). The exchanged toughness used to be written into
             // the printed field and followed the card to the graveyard.
             self.set_pt_effects.retain(|e| e.object != id);
+        }
+        // CR 400.7 again, for a card leaving the graveyard: flashback granted
+        // to it until end of turn ends (Snapcaster Mage's ruling), so a card
+        // returned to hand, cast, and put back the same turn has only its
+        // printed flashback, if any (#1089). Casting it with the granted
+        // flashback moves it to the stack, which ends the grant too; the
+        // spell remembers how it was cast (`cast_with_flashback`).
+        if from == Some(Zone::Graveyard) && to != Zone::Graveyard {
+            self.until_end_of_turn.retain(|e| !matches!(e,
+                TemporaryEffect::GrantFlashback { target, .. } if *target == id));
         }
 
         // Emit zone-change events outside the mutable borrow. Every move is

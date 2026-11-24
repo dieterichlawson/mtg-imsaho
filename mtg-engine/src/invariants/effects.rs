@@ -106,9 +106,15 @@ pub(super) fn check_settled(state: &GameState, _registry: &CardRegistry, v: &mut
                 v.push(format!("until-end-of-turn effect {e:?} on #{} which is not on the battlefield (CR 400.7)", t.0));
             }
         }
+        // CR 400.7/702.34a: granted flashback is on a card in a graveyard,
+        // and ends as the card leaves (#1089: it followed Think Twice to
+        // hand, the stack and back).
         if let TemporaryEffect::GrantFlashback { target, .. } = e {
-            if state.get_object(*target).is_none() {
-                v.push(format!("flashback granted to missing #{}", target.0));
+            match state.get_object(*target) {
+                None => v.push(format!("flashback granted to missing #{}", target.0)),
+                Some(o) if o.zone != Zone::Graveyard =>
+                    v.push(format!("flashback granted to #{} ({}) in {:?}, not a graveyard (CR 400.7)", target.0, o.name, o.zone)),
+                Some(_) => {}
             }
         }
     }

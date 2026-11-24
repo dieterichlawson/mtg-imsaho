@@ -111,12 +111,15 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                 }
                 // CR 601.2b/107.3a: an X spell announced X — for the cost it
                 // was cast with, the flashback cost included (Devil's Play).
+                // Flashback granted until end of turn ended as the card left
+                // the graveyard (CR 400.7), and it was the card's mana cost
+                // (702.34a), so a spell with no printed flashback was cast
+                // for that. One that prints flashback and was cast for the
+                // grant is checked against the printed cost: this reads only
+                // whether X was in it, and Devil's Play, the pool's one X
+                // card, has X in both.
                 let paid = if obj.cast_with_flashback {
-                    registry.card_data(obj.card_id).and_then(|d| d.flashback_cost).or_else(|| state.until_end_of_turn.iter()
-                        .find_map(|e| match e {
-                            crate::state::TemporaryEffect::GrantFlashback { target, cost } if *target == obj.id => Some(cost.clone()),
-                            _ => None,
-                        }))
+                    registry.card_data(obj.card_id).and_then(|d| d.flashback_cost.or(d.cost))
                 } else {
                     registry.card_data(obj.card_id).and_then(|d| d.cost)
                 };

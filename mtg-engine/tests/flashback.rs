@@ -1240,3 +1240,60 @@ fn burning_vengeance_triggers_on_a_non_flashback_cast_from_the_graveyard() {
         "casting a spell from your graveyard is what Burning Vengeance triggers on, \
          however the permission to do it was granted (CR 603.2)");
 }
+
+/// CR 400.7, and Snapcaster Mage's ruling: flashback granted until end of
+/// turn is lost when the card leaves the graveyard. A card that comes back
+/// to the graveyard the same turn is a new object with only its printed
+/// flashback, if any (#1089: a Think Twice returned by Make a Wish, cast,
+/// and back in the graveyard was still offered Snapcaster's {1}{U}).
+#[test]
+fn granted_flashback_ends_when_the_card_leaves_the_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // No printed flashback: the grant is the only way out of the graveyard.
+    let volley = named_card_in_graveyard(&mut state, &reg, "Brimstone Volley", P0);
+    let pif = castable_spell(&mut state, &reg, "Past in Flames", P0);
+    let mut state = cast_and_resolve(&state, &reg, pif, vec![]);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+    assert!(can_cast(&state, &reg, volley), "test setup: the grant is in force");
+
+    // To hand and back, as Make a Wish and a discard would do it.
+    assert!(state.move_object(volley, Zone::Hand, &reg));
+    assert!(!state.until_end_of_turn.iter().any(|e|
+        matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == volley)),
+        "the grant ended as the card left the graveyard");
+    assert!(state.move_object(volley, Zone::Graveyard, &reg));
+    let offered = engine::legal_actions(&state, &reg).castable_spells
+        .into_iter().any(|c| c.object_id == volley);
+    assert!(!offered, "a card back in the graveyard is a new object, with no flashback");
+}
+
+/// The same for a card with flashback of its own: back in the graveyard it
+/// is offered the printed cost alone, not the grant's as well.
+#[test]
+fn a_card_back_in_the_graveyard_keeps_only_its_printed_flashback() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Think Twice: {1}{U}, flashback {2}{U}.
+    let think_twice = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
+    let pif = castable_spell(&mut state, &reg, "Past in Flames", P0);
+    let mut state = cast_and_resolve(&state, &reg, pif, vec![]);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 3);
+    let costs = |state: &GameState| -> Vec<u32> {
+        let mut v: Vec<u32> = engine::legal_actions(state, &reg).actions.iter().filter_map(|a| match a {
+            Action::CastSpell { object_id, alternative_cost, .. } if *object_id == think_twice =>
+                Some(alternative_cost.as_ref().map_or(0, |c| c.mana_value())),
+            _ => None,
+        }).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    assert_eq!(costs(&state), vec![2, 3], "test setup: the grant's {{1}}{{U}} and the printed {{2}}{{U}}");
+
+    assert!(state.move_object(think_twice, Zone::Hand, &reg));
+    assert!(state.move_object(think_twice, Zone::Graveyard, &reg));
+    assert_eq!(costs(&state), vec![3], "only the printed flashback is left");
+}

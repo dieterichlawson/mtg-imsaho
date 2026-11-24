@@ -1299,6 +1299,11 @@ fn delayed_effect_records_name_the_right_kind_of_object() {
     s.move_object(dead, Zone::Graveyard, &reg);
     s.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: dead, cost: cost.clone() });
     flags_core(&s, &reg, "which is no instant or sorcery (CR 702.34a)");
+    // CR 400.7: a grant on a card that has left the graveyard is one the
+    // engine should have ended (#1089).
+    let mut s = state.clone();
+    s.get_object_mut(spell).unwrap().zone = Zone::Hand;
+    flags_settled(&s, &reg, "in Hand, not a graveyard (CR 400.7)");
 
     let mut s = state.clone();
     s.step = Step::DeclareBlockers;
@@ -4833,14 +4838,15 @@ fn an_x_spell_on_the_stack_announced_its_x() {
     flags_core(&s, &reg, "has an X cost but no X announced (CR 601.2b)");
 }
 
-/// CR 702.34a/601.2b: flashback that a spell was GRANTED costs what the
-/// grant naming that spell says, and X is read off that cost. Past in Flames
-/// grants flashback to every instant and sorcery in a graveyard at once, so
-/// the grants sit side by side and the wrong one carries the wrong cost —
-/// Devil's Play is the one card in the pool whose mana cost has an X in it,
-/// and reading its grant for someone else's spell invents an unannounced X.
+/// CR 702.34a/601.2b: flashback that a spell was GRANTED costs its mana
+/// cost, and X is read off that. The grant itself ended as the card left
+/// the graveyard (CR 400.7, #1089), so the check reads the card, not the
+/// turn's grants: Past in Flames grants flashback to every instant and
+/// sorcery in a graveyard at once, Devil's Play is the one card in the
+/// pool whose mana cost has an X in it, and reading its grant for someone
+/// else's spell invents an unannounced X.
 #[test]
-fn a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell() {
+fn a_granted_flashback_cost_is_read_off_the_spell_cast_with_it() {
     let (mut state, reg) = base();
     let play = named_card_in_graveyard(&mut state, &reg, "Devil's Play", P0);
     let volley = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
@@ -4853,7 +4859,6 @@ fn a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell() {
     let volley_cost = reg.card_data(state.get_object(volley).unwrap().card_id).unwrap().cost.unwrap();
     assert!(!volley_cost.has_x(), "precondition: Brimstone Volley does not");
     state.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: play, cost: x_cost });
-    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: volley, cost: volley_cost });
     {
         // CR 702.34a: flashback casts the card from the graveyard.
         let o = state.get_object_mut(volley).unwrap();
@@ -4863,10 +4868,10 @@ fn a_granted_flashback_cost_is_read_off_the_grant_that_names_the_spell() {
     assert!(reg.card_data(state.get_object(volley).unwrap().card_id).unwrap().flashback_cost.is_none(),
         "precondition: the grant is the only flashback cost this spell has");
 
-    // The engine's own reachable board: Past in Flames grants flashback to
-    // every instant and sorcery in the graveyard at once, so Devil's Play's
-    // {X}{R} grant really does sit next to Brimstone Volley's {1}{R}{R} one.
-    // Only the grant naming the spell being cast may be read.
+    // The engine's own reachable board: Past in Flames granted flashback to
+    // both, the Volley was flashed back (its grant ending as it left the
+    // graveyard), and Devil's Play's {X}{R} grant is still there. It is not
+    // the Volley's to read.
     assert_eq!(check_core(&as_collected(&state), &reg), Vec::<String>::new());
 }
 
