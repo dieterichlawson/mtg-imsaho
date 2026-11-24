@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-24",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "UG",
+   "record": "0-3-0",
+   "lessons": [
+    "Fiend Hunter, first-picked at p3p1, and Abbey Griffin, p3p7, were both stranded in a UG deck with only Moon Heron x2, Stitched Drake and Spectral Flight as fliers, so take on-colour fliers over off-colour removal.",
+    "Stitched Drake's 1UU ran on 7 Islands, breaking the guide's 8-source rule for double pips, and the UG went 2-6 in games, so count pips before the final build.",
+    "Tonight's games ran 12 to 24 turns, shorter than the guide's usual 18 to 29, so a UG built around Kindercatch, Grave Bramble and Festerhide Boar needed early pressure and evasion rather than fatties."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12753,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3899,
+    "output_tokens_details": {
+     "thinking_tokens": 3647
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12753
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3899,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12753,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12753,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "Prioritise removal over filler in pack 3: I left Urgent Exorcism and Inquisitor's Flail unplayed, then lost 0-2 to seat 6's Olivia Voldaren with only Rebuke and Sever the Bloodline as answers.",
+    "Black was my deepest colour: Bloodline Keeper, Reaper from the Abyss, Morkrut Banshee and Stromkirk Patrol anchored the deck that went 2-1, so commit to it early and pair it with white.",
+    "Hedge with a second-colour option: I cut red entirely, then lost 2-0 to seat 6's BR deck featuring Olivia Voldaren, Rage Thrower and Riot Devils."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3341,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3148,
+    "output_tokens_details": {
+     "thinking_tokens": 2902
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3341
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3148,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3341,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3341,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide says fliers win, yet I sided Stitched Drake out for Dream Twist and Mulch against WB and lost game 2 in 24 turns; keep evasive threats in that matchup.",
+    "Smite the Monstrous can't hit Bloodline Keeper (power 3), so hold Rebuke or Claustrophobia for it and for Sever the Bloodline.",
+    "Blue-white fliers won rounds 1 and 3, so in pack 3 take cheap evasive threats over a second Doomed Traveler."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5046,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2447,
+    "output_tokens_details": {
+     "thinking_tokens": 2263
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5046
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2447,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5046,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5046,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't spread early picks across three colours: I took Gallows Warden and Voiceless Spirit before settling blue, black then ended with only four playables, forcing a late UR pivot.",
+    "Count creatures before taking removal: my UR deck ran only 10 creatures and went 1-2, losing both matches to WU decks that answered my few threats.",
+    "Value evasive creatures like Moon Heron above Curse of the Bloody Tome, since the WU opponents I lost to used Claustrophobia and Feeling of Dread against my small board."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3305,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2460,
+    "output_tokens_details": {
+     "thinking_tokens": 2273
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3305
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2460,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3305,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3305,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Victim of Night is BB, yet this BG ran two on 7 Swamps and 10 Forests, ignoring the guide's 8-source BB rule; go 9/8 or cut one.",
+    "The guide ranks BG best by matches, yet this BG went 1-2 and 3-5 in games, losing to WU's Chapel Geist, Invisible Stalker and Stitched Drake; take a third flier over Markov Patrician.",
+    "Markov Patrician was taken twice (p1p5, p3p7) and played, though the guide says to avoid top-end bloat; take a cheap two-drop or flier there instead."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12740,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3664,
+    "output_tokens_details": {
+     "thinking_tokens": 3450
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12740
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3664,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12740,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12740,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Balefire Dragon was my pack 3 first pick, yet it never made my WU deck, so once you are two colours deep, take on-colour playables over off-colour bombs.",
+    "Seat 6's BR went 3-0 with Olivia Voldaren and Blazing Torch and beat my WU deck 2-1, so draft cheap removal like Sensory Deprivation and Claustrophobia earlier.",
+    "My 26-turn and 24-turn wins over BG show that long games reward evasive threats like Chapel Geist and Spectral Rider over vanilla bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3314,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1678,
+    "output_tokens_details": {
+     "thinking_tokens": 1478
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3314
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1678,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3314,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3314,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Red-black was open: Olivia Voldaren and Bloodgift Demon topped a 3-0 deck, with Devil's Play, Harvest Pyre and Blazing Torch answering blockers, so prioritise red removal to pair with black.",
+    "The guide says fliers win, yet round 2's WU deck, packing Claustrophobia, Fiend Hunter and Smite the Monstrous, took a game off me, so draft threats that survive removal.",
+    "Riot Devils and Tormented Pariah filled my curve, so take cheap bodies over Cobbled Wings, a guide-listed skip I took and never played."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5051,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3997,
+    "output_tokens_details": {
+     "thinking_tokens": 3781
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5051
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3997,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5051,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5051,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "1-2-0",
+   "lessons": [
+    "Skip marginal late picks like Fortress Crab, Curse of Oblivion and Full Moon's Rise, which never made my deck; Desperate Ravings ended up as the 23rd card instead.",
+    "My two 1-2 losses went to grindy 17 to 23-turn games, so take evasive or card-advantage threats like Falkenrath Noble before a third Night Terrors or Brain Weevil.",
+    "Don't take a second situational Ghoulcaller's Chant (pick 9, pack 3) over a playable creature; that copy never made my deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3284,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2183,
+    "output_tokens_details": {
+     "thinking_tokens": 1988
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3284
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2183,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3284,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3284,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
