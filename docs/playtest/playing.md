@@ -1574,4 +1574,16 @@ illegal or dubious resolutions do.
   one, build a board that moves its card graveyard → hand → graveyard,
   graveyard → library → graveyard (Memory's Journey, then Forbidden Alchemy),
   or hand → stack → hand within one turn, and check that the card comes back
-  with none of it
+  with none of it — **played 2026-11-25**. On the card's own fields it
+  holds: every cast rewrites `x_value`, the flashback marks, `targets`,
+  `chosen_mode` and the cost records in `card_state`, and a cancelled cast
+  never moves the card. The leak was on the other side, in an id one
+  object keeps of *another*: a creature's `damaged_by` keeps the Abattoir
+  Ghoul that damaged it after that Ghoul is bounced and re-cast, and the new
+  Ghoul triggers (#1090). Still to do: grep for every place that stores a
+  *source's* id — `damaged_by`, `control_effects`' source side,
+  `card_state` values such as Fiend Hunter's `exiled_creature` and
+  `last_attached_to`, a pending trigger's source — and for each one, move
+  the source out and back in before the record is read. Fiend Hunter is
+  gated by `is_new_source` and holds. The graveyard → library → graveyard
+  board was cleared by the code read and is not yet played
