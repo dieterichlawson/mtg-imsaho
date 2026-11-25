@@ -1052,6 +1052,16 @@ export function showsGameOverBox(state: State): boolean {
   return !!state.gameOver && !state.gameOverDismissed;
 }
 
+/**
+ * The box's title. Only a game the engine decided is over: one the runner
+ * abandoned at its action budget, or that ended with no result, has none,
+ * and a `--resume` carries it on, so the panel's closed line says it
+ * "has stopped" (#1033) and the box over the board must not say otherwise.
+ */
+export function gameOverTitle(summary: string): string {
+  return /^Game over!/.test(summary) ? "GAME OVER" : "GAME STOPPED";
+}
+
 export const GAME_OVER_DISMISS_HINT = "click or Esc to see the final board";
 
 function gameOverScreen(ctx: Ctx, state: LiveState): void {
@@ -1062,7 +1072,7 @@ function gameOverScreen(ctx: Ctx, state: LiveState): void {
   const lines = engineLine(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
   const h = 56 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
   texturedPanel(ctx, x, y, w, h);
-  text(ctx, "GAME OVER", x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
+  text(ctx, gameOverTitle(state.gameOver), x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
   let ly = y + 28;
   if (headline) { text(ctx, headline, x + w / 2, ly, { align: "center", font: "8px PressStart", color: "#ffffff" }); ly += 14; }
   lines.forEach((l, i) => text(ctx, l, x + w / 2, ly + i * 11, { align: "center" }));

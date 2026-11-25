@@ -52,6 +52,11 @@ if (!R.showsGameOverBox(over)) fail("the box shows at game over");
 over.gameOverDismissed = true;
 if (R.showsGameOverBox(over)) fail("a dismissed box stays away");
 if (R.showsGameOverBox({ gameOver: null })) fail("no box before the game ends");
+// #1033: a game with no result is not titled over.
+eq(R.gameOverTitle("Game over! p0 (g) wins! (p1 conceded)"), "GAME OVER");
+eq(R.gameOverTitle("Game over! It's a draw!"), "GAME OVER");
+eq(R.gameOverTitle("Game abandoned: 50000 actions without a result — no winner.\nTotal actions: 50000"), "GAME STOPPED");
+eq(R.gameOverTitle("Game ended without a result."), "GAME STOPPED");
 if (!/click|Esc/.test(R.GAME_OVER_DISMISS_HINT)) fail("the box says how to put it away");
 
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
