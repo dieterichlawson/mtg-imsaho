@@ -1,0 +1,373 @@
+{
+ "night": "2026-11-25",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "3-0-0",
+   "lessons": [
+    "Tonight contradicted the guide: WG ran 9 Forest/8 Plains with Avacyn's Pilgrim and went 3-0 in matches (6-2 in games), not 0-3 or 1-2 as the guide claims.",
+    "Fliers plus removal won: Angel of Flight Alabaster, Midnight Haunting, Gallows Warden, Orchard Spirit, Spidery Grasp, Bonds of Faith, Urgent Exorcism, Slayer of the Wicked; take fliers over filler.",
+    "Kruin Outlaw was a stranded pack 2 first pick in my WG deck; once pack 1 sets two colours, take on-colour removal over off-colour rares, as the guide says."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 13052,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3127,
+    "output_tokens_details": {
+     "thinking_tokens": 2875
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 13052
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3127,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 13052,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 13052,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Heretic's Punishment, taken early in pack 3 and left out of my UB deck, was the removal I needed; my games stalled for 18 to 21 turns without enough answers, so take cheap removal over more bodies.",
+    "I lost 0-2 to WU's fliers (Stitched Drake, Moon Heron, Invisible Stalker), and my two Vampire Interlopers can't block, so prioritise flying blockers and removal for them."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3286,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2378,
+    "output_tokens_details": {
+     "thinking_tokens": 2221
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3286
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2378,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3286,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3286,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Fliers did not win against WG: our WU lost 0-2 to Somberwald Spider, Spidery Grasp, Bonds of Faith and Urgent Exorcism, so count reach and flier answers before trusting the guide's fliers-win advice.",
+    "WG sideboarded Naturalize after game 1 against our auras, Claustrophobia and Ghostly Possession, so prefer non-aura answers like Grasp of Phantoms when the opponent may have enchantment removal.",
+    "Our WU deck ran Armored Skaab and two Stitcher's Apprentice without a self-mill plan, against the guide's skip list; avoid mill-yourself cards outside UG."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5010,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3448,
+    "output_tokens_details": {
+     "thinking_tokens": 3212
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5010
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3448,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5010,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5010,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't spend pack 2's first pick on Victim of Night unless you're heading into black; my UR deck never played it, so that early pick was wasted.",
+    "My UR deck lost both 1-2 rounds in 15 to 21 turn games, so prioritize card advantage and removal like Claustrophobia over extra bodies such as the second Riot Devils.",
+    "Cutting blue spells to reach 17 lands left my deck thin on answers against grindy WU and UB decks, so keep playable blue spells that trade for value."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3280,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1494,
+    "output_tokens_details": {
+     "thinking_tokens": 1313
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3280
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1494,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3280,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3280,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Commit by mid pack 1: my Dead Weight, Invisible Stalker, Into the Maw of Hell and Disciple of Griselbrand were stranded, leaving WG with only Spidery Grasp and Urgent Exorcism as removal.",
+    "Round 3's 1-2 loss to WG shows removal count matters: my answers to their fliers were thin, so take a third removal spell over a second Grave Bramble.",
+    "Count evasion: my WG had only Voiceless Spirit, Orchard Spirit and Somberwald Spider in the air; take a third flier like Chapel Geist over Festerhide Boar."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12979,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4407,
+    "output_tokens_details": {
+     "thinking_tokens": 4188
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 12979
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4407,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 12979,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 12979,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Red burn was the backbone: Geistflame, Harvest Pyre, and Brimstone Volley did the removal work, so take cheap burn over marginal creatures in packs 1 and 2.",
+    "The 0-2 loss to the green-white deck came in 17- and 30-turn grinds, where my ground creatures stalled, so draft real evasion and card advantage earlier rather than stacking evasive-ish vampires and werewolves.",
+    "When cutting to 23 spells, I dropped the second Skirsdag Cultist and Curse of the Pierced Heart for Stensia Bloodhall, keeping Bloodgift Demon, Night Revelers, and Rage Thrower as finishers; that build went 2-1."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3312,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3181,
+    "output_tokens_details": {
+     "thinking_tokens": 2931
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3312
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3181,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3312,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3312,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "W",
+   "record": "1-2-0",
+   "lessons": [
+    "Mono-white with only three fliers stalled into a 40-turn loss to WG, confirming the guide's 'fliers win' claim, so take a second colour's fliers or removal before a third Village Bell-Ringer.",
+    "Mono-white ignored red burn, and BR's Geistflame and Harvest Pyre beat me 0-2, so take Geistflame and Brimstone Volley over filler like Thraben Purebloods.",
+    "Pack 2 black picks (Typhoid Rats, Vampiric Fury, Spare from Evil) went unplayed, so commit to your second colour by mid-pack 2 instead of hedging."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4946,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3182,
+    "output_tokens_details": {
+     "thinking_tokens": 2961
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4946
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3182,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4946,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4946,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Prioritise cheap removal over Markov Patrician: I took Patrician twice, and my UB deck ran only four removal spells. Fiend Hunter, Brimstone Volley and Claustrophobia beat me.",
+    "Once black is settled, don't spend mid-pack-2 picks on off-colour removal like Harvest Pyre. It became a dead card while my UB deck lacked interaction.",
+    "My losses to BR and UR went 15-22 turns with a stalled board, so prioritise evasive finishers and card advantage such as Bloodgift Demon over a second Markov Patrician."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3221,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2533,
+    "output_tokens_details": {
+     "thinking_tokens": 2326
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3221
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2533,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3221,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3221,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
