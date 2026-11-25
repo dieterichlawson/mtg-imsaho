@@ -791,6 +791,14 @@ fn perform_on_object(
 
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
     let is_planeswalker = state.has_card_type(target, crate::types::CardType::Planeswalker, registry);
+    let source_zone_changes = state.get_object(source).map_or(0, |o| o.zone_change_count);
+    // A record from a save made before the stamps existed: each unstamped
+    // entry is read as its source unchanged, as `damage_sources` reads it.
+    let unstamped: Vec<u32> = state.get_object(target).map_or_else(Vec::new, |o| {
+        o.damaged_by.iter().skip(o.damaged_by_zone_changes.len())
+            .map(|src| state.get_object(*src).map_or(0, |s| s.zone_change_count))
+            .collect()
+    });
 
     if let Some(obj) = state.get_object_mut(target) {
         if is_planeswalker {
@@ -807,8 +815,15 @@ fn perform_on_object(
             }
         }
         // Track which objects damaged this one (Abattoir Ghoul, Into the Maw of Hell).
-        if !obj.damaged_by.contains(&source) {
+        // Stamped with the source's zone changes (CR 400.7): a source that
+        // leaves and comes back is a new object, and when that new object
+        // deals damage too, the entry is re-stamped as its own.
+        obj.damaged_by_zone_changes.extend(unstamped);
+        if let Some(i) = obj.damaged_by.iter().position(|&s| s == source) {
+            obj.damaged_by_zone_changes[i] = source_zone_changes;
+        } else {
             obj.damaged_by.push(source);
+            obj.damaged_by_zone_changes.push(source_zone_changes);
         }
     }
 

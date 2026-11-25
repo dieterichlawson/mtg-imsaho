@@ -162,7 +162,7 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             if obj.attacked_on_turn.is_some() {
                 v.push(format!("{tag} in {:?} remembers attacking", obj.zone));
             }
-            if !obj.damaged_by.is_empty() || obj.dealt_deathtouch_damage {
+            if !obj.damaged_by.is_empty() || !obj.damaged_by_zone_changes.is_empty() || obj.dealt_deathtouch_damage {
                 v.push(format!("{tag} in {:?} keeps a damage record", obj.zone));
             }
             if !obj.abilities_activated_this_turn.is_empty() {

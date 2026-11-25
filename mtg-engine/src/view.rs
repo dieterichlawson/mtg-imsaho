@@ -189,7 +189,9 @@ pub struct PermanentView {
     pub effective_toughness: Option<i32>,
     pub damage_marked: u32,
     /// What has dealt this permanent damage this turn, each once, in the
-    /// order it was dealt (the object's `damaged_by`). Abattoir Ghoul's
+    /// order it was dealt (`GameState::damage_sources`: a source that has
+    /// changed zones since is a new object and is left out, CR 400.7, #1090).
+    /// Abattoir Ghoul's
     /// trigger reads it when the creature dies, so it decides a removal
     /// spell for the rest of the turn; no surface could say it after the
     /// damage line left the recent events (issue #932).
@@ -565,7 +567,7 @@ impl GameView {
                     effective_power: state.effective_power(obj.id, registry),
                     effective_toughness: state.effective_toughness(obj.id, registry),
                     damage_marked: obj.damage_marked,
-                    damaged_by: obj.damaged_by.clone(),
+                    damaged_by: state.damage_sources(obj.id),
                     attacked_this_turn: state.attacked_this_turn(obj.id),
                     once_per_turn_used: !obj.abilities_activated_this_turn.is_empty(),
                     regeneration_shields: obj.regeneration_shields,

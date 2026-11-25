@@ -160,6 +160,77 @@ fn abattoir_ghoul_still_gains_life_after_the_victim_regenerated() {
         "the Ghoul dealt it damage this turn, so its death still gains 3 life");
 }
 
+/// CR 400.7: a Ghoul that left the battlefield and came back is a new object
+/// that has dealt no damage this turn, even though the engine hands it the
+/// same id. The record named the old Ghoul's id, so the bounced and re-cast
+/// Ghoul gained life off a creature the old one damaged (#1090). The view's
+/// "dealt damage by" goes with it: the new Ghoul did not deal that damage.
+///
+/// Paired with the two cases that must still pay: the same Ghoul unmoved, and
+/// the new Ghoul once it deals damage of its own.
+#[test]
+fn abattoir_ghoul_that_changed_zones_has_dealt_no_damage_this_turn() {
+    // (bounced, the new Ghoul deals damage too, life gained)
+    for (bounced, hits_again, gained) in [(false, false, 6), (true, false, 0), (true, true, 6)] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+        let crab = ready_creature(&mut state, P1, 1, 6);
+        let hit = |state: &mut mtg_engine::state::GameState| mtg_engine::damage::deal_damage(state, ghoul,
+            mtg_engine::events::DamageTarget::Object(crab), 3,
+            mtg_engine::damage::DamageKind::Combat, &reg);
+        hit(&mut state);
+
+        if bounced {
+            state.move_object(ghoul, Zone::Hand, &reg);
+            state.move_object(ghoul, Zone::Battlefield, &reg);
+            assert_eq!(state.get_object(ghoul).unwrap().zone, Zone::Battlefield, "test setup: back in play");
+            assert_eq!(state.get_object(crab).unwrap().damage_marked, 3,
+                "the damage is still marked: it was dealt, by an object that is gone");
+        }
+        if hits_again {
+            hit(&mut state);
+        }
+        let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+        let shown = view.battlefield.iter().find(|p| p.object_id == crab).expect("the crab is shown");
+        assert_eq!(shown.damaged_by.contains(&ghoul), gained > 0,
+            "bounced {bounced}, hit again {hits_again}: the view names the Ghoul as a source only when this Ghoul dealt the damage");
+
+        let life_before = state.get_player(P0).life;
+        kill_by_damage(&mut state, &reg, crab);
+        triggers::process_triggers(&mut state, &reg);
+
+        assert_eq!(state.get_player(P0).life, life_before + gained,
+            "bounced {bounced}, hit again {hits_again}");
+    }
+}
+
+/// The lookback half (CR 603.10a): a Ghoul that dies in the same event as the
+/// creature it damaged still sees that death, and the zone change both make
+/// does not erase the record its trigger reads.
+#[test]
+fn abattoir_ghoul_dying_beside_its_victim_still_gains_life() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let victim = ready_creature(&mut state, P1, 2, 3);
+    mtg_engine::damage::deal_damage(&mut state, ghoul,
+        mtg_engine::events::DamageTarget::Object(victim), 3,
+        mtg_engine::damage::DamageKind::Combat, &reg);
+    mtg_engine::damage::deal_damage(&mut state, victim,
+        mtg_engine::events::DamageTarget::Object(ghoul), 2,
+        mtg_engine::damage::DamageKind::Combat, &reg);
+
+    state.events.clear();
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(ghoul).unwrap().zone, Zone::Graveyard, "test setup: both die");
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_player(P0).life, 23, "the dead Ghoul looks back and gains 3");
+}
+
 /// The other half of "this turn": a creature the Ghoul damaged on an earlier
 /// turn is not one it damaged *this* turn. Cleanup clears the record along
 /// with the damage (CR 514.2).

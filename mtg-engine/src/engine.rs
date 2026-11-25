@@ -1210,6 +1210,7 @@ pub(crate) fn finish_cleanup(state: &mut GameState, registry: &CardRegistry) {
         obj.damage_marked = 0;
         obj.dealt_deathtouch_damage = false;
         obj.damaged_by.clear();
+        obj.damaged_by_zone_changes.clear();
     }
 
     // Remove "until end of turn" effects.

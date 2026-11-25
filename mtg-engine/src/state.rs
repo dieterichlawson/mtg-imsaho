@@ -709,6 +709,22 @@ impl GameState {
         }
     }
 
+    /// The objects that have dealt damage to `id` this turn and are still
+    /// the objects that dealt it (CR 400.7): an entry whose source has since
+    /// changed zones, or no longer exists, names an object the game has
+    /// forgotten. The id a new object keeps is not evidence it dealt anything.
+    #[must_use]
+    pub fn damage_sources(&self, id: ObjectId) -> Vec<ObjectId> {
+        let Some(obj) = self.objects.get(&id) else { return Vec::new() };
+        obj.damaged_by.iter().enumerate()
+            .filter(|&(i, src)| match obj.damaged_by_zone_changes.get(i) {
+                Some(&then) => self.objects.get(src).is_some_and(|o| o.zone_change_count == then),
+                None => true,
+            })
+            .map(|(_, &src)| src)
+            .collect()
+    }
+
     /// Whether `id` is the resolving ability's own source and has changed
     /// zones since the ability was put on the stack (CR 400.7): the object
     /// `id` names now is a new one, which the ability does not act on.
@@ -904,7 +920,7 @@ impl GameState {
             tapped: false,
             summoning_sick: zone == Zone::Battlefield,
             damage_marked: 0,
-            dealt_deathtouch_damage: false, damaged_by: Vec::new(),
+            dealt_deathtouch_damage: false, damaged_by: Vec::new(), damaged_by_zone_changes: Vec::new(),
             power,
             toughness,
             colors: Vec::new(),
@@ -1226,7 +1242,7 @@ impl GameState {
             tapped: false,
             summoning_sick: true,
             damage_marked: 0,
-            dealt_deathtouch_damage: false, damaged_by: Vec::new(),
+            dealt_deathtouch_damage: false, damaged_by: Vec::new(), damaged_by_zone_changes: Vec::new(),
             power: Some(power),
             toughness: Some(toughness),
             colors,
@@ -1879,7 +1895,7 @@ impl GameState {
                 // has not attacked — even in the same turn.
                 obj.attacked_on_turn = None;
                 obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
+                obj.dealt_deathtouch_damage = false; obj.damaged_by.clear(); obj.damaged_by_zone_changes.clear();
                 if let Some(att) = obj.attached_to {
                     obj.card_state.insert("last_attached_to".into(), att);
                 }
@@ -4786,6 +4802,15 @@ pub struct GameObject {
     /// Used by Abattoir Ghoul ("when creature dealt damage by this dies").
     #[serde(default)]
     pub damaged_by: Vec<ObjectId>,
+    /// Each of `damaged_by`'s sources' `zone_change_count` when it dealt the
+    /// damage. A source that has since changed zones is a new object with no
+    /// relation to the one that dealt it (CR 400.7): an Abattoir Ghoul that
+    /// was bounced and re-cast has dealt no damage this turn. The raw list
+    /// stays whole — the damage was dealt, and marked damage keeps a record
+    /// of it — and [`GameState::damage_sources`] is what is still the same
+    /// object. Empty on a save from before the stamp, read as "unchanged".
+    #[serde(default)]
+    pub damaged_by_zone_changes: Vec<u32>,
     /// Whether this creature has been dealt damage by a source with deathtouch.
     pub dealt_deathtouch_damage: bool,
 

@@ -334,7 +334,7 @@ pub(crate) fn death_event(state: &GameState, id: ObjectId, registry: Option<&Car
         return None;
     }
     let (cid, ctrl, damaged_by, is_token) = state.get_object(id)
-        .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new(), false), |o| (o.card_id, o.controller, o.damaged_by.clone(), o.is_token));
+        .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new(), false), |o| (o.card_id, o.controller, state.damage_sources(id), o.is_token));
     let name = state.get_object(id).map(|o| o.name.clone()).unwrap_or_default();
 
     let last_known_toughness = registry
