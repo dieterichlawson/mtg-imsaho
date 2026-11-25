@@ -765,7 +765,7 @@ fn steps(state: &GameState, registry: &CardRegistry, events: &[GameEvent], v: &m
         if obj.zone != Zone::Battlefield {
             continue;
         }
-        if obj.damage_marked != 0 || !obj.damaged_by.is_empty() || obj.dealt_deathtouch_damage {
+        if obj.damage_marked != 0 || !obj.damaged_by.is_empty() || !obj.damaged_by_zone_changes.is_empty() || obj.dealt_deathtouch_damage {
             v.push(format!("{w}: {} (#{}) carries damage from last turn (CR 514.2)", obj.name, obj.id.0));
         }
         if obj.regeneration_shields != 0 {
