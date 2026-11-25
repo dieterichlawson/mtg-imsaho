@@ -1462,7 +1462,8 @@ use --save if you need a resumable file.");
     // ...and that nothing more is coming: a page whose socket the exit just
     // reset read it as a dropped network and retried for ever (#1033). Its
     // thread sends the result first, then this, on its next beat.
-    mtg_player::gui::close_pages_on_exit(mtg_player::gui::Over::Game, "the runner serving this page has stopped");
+    let (over, why) = page_close_at_the_end(state.result.is_some(), action_count >= max_actions, max_actions);
+    mtg_player::gui::close_pages_on_exit(over, &why);
     mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
@@ -1883,4 +1884,37 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
     }
 
     Decklist { entries }
+}
+
+/// What a gui seat's page is told as the runner leaves after the game loop.
+/// A game with a result is over. One the runner gave up on at the action
+/// budget has no result and is not over: a `--resume` carries it on with a
+/// fresh budget, so the page is told the game *stopped* and why, as every
+/// other early exit tells it (#1033) -- it used to read "This game is over"
+/// over a game nobody won.
+fn page_close_at_the_end(has_result: bool, budget_spent: bool, max_actions: u64) -> (mtg_player::gui::Over, String) {
+    use mtg_player::gui::Over;
+    match (has_result, budget_spent) {
+        (true, _) => (Over::Game, "the runner serving this page has stopped".into()),
+        (false, true) => (Over::Stopped, format!(
+            "the runner serving this page stopped: the game was abandoned after {max_actions} actions without a result")),
+        (false, false) => (Over::Stopped, "the runner serving this page stopped: the game ended without a result".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_close_at_the_end;
+    use mtg_player::gui::Over;
+
+    #[test]
+    fn only_a_game_with_a_result_is_closed_as_over() {
+        assert_eq!(page_close_at_the_end(true, false, 50_000).0, Over::Game);
+        assert_eq!(page_close_at_the_end(true, true, 50_000).0, Over::Game,
+            "a result reached on the last action is still a result");
+        let (over, why) = page_close_at_the_end(false, true, 50_000);
+        assert_eq!(over, Over::Stopped, "an abandoned game is not over");
+        assert!(why.contains("abandoned") && why.contains("50000"), "{why}");
+        assert_eq!(page_close_at_the_end(false, false, 50_000).0, Over::Stopped);
+    }
 }
