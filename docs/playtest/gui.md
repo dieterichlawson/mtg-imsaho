@@ -90,6 +90,20 @@ random game happened to reach.
   after `window.mtgDebug.render()` — every card's drawn rectangle is in there,
   so "is it off the pane" is `h.x + h.w > 480` and "is it invisible" is
   `h.x >= 480`, both exact.
+  [2026-11-26] Re-run with the attackers widget, which no earlier night had
+  marked on a flood board. The resting board holds: 199 permanents drawn as
+  `ZT x45` / `ZT x129` stacks, 0 hits off the pane. **Marking does not**
+  (#1094): every marked token becomes its own card (#573's `pendingKey`),
+  so 42 one-at-a-time marks fill the row and the 13 still-eligible Zombies
+  go into `+142` with the sick ones, where no click reaches them; only
+  **All** does. To get there: `--stop-after 105 --save` on the seed-11
+  random game above gives turn 36 with p0 at 199 permanents, not over;
+  `--resume` it with `--p1 gui:0`. Move the mouse off the row between
+  scripted clicks: a hovered card is drawn last and on top, so a click
+  aimed from a frame drawn with no hover lands on the raised card and
+  withdraws it (that was the driver's fault, not the page's). Still
+  unasked: the same at declare *blockers* with a flood on the defending
+  side, and a mark screen (`beginMark`) over a stack.
 - G5 game over: a win, a loss, a draw, a concede, a decked opponent.
   Is the reason on screen? Is the last board still readable behind it?
   [2026-10-07] **The reason holds, the board does not** (#712, #713, #714).
@@ -845,3 +859,20 @@ writing it up as the page's problem alone.
   through the canvas's bounding rectangle. **The gained ability is cut
   short as rules text** on the page, on the CLI and in the LLM board:
   `… Destroy target creature with the same name` (#1072).
+- G41 [proposed 2026-11-26, from #1033's fix commits b10d3af4 and
+  e92490d2] every way the page's runner can leave. Start `--p1 gui:0
+  --p2 random`, hold a decision, and end the runner each way:
+  `--stop-after N`, SIGTERM, SIGINT, SIGHUP, SIGKILL, the end of a game,
+  and (staged with `window.mtgDebug.message`) a hosted match's abandoned
+  game. For each one, read `document.title`, `window.mtg.closed` /
+  `closedOver` / `gameOver` / `unreachable` / `connected`, and look at the
+  frame 3 s and 30 s later. Then click the question that is still showing.
+  [2026-11-26] First run. **Every exit the runner announces holds**: each
+  closes the page `over: "stopped"` with its reason, and the title is
+  "This game has stopped". **SIGKILL does not** (#1093): the modal stays
+  live with `connected: false`, a click is recorded in
+  `mtgDebug.sent`, dropped by `sendRaw` and cleared from the screen, and
+  the panel says `Connecting…` for ever. `unreachable` is set only after a
+  game over. At the hosted table, an abandoned game is titled GAME STOPPED
+  beside "Before game 3: game 2 was abandoned" (#1092; the title's
+  reason, "a --resume carries it on", does not hold at a table).
