@@ -19,6 +19,12 @@
 # scripts/kani-tiers.py record; RED means one was left with none (a shard
 # broke). No issue is filed: a new harness that does not prove is what
 # that run is to find out.
+#
+# Run by hand with `machine: self-hosted`, either run is one job on a
+# self-hosted runner instead of the 30: every share at once
+# (scripts/prove.sh kani-shares), for a machine with the cores and the
+# memory, where a solver may also be given more than a GitHub runner has.
+# Nothing but that dispatch runs on a self-hosted runner.
 name: proofs-full
 
 on:
@@ -32,12 +38,27 @@ on:
         type: choice
         options: [proved, new]
         default: proved
+      machine:
+        description: "github: 30 jobs on GitHub's runners. self-hosted: every share at once on a self-hosted runner."
+        type: choice
+        options: [github, self-hosted]
+        default: github
+      shares:
+        description: "self-hosted only: how many shares run at once, each up to `cap` gigabytes."
+        default: "16"
+      cap:
+        description: "self-hosted only: the gigabytes one solver may take."
+        default: "12"
+      timeout:
+        description: "self-hosted only: the seconds one run of a solver may take."
+        default: "1500"
 
 permissions:
   contents: read
 
 jobs:
   shard:
+    if: inputs.machine != 'self-hosted'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     strategy:
@@ -83,8 +104,59 @@ jobs:
           path: logs/kani/shard-${{ matrix.shard }}.txt
           if-no-files-found: warn
 
+  # The same harnesses on one self-hosted machine, every share at once.
+  # The build directories are kept between runs (`clean: false`); the
+  # results are not.
+  big:
+    if: inputs.machine == 'self-hosted'
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 2880
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: A C toolchain, Rust and Kani, where the machine has none
+        run: |
+          command -v cc >/dev/null || { sudo apt-get update && sudo apt-get install -y build-essential; }
+          [ -x "$HOME/.cargo/bin/cargo" ] || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo kani --version >/dev/null 2>&1 || {
+            cargo install --locked kani-verifier --version "$(sed -n 's/^KANI_VERSION=//p' scripts/prove.sh)"
+            cargo kani setup
+          }
+          nproc; free -g | sed -n 2p; df -h . | tail -1
+
+      - name: Prove every share at once
+        env:
+          RUN: ${{ inputs.harnesses == 'new' && 'kani-new' || 'kani-shard' }}
+          SHARES: ${{ inputs.shares }}
+          KANI_CAP: ${{ inputs.cap }}
+          KANI_TIMEOUT: ${{ inputs.timeout }}
+        run: |
+          rm -rf logs/kani
+          scripts/prove.sh kani-shares "$RUN" "$SHARES"
+
+      # The loop bounds the harnesses needed, for scripts/kani/.
+      - name: Loop bounds learned
+        if: always()
+        run: |
+          for f in loop-bounds.txt loop-bounds.through-the-stack.txt; do
+            echo "== $f"
+            cat logs/kani/share-*/"$f" 2>/dev/null | sort -u | comm -23 - <(sort -u "scripts/kani/$f") || true
+          done
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kani-shard-big
+          path: logs/kani/shard-*.txt
+          if-no-files-found: warn
+
   report:
-    needs: shard
+    needs: [shard, big]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
