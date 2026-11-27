@@ -569,87 +569,108 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 /// is handled by its own function in [`actions`]; this is the dispatch and the
 /// bookkeeping either side of it.
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
-    let mut new_state = submit_action_inner(state, action, registry);
+    let mut new_state = state.clone();
+    submit_action_on(&mut new_state, action, registry);
+    new_state
+}
+
+/// [`submit_action`] played on the game itself and not on a copy of it:
+/// every step of it but the copy. `submit_action` is a copy and this, so
+/// what is shown of this is shown of an action as the game loop plays it;
+/// the proofs that take a card through a cast and its resolution
+/// (`proofs::through_the_stack`) run this, a copy of a whole game being
+/// more than symbolic execution gets through.
+pub(crate) fn submit_action_on(state: &mut GameState, action: &Action, registry: &CardRegistry) {
+    let (over_on_entry, seq) = (state.is_game_over(), state.submit_seq);
+    apply_action(state, action, registry);
     // CR 104.1: if the action ended the game, nothing after the end happened.
-    new_state.settle_game_end(state.is_game_over());
+    state.settle_game_end(over_on_entry);
     // Counted once per action the caller submits; a cast that re-enters
     // through its own cost prompt is still one action.
-    new_state.submit_seq = state.submit_seq + 1;
+    state.submit_seq = seq + 1;
     // The frozen end of the game counts the action that ended it too. An
     // action that ends the game from inside itself (a concede, since #764)
     // froze the state before this count, and whatever restores or saves
     // the frozen copy — a resume's "finished game" refusal — said one
     // action fewer than the runner's summary (#773).
-    if let Some(frozen) = new_state.final_state.as_mut().filter(|_| !state.is_game_over()) {
-        frozen.submit_seq = new_state.submit_seq;
+    let seq = state.submit_seq;
+    if let Some(frozen) = state.final_state.as_mut().filter(|_| !over_on_entry) {
+        frozen.submit_seq = seq;
     }
-    new_state
 }
 
 pub(crate) fn submit_action_inner(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = state.clone();
-    new_state.events.clear();
-    new_state.sba_check_starts.clear();
-    new_state.trigger_event_index = 0;
+    apply_action(&mut new_state, action, registry);
+    new_state
+}
+
+/// What an action does to the game it is played on, short of
+/// [`submit_action_on`]'s bookkeeping for the game's end.
+fn apply_action(state: &mut GameState, action: &Action, registry: &CardRegistry) {
+    state.events.clear();
+    state.sba_check_starts.clear();
+    state.trigger_event_index = 0;
 
     let applied = match action {
-        Action::PassPriority => actions::simple::pass_priority(&mut new_state, registry),
+        Action::PassPriority => actions::simple::pass_priority(state, registry),
         Action::PlayLand { object_id } =>
-            actions::simple::play_land(&mut new_state, *object_id, registry),
+            actions::simple::play_land(state, *object_id, registry),
         Action::DiscardCards { cards } =>
-            actions::simple::discard_cards(&mut new_state, cards, registry),
-        Action::Concede => actions::simple::concede(&mut new_state, registry),
-        Action::Forfeit => actions::simple::forfeit(&mut new_state, registry),
+            actions::simple::discard_cards(state, cards, registry),
+        Action::Concede => actions::simple::concede(state, registry),
+        Action::Forfeit => actions::simple::forfeit(state, registry),
         // Not a game action: the harness is stopping. The game loop returns
         // before ever reaching here; a direct submit is a no-op (issue #233).
         Action::AbandonGame => Applied::ReturnNow,
 
         Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids,
                             alternative_cost, tap_plan } =>
-            actions::cast::cast_spell(&mut new_state, *object_id, targets, *sacrifice,
+            actions::cast::cast_spell(state, *object_id, targets, *sacrifice,
                 *exile_count, exile_ids, alternative_cost.as_ref(), tap_plan, registry),
 
         Action::ActivateManaAbility { object_id, ability_index } =>
-            actions::abilities::activate_mana_ability(&mut new_state, *object_id, *ability_index, registry),
+            actions::abilities::activate_mana_ability(state, *object_id, *ability_index, registry),
         Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice,
                                   source_card_id, .. } =>
-            actions::abilities::activate_ability(&mut new_state, *object_id, *ability_index,
+            actions::abilities::activate_ability(state, *object_id, *ability_index,
                 targets, tap_plan, *sacrifice, *source_card_id, registry),
         Action::ActivateLoyaltyAbility { object_id, ability_index, targets } =>
-            actions::abilities::activate_loyalty_ability(&mut new_state, *object_id, *ability_index,
+            actions::abilities::activate_loyalty_ability(state, *object_id, *ability_index,
                 targets, registry),
 
         Action::DeclareAttackers { attackers, planeswalker_attacks } =>
-            actions::combat::declare_attackers(&mut new_state, attackers, planeswalker_attacks, registry),
+            actions::combat::declare_attackers(state, attackers, planeswalker_attacks, registry),
         Action::DeclareBlockers { assignments } =>
-            actions::combat::declare_blockers(&mut new_state, assignments, registry),
+            actions::combat::declare_blockers(state, assignments, registry),
 
-        Action::MulliganKeep => actions::mulligan::mulligan_keep(&mut new_state, registry),
-        Action::MulliganMull => actions::mulligan::mulligan_mull(&mut new_state, registry),
+        Action::MulliganKeep => actions::mulligan::mulligan_keep(state, registry),
+        Action::MulliganMull => actions::mulligan::mulligan_mull(state, registry),
         Action::BottomCards { cards } =>
-            actions::mulligan::bottom_cards(&mut new_state, cards, registry),
+            actions::mulligan::bottom_cards(state, cards, registry),
 
         Action::ResolveChoice { choice: resolved } =>
-            actions::choices::resolve_choice(&mut new_state, resolved, registry),
+            actions::choices::resolve_choice(state, resolved, registry),
     };
 
     match applied {
         // The handler asked to return this state verbatim, skipping the
         // end-of-action cleanup below — it is mid-way through a choice chain.
         Applied::ReturnNow => {
-            new_state.prune_effects_on_departed_objects();
-            return new_state;
+            state.prune_effects_on_departed_objects();
+            return;
         }
         // The handler re-entered submit_action (a cast resumed after its
         // prompts were answered); that call already did the cleanup.
-        Applied::Replace(s) => return s,
+        Applied::Replace(s) => {
+            *state = s;
+            return;
+        }
         Applied::Continue => {}
     }
 
-    finish_spell_resolution_if_idle(&mut new_state, registry);
-    new_state.prune_effects_on_departed_objects();
-
-    new_state
+    finish_spell_resolution_if_idle(state, registry);
+    state.prune_effects_on_departed_objects();
 }
 
 /// What an action handler wants `submit_action` to do once it returns.
