@@ -333,11 +333,18 @@ Counted: rules proved of a written list of the rules the pool uses.
 3. Every action played by the engine's own loop from the actions it
    offers (being measured).
 4. A spell cast for the Oracle's cost, as the creatures' rows are, and
-   its flashback cost the same.
+   its flashback cost the same. Done for every cast of every row
+   (`through_the_stack/oracle.rs`); to be proved.
 5. What must be refused, written from the Oracle for every card: one
    mana short, at the wrong time (a sorcery in response, a creature
    without flash in the other player's turn), at each kind of thing its
-   text does not name.
+   text does not name. Written for the 108 creatures with rows: one
+   mana short, and the other player's turn and the caster's upkeep,
+   where the one of them with flash (Ambush Viper) is cast and the 107
+   without are refused. (The commit that added them says six have
+   flash; one does. The pool's other two creatures with flash do
+   something as they enter and have no rows yet.) To be proved; the
+   spells' are still to write.
 
 **D. Cards together.** A card alone on a board of blanks says little of
 how it meets the other 269.
@@ -357,9 +364,10 @@ every change must fail a proof or a small-board check or be shown to
 change nothing; the 578 official rulings played.
 
 **F. What the proofs themselves rest on.**
-1. The engine differs in a proof build in 31 places (`cfg(kani)`) in 11
-   files. Each is removed, or shown to change nothing a game reads. The
-   first, the events' field order, is tested gone.
+1. The engine differed in a proof build in 31 places (`cfg(kani)`) in
+   11 files. Each is removed, or shown to change nothing a game reads.
+   The first is gone: the events' field order, 3 of the 31, so 28 are
+   left. (The commit that removed it says 30; it miscounted.)
 2. `scripts/precise-enums.py` rewrites every program before it is
    checked, on an argument in prose that nothing observable changes;
    today's fault in it was of the harmless kind (proofs too slow, not
