@@ -22,6 +22,12 @@
 #                  six hours
 #   EC2_SSH_FROM   the address port 22 is opened to: this machine's, as
 #                  the world sees it, unless given
+#   EC2_ATTEMPTS   3: how many machines in all are rented for one run. A
+#                  Spot machine may be reclaimed at two minutes' notice
+#                  (the second one rented here was, four minutes in);
+#                  another is then rented and COMMAND run again on it
+#                  with the results brought back so far, which the proof
+#                  driver goes on from
 #   EC2_IF_NONE    fail (the default) or ok: whether no machine to be had,
 #                  for want of capacity or of quota, is this script's
 #                  failure (status 2) or only said (status 0)
@@ -41,10 +47,10 @@
 # with a key made for the run, opened to this machine's address only, and
 # reads the repository as anyone can (it is public).
 #
-# The exit status is COMMAND's; 3 if the machine went away under it (a
-# Spot machine reclaimed), 4 if COMMAND was still running when the wait
-# ran out. logs/kani is brought back every five minutes as well as at the
-# end, so a machine that goes away takes at most five minutes of results.
+# The exit status is COMMAND's; 3 if every machine rented went away
+# under it, 4 if COMMAND was still running when the wait ran out.
+# logs/kani is brought back every five minutes as well as at the end, so
+# a machine that goes away takes at most five minutes of results.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -184,82 +190,78 @@ subnet_in() {
 # Each region, each type, each zone that offers it, in turn, until one has
 # a machine: a zone may have none of a type to spare, above all on the
 # Spot market, where the third run here found none of the one type it
-# asked for in any zone of its one region.
-quota=""
-for region in $regions; do
-    export AWS_DEFAULT_REGION=$region
-    in_region
-    for type in $types; do
-        zones=$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
-            --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text)
-        [ -n "$zones" ] || { echo "$type is not offered in $region"; continue; }
-        launch=(--image-id "$image" --instance-type "$type" --count 1
-                --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
-                --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
-                --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
-                                     "ResourceType=volume,Tags=[{Key=purpose,Value=kani-proofs}]")
-        if [ "$market" = spot ]; then
-            launch+=(--instance-market-options "MarketType=spot,SpotOptions={MaxPrice=$max_price,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}")
-        fi
-        for zone in $zones; do
-            subnet=$(subnet_in "$zone")
-            if id=$(aws ec2 run-instances "${launch[@]}" \
-                    --network-interfaces "DeviceIndex=0,SubnetId=$subnet,AssociatePublicIpAddress=true,Groups=$group" \
-                    --query 'Instances[0].InstanceId' --output text 2> "$work/launch.err"); then
-                break 3
+# asked for in any zone of its one region. Leaves the machine's id in
+# `id`, or nothing there if none was to be had.
+rent() {
+    quota="" id=""
+    for region in $regions; do
+        export AWS_DEFAULT_REGION=$region
+        in_region
+        for type in $types; do
+            zones=$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
+                --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text)
+            [ -n "$zones" ] || { echo "$type is not offered in $region"; continue; }
+            launch=(--image-id "$image" --instance-type "$type" --count 1
+                    --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
+                    --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
+                    --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
+                                         "ResourceType=volume,Tags=[{Key=purpose,Value=kani-proofs}]")
+            if [ "$market" = spot ]; then
+                launch+=(--instance-market-options "MarketType=spot,SpotOptions={MaxPrice=$max_price,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}")
             fi
-            id=""
-            why=$(sed -n 's/.*An error occurred (\([A-Za-z.]*\)).*/\1/p' "$work/launch.err" | head -n 1)
-            echo "no $market $type in $zone: ${why:-$(tail -n 1 "$work/launch.err")}"
-            case "$why" in
-                # What the account may have at once, which another zone
-                # does not change and a smaller type may.
-                MaxSpotInstanceCountExceeded | VcpuLimitExceeded) quota=yes; break ;;
-                # What no other zone, type or region changes.
-                UnauthorizedOperation | PendingVerification | OptInRequired | AuthFailure) cat "$work/launch.err" >&2; exit 2 ;;
-            esac
+            for zone in $zones; do
+                subnet=$(subnet_in "$zone")
+                if id=$(aws ec2 run-instances "${launch[@]}" \
+                        --network-interfaces "DeviceIndex=0,SubnetId=$subnet,AssociatePublicIpAddress=true,Groups=$group" \
+                        --query 'Instances[0].InstanceId' --output text 2> "$work/launch.err"); then
+                    return 0
+                fi
+                id=""
+                why=$(sed -n 's/.*An error occurred (\([A-Za-z.]*\)).*/\1/p' "$work/launch.err" | head -n 1)
+                echo "no $market $type in $zone: ${why:-$(tail -n 1 "$work/launch.err")}"
+                case "$why" in
+                    # What the account may have at once, which another zone
+                    # does not change and a smaller type may.
+                    MaxSpotInstanceCountExceeded | VcpuLimitExceeded) quota=yes; break ;;
+                    # What no other zone, type or region changes.
+                    UnauthorizedOperation | PendingVerification | OptInRequired | AuthFailure) cat "$work/launch.err" >&2; exit 2 ;;
+                esac
+            done
         done
     done
-done
-if [ -z "$id" ]; then
-    echo "no $market machine was to be had: none of $types, in $regions" >&2
-    if [ -n "$quota" ]; then
-        echo "the account's vCPU quota is below a machine asked for: Service Quotas, EC2," >&2
-        echo "'All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests' for Spot," >&2
-        echo "'Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances' otherwise" >&2
-    fi
-    if [ "${EC2_IF_NONE:-fail}" = ok ]; then
-        echo "nothing was rented and nothing run"
-        exit 0
-    fi
-    exit 2
-fi
-echo "launched $id: $market $type, $disk GB, in $zone; it turns itself off in $max_hours hours"
+    return 0
+}
 
-# Port 22, opened to this machine's address for the run and closed after.
-me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
-aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
-    || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
-
-patiently aws ec2 wait instance-running --instance-ids "$id"
-address=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-case "$address" in [0-9]*) ;; *) echo "$id has no public address" >&2; exit 2 ;; esac
 there=(-i "$work/key" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$work/known_hosts" -o BatchMode=yes
-       -o ConnectTimeout=10 -o ServerAliveInterval=30 -o LogLevel=ERROR)
+       -o ConnectTimeout=10 -o ServerAliveInterval=30 -o LogLevel=QUIET)
 on_it() { ssh "${there[@]}" "ubuntu@$address" "$@"; }
-reached=""
-for _ in $(seq 60); do
-    if patiently on_it true 2> /dev/null; then reached=yes; break; fi
-    patiently sleep 5
-done
-[ -n "$reached" ] || { echo "$id did not answer on port 22 in ten minutes" >&2; exit 2; }
-patiently on_it 'cloud-init status --wait > /dev/null 2>&1; echo "$(nproc) cores, $(free -g | awk "NR==2{print \$2}") GB, $(df -h --output=avail / | tail -1 | tr -d " ") of disk free"'
 
-# The checkout, by the commit: the repository is public, so the machine
-# holds no credential of any kind.
-patiently on_it "git init -q repo && cd repo && git fetch -q --depth 1 '$repo' '$sha' && git checkout -q FETCH_HEAD && git log --oneline -1"
-if [ "$setup" = kani ]; then
-    patiently on_it 'bash -s' <<'EOF'
+bring_back() {
+    mkdir -p logs/kani
+    on_it 'cd repo && [ -d logs/kani ] && tar -cz --exclude="*.out*" logs/kani 2> /dev/null' > "$work/logs.tgz" 2> /dev/null \
+        && [ -s "$work/logs.tgz" ] && tar -xzf "$work/logs.tgz"
+}
+
+# What is done with a machine once it is rented, as a process of its own,
+# so that this script waits for it behind a `wait` and whatever fails in
+# it is one status to look at. That status is COMMAND's; 100 if the
+# machine stopped answering, 101 if COMMAND was still running when the
+# wait ran out, 102 if the machine never answered.
+use_it() (
+    set -euo pipefail
+    reached=""
+    for _ in $(seq 60); do
+        if on_it true 2> /dev/null; then reached=yes; break; fi
+        sleep 5
+    done
+    [ -n "$reached" ] || { echo "$id did not answer on port 22 in ten minutes" >&2; exit 102; }
+    on_it 'cloud-init status --wait > /dev/null 2>&1; echo "$(nproc) cores, $(free -g | awk "NR==2{print \$2}") GB, $(df -h --output=avail / | tail -1 | tr -d " ") of disk free"'
+
+    # The checkout, by the commit: the repository is public, so the
+    # machine holds no credential of any kind.
+    on_it "git init -q repo && cd repo && git fetch -q --depth 1 '$repo' '$sha' && git checkout -q FETCH_HEAD && git log --oneline -1"
+    if [ "$setup" = kani ]; then
+        on_it 'bash -s' <<'EOF'
 set -euo pipefail
 {
     export DEBIAN_FRONTEND=noninteractive
@@ -274,50 +276,111 @@ set -euo pipefail
 . "$HOME/.cargo/env"
 cargo kani --version
 EOF
-fi
+    fi
 
-# COMMAND, on its own there: this script only watches, so that a
-# connection lost is not a run lost.
-printf '%s\n' "$command" | on_it 'cat > run.sh'
-on_it 'cd repo && nohup setsid bash -c "[ -f ~/.cargo/env ] && . ~/.cargo/env; bash ~/run.sh; echo \$? > ~/run.exit" > ~/run.log 2>&1 < /dev/null &'
-echo "running: $command"
+    # What a machine before this one had got to: the proof driver takes a
+    # harness with a result as done.
+    if ls logs/kani/shard-*.txt > /dev/null 2>&1; then
+        tar -cz logs/kani | on_it 'cd repo && tar -xz'
+        echo "going on from $(cat logs/kani/shard-*.txt | wc -l) results brought back from a machine before"
+    fi
 
-bring_back() {
-    mkdir -p logs/kani
-    on_it 'cd repo && [ -d logs/kani ] && tar -cz --exclude="*.out*" logs/kani 2> /dev/null' > "$work/logs.tgz" 2> /dev/null \
-        && [ -s "$work/logs.tgz" ] && tar -xzf "$work/logs.tgz"
-}
+    # COMMAND, on its own there: this script only watches, so that a
+    # connection lost is not a run lost. Its three streams are the
+    # command's own and no shell's around it: begun as `cd repo && nohup
+    # ... &`, the shell that ran that list held the connection's output
+    # open for as long as COMMAND ran, and this script waited there
+    # instead of watching (run 46053007731 brought nothing back until its
+    # end, and run 46058836105 learned its machine was gone only when the
+    # connection dropped).
+    printf '%s\n' "$command" | on_it 'cat > run.sh'
+    on_it 'nohup setsid bash -c "cd ~/repo; [ -f ~/.cargo/env ] && . ~/.cargo/env; bash ~/run.sh; echo \$? > ~/run.exit" > ~/run.log 2>&1 < /dev/null &'
+    echo "running: $command"
+
+    lost=0 minute=0
+    while :; do
+        sleep 60
+        minute=$((minute + 1))
+        if state=$(on_it 'cat run.exit 2> /dev/null || echo running' 2> /dev/null); then
+            lost=0
+        else
+            lost=$((lost + 1))
+            its=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].State.Name' --output text 2> /dev/null || echo unknown)
+            if [ "$its" != running ] || [ $lost -ge 5 ]; then
+                exit 100
+            fi
+            continue
+        fi
+        # Every five minutes, and at the end: the results so far, here,
+        # where a machine reclaimed does not take them with it.
+        if [ "$state" != running ] || [ $((minute % 5)) -eq 0 ]; then
+            bring_back || true
+            echo "minute $minute: $(cat logs/kani/shard-*.txt 2> /dev/null | awk '{n[$1]++} END {for (k in n) printf "%d %s  ", n[k], k}')"
+        fi
+        if [ "$state" != running ]; then
+            on_it 'tail -n 60 run.log'
+            echo "COMMAND ended with status $state after $minute minutes"
+            exit "$state"
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            on_it 'tail -n 20 run.log' || true
+            exit 101
+        fi
+    done
+)
 
 deadline=$(($(date +%s) + wait_minutes * 60))
-lost=0 minute=0
+attempts=${EC2_ATTEMPTS:-3}
+attempt=1
 while :; do
-    patiently sleep 60
-    minute=$((minute + 1))
-    if state=$(on_it 'cat run.exit 2> /dev/null || echo running' 2> /dev/null); then
-        lost=0
-    else
-        lost=$((lost + 1))
-        if [ $lost -ge 5 ]; then
-            echo "the machine has not answered for five minutes: it is $(aws ec2 describe-instances --instance-ids "$id" \
-                --query 'Reservations[0].Instances[0].[State.Name,StateReason.Message]' --output text 2>&1 | tr '\t' ' ')" >&2
-            exit 3
+    rent
+    if [ -z "$id" ]; then
+        echo "no $market machine was to be had: none of $types, in $regions" >&2
+        if [ -n "$quota" ]; then
+            echo "the account's vCPU quota is below a machine asked for: Service Quotas, EC2," >&2
+            echo "'All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests' for Spot," >&2
+            echo "'Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances' otherwise" >&2
         fi
-        continue
+        if [ "${EC2_IF_NONE:-fail}" = ok ] && [ $attempt -eq 1 ]; then
+            echo "nothing was rented and nothing run"
+            exit 0
+        fi
+        exit 2
     fi
-    # Every five minutes, and at the end: the results so far, here, where
-    # a machine reclaimed does not take them with it.
-    if [ "$state" != running ] || [ $((minute % 5)) -eq 0 ]; then
-        bring_back || true
-        echo "minute $minute: $(cat logs/kani/shard-*.txt 2> /dev/null | awk '{n[$1]++} END {for (k in n) printf "%d %s  ", n[k], k}')"
-    fi
-    if [ "$state" != running ]; then
-        on_it 'tail -n 60 run.log'
-        echo "COMMAND ended with status $state after $minute minutes"
-        exit "$state"
-    fi
-    if [ "$(date +%s)" -ge $deadline ]; then
-        on_it 'tail -n 20 run.log' || true
+    echo "launched $id: $market $type, $disk GB, in $zone; it turns itself off in $max_hours hours"
+
+    # Port 22, opened to this machine's address for the run and closed after.
+    me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
+    aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
+        || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
+
+    patiently aws ec2 wait instance-running --instance-ids "$id" || true
+    address=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+    status=0
+    case "$address" in
+        [0-9]*)
+            use_it &
+            wait $! || status=$?
+            ;;
+        *) status=100 ;;
+    esac
+    [ "$status" -ne 0 ] || exit 0
+    if [ "$status" -eq 101 ]; then
         echo "COMMAND was still running after $wait_minutes minutes; its results so far are kept" >&2
         exit 4
     fi
+    its=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].[State.Name,StateReason.Message]' \
+        --output text 2> /dev/null | tr '\t' ' ' || true)
+    # A machine still there and answering: the status is COMMAND's, or
+    # the setup's.
+    case "$status:$its" in 100:* | 102:*) ;; *:running*) exit "$status" ;; esac
+    echo "the machine went away under the run: it is ${its:-not to be found}" >&2
+    aws ec2 terminate-instances --instance-ids "$id" > /dev/null 2>&1 || true
+    id=""
+    if [ $attempt -ge "$attempts" ]; then
+        echo "that was machine $attempt of the $attempts a run may rent" >&2
+        exit 3
+    fi
+    attempt=$((attempt + 1))
+    echo "renting another, machine $attempt of $attempts"
 done
