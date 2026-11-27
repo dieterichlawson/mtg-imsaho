@@ -1074,7 +1074,7 @@ fn a_doctored_snapshot_is_refused_with_its_reason() {
     // the card was recorded is still read.
     assert!(mid.picks.iter().all(|p| p.card.is_some()), "every pick records its card");
     assert!(refused(&edit(&mid, &|s| s.picks[0].card = Some("Snapcaster Mage".into()))).contains("took Snapcaster Mage"));
-    assert!(refused(&edit(&mid, &|s| s.picks[0].index = (s.picks[0].index + 1) % 14)).contains("the packs are not the ones"));
+    assert!(refused(&edit(&mid, &|s| s.picks[0].index = (s.picks[0].index + 1) % 14)).contains("the packs dealt now are not the ones the table drafted"));
     let (mut old, _) = lobby(seats());
     old.restore(&edit(&mid, &|s| for p in &mut s.picks { p.card = None; })).expect("an older snapshot is read");
 }

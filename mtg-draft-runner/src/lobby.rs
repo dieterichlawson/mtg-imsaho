@@ -646,7 +646,7 @@ pub const TABLE_SAVE_VERSION: u32 = 1;
 
 /// Why a snapshot whose deal is not this one's is refused, on both resumes.
 pub const DEALT_OTHER_PACKS: &str = "the packs dealt now are not the ones the table drafted \
-(another seed, or a build with another card pool)";
+(another seed, or a build with another card pool or another pack collation)";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedSeat {
@@ -2371,7 +2371,7 @@ for the seat from here, and its games are forfeit"), ""));
                 .map_err(|e| format!("snapshot pick {}: {e}", n + 1))?;
             if let Some(card) = p.card.as_ref().filter(|c| **c != picked.card) {
                 return Err(format!("snapshot pick {}: seat {} took {card}, and the pack dealt now has {} \
-there: the packs are not the ones the table drafted (another seed, or a build with another card pool)",
+there: {DEALT_OTHER_PACKS}",
                     n + 1, p.seat, picked.card));
             }
             self.seats[p.seat].seen.push((picked.round, picked.pick, available, picked.card.clone(), p.auto));
