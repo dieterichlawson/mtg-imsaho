@@ -20,11 +20,14 @@
 # broke). No issue is filed: a new harness that does not prove is what
 # that run is to find out.
 #
-# Run by hand with `machine: self-hosted`, either run is one job on a
-# self-hosted runner instead of the 30: every share at once
-# (scripts/prove.sh kani-shares), for a machine with the cores and the
-# memory, where a solver may also be given more than a GitHub runner has.
-# Nothing but that dispatch runs on a self-hosted runner.
+# Run by hand with `machine: aws`, either run is one job instead of the
+# 30: it rents a machine from AWS EC2 for the run, proves every share on
+# it at once and terminates it (scripts/ec2-run.sh), for the proofs a
+# GitHub runner has not the memory or the cores for. That needs the
+# repository's secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, and
+# costs the machine's hours; nothing is left running between runs.
+# `harnesses: none` there only rents the machine, says what it is and
+# gives it back.
 name: proofs-full
 
 on:
@@ -34,23 +37,34 @@ on:
   workflow_dispatch:
     inputs:
       harnesses:
-        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one."
+        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one. none (aws only): rent the machine and give it back."
         type: choice
-        options: [proved, new]
+        options: [proved, new, none]
         default: proved
       machine:
-        description: "github: 30 jobs on GitHub's runners. self-hosted: every share at once on a self-hosted runner."
+        description: "github: 30 jobs on GitHub's runners. aws: every share at once on one machine rented for the run."
         type: choice
-        options: [github, self-hosted]
+        options: [github, aws]
         default: github
+      instance_type:
+        description: "aws only: the machine. r7a.8xlarge is 32 cores and 256 GB."
+        default: r7a.8xlarge
+      market:
+        description: "aws only: spot (cheaper, and may be reclaimed under the run) or on-demand."
+        type: choice
+        options: [spot, on-demand]
+        default: spot
+      region:
+        description: "aws only: the region."
+        default: us-east-1
       shares:
-        description: "self-hosted only: how many shares run at once, each up to `cap` gigabytes."
+        description: "aws only: how many shares run at once, each up to `cap` gigabytes."
         default: "16"
       cap:
-        description: "self-hosted only: the gigabytes one solver may take."
+        description: "aws only: the gigabytes one solver may take."
         default: "12"
       timeout:
-        description: "self-hosted only: the seconds one run of a solver may take."
+        description: "aws only: the seconds one run of a solver may take."
         default: "1500"
 
 permissions:
@@ -58,7 +72,7 @@ permissions:
 
 jobs:
   shard:
-    if: inputs.machine != 'self-hosted'
+    if: inputs.machine != 'aws' && inputs.harnesses != 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     strategy:
@@ -104,43 +118,40 @@ jobs:
           path: logs/kani/shard-${{ matrix.shard }}.txt
           if-no-files-found: warn
 
-  # The same harnesses on one self-hosted machine, every share at once.
-  # The build directories are kept between runs (`clean: false`); the
-  # results are not.
+  # The same harnesses on one machine rented for the run, every share at
+  # once. This job is the one that rents it, watches it and gives it back;
+  # the proofs run there.
   big:
-    if: inputs.machine == 'self-hosted'
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 2880
+    if: inputs.machine == 'aws'
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
-        with:
-          clean: false
 
-      - name: A C toolchain, Rust and Kani, where the machine has none
-        run: |
-          command -v cc >/dev/null || { sudo apt-get update && sudo apt-get install -y build-essential; }
-          [ -x "$HOME/.cargo/bin/cargo" ] || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          cargo kani --version >/dev/null 2>&1 || {
-            cargo install --locked kani-verifier --version "$(sed -n 's/^KANI_VERSION=//p' scripts/prove.sh)"
-            cargo kani setup
-          }
-          nproc; free -g | sed -n 2p; df -h . | tail -1
-
-      - name: Prove every share at once
+      - name: Rent a machine, prove on it, give it back
         env:
-          RUN: ${{ inputs.harnesses == 'new' && 'kani-new' || 'kani-shard' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          EC2_TYPE: ${{ inputs.instance_type }}
+          EC2_MARKET: ${{ inputs.market }}
+          EC2_REGION: ${{ inputs.region }}
+          HARNESSES: ${{ inputs.harnesses }}
           SHARES: ${{ inputs.shares }}
-          KANI_CAP: ${{ inputs.cap }}
-          KANI_TIMEOUT: ${{ inputs.timeout }}
+          CAP: ${{ inputs.cap }}
+          TIMEOUT: ${{ inputs.timeout }}
         run: |
-          rm -rf logs/kani
-          scripts/prove.sh kani-shares "$RUN" "$SHARES"
+          for n in "$SHARES" "$CAP" "$TIMEOUT"; do
+            [[ $n =~ ^[0-9]+$ ]] || { echo "shares, cap and timeout are whole numbers, not '$n'"; exit 2; }
+          done
+          case "$HARNESSES" in
+            none) EC2_SETUP=none EC2_MAX_HOURS=1 scripts/ec2-run.sh 'uname -srm; ls scripts/prove.sh' ;;
+            new) scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-new $SHARES" ;;
+            *) scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-shard $SHARES" ;;
+          esac
 
       # The loop bounds the harnesses needed, for scripts/kani/.
       - name: Loop bounds learned
-        if: always()
+        if: always() && inputs.harnesses != 'none'
         run: |
           for f in loop-bounds.txt loop-bounds.through-the-stack.txt; do
             echo "== $f"
@@ -148,7 +159,7 @@ jobs:
           done
 
       - name: Keep the results
-        if: always()
+        if: always() && inputs.harnesses != 'none'
         uses: actions/upload-artifact@v4
         with:
           name: kani-shard-big
@@ -157,7 +168,7 @@ jobs:
 
   report:
     needs: [shard, big]
-    if: always()
+    if: always() && inputs.harnesses != 'none'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
