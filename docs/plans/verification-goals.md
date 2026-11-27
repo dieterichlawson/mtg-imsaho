@@ -151,6 +151,44 @@ memory building four of these proofs at once (two at a time build), and
 each proof is then 80 to 110 MB of program that CBMC's tools each read
 and write before CBMC starts.
 
+### What a run of them takes, and where it is to run
+
+The first batch on this container (4 cores, 15 GB), one proof at a time,
+gave 10 results in 107 minutes, of which 58 were the solver's and the
+rest the builds and the tools before it: Bramblecrush destroying an
+artifact of each player's, an enchantment and a land (315 to 359 s
+each), Doom Blade at a creature with a regeneration shield (439 s) and
+refused at a black creature of each player's and at an artifact (62 to
+71 s) prove; Doom Blade at an indestructible creature was still in
+symbolic execution at 1,200 s, and why is not found. At that rate the
+267 proofs written and not yet run are two days of this container, and
+a background job here is stopped at two hours.
+
+So the run is made one that can go elsewhere, in
+`.github/workflows/proofs-full.yml`, dispatched by hand:
+
+- `harnesses: new` runs only the proofs with no result yet
+  (`scripts/prove.sh kani-new`), and is red only if one is left with
+  none: a new proof that does not finish is what it is to find out.
+- `machine: github` (the default) shares them over 30 of GitHub's
+  runners, which are this container's size: the volume, not the memory.
+- `machine: aws` rents one machine for the run, proves every share on
+  it at once (`scripts/prove.sh kani-shares`) and terminates it
+  (`scripts/ec2-run.sh`): 32 cores and 256 GB unless told otherwise,
+  and a solver may be given more than 12 GB there.
+
+Neither has been dispatched yet (2026-11-27): the first waits on a word,
+the second on the repository's AWS secrets. `scripts/ec2-run.sh` has
+been run against stand-ins for AWS and SSH only.
+
+A proof's result now also says which of its own assertions no execution
+reached. A proof here is one case of a family that asserts under each
+case's branch, so some are expected: Bramblecrush destroying a land
+reaches the assertions of a permanent destroyed and not those of one
+left as it was or of a shield used, and Doom Blade at a regenerating
+creature the reverse. An unreached assertion that is the case's own
+would be a proof of nothing, and is now visible as one.
+
 ## The goals
 
 **0. A scoreboard.** `scripts/verification-scoreboard.py` writes
