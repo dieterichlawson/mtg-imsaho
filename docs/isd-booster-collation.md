@@ -484,7 +484,7 @@ fn generate_pack(state: &mut CollationState, rng: &mut Rng) -> Pack {
 
     // 6. Handle foils (22.5% chance)
     let foil = if rng.gen_ratio(9, 40) {
-        Some(generate_foil(rng, is_c1, &mut commons))
+        Some(generate_foil(rng, is_c1, n_a, n_b, &mut commons))
     } else {
         None
     };
@@ -501,7 +501,7 @@ Where `RARE_SHEET1` is the concatenation of `rare_a ++ rare_c` (121 cards), and
 ### Foil Generation
 
 ```
-fn generate_foil(rng: &mut Rng, is_c1: bool, commons: &mut Vec<String>) -> Foil {
+fn generate_foil(rng: &mut Rng, is_c1: bool, n_a: usize, n_b: usize, commons: &mut Vec<String>) -> Foil {
     // Determine if DFC foil (~14%) or non-DFC foil (~86%)
     let is_dfc_foil = rng.gen_ratio(1, 7);  // rough estimate
 
@@ -533,8 +533,9 @@ fn generate_foil(rng: &mut Rng, is_c1: bool, commons: &mut Vec<String>) -> Foil 
             Foil::Card(random_card_of_rarity(rng, rarity))
         }
         Uncommon => {
-            // Displace a B common
-            remove_b_common(commons);
+            // Displace a B common: the first one follows the variant's n_a
+            // A commons (a fixed index is an A card in 4A+3B+2C2, #1099)
+            commons.remove(n_a);
             Foil::Card(random_card_of_rarity(rng, rarity))
         }
         Rare | Mythic => {

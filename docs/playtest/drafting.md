@@ -83,7 +83,8 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   400,000 times, each pack's commons classified by run (`data.runs`) and
   keyed by foil rarity and `displaced_run`, shows every slot rule at once.
   Each displacement must remove a card from the run it names, in every
-  variant (`remove_from_run` guesses the B boundary at index 3). Foil rate,
+  variant (`generate_foil` removes the first B card at `commons[n_a]`; it
+  guessed index 3 until #1099). Foil rate,
   foil rarities, per-card rates and conservation held; ISD loses no card to
   `filter_implemented`. Conservation is cheapest from a stub night's
   `positions.jsonl`: each position's `available` is the upstream seat's
