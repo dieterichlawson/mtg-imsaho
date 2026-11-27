@@ -6,7 +6,9 @@ results recorded in `scripts/kani/times.txt`, as Markdown.
 A goal there is done when its number here says so. With `--check FILE`
 (the scoreboard as last committed), exits 1 if a number has gone the wrong
 way since: fewer cards proved through the stack, more stand-ins, more
-proofs open.
+proofs open. A proof that was waiting to be run and has now been run and
+did not finish is not one gone the wrong way: the open proofs may grow by
+as many as the proofs not yet run have shrunk.
 
 What is counted:
 
@@ -114,17 +116,20 @@ def render():
         mark = f'{c["proved"]} of {c["through"]}' if c['through'] else '-'
         out.append(f'| {m} | {mark} | {c["hook"]} | {c["declared"]} |')
     out += ['', '## Engine functions stood in for', '', ', '.join(f'`{s}`' for s in stubs), '']
-    return '\n'.join(out), (through, -hooks, -len(stubs), -len(open_proofs))
+    return '\n'.join(out), (through, -hooks, -len(stubs), -len(open_proofs)), len(not_run)
 
 
 def main():
-    text, now = render()
+    text, now, waiting = render()
     if len(sys.argv) == 3 and sys.argv[1] == '--check':
         was = open(sys.argv[2]).read()
         m = (re.search(r'resolution proved \| (\d+) of', was), re.search(r'hook directly \| (\d+)', was),
              re.search(r'unchecked \| (\d+)', was), re.search(r'do not finish \| (\d+)', was))
         if all(m):
-            before = (int(m[0].group(1)), -int(m[1].group(1)), -int(m[2].group(1)), -int(m[3].group(1)))
+            # Proofs that were waiting and have since been run to a result.
+            waited = re.search(r'\((\d+) not yet run\)', was)
+            run_since = max(0, int(waited.group(1)) - waiting) if waited else 0
+            before = (int(m[0].group(1)), -int(m[1].group(1)), -int(m[2].group(1)), -int(m[3].group(1)) - run_since)
             worse = [name for name, a, b in zip(('cards through the stack', 'hook harnesses', 'stand-ins', 'open proofs'), before, now) if b < a]
             if worse:
                 sys.exit(f'the scoreboard went the wrong way: {", ".join(worse)} (was {before}, now {now})')
