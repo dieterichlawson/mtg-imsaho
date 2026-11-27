@@ -343,11 +343,19 @@ def rewrite(version, strings, symbols, functions):
         if ident is None or comps is None or not comps.subs:
             return False
         name = strings[ident.id]
-        prefix = (name[:-len(b'-union')] if name.endswith(b'-union') else name) + b'::'
+        # A variant's struct is named for the union it is a member of: a
+        # tagged enum's union is `tag-X-union` and its variants
+        # `tag-X-union::V`, a niche-encoded enum's is the enum itself,
+        # `tag-X`, and its variants `tag-X::V`. Until 2026-11-27 only
+        # `tag-X::V` was looked for under either, so no tagged enum was
+        # taken for an enum here, and none had its widest variant put
+        # first below (0 of this module's count in every program; 11 in
+        # the first one rewritten since).
+        prefixes = (name + b'::', (name[:-len(b'-union')] if name.endswith(b'-union') else name) + b'::')
         for c in comps.subs:
             ct = named(c, K_TYPE)
             ci = named(ct, K_IDENT) if ct is not None and ct.id == STRUCT_TAG else None
-            if ci is None or not strings[ci.id].startswith(prefix):
+            if ci is None or not strings[ci.id].startswith(prefixes):
                 return False
         return True
 
@@ -361,6 +369,23 @@ def rewrite(version, strings, symbols, functions):
     # was read through another member than the one kept, and every `match`
     # on it followed every arm. Members of a union all start at its first
     # byte, so their order is not the program's.
+    #
+    # The same holds of a tagged enum's union, and costs more there.
+    # Symbolic execution keeps a symbol for every field of every member,
+    # and gives each its value by reading the union's bytes where the
+    # field is, through the first member that has a field of that type
+    # there. `GameEvent`'s widest variant, `CreatureDied`, was not its
+    # first: a death's `object` was read as `CardDrawn`'s `object`, its
+    # `card_id` out of `EnteredBattlefield`'s bytes, and since the value
+    # kept holds pointers (the dead creature's name and subtypes) none of
+    # those reads could be simplified. So a creature's death, read back
+    # from the event list, was of no known creature, the trigger
+    # collectors followed every object and card for it, and a spell that
+    # killed a creature did not get through the check before priority:
+    # Doom Blade destroying a creature was still in symbolic execution at
+    # 1,500 seconds, and with `CreatureDied` first it proves in 757 (two
+    # rounds, 322 the second); at an indestructible creature, 1,200
+    # seconds and not done, and 342.
     reordered = 0
     for ident, ty in types.items():
         comps = named(ty, K_COMPONENTS) if ty.id == UNION else None
