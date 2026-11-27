@@ -76,7 +76,12 @@ give_back() {
 }
 trap give_back EXIT
 
-aws sts get-caller-identity --query Arn --output text
+# This repository is public and so is a run's log: the account's number
+# is kept out of what AWS says of a refusal, and no address is printed.
+aws() { command aws "$@" 2> >(sed -E 's/[0-9]{12}/<account>/g' >&2); }
+
+aws sts get-caller-identity --query UserId --output text > /dev/null
+echo "the AWS credentials are accepted"
 
 # The newest Ubuntu 24.04 that Canonical publishes, and its root device.
 found=$(aws ec2 describe-images --owners 099720109477 \
@@ -151,7 +156,7 @@ echo "launched $id: $market $type, $disk GB, in $AWS_DEFAULT_REGION; it turns it
 
 aws ec2 wait instance-running --instance-ids "$id"
 address=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-case "$address" in [0-9]*) ;; *) echo "$id has no public address ($address)" >&2; exit 2 ;; esac
+case "$address" in [0-9]*) ;; *) echo "$id has no public address" >&2; exit 2 ;; esac
 there=(-i "$work/key" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$work/known_hosts" -o BatchMode=yes
        -o ConnectTimeout=10 -o ServerAliveInterval=30 -o LogLevel=ERROR)
 on_it() { ssh "${there[@]}" "ubuntu@$address" "$@"; }
@@ -160,7 +165,7 @@ for _ in $(seq 60); do
     if on_it true 2> /dev/null; then reached=yes; break; fi
     sleep 5
 done
-[ -n "$reached" ] || { echo "$id at $address did not answer on port 22, opened to $me, in ten minutes" >&2; exit 2; }
+[ -n "$reached" ] || { echo "$id did not answer on port 22 in ten minutes" >&2; exit 2; }
 on_it 'cloud-init status --wait > /dev/null 2>&1; echo "$(nproc) cores, $(free -g | awk "NR==2{print \$2}") GB, $(df -h --output=avail / | tail -1 | tr -d " ") of disk free"'
 
 # The checkout, by the commit: the repository is public, so the machine
