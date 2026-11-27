@@ -152,12 +152,8 @@ const FIRST: Cast = Cast { by: 0, flashback: false };
 const SECOND: Cast = Cast { by: 1, flashback: false };
 const FLASHBACK: Cast = Cast { by: 0, flashback: true };
 
-/// The mana `cost` asks for, in `player`'s pool: each coloured pip as that
-/// colour, generic mana as colourless.
-fn mana_for(state: &mut GameState, player: PlayerId, cost: &crate::types::ManaCost) {
-    mana_for_symbols(state, player, &cost.symbols);
-}
-/// The same of a cost given as its symbols.
+/// The mana a cost of these symbols asks for, in `player`'s pool: each
+/// coloured pip as that colour, generic mana as colourless.
 fn mana_for_symbols(state: &mut GameState, player: PlayerId, symbols: &[ManaSymbol]) {
     let pool = &mut state.players[usize::from(player.0)].mana_pool;
     for symbol in symbols {
@@ -170,19 +166,21 @@ fn mana_for_symbols(state: &mut GameState, player: PlayerId, symbols: &[ManaSymb
 }
 
 /// `card` in `player`'s hand, and the mana its printed cost asks for in
-/// their pool.
+/// their pool: the cost the Oracle prints for it ([`oracle::cost`]), not
+/// the one the engine's data gives it. A cast then goes through, and
+/// leaves the pool empty, only if the two are the same cost.
 fn holds(state: &mut GameState, registry: &CardRegistry, card: CardId, player: PlayerId) -> ObjectId {
     let spell = state.create_object(card, player, Zone::Hand, None, None);
-    let cost = registry.get(card).expect("registered").card_data().cost.expect("a card with a cost");
-    mana_for(state, player, &cost);
-    std::mem::forget(cost);
+    let name = registry.get(card).expect("registered").card_data().name;
+    mana_for_symbols(state, player, oracle::cost(&name));
+    std::mem::forget(name);
     spell
 }
 
 /// `card` where `cast` casts it from, its caster's own first main phase,
 /// the stack empty and priority theirs, and the mana for that cast in
 /// their pool: in their hand with its printed cost, or in their graveyard
-/// with its flashback cost.
+/// with its printed flashback cost, each as the Oracle has it.
 fn a_spell(state: &mut GameState, registry: &CardRegistry, card: CardId, cast: Cast) -> ObjectId {
     let caster = PlayerId(cast.by);
     state.active_player = caster;
@@ -197,9 +195,9 @@ fn a_spell(state: &mut GameState, registry: &CardRegistry, card: CardId, cast: C
     } else {
         state.players[1].graveyard_order.push(spell);
     }
-    let cost = registry.get(card).expect("registered").card_data().flashback_cost.expect("a card with flashback");
-    mana_for(state, caster, &cost);
-    std::mem::forget(cost);
+    let name = registry.get(card).expect("registered").card_data().name;
+    mana_for_symbols(state, caster, oracle::flashback_cost(&name));
+    std::mem::forget(name);
     spell
 }
 
@@ -2125,30 +2123,104 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
 
+    is_there_as_printed(&state, &registry, spell, printed, caster);
+    assert!(as_it_is(&state, beside) == before && before.is_some());
+    assert!(state.players[0].life == 20 && state.players[1].life == 20);
+    assert!(state.awaiting_action.is_none());
+    assert!(state.players[0].graveyard_order.is_empty() && state.players[1].graveyard_order.is_empty());
+    std::mem::forget((registry, state));
+}
+
+/// `spell`, a creature card just resolved, is on the battlefield under
+/// `caster` as `printed` says ([`enters_as_printed`] says what that is).
+fn is_there_as_printed(state: &GameState, registry: &CardRegistry, spell: ObjectId, printed: Printed, caster: PlayerId) {
     let o = state.get_object(spell).expect("still an object");
     assert!(o.zone == Zone::Battlefield && o.controller == caster && o.owner == caster);
     assert!(!o.tapped && o.damage_marked == 0);
-    assert!(state.effective_power(spell, &registry) == Some(printed.power));
-    assert!(state.effective_toughness(spell, &registry) == Some(printed.toughness));
+    assert!(state.effective_power(spell, registry) == Some(printed.power));
+    assert!(state.effective_toughness(spell, registry) == Some(printed.toughness));
     for t in [CardType::Land, CardType::Creature, CardType::Instant, CardType::Sorcery, CardType::Enchantment, CardType::Artifact, CardType::Planeswalker] {
-        assert!(state.has_card_type(spell, t, &registry) == printed.types.contains(&t));
+        assert!(state.has_card_type(spell, t, registry) == printed.types.contains(&t));
     }
-    let subtypes = state.subtypes_of(spell, &registry);
+    let subtypes = state.subtypes_of(spell, registry);
     assert!(subtypes.len() == printed.subtypes.len());
     for subtype in printed.subtypes {
         assert!(subtypes.iter().any(|s| s == subtype));
     }
     for k in Keyword::ALL {
-        assert!(state.has_keyword(spell, k, &registry) == printed.keywords.contains(&k));
+        assert!(state.has_keyword(spell, k, registry) == printed.keywords.contains(&k));
     }
-    assert!(state.has_summoning_sickness(spell, &registry) != printed.keywords.contains(&Keyword::Haste));
-    assert!(as_it_is(&state, beside) == before && before.is_some());
-    assert!(state.players[0].life == 20 && state.players[1].life == 20);
-    assert!(state.awaiting_action.is_none());
-    assert!(state.players[0].graveyard_order.is_empty() && state.players[1].graveyard_order.is_empty());
-    std::mem::forget((registry, state, subtypes));
+    assert!(state.has_summoning_sickness(spell, registry) != printed.keywords.contains(&Keyword::Haste));
+    std::mem::forget(subtypes);
 }
 
+/// A creature card cast for its printed cost less one mana, a generic one
+/// if the cost has any and a coloured one if not: the cast is refused and
+/// nothing is done (CR 601.2h). With [`enters_as_printed`], the engine's
+/// cost for the card is the printed cost from both sides.
+fn is_not_cast_for_one_mana_less((card, printed): (Box<dyn CardBehavior>, Printed)) {
+    let (registry, mut state, _, card) = board(card);
+    let caster = PlayerId(0);
+    state.active_player = caster;
+    state.step = Step::PrecombatMain;
+    state.priority_player = Some(caster);
+    let spell = state.create_object(card, caster, Zone::Hand, None, None);
+    // The one mana left out: of the first generic symbol, or else the
+    // first symbol.
+    let generic = printed.cost.iter().position(|s| matches!(s, ManaSymbol::Generic(_)));
+    let pool = &mut state.players[0].mana_pool;
+    for (i, symbol) in printed.cost.iter().enumerate() {
+        match *symbol {
+            ManaSymbol::Generic(n) if generic == Some(i) => pool.add(ManaType::Colorless, n - 1),
+            ManaSymbol::Generic(n) => pool.add(ManaType::Colorless, n),
+            ManaSymbol::Colored(_) if generic.is_none() && i == 0 => {}
+            ManaSymbol::Colored(c) => pool.add(ManaType::from(c), 1),
+            _ => panic!("a cost of coloured and generic mana"),
+        }
+    }
+
+    cast_is_refused(&mut state, &registry, spell, Vec::new());
+
+    assert!(state.players[0].life == 20 && state.players[1].life == 20);
+    std::mem::forget((registry, state));
+}
+
+/// When a creature card is cast other than in its caster's own main
+/// phase with the stack empty.
+#[derive(Clone, Copy, PartialEq)]
+enum At {
+    /// The other player's first main phase, the caster holding priority.
+    TheOtherPlayersTurn,
+    /// The caster's own upkeep.
+    ItsCastersUpkeep,
+}
+
+/// A creature card cast, for its printed cost, at a time only a card
+/// with flash may be (CR 307.1, 702.8a): with flash it is cast, resolves
+/// and is there as printed; without, the cast is refused and nothing is
+/// done.
+fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed, At)) {
+    let (registry, mut state, _, card) = board(card);
+    let caster = PlayerId(0);
+    (state.active_player, state.step) = match at {
+        At::TheOtherPlayersTurn => (PlayerId(1), Step::PrecombatMain),
+        At::ItsCastersUpkeep => (caster, Step::Upkeep),
+    };
+    state.priority_player = Some(caster);
+    let spell = state.create_object(card, caster, Zone::Hand, None, None);
+    mana_for_symbols(&mut state, caster, printed.cost);
+
+    if printed.keywords.contains(&Keyword::Flash) {
+        cast_and_resolve(&mut state, &registry, spell, Vec::new());
+        is_there_as_printed(&state, &registry, spell, printed, caster);
+    } else {
+        cast_is_refused(&mut state, &registry, spell, Vec::new());
+    }
+    assert!(state.players[0].life == 20 && state.players[1].life == 20);
+    std::mem::forget((registry, state));
+}
+
+mod oracle;
 mod printed;
 
 // The engine's own game loop playing each action, where the rows above

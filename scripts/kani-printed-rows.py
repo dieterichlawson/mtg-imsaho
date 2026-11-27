@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""kani-printed-rows.py [--check]: write the rows of
-`mtg-engine/src/proofs/through_the_stack/printed.rs`, a proof for each
-creature card that, cast through the engine, it is on the battlefield as
-its printed text says (`enters_as_printed` in `through_the_stack.rs`).
+"""kani-printed-rows.py [--check]: write, from the Oracle's text, the two
+files of `mtg-engine/src/proofs/through_the_stack/` no hand writes.
+
+`oracle.rs` is the mana cost and the flashback cost the Oracle prints for
+each card of the pool: what a proof gives a caster to cast a card with
+(`a_spell`), so that the cost the engine asks is held against the printed
+one and not against the engine's own data for the card.
+
+`printed.rs` is, for each creature card, the rows of what casting it
+through the engine comes to: for exactly its printed cost, by each player
+in their own main phase, it is on the battlefield as its printed text says
+(`enters_as_printed` in `through_the_stack.rs`); for one mana less it is
+not cast; and in the other player's turn, or in its caster's upkeep, it is
+cast if it has flash and not otherwise (`is_cast_only_at_its_time`).
 
 What a row holds a card against is the Oracle's text for it
 (`data/oracle_cache.json`, from Scryfall, which `scripts/oracle_lookup.py`
@@ -31,6 +41,7 @@ import glob, json, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CARDS = f'{ROOT}/mtg-engine/src/cards'
 OUT = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/printed.rs'
+COSTS = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/oracle.rs'
 COLORS = {'W': 'White', 'U': 'Blue', 'B': 'Black', 'R': 'Red', 'G': 'Green'}
 # The engine's keywords (`types::Keyword`), by the words a card prints.
 KEYWORDS = {'flying': 'Flying', 'first strike': 'FirstStrike', 'double strike': 'DoubleStrike', 'trample': 'Trample',
@@ -70,6 +81,61 @@ def own_keywords(text):
     return found
 
 
+def symbols(cost):
+    """A printed cost's symbols as Rust, or the symbol that has none."""
+    out = []
+    for sym in re.findall(r'\{([^}]*)\}', cost or ''):
+        if sym.isdigit():
+            out.append(f'ManaSymbol::Generic({sym})')
+        elif sym in COLORS:
+            out.append(f'ManaSymbol::Colored(Color::{COLORS[sym]})')
+        elif sym == 'X':
+            out.append('ManaSymbol::X')
+        else:
+            return None, sym
+    return out, None
+
+
+def costs():
+    """`oracle.rs`: each pool card's printed cost and flashback cost."""
+    oracle = json.load(open(f'{ROOT}/data/oracle_cache.json'))['cards']
+    cast, flashback = [], []
+    for module, _, name, _ in pool():
+        card = oracle.get(name)
+        if card is None:
+            sys.exit(f'{module}: the Oracle cache has no card named {name!r}; scripts/oracle_lookup.py fetch it')
+        syms, odd = symbols(card.get('mana_cost'))
+        if syms is None:
+            sys.exit(f'{module}: its cost has {{{odd}}}, which the proofs have no mana symbol for')
+        cast.append(f'        {json.dumps(name)} => &[{", ".join(syms)}],')
+        for line in (card.get('oracle_text') or '').split('\n'):
+            m = re.match(r'Flashback ((?:\{[^}]*\})+)(?: \(|$)', line)
+            if m:
+                syms, odd = symbols(m.group(1))
+                if syms is None:
+                    sys.exit(f'{module}: its flashback cost has {{{odd}}}')
+                flashback.append(f'        {json.dumps(name)} => &[{", ".join(syms)}],')
+            elif line.startswith('Flashback'):
+                sys.exit(f'{module}: a flashback cost that is not only mana: {line[:60]}')
+    return '\n'.join([
+        '//! Written by `scripts/kani-printed-rows.py` from the Oracle\'s text',
+        '//! (`data/oracle_cache.json`); not to be edited by hand. The mana cost',
+        '//! and the flashback cost the Oracle prints for each card of the pool,',
+        '//! by the card\'s name: what a proof gives a caster to cast it with.', '',
+        'use crate::types::{Color, ManaSymbol};', '',
+        '/// The mana cost printed on the card of this name; none for a card with',
+        '/// no mana cost (a land).',
+        'pub(super) fn cost(name: &str) -> &\'static [ManaSymbol] {',
+        '    match name {'] + cast + [
+        '        _ => panic!("the Oracle\'s costs have no card of this name"),',
+        '    }', '}', '',
+        '/// The flashback cost printed on the card of this name.',
+        'pub(super) fn flashback_cost(name: &str) -> &\'static [ManaSymbol] {',
+        '    match name {'] + flashback + [
+        '        _ => panic!("the Oracle prints no flashback cost for a card of this name"),',
+        '    }', '}', '']) + '\n'
+
+
 def printed(card):
     """`card`'s row data as Rust, or why it has no row."""
     front = (card.get('type_line') or '').split('//')[0]
@@ -79,17 +145,11 @@ def printed(card):
     text = card.get('oracle_text') or ''
     if re.search(r'\benters\b', text):
         return None, 'its text has something happen as it enters'
-    symbols = re.findall(r'\{([^}]*)\}', card.get('mana_cost') or '')
-    if not symbols:
+    cost, odd = symbols(card.get('mana_cost'))
+    if cost is None or 'ManaSymbol::X' in cost:
+        return None, f'its cost has {{{odd or "X"}}}'
+    if not cost:
         return None, 'it has no mana cost'
-    cost = []
-    for sym in symbols:
-        if sym.isdigit():
-            cost.append(f'ManaSymbol::Generic({sym})')
-        elif sym in COLORS:
-            cost.append(f'ManaSymbol::Colored(Color::{COLORS[sym]})')
-        else:
-            return None, f'its cost has {{{sym}}}'
     power, toughness = str(card.get('power')), str(card.get('toughness'))
     if not re.fullmatch(r'-?\d+', power) or not re.fullmatch(r'-?\d+', toughness):
         return None, f'its power and toughness are {power}/{toughness}'
@@ -115,6 +175,10 @@ def render():
             continue
         for who, cast in (('first', 'FIRST'), ('second', 'SECOND')):
             rows.append(f'    {module}_cast_by_the_{who}_player_enters_as_printed: enters_as_printed((Box::new({path}), {data}, {cast}));')
+        rows.append(f'    {module}_is_not_cast_for_one_mana_less: is_not_cast_for_one_mana_less((Box::new({path}), {data}));')
+        flash = 'Keyword::Flash' in data
+        for when, at in (('in_the_other_players_turn', 'At::TheOtherPlayersTurn'), ('in_its_casters_upkeep', 'At::ItsCastersUpkeep')):
+            rows.append(f'    {module}_{"is" if flash else "is_not"}_cast_{when}: is_cast_only_at_its_time((Box::new({path}), {data}, {at}));')
     out = ['//! Written by `scripts/kani-printed-rows.py` from the Oracle\'s text',
            '//! (`data/oracle_cache.json`); not to be edited by hand. Each creature',
            '//! card of the pool whose text has nothing happen as it enters, cast by',
@@ -122,21 +186,24 @@ def render():
            '//! (`enters_as_printed`).', '',
            'use super::*;', 'use crate::types::Color;', '',
            'through_the_stack! {'] + rows + ['}', '',
-           f'// {len(rows)} rows for {len(rows) // 2} cards. Creature cards with no row here, and why:']
+           f'// {len(rows)} rows for {len(rows) // 5} cards. Creature cards with no row here, and why:']
     out += [f'// - {module}: {why}' for module, why in left]
     return '\n'.join(out) + '\n'
 
 
 def main():
-    text = render()
+    files = {OUT: render(), COSTS: costs()}
     if sys.argv[1:] == ['--check']:
-        if not os.path.exists(OUT) or open(OUT).read() != text:
-            sys.exit(f'{os.path.relpath(OUT, ROOT)} is not what scripts/kani-printed-rows.py writes: run it')
+        for path, text in files.items():
+            if not os.path.exists(path) or open(path).read() != text:
+                sys.exit(f'{os.path.relpath(path, ROOT)} is not what scripts/kani-printed-rows.py writes: run it')
         return
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, 'w') as f:
-        f.write(text)
-    print(f'{text.count("enters_as_printed((")} rows written to {os.path.relpath(OUT, ROOT)}')
+    for path, text in files.items():
+        with open(path, 'w') as f:
+            f.write(text)
+    print(f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[OUT]))} rows written to {os.path.relpath(OUT, ROOT)}, '
+          f'{files[COSTS].count(" => &[")} costs to {os.path.relpath(COSTS, ROOT)}')
 
 
 if __name__ == '__main__':
