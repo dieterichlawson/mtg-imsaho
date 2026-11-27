@@ -21,13 +21,18 @@
 #   EC2_SSH_FROM   the address port 22 is opened to: this machine's, as
 #                  the world sees it, unless given
 #
-# What it costs is the machine's hours, to the minute it is terminated;
-# nothing is left behind but a security group with no rule in it.
+# What it costs is the machine's hours, to the minute it is terminated.
+# What is left behind costs nothing: a network of its own (a VPC, its
+# gateway to the internet, and a subnet in each zone it has tried), made
+# on the first run and used by every one after, and a security group
+# with no rule in it. All are tagged purpose=kani-proofs, and none of the
+# account's own networks is used or changed.
 #
 # What it needs of the account: to describe, run and tag instances, to
-# terminate the ones tagged purpose=kani-proofs, to make a security group
-# and open and close its port 22, and, for a first Spot request, to create
-# the Spot service's role. Nothing else: the machine is reached over SSH
+# terminate the ones tagged purpose=kani-proofs, to make that network and
+# a security group and open and close its port 22, and, for a first Spot
+# request, to create the Spot service's role (the AmazonEC2FullAccess
+# policy covers these). Nothing else: the machine is reached over SSH
 # with a key made for the run, opened to this machine's address only, and
 # reads the repository as anyone can (it is public).
 #
@@ -78,7 +83,12 @@ trap give_back EXIT
 
 # This repository is public and so is a run's log: the account's number
 # is kept out of what AWS says of a refusal, and no address is printed.
-aws() { command aws "$@" 2> >(sed -E 's/[0-9]{12}/<account>/g' >&2); }
+aws() {
+    local status=0
+    command aws "$@" 2> "$work/aws.err" || status=$?
+    sed -E 's/[0-9]{12}/<account>/g' "$work/aws.err" >&2
+    return $status
+}
 
 aws sts get-caller-identity --query UserId --output text > /dev/null
 echo "the AWS credentials are accepted"
@@ -101,10 +111,46 @@ runcmd:
   - shutdown -h +$((max_hours * 60))
 EOF
 
+# A network of its own, made on the first run and kept: an account need
+# not have a default one (the first run here found none), and this uses
+# none the account has. Each piece is looked for before it is made, so
+# that a run stopped half-way through making them is finished by the next.
+tags='Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs}]'
+vpc=$(aws ec2 describe-vpcs --filters Name=tag:purpose,Values=kani-proofs --query 'Vpcs[0].VpcId' --output text)
+if [ "$vpc" = None ]; then
+    vpc=$(aws ec2 create-vpc --cidr-block 10.77.0.0/16 --tag-specifications "ResourceType=vpc,$tags" --query Vpc.VpcId --output text)
+    aws ec2 wait vpc-available --vpc-ids "$vpc"
+    echo "made the network kani-proofs ($vpc)"
+fi
+gateway=$(aws ec2 describe-internet-gateways --filters Name=tag:purpose,Values=kani-proofs \
+    --query 'InternetGateways[0].InternetGatewayId' --output text)
+if [ "$gateway" = None ]; then
+    gateway=$(aws ec2 create-internet-gateway --tag-specifications "ResourceType=internet-gateway,$tags" \
+        --query InternetGateway.InternetGatewayId --output text)
+fi
+aws ec2 attach-internet-gateway --vpc-id "$vpc" --internet-gateway-id "$gateway" 2> "$work/gateway.err" \
+    || grep -q Resource.AlreadyAssociated "$work/gateway.err" || { cat "$work/gateway.err" >&2; exit 2; }
+table=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpc" Name=association.main,Values=true \
+    --query 'RouteTables[0].RouteTableId' --output text)
+aws ec2 create-route --route-table-id "$table" --destination-cidr-block 0.0.0.0/0 --gateway-id "$gateway" > /dev/null 2> "$work/route.err" \
+    || grep -q RouteAlreadyExists "$work/route.err" || { cat "$work/route.err" >&2; exit 2; }
+
+# The network's subnet in a zone, made if it is not there: 10.77.0.0/24 in
+# the region's zone a, 10.77.1.0/24 in b, and so on.
+subnet_in() {
+    local zone=$1 found letter
+    found=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc" "Name=availability-zone,Values=$zone" \
+        --query 'Subnets[0].SubnetId' --output text)
+    if [ "$found" = None ]; then
+        letter=$(printf '%d' "'${zone: -1}")
+        found=$(aws ec2 create-subnet --vpc-id "$vpc" --availability-zone "$zone" --cidr-block "10.77.$((letter - 97)).0/24" \
+            --tag-specifications "ResourceType=subnet,$tags" --query Subnet.SubnetId --output text)
+    fi
+    echo "$found"
+}
+
 # One security group, kept between runs with no rule in it; port 22 is
 # opened to this machine's address for the run and closed after.
-vpc=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)
-[ "$vpc" != None ] || { echo "the account has no default VPC in $AWS_DEFAULT_REGION" >&2; exit 2; }
 group=$(aws ec2 describe-security-groups --filters Name=group-name,Values=kani-proofs "Name=vpc-id,Values=$vpc" \
     --query 'SecurityGroups[0].GroupId' --output text)
 if [ "$group" = None ]; then
@@ -115,16 +161,13 @@ me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
 aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
     || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
 
-# The default subnets of the zones that offer the type, tried in turn: a
-# zone may have none of it to spare, above all on the Spot market.
+# The zones that offer the type, tried in turn: a zone may have none of it
+# to spare, above all on the Spot market.
 zones=$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
-    --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text | tr '\t' ',')
+    --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text)
 [ -n "$zones" ] || { echo "$type is not offered in $AWS_DEFAULT_REGION" >&2; exit 2; }
-subnets=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc" Name=default-for-az,Values=true \
-    "Name=availability-zone,Values=$zones" --query 'Subnets[].SubnetId' --output text)
-[ -n "$subnets" ] || { echo "no default subnet in a zone that offers $type" >&2; exit 2; }
 
-launch=(--image-id "$image" --instance-type "$type" --count 1 --security-group-ids "$group"
+launch=(--image-id "$image" --instance-type "$type" --count 1
         --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
         --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
         --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
@@ -132,8 +175,11 @@ launch=(--image-id "$image" --instance-type "$type" --count 1 --security-group-i
 if [ "$market" = spot ]; then
     launch+=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
 fi
-for subnet in $subnets; do
-    if id=$(aws ec2 run-instances "${launch[@]}" --subnet-id "$subnet" --query 'Instances[0].InstanceId' --output text 2> "$work/launch.err"); then
+for zone in $zones; do
+    subnet=$(subnet_in "$zone")
+    if id=$(aws ec2 run-instances "${launch[@]}" \
+            --network-interfaces "DeviceIndex=0,SubnetId=$subnet,AssociatePublicIpAddress=true,Groups=$group" \
+            --query 'Instances[0].InstanceId' --output text 2> "$work/launch.err"); then
         break
     fi
     id=""
