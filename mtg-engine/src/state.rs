@@ -863,6 +863,17 @@ impl GameState {
         id
     }
 
+    /// A card of the game, as a deck's cards are made when a game begins:
+    /// the object for `card_id` in `zone`, with the power and toughness its
+    /// data gives it and its name. Everything else a card prints is read
+    /// off its data when asked, and not copied onto the object.
+    pub fn create_card(&mut self, card_id: CardId, owner: PlayerId, zone: Zone, registry: &crate::cards::CardRegistry) -> ObjectId {
+        let data = registry.card_data(card_id).expect("card must be in registry");
+        let id = self.create_object(card_id, owner, zone, data.power, data.toughness);
+        self.get_object_mut(id).expect("just created").name = data.name;
+        id
+    }
+
     /// Create a new game object and add it to the state.
     pub fn create_object(
         &mut self,

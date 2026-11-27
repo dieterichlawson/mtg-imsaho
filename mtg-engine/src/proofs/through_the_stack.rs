@@ -170,7 +170,7 @@ fn mana_for_symbols(state: &mut GameState, player: PlayerId, symbols: &[ManaSymb
 /// the one the engine's data gives it. A cast then goes through, and
 /// leaves the pool empty, only if the two are the same cost.
 fn holds(state: &mut GameState, registry: &CardRegistry, card: CardId, player: PlayerId) -> ObjectId {
-    let spell = state.create_object(card, player, Zone::Hand, None, None);
+    let spell = state.create_card(card, player, Zone::Hand, registry);
     let name = registry.get(card).expect("registered").card_data().name;
     mana_for_symbols(state, player, oracle::cost(&name));
     std::mem::forget(name);
@@ -189,7 +189,7 @@ fn a_spell(state: &mut GameState, registry: &CardRegistry, card: CardId, cast: C
     if !cast.flashback {
         return holds(state, registry, card, caster);
     }
-    let spell = state.create_object(card, caster, Zone::Graveyard, None, None);
+    let spell = state.create_card(card, caster, Zone::Graveyard, registry);
     if cast.by == 0 {
         state.players[0].graveyard_order.push(spell);
     } else {
@@ -510,7 +510,7 @@ impl Everything {
 /// A harness for each row, as in `engine_under_card`.
 macro_rules! through_the_stack {
     ($($name:ident: $proof:ident($open:expr);)*) => {
-        through_the_stack! { unwind(16) $($name: $proof($open);)* }
+        through_the_stack! { unwind(26) $($name: $proof($open);)* }
     };
     (unwind($n:literal) $($name:ident: $proof:ident($open:expr);)*) => {$(
         #[kani::proof]
@@ -531,7 +531,7 @@ macro_rules! through_the_stack {
 macro_rules! in_the_game_loop {
     ($($name:ident: $proof:ident($open:expr);)*) => {$(
         #[kani::proof]
-        #[kani::unwind(16)]
+        #[kani::unwind(26)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
         #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
@@ -2353,7 +2353,7 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
     state.active_player = caster;
     state.step = Step::PrecombatMain;
     state.priority_player = Some(caster);
-    let spell = state.create_object(card, caster, Zone::Hand, None, None);
+    let spell = state.create_card(card, caster, Zone::Hand, &registry);
     mana_for_symbols(&mut state, caster, printed.cost);
     let before = as_it_is(&state, beside);
     let mut expected = everything(&state, &registry);
@@ -2406,7 +2406,7 @@ fn is_not_cast_for_one_mana_less((card, printed): (Box<dyn CardBehavior>, Printe
     state.active_player = caster;
     state.step = Step::PrecombatMain;
     state.priority_player = Some(caster);
-    let spell = state.create_object(card, caster, Zone::Hand, None, None);
+    let spell = state.create_card(card, caster, Zone::Hand, &registry);
     // The one mana left out: of the first generic symbol, or else the
     // first symbol.
     let generic = printed.cost.iter().position(|s| matches!(s, ManaSymbol::Generic(_)));
@@ -2449,7 +2449,7 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
         At::ItsCastersUpkeep => (caster, Step::Upkeep),
     };
     state.priority_player = Some(caster);
-    let spell = state.create_object(card, caster, Zone::Hand, None, None);
+    let spell = state.create_card(card, caster, Zone::Hand, &registry);
     mana_for_symbols(&mut state, caster, printed.cost);
     let mut expected = everything(&state, &registry);
 

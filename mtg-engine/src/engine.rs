@@ -796,16 +796,8 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
             let card_id = registry.get_id_by_name(card_name)
                 .unwrap_or_else(|| panic!("Unknown card: {card_name}"));
 
-            let card_data = registry.card_data(card_id).expect("card must be in registry");
-
             for _ in 0..*count {
-                let obj_id = state.create_object(
-                    card_id,
-                    player_id,
-                    Zone::Library,
-                    card_data.power,
-                    card_data.toughness,
-                );
+                let obj_id = state.create_card(card_id, player_id, Zone::Library, registry);
                 // Printed characteristics are NOT copied onto the object: they
                 // live on the card's active face and are read through the
                 // characteristics accessors. Copying them here was the source
