@@ -154,6 +154,11 @@ pub type CounterMap = crate::kind_map::KindMap<crate::types::CounterType>;
 /// `clear`.
 #[cfg(not(kani))]
 pub type CardState = std::collections::BTreeMap<String, ObjectId>;
+/// A token's link to the ability that defines its P/T (CR 604.3): its
+/// creator under [`crate::cards::PT_DEFINED_BY`], and the stamp
+/// [`GameObject::pt_defined_by_card`] (`None` to take it from the creator
+/// as it is now).
+pub type PtLink = (ObjectId, Option<(CardId, u32)>);
 #[cfg(kani)]
 pub type CardState = crate::vec_map::VecMap<String, ObjectId>;
 
@@ -1069,7 +1074,19 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
         self.create_tokens_inner(1, name, owner, 0, 0,
-            colors, card_types, keywords, subtypes, None, Some(defined_by), registry)
+            colors, card_types, keywords, subtypes, None, Some((defined_by, None)), registry)
+    }
+
+    /// The link to the ability that defines this object's P/T (CR 604.3),
+    /// as a copy takes it. The ability was granted by the effect that
+    /// created the token, which makes it a copiable value (CR 707.2,
+    /// 111.3): a copy of a Gutter Grime Ooze counts the same Grime's slime,
+    /// and an Ooze that becomes a copy of something else has the copied
+    /// P/T instead (#1100).
+    #[must_use]
+    pub fn pt_link(&self, id: ObjectId) -> Option<PtLink> {
+        let obj = self.get_object(id)?;
+        Some((*obj.card_state.get(crate::cards::PT_DEFINED_BY)?, obj.pt_defined_by_card))
     }
 
     /// The card that prints the ability defining this token's power and
@@ -1112,7 +1129,7 @@ impl GameState {
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
         face: Option<TokenCopyFace>,
-        pt_defined_by: Option<ObjectId>,
+        pt_defined_by: Option<PtLink>,
         registry: &crate::cards::CardRegistry,
     ) -> Vec<ObjectId> {
         if count == 0 {
@@ -1226,7 +1243,7 @@ impl GameState {
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
         face: Option<TokenCopyFace>,
-        pt_defined_by: Option<ObjectId>,
+        pt_defined_by: Option<PtLink>,
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let id = self.next_id();
@@ -1234,7 +1251,9 @@ impl GameState {
         let keywords_printed = keywords.clone();
         let card_types_printed = card_types.clone();
         let subtypes_printed = subtypes.clone();
-        let pt_defined_by_card = pt_defined_by.and_then(|src| self.get_object(src)).map(|s| (s.card_id, s.zone_change_count));
+        let pt_defined_by_card = pt_defined_by.and_then(|(src, stamp)| stamp
+            .or_else(|| self.get_object(src).map(|s| (s.card_id, s.zone_change_count))));
+        let pt_defined_by = pt_defined_by.map(|(src, _)| src);
         let obj = GameObject {
             id,
             // A token of no card is `CardId(0)`; a token copy carries the
@@ -1406,6 +1425,7 @@ impl GameState {
         // whose copy effect granted me an ability". Only the second is a
         // copiable value, and a token has no printed self to give back.
         let copy_grantor = crate::cards::ability_granting_grantor(self, source_id, registry);
+        let pt_link = self.pt_link(source_id);
 
         let name = self.name_of(source_id, registry);
         // `obj.power` on anything with a card face is the FRONT face's, and
@@ -1465,7 +1485,7 @@ impl GameState {
                 card_id, is_legendary, is_transformed: source_transformed, copy_grantor,
                 entering,
             }),
-            None,
+            pt_link,
             registry,
         );
         all_ids.into_iter().next().unwrap_or(ObjectId(0))
@@ -1972,6 +1992,10 @@ impl GameState {
                     if let Some(printed) = obj.copy_grantor.take() {
                         obj.card_id = printed;
                     }
+                    // A card that copied an Ooze is its own card again,
+                    // with no token's P/T-defining ability (#1100).
+                    obj.card_state.remove(crate::cards::PT_DEFINED_BY);
+                    obj.pt_defined_by_card = None;
                 }
                 // CR 712.8a: a DFC off the battlefield has only its front
                 // face. Clearing `is_transformed` does most of it — every
@@ -2245,6 +2269,7 @@ impl GameState {
         let subtypes = self.printed_subtypes_of(source, registry);
         let colors = self.printed_colors_of(source, registry);
         let oracle_text = self.face_data(source, registry).map(|d| d.oracle_text.clone());
+        let pt_link = self.pt_link(source);
 
         let old_name = self.get_object(dest).map(|o| o.name.clone()).unwrap_or_default();
         if let Some(obj) = self.get_object_mut(dest) {
@@ -2272,6 +2297,19 @@ impl GameState {
             // abilities come from its face (CR 706.2).
             obj.instance_continuous_effects = None;
             obj.instance_oracle_text = oracle_text;
+            // A P/T-defining ability granted by a token's creation is
+            // copiable (CR 707.2, #1100): taken from the copied object, and
+            // gone when what is copied has none.
+            match pt_link {
+                Some((src, stamp)) => {
+                    obj.card_state.insert(crate::cards::PT_DEFINED_BY.to_string(), src);
+                    obj.pt_defined_by_card = stamp;
+                }
+                None => {
+                    obj.card_state.remove(crate::cards::PT_DEFINED_BY);
+                    obj.pt_defined_by_card = None;
+                }
+            }
         }
         // The size a reader is told is the size the copy has, read off the
         // object the way the board reads it, not the copied card's printed

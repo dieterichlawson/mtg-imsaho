@@ -4096,3 +4096,83 @@ fn a_copy_of_a_star_star_creature_is_announced_at_the_size_it_entered() {
         "the size that entered: {lines:?}");
     assert!(!lines.iter().any(|l| l.contains("(0/0)")), "{lines:?}");
 }
+
+/// An Ooze from a Gutter Grime with one slime counter, kept alive by a
+/// +1/+1 counter where a test needs it at 0 slime.
+fn a_grime_and_its_ooze(state: &mut mtg_engine::state::GameState, reg: &mtg_engine::cards::CardRegistry) -> (ObjectId, ObjectId) {
+    let grime = named_permanent(state, reg, "Gutter Grime", P0);
+    let creature = ready_creature(state, P0, 2, 2);
+    kill_by_damage(state, reg, creature);
+    triggers::process_triggers(state, reg);
+    let ooze = find_token_named(state, "Ooze Token").expect("an Ooze was made");
+    assert_eq!(state.effective_power(ooze, reg), Some(1), "test precondition: one slime counter");
+    (grime, ooze)
+}
+
+/// Issue #1100. The Ooze's "power and toughness are each equal to the
+/// number of slime counters on Gutter Grime" was granted by the effect that
+/// created it, so it is a copiable value (CR 707.2, 111.3). A token copy of
+/// the Ooze counts the same Grime's slime. It was built without the link: a
+/// 0/0 with no ability text.
+#[test]
+fn a_token_copy_of_an_ooze_counts_the_same_gutter_grimes_slime() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let (grime, ooze) = a_grime_and_its_ooze(&mut state, &reg);
+
+    let copy = state.create_token_copy(ooze, P0, &reg);
+    assert_eq!(state.effective_power(copy, &reg), Some(1));
+    assert_eq!(state.effective_toughness(copy, &reg), Some(1));
+    state.add_counters(grime, CounterType::Slime, 2);
+    assert_eq!(state.effective_power(copy, &reg), Some(3), "the copy follows the Grime's slime");
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let row = view.battlefield.iter().find(|p| p.object_id == copy).expect("the copy");
+    assert!(row.oracle_text.contains("slime counters on Gutter Grime"), "{}", row.oracle_text);
+}
+
+/// Issue #1100. A card that enters as a copy of an Ooze (Evil Twin) takes
+/// the same copiable ability, and gives it back with the copy when it leaves.
+#[test]
+fn an_evil_twin_copying_an_ooze_counts_the_slime_and_drops_it_on_leaving() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let (grime, ooze) = a_grime_and_its_ooze(&mut state, &reg);
+    state.add_counters(grime, CounterType::Slime, 1);
+
+    let twin = spell_in_hand(&mut state, &reg, "Evil Twin", P0);
+    state.move_object(twin, Zone::Battlefield, &reg);
+    mtg_engine::replacement::process_pending_entry_choices(&mut state, &reg);
+    let mut state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(ooze))),
+    }, &reg);
+    assert_eq!(state.get_object(twin).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.effective_power(twin, &reg), Some(2), "two slime counters");
+    assert_eq!(state.effective_toughness(twin, &reg), Some(2));
+
+    state.move_object(twin, Zone::Graveyard, &reg);
+    assert!(state.token_pt_card(twin).is_none(), "Evil Twin in the graveyard is its own card");
+}
+
+/// Issue #1100, the other way round. An Ooze that enters as a copy of
+/// Essence of the Wild has the copied 6/6 (CR 707.2). The link to Gutter
+/// Grime is not a copiable value of Essence, and kept, it overrode the 6/6
+/// with the slime count.
+#[test]
+fn an_ooze_that_enters_as_an_essence_of_the_wild_is_a_6_6() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    state = cast_and_resolve(&state, &reg, essence, vec![]);
+
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    kill_by_damage(&mut state, &reg, creature);
+    triggers::process_triggers(&mut state, &reg);
+    let ooze = state.objects.values()
+        .find(|o| o.is_token && o.zone == Zone::Battlefield && o.id != essence && o.id != grime)
+        .map(|o| o.id).expect("the token Gutter Grime made");
+    assert_eq!(state.get_object(ooze).unwrap().name, "Essence of the Wild");
+    assert_eq!(state.effective_power(ooze, &reg), Some(6));
+    assert_eq!(state.effective_toughness(ooze, &reg), Some(6));
+    assert!(state.token_pt_card(ooze).is_none());
+}
