@@ -76,7 +76,7 @@ named in --expect-open FILE (the harnesses known not to prove, in the
 form of --list); 0 otherwise. A harness expected open that proved is
 said so, for the list to be pruned.
 """
-import argparse, concurrent.futures, fcntl, glob, json, os, re, subprocess, sys, tempfile, threading, time
+import argparse, collections, concurrent.futures, fcntl, glob, json, os, re, subprocess, sys, tempfile, threading, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 K = os.path.expanduser('~/.kani/kani-0.68.0')
@@ -334,7 +334,7 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
         unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec] + [f'{l}:{full}' for l in raised]
                              + [f'{l}:{n}' for l, n in sorted(caps.items())])
         cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ([] if MEMORY_CHECKS else NO_MEMORY_CHECKS) + [
-            '--unwind', str(min(START_UNWIND, full)), '--unwindset', unwindset, out, '--verbosity', '9', '--json-ui']
+            '--unwind', str(min(START_UNWIND, full)), '--unwindset', unwindset, out, '--verbosity', '9'] + (['--json-ui'] if JSON_UI else [])
         with open(out + '.cmd', 'w') as f:
             f.write(' '.join(f"'{c}'" if ',' in c or '*' in c else c for c in cmd) + '\n')
         if cap:
@@ -419,6 +419,12 @@ def solve(cmd, timeout, nrec):
     messages, results, size = [], [], ''
     oom = False
     prop = desc = None
+    # Plain output: whether the results have begun, the property whose
+    # result has not ended yet, what cbmc says it reported (how many
+    # properties, how many failed), a result line this could not read, and
+    # the last few lines, which say why if cbmc stops on an error.
+    in_results, open_result, said, unread = False, None, None, None
+    tail = collections.deque(maxlen=6)
 
     def value(line):
         # A line cut short (cbmc stopped at the cap mid-write, or the disk
@@ -435,6 +441,37 @@ def solve(cmd, timeout, nrec):
         # which is the cap as much as CBMC's is.
         if 'ut of memory' in line or 'bad_alloc' in line or 'olver ran out' in line:
             oom = True
+        if not JSON_UI:
+            text = line.rstrip('\n')
+            if open_result is not None:
+                # A description that runs over lines: its result ends it.
+                open_result[1] += ' ' + text
+                m = RESULT_END.match(open_result[1])
+                if m:
+                    results.append((open_result[0], m.group(2), m.group(1)))
+                    open_result = None
+            elif text == '** Results:':
+                in_results = True
+            elif in_results and text.startswith('** '):
+                m = re.match(r'\*\* (\d+) of (\d+) failed', text)
+                said = (int(m.group(2)), int(m.group(1))) if m else None
+                in_results = False
+            elif in_results and text.startswith('['):
+                m = RESULT_START.match(text)
+                if not m:
+                    unread = unread or text
+                    continue
+                rest = re.sub(r'^line \d+ ', '', m.group(2))
+                end = RESULT_END.match(rest)
+                if end:
+                    results.append((m.group(1), end.group(2), end.group(1)))
+                else:
+                    open_result = [m.group(1), rest]
+            elif STATISTIC.match(text) or 'Invalid User Input' in text:
+                messages.append([text, None])
+            elif text.strip() and not text.startswith('Unwinding loop '):
+                tail.append(text.strip())
+            continue
         if line.startswith('    "messageText": '):
             text = value(line)
             if isinstance(text, str):
@@ -513,6 +550,16 @@ def solve(cmd, timeout, nrec):
             failed.append(text)
             others.append(text)
     errors = [t for t, k in messages if k == 'ERROR']
+    if not JSON_UI:
+        # Read as text, the results are checked against cbmc's own count of
+        # them: a result this did not read is not a result that passed.
+        counted = (len(results), sum(status == 'FAILURE' for _, status, _ in results))
+        if code not in (0, 10):
+            errors = [f'cbmc exit {code}: ' + ' | '.join(tail)]
+        elif unread or open_result or said != counted:
+            errors = [f"cbmc's results not read: it says {said} (properties, failed), read {counted}"
+                      + (f'; first unread: {unread[:120]}' if unread else '')]
+            failed = []
     if errors and not failed:
         return ('ERROR', ' '.join(errors)[:300], seconds, set(), ['error'])
     if not results and not errors:
@@ -529,6 +576,22 @@ def solve(cmd, timeout, nrec):
 
 
 START_UNWIND, LOOPS, MEMORY_CHECKS = 4, None, False
+# CBMC's output is read as plain text. As JSON (`--json-ui`) CBMC writes an
+# execution trace for every property it reports as failed, asked for or
+# not, and a Kani reachability check is reported so whenever its assertion
+# is reached: one trace as long as the execution for each assertion the
+# proof reaches. For a proof that plays a card through the engine's cast
+# and stack that was 5.4 gigabytes of output and 427 seconds where the
+# plain output is a megabyte and 97 (the same program, 2026-11-27).
+# KANI_BOUNDED_UI=json reads the JSON as before.
+JSON_UI = os.environ.get('KANI_BOUNDED_UI') == 'json'
+# A result in the plain output, between `** Results:` and cbmc's count of
+# them: `[property] line N description: STATUS`, the property's name ending
+# in `.number` (or `.recursion`), the line left out for a property with no
+# source line, and the description at times over lines.
+RESULT_START = re.compile(r'^\[(.+?(?:\.\d+|\.recursion))\] (.*)$')
+RESULT_END = re.compile(r'^(.*): (SUCCESS|FAILURE|UNREACHABLE|UNKNOWN|ERROR|NOT CHECKED|UNDETERMINED)$', re.S)
+STATISTIC = re.compile(r'size of program expression|Runtime |\d+ variables, \d+ clauses')
 
 
 def main():
