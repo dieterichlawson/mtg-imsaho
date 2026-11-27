@@ -302,7 +302,7 @@ pub fn generate_pack(
 
     // 5. Handle foils (9/40 chance = 22.5%)
     let foil = if rng.gen_ratio(9, 40) {
-        Some(generate_foil(sheets, rng, is_c1, &mut commons))
+        Some(generate_foil(sheets, rng, is_c1, n_a, n_b, &mut commons))
     } else {
         None
     };
@@ -323,6 +323,8 @@ fn generate_foil(
     sheets: &SheetData,
     rng: &mut impl Rng,
     is_c1: bool,
+    n_a: usize,
+    n_b: usize,
     commons: &mut Vec<String>,
 ) -> Foil {
     // ~14% chance of DFC foil (1 DFC sheet out of ~7 total print sheets)
@@ -372,12 +374,19 @@ fn generate_foil(
             commons.pop();
             if is_c1 { "c1".to_string() } else { "c2".to_string() }
         }
-        FoilRarity::Uncommon => {
-            remove_from_run(commons, "b");
+        // "Foil uncommons displace B commons", rares and mythics A ones
+        // (docs/isd-booster-collation.md). The commons are the variant's
+        // `n_a` A cards, then its `n_b` B cards, then the C run's, so the
+        // first B card is at `n_a`. It was guessed at index 3, which in a
+        // 4A+3B+2C2 pack is the fourth A card (#1099). Every variant in the
+        // set data draws a B common; one that drew none would lose an A
+        // common, and say so.
+        FoilRarity::Uncommon if n_b > 0 => {
+            commons.remove(n_a);
             "b".to_string()
         }
-        FoilRarity::Rare | FoilRarity::Mythic => {
-            remove_from_run(commons, "a");
+        FoilRarity::Uncommon | FoilRarity::Rare | FoilRarity::Mythic => {
+            commons.remove(0);
             "a".to_string()
         }
     };
@@ -386,37 +395,6 @@ fn generate_foil(
         card,
         rarity,
         displaced_run,
-    }
-}
-
-/// Remove one common from the beginning of the commons list (A-run cards are first,
-/// then B-run, then C-run in the pack assembly order).
-fn remove_from_run(commons: &mut Vec<String>, run: &str) {
-    // In pack assembly, commons are ordered: A cards first, then B, then C.
-    // Displacing an A common means removing from the front.
-    // Displacing a B common means removing from after the A cards.
-    // For simplicity, we just remove the first card (A displacement) or
-    // a middle card (B displacement). The exact position matters less than
-    // the count being correct.
-    if !commons.is_empty() {
-        match run {
-            "a" => {
-                commons.remove(0);
-            }
-            "b" => {
-                // B cards follow A cards. Find the approximate boundary.
-                // A cards are typically 2-4, so remove from that area.
-                let pos = commons.len().min(3); // approximate B start
-                if pos < commons.len() {
-                    commons.remove(pos);
-                } else {
-                    commons.pop();
-                }
-            }
-            _ => {
-                commons.pop();
-            }
-        }
     }
 }
 
@@ -615,7 +593,7 @@ mod tests {
 
         // The first 2-3 commons should be consecutive cards from common_a
         // (starting from position 0). Exception: a rare/mythic foil displaces
-        // the first A-run common (remove_from_run "a"), shifting the start to
+        // the first A-run common (`generate_foil`), shifting the start to
         // sheet position 1 — this made the test flaky (~1.4% of packs) before
         // it modeled displacement.
         let a_run = &sheets.common_a;
@@ -845,6 +823,49 @@ mod tests {
                 assert_eq!(seat_packs.len(), 3);
             }
         }
+    }
+
+    /// Issue #1099: every foil takes its common from the run it says it
+    /// does, in every variant. Counted by run, a pack's commons plus the
+    /// one its foil displaced are one of its C sheet's variants. A guessed
+    /// B boundary at index 3 took the fourth A card of a 4A+3B+2C2 pack
+    /// while recording `displaced_run: "b"`.
+    #[test]
+    fn a_foil_displaces_a_common_of_the_run_it_names() {
+        let sheets = load_sheets();
+        let run_of = |card: &str| -> usize {
+            let runs = [&sheets.common_a, &sheets.common_b];
+            let hits: Vec<usize> = runs.iter().enumerate()
+                .filter(|(_, r)| r.iter().any(|c| c == card)).map(|(i, _)| i).collect();
+            match hits.as_slice() {
+                [i] => *i,
+                [] => 2,
+                _ => panic!("{card} is on both the A and the B run; this count cannot place it"),
+            }
+        };
+        let mut rng = seeded_rng(1099);
+        let mut state = CollationState::new_random(&mut rng);
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..40_000 {
+            let is_c1 = state.pack_index.is_multiple_of(2);
+            let pack = generate_pack(&sheets, &mut state, &mut rng);
+            let Some(Foil::NonDfc { displaced_run, .. }) = &pack.foil else { continue };
+            let mut count = [0usize; 3];
+            for c in &pack.commons {
+                count[run_of(c)] += 1;
+            }
+            match displaced_run.as_str() {
+                "a" => count[0] += 1,
+                "b" => count[1] += 1,
+                _ => count[2] += 1,
+            }
+            let variants = if is_c1 { &sheets.c1_variants } else { &sheets.c2_variants };
+            assert!(variants.contains(&(count[0], count[1], count[2])),
+                "displaced {displaced_run}: {count:?} is no variant of {variants:?}");
+            seen.insert((count[0], count[1], count[2], displaced_run.clone()));
+        }
+        // The case that broke: a 4A+3B+2C2 pack with an uncommon foil.
+        assert!(seen.contains(&(4, 3, 2, "b".to_string())), "{seen:?}");
     }
 
     #[test]
