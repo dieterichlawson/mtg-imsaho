@@ -332,10 +332,124 @@ fn cast_is_refused_as(state: &mut GameState, registry: &CardRegistry, cast: Acti
     let Action::CastSpell { object_id: spell, .. } = cast else { panic!("a cast") };
     let caster = state.priority_player.expect("the caster has priority");
     let (pool, zone) = (state.players[usize::from(caster.0)].mana_pool.total(), state.get_object(spell).expect("an object").zone);
+    let before = everything(state);
     play(state, registry, &cast);
     assert!(state.get_object(spell).expect("still an object").zone == zone && state.stack.is_empty() && state.awaiting_action.is_none());
     assert!(state.players[usize::from(caster.0)].mana_pool.total() == pool && state.priority_player == Some(caster));
+    // And nothing else of the game is other than it was.
+    assert!(everything(state) == before);
     std::mem::forget(cast);
+}
+
+/// What a game can see of one object: where it is and whose, and what a
+/// permanent carries. Not what the engine keeps for its own use (how
+/// often it has changed zone, what it last was): a rule reads none of it.
+#[derive(Clone, Copy, PartialEq)]
+struct Seen {
+    zone: Zone,
+    owner: PlayerId,
+    controller: PlayerId,
+    tapped: bool,
+    damage: u32,
+    /// Came under its controller's control this turn (CR 302.6): asked
+    /// only of a permanent.
+    sick: bool,
+    power: Option<i32>,
+    toughness: Option<i32>,
+    counters: u32,
+    shields: u32,
+    attached_to: Option<ObjectId>,
+    attached_to_player: Option<PlayerId>,
+    transformed: bool,
+    token: bool,
+}
+
+/// What a game can see of one player.
+#[derive(Clone, Copy, PartialEq)]
+struct SeenOfAPlayer {
+    life: i32,
+    lost: bool,
+    mana: u32,
+    land_plays: u32,
+    library: [Option<ObjectId>; 6],
+    graveyard: [Option<ObjectId>; 6],
+}
+
+/// The whole game as a rule can see it: every object, each player, and
+/// whose turn and priority it is. A proof takes it before a spell is
+/// cast, changes in it what the card's text says is done, and asks that
+/// the game after is that and nothing else ([`everything`]): "and
+/// nothing else is done" of the whole game, where a neighbour and the
+/// life totals were looked at.
+#[derive(Clone, Copy, PartialEq)]
+struct Everything {
+    objects: [Option<Seen>; 24],
+    players: [SeenOfAPlayer; 2],
+    stack: usize,
+    effects_until_end_of_turn: usize,
+    damage_waiting: usize,
+    turn: u32,
+    step: Step,
+    active: PlayerId,
+    priority: Option<PlayerId>,
+    asked: bool,
+    a_creature_died: bool,
+}
+
+fn everything(state: &GameState) -> Everything {
+    let mut objects = [None; 24];
+    for o in state.objects.values() {
+        let at = usize::try_from(o.id.0).expect("a small id");
+        assert!(at < 24);
+        objects[at] = Some(Seen {
+            zone: o.zone,
+            owner: o.owner,
+            controller: o.controller,
+            tapped: o.tapped,
+            damage: o.damage_marked,
+            sick: o.zone == Zone::Battlefield && o.summoning_sick,
+            power: o.power,
+            toughness: o.toughness,
+            counters: o.counters.values().sum(),
+            shields: o.regeneration_shields,
+            attached_to: o.attached_to,
+            attached_to_player: o.attached_to_player,
+            transformed: o.is_transformed,
+            token: o.is_token,
+        });
+    }
+    let player = |p: usize| {
+        let (mut library, mut graveyard) = ([None; 6], [None; 6]);
+        let of = &state.players[p];
+        assert!(of.library_order.len() <= 6 && of.graveyard_order.len() <= 6);
+        for (i, id) in of.library_order.iter().enumerate() {
+            library[i] = Some(*id);
+        }
+        for (i, id) in of.graveyard_order.iter().enumerate() {
+            graveyard[i] = Some(*id);
+        }
+        SeenOfAPlayer { life: of.life, lost: of.lost, mana: of.mana_pool.total(), land_plays: of.land_plays_remaining, library, graveyard }
+    };
+    Everything {
+        objects,
+        players: [player(0), player(1)],
+        stack: state.stack.len(),
+        effects_until_end_of_turn: state.until_end_of_turn.len(),
+        damage_waiting: state.pending_damage.len(),
+        turn: state.turn_number,
+        step: state.step,
+        active: state.active_player,
+        priority: state.priority_player,
+        asked: state.awaiting_action.is_some(),
+        a_creature_died: state.creature_died_this_turn,
+    }
+}
+
+impl Everything {
+    /// What is seen of `id`, to be changed to what a card's text says.
+    fn of(&mut self, id: ObjectId) -> &mut Seen {
+        self.objects[usize::try_from(id.0).expect("a small id")].as_mut().expect("an object of the game")
+    }
 }
 
 /// A harness for each row, as in `engine_under_card`.
@@ -2120,6 +2234,7 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
     let spell = state.create_object(card, caster, Zone::Hand, None, None);
     mana_for_symbols(&mut state, caster, printed.cost);
     let before = as_it_is(&state, beside);
+    let mut expected = everything(&state);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
 
@@ -2128,6 +2243,11 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
     assert!(state.players[0].life == 20 && state.players[1].life == 20);
     assert!(state.awaiting_action.is_none());
     assert!(state.players[0].graveyard_order.is_empty() && state.players[1].graveyard_order.is_empty());
+    // The whole game after is the game before with the card on the
+    // battlefield, new there this turn, and the mana spent: nothing else.
+    (expected.of(spell).zone, expected.of(spell).sick) = (Zone::Battlefield, true);
+    expected.players[usize::from(cast.by)].mana = 0;
+    assert!(everything(&state) == expected);
     std::mem::forget((registry, state));
 }
 
@@ -2209,10 +2329,17 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
     state.priority_player = Some(caster);
     let spell = state.create_object(card, caster, Zone::Hand, None, None);
     mana_for_symbols(&mut state, caster, printed.cost);
+    let mut expected = everything(&state);
 
     if printed.keywords.contains(&Keyword::Flash) {
         cast_and_resolve(&mut state, &registry, spell, Vec::new());
         is_there_as_printed(&state, &registry, spell, printed, caster);
+        // As in its caster's own main phase, and priority is the active
+        // player's once it has resolved (CR 117.3b).
+        (expected.of(spell).zone, expected.of(spell).sick) = (Zone::Battlefield, true);
+        expected.players[0].mana = 0;
+        expected.priority = Some(state.active_player);
+        assert!(everything(&state) == expected);
     } else {
         cast_is_refused(&mut state, &registry, spell, Vec::new());
     }
