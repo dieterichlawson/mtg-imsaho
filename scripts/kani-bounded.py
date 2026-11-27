@@ -326,7 +326,7 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
                              if fn.endswith('*') else by_name.get(fn, []))
                     for m in named:
                         caps.update({l: n for l in loops_of if (l == f'{m}.{k}' if k else l.startswith(m + '.'))})
-    learned = load_loops()
+    learned = load_loops(h)
     took, rounds = 0.0, 0
     while True:
         rounds += 1
@@ -352,30 +352,50 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
         if result != 'FAILED' or not new or others:
             return (result, f'{took:.0f}s', why + (f' rounds {rounds}' if rounds > 1 else ''))
         learned |= new
-        save_loops(learned)
+        save_loops(learned, h)
 
 
 LOOPS_LOCK = threading.Lock()
 
 
-def load_loops():
+# The modules whose harnesses keep the loop bounds they learn in a file of
+# their own, beside --loops: `loop-bounds.NAME.txt`. A loop learned is
+# unwound to each harness's own bound in every harness after, and the
+# proofs that go through the stack learn the loops of the state-based
+# check and the trigger collectors, over a whole board's objects. Kept
+# with the rest, those would be unwound further in every engine proof of
+# those functions, whose recorded results are of the bounds they had.
+OWN_LOOPS = {'proofs::through_the_stack::': 'through-the-stack'}
+
+
+def own_loops_file(h):
+    for prefix, name in OWN_LOOPS.items():
+        if h.startswith(prefix):
+            return os.path.join(os.path.dirname(LOOPS), f'loop-bounds.{name}.txt')
+    return LOOPS
+
+
+def load_loops(h=''):
+    """The loops learned that apply to `h`: the shared ones and its module's own."""
     with LOOPS_LOCK:
-        return read_loops()
+        return read_loops(LOOPS) | read_loops(own_loops_file(h))
 
 
-def read_loops():
-    if not os.path.exists(LOOPS):
+def read_loops(path):
+    if not os.path.exists(path):
         return set()
-    return {tuple(l.rsplit(' ', 1)) for l in open(LOOPS).read().splitlines() if l.strip()}
+    return {tuple(l.rsplit(' ', 1)) for l in open(path).read().splitlines() if l.strip()}
 
 
-def save_loops(loops):
+def save_loops(loops, h=''):
     # Merged with what is there: a harness verified alongside may have
-    # raised loops of its own since this one read the file.
+    # raised loops of its own since this one read the file. Only what the
+    # shared file does not hold goes into a module's own.
     with LOOPS_LOCK:
-        os.makedirs(os.path.dirname(LOOPS), exist_ok=True)
-        merged = read_loops() | loops
-        with open(LOOPS, 'w') as f:
+        path = own_loops_file(h)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        merged = read_loops(path) | (loops if path == LOOPS else loops - read_loops(LOOPS))
+        with open(path, 'w') as f:
             for name, n in sorted(merged):
                 f.write(f'{name} {n}\n')
 
