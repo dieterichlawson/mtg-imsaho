@@ -36,7 +36,11 @@ pub fn changed_fields<'a>(a: &'a serde_json::Value, b: &serde_json::Value) -> Ve
 
 /// `state` with the cards of every hand but `keep`'s dealt anew among its
 /// objects, each object taking the next one's card: the same game to
-/// everyone who cannot see those hands.
+/// everyone who cannot see those hands. The object keeps its own id and
+/// zone-change count. Each of its moves was public, and a public row reads
+/// the count: a damage record drops a source that has moved since it dealt
+/// the damage (CR 400.7). Moving the count with the card changed the
+/// game's history, not just the hidden card (#1091, #1096).
 pub fn hands_dealt_anew(state: &GameState, keep: PlayerId) -> GameState {
     let mut dealt = state.clone();
     for other in state.players.iter().filter(|p| p.id != keep) {
@@ -44,6 +48,7 @@ pub fn hands_dealt_anew(state: &GameState, keep: PlayerId) -> GameState {
         for (i, id) in hand.iter().enumerate() {
             let mut next = state.get_object(hand[(i + 1) % hand.len()]).expect("in the hand").clone();
             next.id = *id;
+            next.zone_change_count = state.get_object(*id).expect("in the hand").zone_change_count;
             dealt.objects.insert(*id, next);
         }
     }
