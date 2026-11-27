@@ -14,12 +14,14 @@ proofs::actions::trigger_order::the_first_trigger_chosen_goes_on_now  # OOM
 proofs::actions::trigger_order::the_second_trigger_chosen_goes_on_now  # OOM
 proofs::actions::trigger_order::a_trigger_past_those_offered_is_refused  # OOM
 proofs::actions::trigger_resolving::a_creature_dying_trigger_resolves_with_the_dead_and_its_target_unless_it_is_illegal  # OOM
+proofs::through_the_stack::divination_in_the_game_loop_draws_the_top_two_of_three  # NOT_RUN
+proofs::through_the_stack::doom_blade_in_the_game_loop_is_not_cast_at_an_artifact  # NOT_RUN
+proofs::through_the_stack::bramblecrush_in_the_game_loop_destroys_the_second_players_artifact  # NOT_RUN
+proofs::through_the_stack::doom_blade_in_the_game_loop_destroys_the_second_players_creature  # NOT_RUN
 proofs::through_the_stack::divination_cast_by_the_first_player_with_one_card_draws_it_and_loses  # NOT_RUN
-proofs::through_the_stack::doom_blade_destroys_the_second_players_creature  # TIMEOUT
 proofs::through_the_stack::doom_blade_cast_by_the_second_player_destroys_the_first_players  # NOT_RUN
 proofs::through_the_stack::doom_blade_destroys_your_own_creature  # NOT_RUN
 proofs::through_the_stack::doom_blade_destroys_a_creature_you_control_and_the_other_player_owns  # NOT_RUN
-proofs::through_the_stack::doom_blade_at_an_indestructible_creature_does_nothing_to_it  # TIMEOUT
 proofs::through_the_stack::doom_blade_does_nothing_once_its_target_is_gone  # NOT_RUN
 proofs::through_the_stack::bramblecrush_destroys_a_planeswalker  # NOT_RUN
 proofs::through_the_stack::bramblecrush_is_not_cast_at_a_creature  # NOT_RUN
@@ -283,7 +285,3 @@ proofs::through_the_stack::spider_spawning_makes_one_spider_for_one_creature_car
 proofs::through_the_stack::spider_spawning_makes_two_spiders_for_two_creature_cards  # NOT_RUN
 proofs::through_the_stack::spider_spawning_cast_by_the_second_player_makes_them_two_spiders  # NOT_RUN
 proofs::through_the_stack::spider_spawning_flashed_back_makes_a_spider_and_is_exiled  # NOT_RUN
-proofs::through_the_stack::divination_in_the_game_loop_draws_the_top_two_of_three  # NOT_RUN
-proofs::through_the_stack::doom_blade_in_the_game_loop_is_not_cast_at_an_artifact  # NOT_RUN
-proofs::through_the_stack::bramblecrush_in_the_game_loop_destroys_the_second_players_artifact  # NOT_RUN
-proofs::through_the_stack::doom_blade_in_the_game_loop_destroys_the_second_players_creature  # NOT_RUN
