@@ -60,10 +60,48 @@ use crate::types::{CardType, ManaSymbol, ManaType, Step, Zone};
 /// on (117.3-117.4), the top of the stack resolved if that was the last
 /// player's pass.
 fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
+    if IN_THE_GAME_LOOP.load(core::sync::atomic::Ordering::Relaxed) {
+        return play_in_the_game_loop(state, registry, action);
+    }
     crate::engine::before_priority(state, registry);
     let cast_prompt_player = crate::engine::cast_time_prompt_player(state);
     crate::engine::submit_action_on(state, action, registry);
     crate::engine::hand_on_priority(state, action, cast_prompt_player, 2, registry);
+}
+
+/// Whether [`play`] hands its action to the engine's own game loop
+/// ([`play_in_the_game_loop`]): set by a harness of [`in_the_game_loop`]
+/// before it does anything else, and by no other.
+static IN_THE_GAME_LOOP: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// One action played by the engine's own game loop, the harness in the
+/// seat and nowhere else: `engine::resume_game_loop`, the loop every
+/// runner of a game calls, is given the state and a seat that answers
+/// `action` the first time it is asked for a decision and stops the
+/// harness the second (`AbandonGame`, as a runner stops a game it has
+/// seen enough of). Everything between is the engine's and none of it the
+/// harness's: what is checked before a player receives priority, the
+/// actions it offers (`legal_actions`), its refusal to play an answer it
+/// did not offer, `submit_action` with its copy of the game, and priority
+/// handed on.
+///
+/// The loop passes for a player it offers nothing worth a decision. With
+/// `observe_every_submit`, the engine's own setting for a runner that
+/// wants to see every action, it asks the seat for those passes too:
+/// without it a harness could not stop the game after one decision, and
+/// the loop would play on through the turn.
+fn play_in_the_game_loop(state: &mut GameState, registry: &CardRegistry, action: &Action) {
+    let mut answered = false;
+    state.observe_every_submit = true;
+    crate::engine::resume_game_loop(state, registry, |_, _, _| {
+        if answered {
+            Action::AbandonGame
+        } else {
+            answered = true;
+            action.clone()
+        }
+    });
+    assert!(answered);
 }
 
 /// A registry of the blank card and `card`, and a two-player game: the
@@ -319,6 +357,23 @@ macro_rules! through_the_stack {
     )*};
 }
 
+/// The same, each action played by the engine's own game loop
+/// ([`play_in_the_game_loop`]).
+macro_rules! in_the_game_loop {
+    ($($name:ident: $proof:ident($open:expr);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(16)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        fn $name() {
+            IN_THE_GAME_LOOP.store(true, core::sync::atomic::Ordering::Relaxed);
+            $proof($open);
+        }
+    )*};
+}
 use crate::cards::divination::Divination;
 
 // "Draw two cards.": each player casting, a library of none, one, two and three.
@@ -2022,4 +2077,19 @@ through_the_stack! {
     spider_spawning_makes_two_spiders_for_two_creature_cards: spider_spawning((2, FIRST));
     spider_spawning_cast_by_the_second_player_makes_them_two_spiders: spider_spawning((2, SECOND));
     spider_spawning_flashed_back_makes_a_spider_and_is_exiled: spider_spawning((1, FLASHBACK));
+}
+
+// The engine's own game loop playing each action, where the rows above
+// name the action to the engine themselves. Four rows to begin with, one
+// of each kind of thing a spell does here (it resolves and nothing dies,
+// it is refused, a permanent is destroyed, a creature dies), to find out
+// what the loop takes: `legal_actions` alone ran out of memory at 11 GB
+// and `submit_action`'s copy at 6 GB on a machine of 15 GB. If the loop
+// fits a larger machine, every row above is to be played this way and
+// `play`'s other half goes.
+in_the_game_loop! {
+    divination_in_the_game_loop_draws_the_top_two_of_three: draws((Box::new(Divination), 2, 3, FIRST));
+    doom_blade_in_the_game_loop_is_not_cast_at_an_artifact: is_not_cast_at((Box::new(DoomBlade), Permanent::Artifact, FIRST, 1));
+    bramblecrush_in_the_game_loop_destroys_the_second_players_artifact: destroys((Box::new(Bramblecrush), Permanent::Artifact, FIRST, (1, 1), Guard::Nothing));
+    doom_blade_in_the_game_loop_destroys_the_second_players_creature: destroys((Box::new(DoomBlade), Permanent::Creature, FIRST, (1, 1), Guard::Nothing));
 }
