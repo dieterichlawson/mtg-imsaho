@@ -47,16 +47,16 @@ on:
         options: [github, aws]
         default: github
       instance_type:
-        description: "aws only: the machine. r7a.8xlarge is 32 cores and 256 GB."
-        default: r7a.8xlarge
+        description: "aws only: the machines, tried in order. Each of these is 32 vCPUs and 256 GB; r7a's are whole cores."
+        default: r7a.8xlarge r7i.8xlarge r6a.8xlarge r6i.8xlarge
       market:
         description: "aws only: spot (cheaper, and may be reclaimed under the run) or on-demand."
         type: choice
         options: [spot, on-demand]
         default: spot
       region:
-        description: "aws only: the region."
-        default: us-east-1
+        description: "aws only: the regions, tried in order."
+        default: us-east-1 us-east-2 us-west-2
       shares:
         description: "aws only: how many shares run at once, each up to `cap` gigabytes."
         default: "16"

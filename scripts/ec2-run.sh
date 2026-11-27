@@ -7,9 +7,11 @@
 # .github/workflows/proofs-full.yml (machine: aws), or by hand with AWS
 # credentials in the environment.
 #
-#   EC2_TYPE       the instance type (r7a.8xlarge: 32 cores, 256 GB)
+#   EC2_TYPE       the instance types, tried in order (r7a.8xlarge: 32
+#                  cores, 256 GB)
 #   EC2_MARKET     spot (the default) or on-demand
-#   EC2_REGION     us-east-1
+#   EC2_MAX_PRICE  1.25: the most a Spot machine may cost, dollars an hour
+#   EC2_REGION     the regions, tried in order (us-east-1)
 #   EC2_DISK_GB    500
 #   EC2_SETUP      kani (Rust and Kani installed before COMMAND, the
 #                  default) or none
@@ -45,13 +47,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 command=${1:?usage: scripts/ec2-run.sh COMMAND}
-type=${EC2_TYPE:-r7a.8xlarge}
+types=${EC2_TYPE:-r7a.8xlarge}
+regions=${EC2_REGION:-us-east-1}
 market=${EC2_MARKET:-spot}
+max_price=${EC2_MAX_PRICE:-1.25}
 disk=${EC2_DISK_GB:-500}
 setup=${EC2_SETUP:-kani}
 max_hours=${EC2_MAX_HOURS:-6}
 wait_minutes=${EC2_WAIT_MINUTES:-320}
-export AWS_DEFAULT_REGION=${EC2_REGION:-us-east-1} AWS_PAGER=""
+export AWS_DEFAULT_REGION=${regions%% *} AWS_PAGER=""
 repo=${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY: owner/name of the repository to check out}
 sha=${GITHUB_SHA:-$(git rev-parse HEAD)}
 
@@ -93,13 +97,6 @@ aws() {
 aws sts get-caller-identity --query UserId --output text > /dev/null
 echo "the AWS credentials are accepted"
 
-# The newest Ubuntu 24.04 that Canonical publishes, and its root device.
-found=$(aws ec2 describe-images --owners 099720109477 \
-    --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' 'Name=state,Values=available' \
-    --query 'sort_by(Images,&CreationDate)[-1].[ImageId,RootDeviceName]' --output text)
-read -r image root <<< "$found" || true
-case "${image:-}" in ami-*) ;; *) echo "no Ubuntu 24.04 image found in $AWS_DEFAULT_REGION" >&2; exit 2 ;; esac
-
 # A key for this run only, given to the machine as it boots; and the hour
 # it turns itself off.
 ssh-keygen -q -t ed25519 -N '' -C kani-proofs -f "$work/key"
@@ -111,29 +108,48 @@ runcmd:
   - shutdown -h +$((max_hours * 60))
 EOF
 
-# A network of its own, made on the first run and kept: an account need
-# not have a default one (the first run here found none), and this uses
-# none the account has. Each piece is looked for before it is made, so
-# that a run stopped half-way through making them is finished by the next.
+# What a launch needs of a region: the newest Ubuntu 24.04 that Canonical
+# publishes there, with its root device, and a network of this script's
+# own, made on the first run there and kept. An account need not have a
+# default network (the first run here found none), and this uses none the
+# account has. Each piece is looked for before it is made, so that a run
+# stopped half-way through making them is finished by the next.
 tags='Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs}]'
-vpc=$(aws ec2 describe-vpcs --filters Name=tag:purpose,Values=kani-proofs --query 'Vpcs[0].VpcId' --output text)
-if [ "$vpc" = None ]; then
-    vpc=$(aws ec2 create-vpc --cidr-block 10.77.0.0/16 --tag-specifications "ResourceType=vpc,$tags" --query Vpc.VpcId --output text)
-    aws ec2 wait vpc-available --vpc-ids "$vpc"
-    echo "made the network kani-proofs ($vpc)"
-fi
-gateway=$(aws ec2 describe-internet-gateways --filters Name=tag:purpose,Values=kani-proofs \
-    --query 'InternetGateways[0].InternetGatewayId' --output text)
-if [ "$gateway" = None ]; then
-    gateway=$(aws ec2 create-internet-gateway --tag-specifications "ResourceType=internet-gateway,$tags" \
-        --query InternetGateway.InternetGatewayId --output text)
-fi
-aws ec2 attach-internet-gateway --vpc-id "$vpc" --internet-gateway-id "$gateway" 2> "$work/gateway.err" \
-    || grep -q Resource.AlreadyAssociated "$work/gateway.err" || { cat "$work/gateway.err" >&2; exit 2; }
-table=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpc" Name=association.main,Values=true \
-    --query 'RouteTables[0].RouteTableId' --output text)
-aws ec2 create-route --route-table-id "$table" --destination-cidr-block 0.0.0.0/0 --gateway-id "$gateway" > /dev/null 2> "$work/route.err" \
-    || grep -q RouteAlreadyExists "$work/route.err" || { cat "$work/route.err" >&2; exit 2; }
+in_region() {
+    local found gateway table
+    found=$(aws ec2 describe-images --owners 099720109477 \
+        --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' 'Name=state,Values=available' \
+        --query 'sort_by(Images,&CreationDate)[-1].[ImageId,RootDeviceName]' --output text)
+    read -r image root <<< "$found" || true
+    case "${image:-}" in ami-*) ;; *) echo "no Ubuntu 24.04 image found in $AWS_DEFAULT_REGION" >&2; exit 2 ;; esac
+
+    vpc=$(aws ec2 describe-vpcs --filters Name=tag:purpose,Values=kani-proofs --query 'Vpcs[0].VpcId' --output text)
+    if [ "$vpc" = None ]; then
+        vpc=$(aws ec2 create-vpc --cidr-block 10.77.0.0/16 --tag-specifications "ResourceType=vpc,$tags" --query Vpc.VpcId --output text)
+        aws ec2 wait vpc-available --vpc-ids "$vpc"
+        echo "made the network kani-proofs in $AWS_DEFAULT_REGION"
+    fi
+    gateway=$(aws ec2 describe-internet-gateways --filters Name=tag:purpose,Values=kani-proofs \
+        --query 'InternetGateways[0].InternetGatewayId' --output text)
+    if [ "$gateway" = None ]; then
+        gateway=$(aws ec2 create-internet-gateway --tag-specifications "ResourceType=internet-gateway,$tags" \
+            --query InternetGateway.InternetGatewayId --output text)
+    fi
+    aws ec2 attach-internet-gateway --vpc-id "$vpc" --internet-gateway-id "$gateway" 2> "$work/gateway.err" \
+        || grep -q Resource.AlreadyAssociated "$work/gateway.err" || { cat "$work/gateway.err" >&2; exit 2; }
+    table=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpc" Name=association.main,Values=true \
+        --query 'RouteTables[0].RouteTableId' --output text)
+    aws ec2 create-route --route-table-id "$table" --destination-cidr-block 0.0.0.0/0 --gateway-id "$gateway" > /dev/null 2> "$work/route.err" \
+        || grep -q RouteAlreadyExists "$work/route.err" || { cat "$work/route.err" >&2; exit 2; }
+
+    # One security group, kept between runs with no rule in it.
+    group=$(aws ec2 describe-security-groups --filters Name=group-name,Values=kani-proofs "Name=vpc-id,Values=$vpc" \
+        --query 'SecurityGroups[0].GroupId' --output text)
+    if [ "$group" = None ]; then
+        group=$(aws ec2 create-security-group --group-name kani-proofs --vpc-id "$vpc" \
+            --description "SSH to the Kani proof machines, opened for a run and closed after" --query GroupId --output text)
+    fi
+}
 
 # The network's subnet in a zone, made if it is not there: 10.77.0.0/24 in
 # the region's zone a, 10.77.1.0/24 in b, and so on.
@@ -149,56 +165,61 @@ subnet_in() {
     echo "$found"
 }
 
-# One security group, kept between runs with no rule in it; port 22 is
-# opened to this machine's address for the run and closed after.
-group=$(aws ec2 describe-security-groups --filters Name=group-name,Values=kani-proofs "Name=vpc-id,Values=$vpc" \
-    --query 'SecurityGroups[0].GroupId' --output text)
-if [ "$group" = None ]; then
-    group=$(aws ec2 create-security-group --group-name kani-proofs --vpc-id "$vpc" \
-        --description "SSH to the Kani proof machines, opened for a run and closed after" --query GroupId --output text)
-fi
-me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
-aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
-    || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
-
-# The zones that offer the type, tried in turn: a zone may have none of it
-# to spare, above all on the Spot market.
-zones=$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
-    --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text)
-[ -n "$zones" ] || { echo "$type is not offered in $AWS_DEFAULT_REGION" >&2; exit 2; }
-
-launch=(--image-id "$image" --instance-type "$type" --count 1
-        --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
-        --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
-        --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
-                             "ResourceType=volume,Tags=[{Key=purpose,Value=kani-proofs}]")
-if [ "$market" = spot ]; then
-    launch+=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
-fi
-for zone in $zones; do
-    subnet=$(subnet_in "$zone")
-    if id=$(aws ec2 run-instances "${launch[@]}" \
-            --network-interfaces "DeviceIndex=0,SubnetId=$subnet,AssociatePublicIpAddress=true,Groups=$group" \
-            --query 'Instances[0].InstanceId' --output text 2> "$work/launch.err"); then
-        break
-    fi
-    id=""
-    cat "$work/launch.err" >&2
-    # Asking another zone does not change what the account may have.
-    if grep -Eq 'MaxSpotInstanceCountExceeded|VcpuLimitExceeded|UnauthorizedOperation|PendingVerification|OptInRequired' "$work/launch.err"; then
-        break
-    fi
+# Each region, each type, each zone that offers it, in turn, until one has
+# a machine: a zone may have none of a type to spare, above all on the
+# Spot market, where the third run here found none of the one type it
+# asked for in any zone of its one region.
+quota=""
+for region in $regions; do
+    export AWS_DEFAULT_REGION=$region
+    in_region
+    for type in $types; do
+        zones=$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
+            --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text)
+        [ -n "$zones" ] || { echo "$type is not offered in $region"; continue; }
+        launch=(--image-id "$image" --instance-type "$type" --count 1
+                --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
+                --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
+                --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
+                                     "ResourceType=volume,Tags=[{Key=purpose,Value=kani-proofs}]")
+        if [ "$market" = spot ]; then
+            launch+=(--instance-market-options "MarketType=spot,SpotOptions={MaxPrice=$max_price,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}")
+        fi
+        for zone in $zones; do
+            subnet=$(subnet_in "$zone")
+            if id=$(aws ec2 run-instances "${launch[@]}" \
+                    --network-interfaces "DeviceIndex=0,SubnetId=$subnet,AssociatePublicIpAddress=true,Groups=$group" \
+                    --query 'Instances[0].InstanceId' --output text 2> "$work/launch.err"); then
+                break 3
+            fi
+            id=""
+            why=$(sed -n 's/.*An error occurred (\([A-Za-z.]*\)).*/\1/p' "$work/launch.err" | head -n 1)
+            echo "no $market $type in $zone: ${why:-$(tail -n 1 "$work/launch.err")}"
+            case "$why" in
+                # What the account may have at once, which another zone
+                # does not change and a smaller type may.
+                MaxSpotInstanceCountExceeded | VcpuLimitExceeded) quota=yes; break ;;
+                # What no other zone, type or region changes.
+                UnauthorizedOperation | PendingVerification | OptInRequired | AuthFailure) cat "$work/launch.err" >&2; exit 2 ;;
+            esac
+        done
+    done
 done
 if [ -z "$id" ]; then
-    echo "no $market $type was to be had in $AWS_DEFAULT_REGION (the refusals are above)" >&2
-    if grep -Eq 'MaxSpotInstanceCountExceeded|VcpuLimitExceeded' "$work/launch.err"; then
-        echo "the account's vCPU quota is below this machine's: Service Quotas, EC2," >&2
+    echo "no $market machine was to be had: none of $types, in $regions" >&2
+    if [ -n "$quota" ]; then
+        echo "the account's vCPU quota is below a machine asked for: Service Quotas, EC2," >&2
         echo "'All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests' for Spot," >&2
         echo "'Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances' otherwise" >&2
     fi
     exit 2
 fi
-echo "launched $id: $market $type, $disk GB, in $AWS_DEFAULT_REGION; it turns itself off in $max_hours hours"
+echo "launched $id: $market $type, $disk GB, in $zone; it turns itself off in $max_hours hours"
+
+# Port 22, opened to this machine's address for the run and closed after.
+me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
+aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
+    || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
 
 aws ec2 wait instance-running --instance-ids "$id"
 address=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
