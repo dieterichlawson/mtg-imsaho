@@ -78,7 +78,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   pack exactly once, and every card printed into a pack ends in exactly
   one seat's pool. `filter_implemented` drops unimplemented cards before
   packs are built — quantify what that removes and whether it skews the
-  rarity or colour balance the collation intends
+  rarity or colour balance the collation intends. Re-run 2026-11-27
+  (#1099): a scratch `mtg-draft/examples/` probe looping `generate_pack`
+  400,000 times, each pack's commons classified by run (`data.runs`) and
+  keyed by foil rarity and `displaced_run`, shows every slot rule at once.
+  Each displacement must remove a card from the run it names, in every
+  variant (`remove_from_run` guesses the B boundary at index 3). Foil rate,
+  foil rarities, per-card rates and conservation held; ISD loses no card to
+  `filter_implemented`. Conservation is cheapest from a stub night's
+  `positions.jsonl`: each position's `available` is the upstream seat's
+  previous pack minus its pick, and pick 14 is what pick 13 left
 - D2 [Vandal] the silent first-card pick: `parse_pick_response` falls back
   to `available[0]` when a seat's response doesn't parse. Point
   `CLAUDE_CODE_BIN` at a wrapper returning junk, an out-of-range index,
@@ -1066,7 +1075,16 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   Tried 2026-10-22 (#899-#901, #912): run `ledger.py`'s `log_health` itself
   on a log with forced pick re-asks rather than trusting the report's
   sentence, and kill the runner from a script file — `pgrep -f` from the
-  same shell line matches its own command and kills the shell (exit 144)
+  same shell line matches its own command and kills the shell (exit 144).
+  Tried 2026-11-27 (#1097, #1098): make every between-games answer fail
+  twice with a *distinct* first and second answer (a wrapper around the
+  stub that answers `maindeck: [1]`, then `[2, 2]` when the prompt starts
+  "Your answer could not be played"). Then check that each bullet's "First
+  answer" really is the first. Also check that some number in the record
+  counts the decks kept in a seat's place: the runner's "Answers the harness
+  could not use", a standings tag, the headline. The real night's
+  re-ask list is the place to start a D48 probe: read each bullet's thought
+  against its answer
 - D49 [proposed 2026-10-21, from the one-port hosting (`server.rs`
   `proxy_game_page`)] one port, nothing else: host `--bind 0.0.0.0` with a
   human seat and open the match link from another machine (or another
