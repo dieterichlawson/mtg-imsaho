@@ -21,4 +21,5 @@ mod cards;
 mod kind_map;
 mod decide;
 mod mana_payment;
+mod through_the_stack;
 mod vec_map;

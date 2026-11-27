@@ -1,5 +1,5 @@
 # What a pull request proves: the fastest proved harness of each module of
-# the proofs, fastest first, 31 of the 190 modules within 450 s
+# the proofs, fastest first, 31 of the 191 modules within 450 s
 # (441 s in the last run). Written by scripts/kani-tiers.py write.
 proofs::mana_payment::each_type_has_its_own_slot
 proofs::actions::mana_cost::a_cost_of_no_symbols_is_built_as_none
