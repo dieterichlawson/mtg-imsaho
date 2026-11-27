@@ -291,7 +291,20 @@ fn draws((card, n, cards, cast): (Box<dyn CardBehavior>, usize, usize, Cast)) {
     let spell = a_spell(&mut state, &registry, card, cast);
 
     if cards >= n {
+        let mut expected = everything(&state);
         cast_and_resolve(&mut state, &registry, spell, Vec::new());
+        // The whole game after is the game before with the top `n` cards
+        // of the caster's library in their hand, the library that much
+        // shorter, and the spell resolved: nothing else.
+        for k in 0..n {
+            expected.of(libraries[mine][k].expect("made")).zone = Zone::Hand;
+        }
+        expected.players[mine].library.copy_within(n.., 0);
+        for slot in &mut expected.players[mine].library[6 - n..] {
+            *slot = None;
+        }
+        expected.has_resolved(spell, cast, state.active_player);
+        assert!(everything(&state) == expected);
     } else {
         // A draw from a library too small ends the game as the state-based
         // actions are checked, before anyone has priority again.
@@ -449,6 +462,42 @@ impl Everything {
     /// What is seen of `id`, to be changed to what a card's text says.
     fn of(&mut self, id: ObjectId) -> &mut Seen {
         self.objects[usize::try_from(id.0).expect("a small id")].as_mut().expect("an object of the game")
+    }
+
+    /// `id` goes to `zone` from the battlefield or the stack, and is a
+    /// new object there with no memory of what it was (CR 400.7): its
+    /// owner's, untapped, undamaged, with no counter, shield or
+    /// attachment, its front face up.
+    fn goes_to(&mut self, id: ObjectId, zone: Zone) {
+        let o = self.of(id);
+        *o = Seen { zone, controller: o.owner, tapped: false, damage: 0, sick: false, counters: 0, shields: 0, attached_to: None, attached_to_player: None, transformed: false, ..*o };
+    }
+
+    /// `id` goes to its owner `player`'s graveyard, the newest card there.
+    fn is_buried(&mut self, id: ObjectId, player: u8) {
+        self.goes_to(id, Zone::Graveyard);
+        let graveyard = &mut self.players[usize::from(player)].graveyard;
+        let at = graveyard.iter().position(Option::is_none).expect("room in the graveyard");
+        graveyard[at] = Some(id);
+    }
+
+    /// `spell`, cast as `cast`, has resolved (CR 608.2n): the mana it
+    /// was cast with is spent, it is in its owner's graveyard, or in
+    /// exile and out of that graveyard if it was cast with flashback
+    /// (702.34a), and priority is the active player's (117.3b).
+    fn has_resolved(&mut self, spell: ObjectId, cast: Cast, active: PlayerId) {
+        let caster = usize::from(cast.by);
+        self.players[caster].mana = 0;
+        self.priority = Some(active);
+        if cast.flashback {
+            self.goes_to(spell, Zone::Exile);
+            let graveyard = &mut self.players[caster].graveyard;
+            let at = graveyard.iter().position(|c| *c == Some(spell)).expect("cast from the graveyard");
+            graveyard.copy_within(at + 1.., at);
+            graveyard[5] = None;
+        } else {
+            self.is_buried(spell, cast.by);
+        }
     }
 }
 
@@ -636,8 +685,23 @@ fn destroys((card, what, cast, (owner, controller), guard): (Box<dyn CardBehavio
         in_the_declare_attackers_step(&mut state, controller);
     }
     let (before, beside_before) = (as_it_is(&state, target).expect("there"), as_it_is(&state, beside));
+    let mut expected = everything(&state);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the permanent
+    // destroyed, regenerated or left, as its guard has it, a creature's
+    // death noted, and the spell resolved: nothing else.
+    match guard {
+        Guard::Indestructible => {}
+        Guard::Shield => (expected.of(target).tapped, expected.of(target).shields) = (true, 0),
+        Guard::Nothing => {
+            expected.is_buried(target, owner);
+            expected.a_creature_died = !matches!(what, Permanent::Artifact | Permanent::Enchantment | Permanent::Land | Permanent::Planeswalker);
+        }
+    }
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state) == expected);
 
     let o = state.get_object(target).expect("still an object");
     let attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&target));
