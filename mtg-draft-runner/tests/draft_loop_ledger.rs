@@ -94,7 +94,12 @@ fn the_night_report_says_one_call_in_the_singular() {
         "health": {"reasks": 1, "unreadable": 1, "panics": 0, "harness_chose": 1, "game_calls": 1,
                    "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0,
                    "reask_reasons": [{"who": "game", "reason": "`indices` has 0 entries; it needs at least 1",
-                                      "count": 1, "answer": "{\"indices\": []}", "thought": "I would rather wait"}]},
+                                      "count": 1, "answer": "{\"indices\": []}", "thought": "I would rather wait"},
+                                     // #1097: the second answer of a deck kept after a re-ask,
+                                     // and a reason with its own full stop.
+                                     {"who": "sideboard", "reason": "Add more cards or basic lands.", "count": 1,
+                                      "answer": "{\"maindeck\":[2]}", "thought": "SECOND-TRY thought",
+                                      "settled": "asked again once, then the deck was kept"}]},
     }).to_string()).unwrap();
     std::fs::write(dir.join("nights/2099-01-01-lessons.json"), serde_json::json!({
         "seats": [{"seat": 0, "colors": "G", "record": "1-0", "lessons": [], "usage": {"output_tokens": 5}}],
@@ -111,10 +116,12 @@ fn the_night_report_says_one_call_in_the_singular() {
     for said in ["debriefs: 1 call,", "curator: 1 call,", "1 re-ask,", "1 reply no answer", "1 game answer the harness",
                  "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |",
                  // #992: what the re-ask was for.
-                 "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}` It thought: \"I would rather wait\""] {
+                 "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}` It thought: \"I would rather wait\"",
+                 "- 1 \u{d7} sideboard (asked again once, then the deck was kept): Add more cards or basic lands. Its last answer: `{\"maindeck\":[2]}` It thought: \"SECOND-TRY thought\""] {
         assert!(report.contains(said), "{said:?} in:\n{report}");
     }
     assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");
+    assert!(!report.contains(".."), "a reason's own full stop is not doubled: {report}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

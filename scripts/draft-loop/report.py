@@ -89,11 +89,16 @@ def main():
         if reasons:
             out.append("\nThe re-asks, by reason:\n")
             for r in reasons:
-                seen = f" First answer: `{r['answer']}`" if r.get("answer") else ""
+                # A settled kind is the answer the seat ended on: the deck
+                # kept after a re-ask, the table's deck after the last
+                # attempt. Its own first answer is the re-ask above (#1097).
+                said = "Its last answer" if r.get("settled") else "First answer"
+                seen = f" {said}: `{r['answer']}`" if r.get("answer") else ""
                 # What the seat thought when it gave it (#1024).
                 seen += f" It thought: \"{r['thought']}\"" if r.get("thought") else ""
                 settled = f" ({r['settled']})" if r.get("settled") else ""
-                out.append(f"- {r['count']} \u00d7 {r['who']}{settled}: {r['reason']}.{seen}")
+                # The validator's reasons end in a full stop of their own.
+                out.append(f"- {r['count']} \u00d7 {r['who']}{settled}: {r['reason'].rstrip('.')}.{seen}")
     out += ["", "## Lessons", ""]
     for s in lessons["seats"]:
         for l in s["lessons"]:
