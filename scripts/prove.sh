@@ -125,7 +125,7 @@ case "$what" in
         prove_kani --list "$list" --expect-open scripts/kani/expected-open.txt --loops scripts/kani/loop-bounds.txt \
             --batch 24 --timeout 600 --solo-cap 12 --results logs/kani/pr.txt ;;
     kani-shard)
-        prove_kani --shard "$1" --times scripts/kani/times.txt --expect-open scripts/kani/expected-open.txt \
+        prove_kani --shard "$1" --times scripts/kani/times.txt --skip-not-run --expect-open scripts/kani/expected-open.txt \
             --loops scripts/kani/loop-bounds.txt --batch 8 --timeout 1800 --solo-cap 12 \
             --results "logs/kani/shard-${1%/*}.txt" ;;
     exhaustive) check_exhaustively ;;

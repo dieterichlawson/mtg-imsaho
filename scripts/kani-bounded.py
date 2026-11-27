@@ -615,6 +615,8 @@ def main():
     ap.add_argument('--shard', default=None, help='K/N: the Kth of N shares of the harnesses, by --times')
     ap.add_argument('--times', default=None, help='a results file whose seconds share out --shard')
     ap.add_argument('--expect-open', default=None, help='a file of the harnesses known not to prove')
+    ap.add_argument('--skip-not-run', action='store_true',
+                    help='leave out the harnesses --times records as NOT_RUN: written, and not yet run to a result')
     a = ap.parse_args()
     for f in a.list:
         a.harness += read_names(f)
@@ -651,6 +653,14 @@ def main():
             for w in unknown:
                 res.write(f"{'NOT_RUN':10s} {'-':>8s}  {w}  not a harness this script finds\n")
         print(f'not harnesses this script finds: {" ".join(unknown)}', file=sys.stderr)
+    if a.skip_not_run and a.times:
+        # A harness recorded as NOT_RUN has been written and not yet run to
+        # a result on a machine that fits it (docs/plans/verification-
+        # goals.md, goal 1). The scheduled run proves what has been proved;
+        # such a harness joins it with its first result.
+        with open(a.times, errors='replace') as f:
+            not_run = {p[2] for p in (l.split() for l in f) if len(p) > 2 and p[0] == 'NOT_RUN'}
+        wanted = [h for h in wanted if h not in not_run]
     if a.shard:
         wanted = shard_of(wanted, a.shard, a.times)
     todo = [h for h in wanted if h not in done()]

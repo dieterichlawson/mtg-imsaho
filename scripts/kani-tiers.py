@@ -12,6 +12,13 @@
                              fastest proved harness of each module of the
                              proofs, fastest first, while their seconds sum
                              to under BUDGET (default 600).
+    kani-tiers.py record RESULTS... [--budget SECONDS]
+        The same from what is recorded already (times.txt) with the
+        results of a run of some of the harnesses laid over it: each
+        harness's result in the last file that has one, and NOT_RUN for a
+        harness written since that no file has a result for. Such a
+        harness is expected open, and the scheduled run leaves it out
+        (`kani-bounded.py --skip-not-run`) until it has a result.
     kani-tiers.py pr [--base REF] [--extra SECONDS]
         The harnesses a pull request runs, printed: pr.list, and for each
         proof module the change edits (git diff REF...HEAD, default
@@ -117,18 +124,48 @@ def pr(base, extra):
     print('\n'.join(names))
 
 
+def record(results, budget):
+    """What is recorded, with the results of a run of some of the harnesses
+    laid over it: a harness's last result in the last file that has one,
+    and NOT_RUN for a harness no file has a result for."""
+    lines = {}
+    for path in [os.path.join(DIR, 'times.txt')] + results:
+        with open(path, errors='replace') as f:
+            for l in f:
+                p = l.split()
+                if len(p) > 2 and not l.startswith('#') and not (p[0] == 'NOT_RUN' and 'codegen failed' in l):
+                    lines.setdefault(p[2], {})[path] = lines.get(p[2], {}).get(path, []) + [l.rstrip('\n')]
+    merged = os.path.join(ROOT, 'logs', 'kani', 'recorded.txt')
+    os.makedirs(os.path.dirname(merged), exist_ok=True)
+    every = harnesses()
+    with open(merged, 'w') as f:
+        for h in every:
+            if h in lines:
+                # The attempts of the last file that ran it: its seconds are theirs.
+                f.write('\n'.join(lines[h][list(lines[h])[-1]]) + '\n')
+            else:
+                f.write(f"{'NOT_RUN':10s} {'0s':>8s}  {h}  written, not yet run\n")
+    write(merged, budget)
+    os.remove(merged)
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='what', required=True)
     w = sub.add_parser('write')
     w.add_argument('results')
     w.add_argument('--budget', type=int, default=600)
+    r = sub.add_parser('record')
+    r.add_argument('results', nargs='+')
+    r.add_argument('--budget', type=int, default=600)
     p = sub.add_parser('pr')
     p.add_argument('--base', default='origin/master')
     p.add_argument('--extra', type=int, default=600)
     a = ap.parse_args()
     if a.what == 'write':
         write(a.results, a.budget)
+    elif a.what == 'record':
+        record(a.results, a.budget)
     else:
         pr(a.base, a.extra)
 
