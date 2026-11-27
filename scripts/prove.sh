@@ -2,7 +2,8 @@
 # Run the engine's proofs: Verus over mtg-kernel, then Kani over
 # mtg-engine/src/proofs/.
 #
-# Usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | exhaustive]
+# Usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N |
+#                          kani-shares RUN N | exhaustive]
 #   With no arguments, Verus and Kani. `verus` checks every contract in
 #   mtg-kernel (seconds, once vstd is built). `kani` runs every Kani proof,
 #   or only the named ones (a name may be the last part of the path, e.g.
@@ -16,7 +17,10 @@
 #   it. `kani-new K/N` is the Kth of N shares of the harnesses written and
 #   not yet run to a result (NOT_RUN in scripts/kani/times.txt), which the
 #   other two leave out; it fails only if one of them is left with no
-#   result. `exhaustive` runs the bounded
+#   result. `kani-shares RUN N` is all N shares of RUN (kani-shard or
+#   kani-new) at once, for one machine with the cores and memory: KANI_CAP
+#   (12) is the gigabytes a solver may take and KANI_TIMEOUT its seconds.
+#   `exhaustive` runs the bounded
 #   exhaustive checks at a larger scope than `cargo test` gives them, in
 #   release: the autotap planner against tapping by hand on every board of
 #   up to three sources with up to two mana floating (about 30 million
@@ -62,9 +66,9 @@ KANI_VERSION=0.68.0
 
 what="${1:-all}"
 case "$what" in
-    verus | kani | kani-pr | kani-shard | kani-new | exhaustive) shift ;;
+    verus | kani | kani-pr | kani-shard | kani-new | kani-shares | exhaustive) shift ;;
     all) ;;
-    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | exhaustive]" >&2; exit 2 ;;
+    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | kani-shares RUN N | exhaustive]" >&2; exit 2 ;;
 esac
 
 prove_verus() {
@@ -103,6 +107,19 @@ EOF
     python3 scripts/kani-bounded.py "$@"
 }
 
+# The list of loop bounds a run reads and adds to: the committed one, or
+# with KANI_LOOPS_DIR a copy of the committed lists there (a share of
+# `kani-shares`).
+loops_file() {
+    if [ -n "${KANI_LOOPS_DIR:-}" ]; then
+        mkdir -p "$KANI_LOOPS_DIR"
+        [ -e "$KANI_LOOPS_DIR/loop-bounds.txt" ] || cp scripts/kani/loop-bounds*.txt "$KANI_LOOPS_DIR"/
+        echo "$KANI_LOOPS_DIR/loop-bounds.txt"
+    else
+        echo scripts/kani/loop-bounds.txt
+    fi
+}
+
 check_exhaustively() {
     AUTOTAP_EXHAUSTIVE_SOURCES=3 AUTOTAP_EXHAUSTIVE_POOL=2 \
         cargo test --release -p mtg-engine --test autotap_brute_force every_small_board
@@ -129,14 +146,33 @@ case "$what" in
             --batch 24 --timeout 600 --solo-cap 12 --results logs/kani/pr.txt ;;
     kani-shard)
         prove_kani --shard "$1" --times scripts/kani/times.txt --skip-not-run --expect-open scripts/kani/expected-open.txt \
-            --loops scripts/kani/loop-bounds.txt --batch 8 --timeout 1800 --solo-cap 12 \
+            --loops "$(loops_file)" --batch 8 --timeout "${KANI_TIMEOUT:-1800}" --solo-cap "${KANI_CAP:-12}" \
             --results "logs/kani/shard-${1%/*}.txt" ;;
     kani-new)
         # Two to a build: Kani's compiler is stopped for memory building
         # four proofs of a whole game loop at once on 16 GB.
         prove_kani --shard "$1" --times scripts/kani/times.txt --only-not-run \
-            --loops scripts/kani/loop-bounds.txt --batch 2 --timeout 1500 --solo-cap 12 \
+            --loops "$(loops_file)" --batch 2 --timeout "${KANI_TIMEOUT:-1500}" --solo-cap "${KANI_CAP:-12}" \
             --results "logs/kani/shard-${1%/*}.txt" ;;
+    kani-shares)
+        # Every one of N shares at once, on one machine with the cores and
+        # memory for it: at most one build or one solver a share, so about
+        # KANI_CAP gigabytes each. Each share builds in its own target
+        # directory and learns loop bounds in its own copy of the lists, so
+        # that none waits for another or writes over it.
+        run=$1 n=$2
+        case "$run" in kani-shard | kani-new) ;; *) echo "kani-shares: kani-shard or kani-new, not $run" >&2; exit 2 ;; esac
+        mkdir -p logs/kani
+        pids=()
+        for k in $(seq 1 "$n"); do
+            CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}/kani-share-$k" KANI_LOOPS_DIR="logs/kani/share-$k" \
+                KANI_BOUNDED_CODEGEN_SLOTS="$n" bash scripts/prove.sh "$run" "$k/$n" > "logs/kani/share-$k.log" 2>&1 &
+            pids+=($!)
+        done
+        status=0
+        for pid in "${pids[@]}"; do wait "$pid" || status=1; done
+        tail -n 3 logs/kani/share-*.log
+        exit $status ;;
     exhaustive) check_exhaustively ;;
     all) prove_verus; prove_kani ;;
 esac

@@ -246,6 +246,23 @@ def run(cmd, **kw):
 # compiling at once beside their solvers had the kernel stop it, which
 # recorded every harness of its batch as not run.
 CODEGEN_LOCK = os.path.join(tempfile.gettempdir(), 'kani-bounded-codegen.lock')
+# On a machine with the memory for it, KANI_BOUNDED_CODEGEN_SLOTS=N lets N
+# runs compile at once (scripts/prove.sh kani-shares, each run building in
+# its own target directory).
+CODEGEN_SLOTS = max(1, int(os.environ.get('KANI_BOUNDED_CODEGEN_SLOTS', '1')))
+
+
+def codegen_slot():
+    """An open file holding one of the machine's compile slots, locked."""
+    while True:
+        for i in range(CODEGEN_SLOTS):
+            lock = open(CODEGEN_LOCK + (f'.{i}' if i else ''), 'w')
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if CODEGEN_SLOTS > 1 else 0))
+                return lock
+            except BlockingIOError:
+                lock.close()
+        time.sleep(2)
 
 
 def codegen(harnesses, crate, target):
@@ -253,8 +270,7 @@ def codegen(harnesses, crate, target):
     for h in harnesses:
         args += ['--harness', h]
     env = dict(os.environ, CARGO_TARGET_DIR=target)
-    with open(CODEGEN_LOCK, 'w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with codegen_slot():
         p = run(args, cwd=crate, env=env)
         if p.returncode != 0 and 'Failed to canonicalize harness model' in p.stdout + p.stderr:
             # A cached build whose goto files were removed: build it again.
