@@ -14,8 +14,6 @@ proofs::actions::trigger_order::the_first_trigger_chosen_goes_on_now  # OOM
 proofs::actions::trigger_order::the_second_trigger_chosen_goes_on_now  # OOM
 proofs::actions::trigger_order::a_trigger_past_those_offered_is_refused  # OOM
 proofs::actions::trigger_resolving::a_creature_dying_trigger_resolves_with_the_dead_and_its_target_unless_it_is_illegal  # OOM
-proofs::through_the_stack::divination_cast_by_the_second_player_draws_the_top_two_of_three  # NOT_RUN
-proofs::through_the_stack::divination_cast_by_the_first_player_draws_their_whole_library_of_two  # NOT_RUN
 proofs::through_the_stack::divination_cast_by_the_first_player_with_one_card_draws_it_and_loses  # NOT_RUN
 proofs::through_the_stack::doom_blade_destroys_the_second_players_creature  # TIMEOUT
 proofs::through_the_stack::doom_blade_cast_by_the_second_player_destroys_the_first_players  # NOT_RUN

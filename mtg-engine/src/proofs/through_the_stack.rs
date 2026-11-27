@@ -95,6 +95,8 @@ fn a_game() -> GameState {
     state.end_of_combat_exiles.reserve(2);
     state.stack.reserve(4);
     for p in &mut state.players {
+        // Twenty life each: a new game's players start at Commander's forty.
+        p.life = 20;
         p.library_order.reserve(6);
         p.graveyard_order.reserve(6);
     }
