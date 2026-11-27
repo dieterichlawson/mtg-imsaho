@@ -127,12 +127,36 @@ of it. With that:
 | an artifact destroyed by `try_destroy`, then the same | not measured | proves, 101 s |
 | a creature destroyed by `try_destroy`, then the same | not finished at 360 s | not finished at 420 s |
 
-The last row is what is left: `CreatureDied` itself, read back from the
-list, is of no known object or controller (the same probe). Why is not
-found yet. A guess, not measured: the event is built from the dying
-creature's toughness and subtypes as the layers read them, CBMC carries
-a value forward only when it knows all of it, and one of those is not a
-value it knows.
+The last row was a fault of `scripts/precise-enums.py`, found later the
+same day, and not of the event. (The guess written here first, that one
+of the event's parts was not a value CBMC knew, was wrong: a death built
+of constants was as unknown as the engine's own.) The script puts each
+enum's widest variant first in its union, because symbolic execution
+keeps a symbol for every field of every member and fills each by
+reading the union's bytes through the first member with a field of that
+type there. It recognised an enum's union by its variants' names, and
+looked for the naming of a niche-encoded enum only: for a tagged enum,
+which `GameEvent` and the engine's other large enums are in a Kani
+build, it reordered nothing (0 unions in the program looked at, 11 once
+fixed). So `GameEvent`'s first member stayed `TurnStarted`, a death's
+`object` was read as `CardDrawn`'s `object` and its `card_id` out of
+`EnteredBattlefield`'s bytes, and since the value kept holds pointers
+(the dead creature's name and subtypes) neither read could be
+simplified. Read off CBMC's own program for a probe (`--program-only`):
+`cases..CreatureDied..object..0 == { .CreatureDied={ ... } }.CardDrawn.object.0`.
+
+With the widest variant first:
+
+| What runs | Before | After |
+|---|---|---|
+| a death built of constants, pushed on the event list and read back | of no known creature | known |
+| the engine's own death event, the same | of no known creature | known |
+| Doom Blade destroying a creature, every pass whole | still in symbolic execution at 1,500 s | proves, 757 s over two rounds, the second 322 s |
+| Doom Blade at an indestructible creature, every pass whole | not done at 1,200 s | proves, 342 s |
+| the 28 proofs of the paragraph below, their solvers' seconds in all | 1,358 | 1,116, all 28 proved, none slower |
+
+The fix changes the program every harness is run as, so every result
+recorded before it is to be had again with it.
 
 28 existing proofs that build or collect these events were run again
 with the new order and all prove: 7 of `proofs::actions::damage`, 6 of
@@ -141,10 +165,9 @@ with the new order and all prove: 7 of `proofs::actions::damage`, 6 of
 says nine card proofs; it was eight.) The other harnesses have not been
 run again with it.
 
-So on this machine: a spell after which no creature dies goes through
-every pass of the loop, and so does a cast the engine refuses. A spell
-that kills a creature goes through the cast, the stack and the
-resolution, and not yet through the check after.
+So on this machine, with that fix: a spell goes through every pass of
+the loop whether a creature dies of it or not, and so does a cast the
+engine refuses.
 
 Two more limits of this machine: Kani's own compiler is stopped for
 memory building four of these proofs at once (two at a time build), and
@@ -177,9 +200,17 @@ So the run is made one that can go elsewhere, in
   (`scripts/ec2-run.sh`): 32 cores and 256 GB unless told otherwise,
   and a solver may be given more than 12 GB there.
 
-Neither has been dispatched yet (2026-11-27): the first waits on a word,
-the second on the repository's AWS secrets. `scripts/ec2-run.sh` has
-been run against stand-ins for AWS and SSH only.
+`machine: aws` was first dispatched on 2026-11-27, and its first runs
+were of the script more than of the proofs. A fresh machine is 32 cores
+and 246 GB, and has Rust and Kani on it 43 seconds after it answers.
+What the runs showed, each fixed since (`scripts/ec2-run.sh` says how):
+the account had no default network; the Spot market had none of one
+type in one region minutes after it had; a run cancelled left its
+machine running, found by listing the machines a minute later
+(`scripts/ec2-sweep.sh`, `harnesses: sweep`); the script was not
+watching a run while it ran; and a Spot machine was reclaimed four
+minutes in. `harnesses: named` runs chosen harnesses with most of the
+machine's memory, to find out what a proof takes.
 
 A proof's result now also says which of its own assertions no execution
 reached. A proof here is one case of a family that asserts under each
@@ -208,10 +239,15 @@ by the engine, not called. Baseline 0 of 270. Done at 270, or with each
 card that is not listed beside the measurement that says why. The 604
 hook harnesses go as each card's replacement proves.
 
-Two parts are not there yet, each for a measured reason above, and each
-is this goal's to close: the action is named by the proof and not taken
-from `legal_actions` (which alone is past 11 GB), and a spell after
-which a creature dies does not finish the check before priority.
+One part is not there yet, and is this goal's to close: the action is
+named by the proof and not taken from `legal_actions`, which alone was
+past 11 GB before the fix above. Four rows now have the engine's own
+loop (`engine::resume_game_loop`) play each action, the proof only in
+the seat: the actions offered, the refusal of one not offered,
+`submit_action` with its copy. They are being measured on the rented
+machine; if the loop fits, every row is to be played that way and the
+naming of actions goes. (The other part that was here, a spell after
+which a creature dies, is closed by that fix.)
 
 **2. No card's proof is one scenario.** Each card's proofs through the
 stack cover at least: each player casting; each kind of thing its text
