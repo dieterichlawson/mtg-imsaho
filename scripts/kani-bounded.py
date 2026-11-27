@@ -220,6 +220,14 @@ CBMC_FLAGS = ['--no-malloc-may-fail', '--no-undefined-shift-check', '--no-signed
 # it holds of every value. Without them Rolling Temblor's symbolic
 # execution took half the time and left 3876 checks to solve, not 9670.
 NO_MEMORY_CHECKS = ['--no-pointer-check', '--no-bounds-check', '--no-div-by-zero-check']
+# The harnesses whose programs are rewritten with `--wide-pointer-free`
+# (`scripts/precise-enums.py` says what that is and why it is a flag): by
+# the start of their names. The proofs that take a card through the
+# engine's own cast, stack and resolution need it to be read at all; the
+# rest keep the program their recorded result is of. KANI_WIDE_POINTER_FREE
+# adds prefixes, comma-separated, to try it on others.
+WIDE_POINTER_FREE = tuple(['proofs::through_the_stack::']
+                          + [p for p in os.environ.get('KANI_WIDE_POINTER_FREE', '').split(',') if p])
 
 
 def run(cmd, **kw):
@@ -294,7 +302,8 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
         [f'{K}/bin/goto-instrument', '--ensure-one-backedge-per-target', out, out],
     ]
     if precise:
-        steps.append([sys.executable, f'{ROOT}/scripts/precise-enums.py', out, out])
+        wide = ['--wide-pointer-free'] if h.startswith(WIDE_POINTER_FREE) else []
+        steps.append([sys.executable, f'{ROOT}/scripts/precise-enums.py', out, out] + wide)
     for cmd in steps:
         p = run(cmd)
         if p.returncode != 0:

@@ -32,7 +32,9 @@ The rewrite, which changes nothing a Rust program can observe:
   becomes `x.cases := bytes of {v, 0...}`, so the bytes of other variants
   are zero rather than whatever they were. No program reads a variant other
   than the one its tag names. Not where the union is wider than
-  `WIDEST_WHOLE` bits and the variant narrower than it: there the bytes of
+  `WIDEST_WHOLE` bits and the variant narrower than it (unless the
+  variant holds no pointer and `--wide-pointer-free` is given:
+  `WIDE_POINTER_FREE` says why): there the bytes of
   a narrow variant holding a pointer, laid over a wide union, are more
   than CBMC gets through, and asking a yes/no question (`awaiting_action :=
   Some(ResolutionChoice { YesNo })`, its 256-bit variant in a 1152-bit
@@ -96,6 +98,21 @@ ASSIGN, DECL = 13, 14
 # The widest union, in bits, whose narrower variants' writes are made
 # writes of the whole union (the module doc says why there is a limit).
 WIDEST_WHOLE = 1024
+# Past that limit too where the variant written holds no pointer, with
+# `--wide-pointer-free`. The limit is there for a narrow variant's
+# pointer laid over a wide union's bytes; a variant with no pointer in it
+# is bits, and its bytes with zeros after them are a value CBMC knows all
+# of. `StackEntry::Spell(id)`, 64 bits in the 1,664 of a stack entry, is
+# the one this is for: written as a member, the entry `Vec::push` put on
+# the stack was read back off it as an entry of any kind for any spell,
+# and `resolve_top_of_stack` under one real card ran out of memory at
+# 12 GB (2026-11-18); written whole, the same resolution is 83 seconds
+# (2026-11-27). The argument that nothing a Rust program can observe
+# changes is the rule's own: no program reads a variant other than the
+# one its tag names. It is a flag, on for the proofs that go through the
+# stack (`kani-bounded.py` says which), so that every other harness's
+# program, and the result recorded for it, is the one it was.
+WIDE_POINTER_FREE = False
 # Writing a variant whole past this limit when it is at least half its
 # union's width was tried, for the answers to a set of objects, a tap cost
 # and a graveyard exile, whose prompts are such variants of the
@@ -174,6 +191,31 @@ def rewrite(version, strings, symbols, functions):
         widths[id(t)] = w
         return w
 
+    pointers = {}
+
+    def holds_pointer(t):
+        """Whether a value of `t` holds a pointer anywhere, or might (a type
+        this does not know)."""
+        if id(t) in pointers:
+            return pointers[id(t)]
+        pointers[id(t)] = True
+        r = resolve(t)
+        if r is None:
+            p = True
+        elif r.id == POINTER:
+            p = True
+        elif r.id in BVS or r.id == BOOL:
+            p = False
+        elif r.id in (STRUCT, UNION):
+            comps = named(r, K_COMPONENTS)
+            p = comps is None or any(holds_pointer(named(c, K_TYPE)) for c in comps.subs)
+        elif r.id == ARRAY and r.subs:
+            p = holds_pointer(r.subs[0])
+        else:
+            p = True
+        pointers[id(t)] = p
+        return p
+
     # Padding filled with zero rather than nondet.
     padding, seen = 0, set()
     stack = [x for sym in symbols for x in sym[:3]] + [x for _, ins in functions for i in ins for x in (i[0], i[3])]
@@ -218,7 +260,9 @@ def rewrite(version, strings, symbols, functions):
                 continue
             vt = named(rhs, K_TYPE)
             uw, vw = width(ut), (width(vt) if vt is not None else None)
-            if uw is None or vw is None or vw > uw or (vw < uw and uw > WIDEST_WHOLE):
+            if uw is None or vw is None or vw > uw:
+                continue
+            if vw < uw and uw > WIDEST_WHOLE and not (WIDE_POINTER_FREE and vt is not None and not holds_pointer(vt)):
                 continue
             # As bytes, not as the union of the member written: CBMC splits
             # a union so built into its members and does not keep the whole,
@@ -509,7 +553,9 @@ def rewrite(version, strings, symbols, functions):
     return padding, variants, fieldless, niches, tags, dataful, reordered, nulls, allocs
 
 
-def main(src, dst):
+def main(src, dst, *flags):
+    global WIDE_POINTER_FREE
+    WIDE_POINTER_FREE = '--wide-pointer-free' in flags
     model = gb.read(src)
     padding, variants, fieldless, niches, tags, dataful, reordered, nulls, allocs = rewrite(*model)
     gb.write(dst, *model)
@@ -521,4 +567,4 @@ def main(src, dst):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    main(*sys.argv[1:])
