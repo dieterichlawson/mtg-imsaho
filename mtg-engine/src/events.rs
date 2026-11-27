@@ -36,9 +36,18 @@ pub enum GameEvent {
     Untapped { object: ObjectId },
     AttackersDeclared { attackers: Vec<(ObjectId, PlayerId)> },
     BlockersDeclared { assignments: Vec<(ObjectId, ObjectId)> },
+    #[cfg(not(kani))]
     CombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
     /// Non-combat damage dealt (e.g., triggered abilities, spells).
+    #[cfg(not(kani))]
     NonCombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
+    /// The two in a Kani build, the amount first: declared last it lies
+    /// past the 24 bytes of plain fields `CreatureDied` begins with there,
+    /// on a pointer of it (`CreatureDied` says why that matters).
+    #[cfg(kani)]
+    CombatDamageDealt { amount: u32, source: ObjectId, target: DamageTarget },
+    #[cfg(kani)]
+    NonCombatDamageDealt { amount: u32, source: ObjectId, target: DamageTarget },
     LifeChanged { player: PlayerId, old: i32, new_life: i32 },
     /// A creature died.
     ///
@@ -55,7 +64,23 @@ pub enum GameEvent {
     /// is its name as it died: a token is gone from `state.objects` by the
     /// time a trigger it caused is ordered, and the player ordering it
     /// needs to know which death it is for (issue #325).
+    #[cfg(not(kani))]
     CreatureDied { object: ObjectId, name: String, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32, is_token: bool, subtypes: Vec<String> },
+    /// The same variant in a Kani build, its fields in another order: every
+    /// field that is not a list or a string first. A Kani build lays an
+    /// enum out as declared (`repr(u8)` above), and CBMC keeps an event as
+    /// its widest variant, this one. An event of a narrower variant is
+    /// then read back through this one's fields, and where its bytes fell
+    /// on a pointer of this one's (`name`, second as declared, under the
+    /// zones of `ObjectMoved` and `LeftBattlefield`) CBMC could not read
+    /// any of it back: the object that left was any object to the trigger
+    /// collectors, its card any card, and each went on to describe a
+    /// trigger for it (`proofs::through_the_stack` has the measurements).
+    /// With 24 bytes of plain fields first, no narrower variant reaches a
+    /// pointer. Fields are named wherever this is built or matched, so the
+    /// order is nothing a program reads.
+    #[cfg(kani)]
+    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, last_known_toughness: i32, controller: PlayerId, is_token: bool, name: String, damaged_by: Vec<ObjectId>, subtypes: Vec<String> },
 
     PlayerLost { player: PlayerId, reason: LossReason },
     GameEnded { result: GameResult },
