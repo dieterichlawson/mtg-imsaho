@@ -643,6 +643,14 @@ fn in_the_declare_attackers_step(state: &mut GameState, attacking: u8) {
     state.consecutive_passes = u32::from(state.priority_player != Some(PlayerId(attacking)));
 }
 
+impl Permanent {
+    /// Whether this kind of permanent is a creature: every kind but the
+    /// four that are named for another card type.
+    fn is_a_creature(self) -> bool {
+        !matches!(self, Permanent::Artifact | Permanent::Enchantment | Permanent::Land | Permanent::Planeswalker)
+    }
+}
+
 /// What a permanent is that a proof reads back to say nothing was done to it.
 #[derive(Clone, Copy, PartialEq)]
 struct AsItWas {
@@ -703,7 +711,7 @@ fn destroys((card, what, cast, (owner, controller), guard): (Box<dyn CardBehavio
         Guard::Shield => (expected.of(target).tapped, expected.of(target).shields) = (true, 0),
         Guard::Nothing => {
             expected.is_buried(target, owner);
-            expected.a_creature_died = !matches!(what, Permanent::Artifact | Permanent::Enchantment | Permanent::Land | Permanent::Planeswalker);
+            expected.a_creature_died = what.is_a_creature();
         }
     }
     expected.has_resolved(spell, cast, state.active_player);
@@ -767,6 +775,7 @@ fn does_nothing_once_its_target_is_gone((card, what, answer, cast): (Box<dyn Car
         in_the_declare_attackers_step(&mut state, other);
     }
     let (objects, beside_before) = (state.objects.len(), as_it_is(&state, beside));
+    let mut expected = everything(&state, &registry);
 
     casts(&mut state, &registry, spell, vec![Target::Object(target)]);
     play(&mut state, &registry, &Action::PassPriority);
@@ -777,6 +786,17 @@ fn does_nothing_once_its_target_is_gone((card, what, answer, cast): (Box<dyn Car
     assert!(state.stack.len() == 1 && state.stack[0].as_spell() == Some(spell));
     assert!(state.get_object(target).expect("still an object").zone == Zone::Graveyard);
     all_pass(&mut state, &registry);
+
+    // The whole game after is the game before with the target in its
+    // owner's graveyard by the answer, the answer after it there and its
+    // mana spent, and the first spell resolved for nothing (CR 608.2b):
+    // nothing else.
+    expected.is_buried(target, other);
+    expected.a_creature_died = what.is_a_creature();
+    expected.is_buried(response, other);
+    expected.players[usize::from(other)].mana = 0;
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(state.stack.is_empty());
     assert!(state.get_object(target).expect("still an object").zone == Zone::Graveyard);
@@ -1010,8 +1030,21 @@ fn damages_a_creature((card, amount, (what, marked), cast, controller): (Box<dyn
     let spell = a_spell(&mut state, &registry, card, cast);
     let toughness = state.get_object(target).expect("just created").toughness.expect("a creature");
     let (before, beside_before) = (as_it_is(&state, target).expect("there"), as_it_is(&state, beside));
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the damage marked on
+    // the creature, or the creature dead of it and in its owner's
+    // graveyard (CR 704.5g), and the spell resolved: nothing else.
+    if i64::from(marked + n) >= i64::from(toughness) {
+        expected.is_buried(target, controller);
+        expected.a_creature_died = true;
+    } else {
+        expected.of(target).damage = marked + n;
+    }
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     if i64::from(marked + n) >= i64::from(toughness) {
