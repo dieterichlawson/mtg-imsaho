@@ -157,8 +157,12 @@ const FLASHBACK: Cast = Cast { by: 0, flashback: true };
 /// The mana `cost` asks for, in `player`'s pool: each coloured pip as that
 /// colour, generic mana as colourless.
 fn mana_for(state: &mut GameState, player: PlayerId, cost: &crate::types::ManaCost) {
+    mana_for_symbols(state, player, &cost.symbols);
+}
+/// The same of a cost given as its symbols.
+fn mana_for_symbols(state: &mut GameState, player: PlayerId, symbols: &[ManaSymbol]) {
     let pool = &mut state.players[usize::from(player.0)].mana_pool;
-    for symbol in &cost.symbols {
+    for symbol in symbols {
         match *symbol {
             ManaSymbol::Colored(c) => pool.add(ManaType::from(c), 1),
             ManaSymbol::Generic(n) => pool.add(ManaType::Colorless, n),
@@ -2078,6 +2082,76 @@ through_the_stack! {
     spider_spawning_cast_by_the_second_player_makes_them_two_spiders: spider_spawning((2, SECOND));
     spider_spawning_flashed_back_makes_a_spider_and_is_exiled: spider_spawning((1, FLASHBACK));
 }
+
+/// What a permanent card's printed text says of it, as the Oracle has it
+/// (`data/oracle_cache.json`, from Scryfall): its mana cost, the card
+/// types and subtypes of its type line, its power and toughness, and the
+/// keyword abilities it has on lines of their own. Nothing here is read
+/// from the engine's own data for the card, which is what it is held
+/// against.
+#[derive(Clone, Copy)]
+struct Printed {
+    cost: &'static [ManaSymbol],
+    types: &'static [CardType],
+    subtypes: &'static [&'static str],
+    power: i32,
+    toughness: i32,
+    keywords: &'static [Keyword],
+}
+
+/// A creature card cast by `cast` for exactly the mana its printed cost
+/// asks for, and resolved: the cast is accepted and leaves the pool
+/// empty, so the engine's cost for it is the printed one and neither more
+/// nor less (CR 601.2f-h); the card is on the battlefield under its
+/// caster's control (608.3), untapped and undamaged; its power and
+/// toughness, each card type, its subtypes and each of the engine's
+/// keywords are the printed ones and no others, as the engine's layers
+/// report them (208, 205, 702); and it is summoning-sick unless it has
+/// haste (302.6). A creature of the other player's beside it is as it
+/// was, no life has changed, and nothing is left on the stack or asked of
+/// anyone.
+///
+/// A row is written for each creature card whose text has nothing happen
+/// as it enters: `scripts/kani-printed-rows.py` writes them from the
+/// Oracle's text, and says which cards it leaves and why.
+fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cast)) {
+    let (registry, mut state, blank, card) = board(card);
+    let caster = PlayerId(cast.by);
+    let beside = a_permanent(&mut state, blank, Permanent::Creature, (1 - cast.by, 1 - cast.by));
+    state.active_player = caster;
+    state.step = Step::PrecombatMain;
+    state.priority_player = Some(caster);
+    let spell = state.create_object(card, caster, Zone::Hand, None, None);
+    mana_for_symbols(&mut state, caster, printed.cost);
+    let before = as_it_is(&state, beside);
+
+    cast_and_resolve(&mut state, &registry, spell, Vec::new());
+
+    let o = state.get_object(spell).expect("still an object");
+    assert!(o.zone == Zone::Battlefield && o.controller == caster && o.owner == caster);
+    assert!(!o.tapped && o.damage_marked == 0);
+    assert!(state.effective_power(spell, &registry) == Some(printed.power));
+    assert!(state.effective_toughness(spell, &registry) == Some(printed.toughness));
+    for t in [CardType::Land, CardType::Creature, CardType::Instant, CardType::Sorcery, CardType::Enchantment, CardType::Artifact, CardType::Planeswalker] {
+        assert!(state.has_card_type(spell, t, &registry) == printed.types.contains(&t));
+    }
+    let subtypes = state.subtypes_of(spell, &registry);
+    assert!(subtypes.len() == printed.subtypes.len());
+    for subtype in printed.subtypes {
+        assert!(subtypes.iter().any(|s| s == subtype));
+    }
+    for k in Keyword::ALL {
+        assert!(state.has_keyword(spell, k, &registry) == printed.keywords.contains(&k));
+    }
+    assert!(state.has_summoning_sickness(spell, &registry) != printed.keywords.contains(&Keyword::Haste));
+    assert!(as_it_is(&state, beside) == before && before.is_some());
+    assert!(state.players[0].life == 20 && state.players[1].life == 20);
+    assert!(state.awaiting_action.is_none());
+    assert!(state.players[0].graveyard_order.is_empty() && state.players[1].graveyard_order.is_empty());
+    std::mem::forget((registry, state, subtypes));
+}
+
+mod printed;
 
 // The engine's own game loop playing each action, where the rows above
 // name the action to the engine themselves. Four rows to begin with, one
