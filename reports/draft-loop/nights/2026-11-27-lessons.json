@@ -1,0 +1,374 @@
+{
+ "night": "2026-11-27",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Your WG deck went 1-2 with only two Abbey Griffins, Chapel Geist and Voiceless Spirit as fliers, and 9 Forest/8 Plains lost long games in 19 to 33 turns, so draft a third real flier and a finisher before adding more ground filler like Kindercatch.",
+    "Against WU, Rebuke, Spidery Grasp and Ghostly Possession were your answers, but Round 2's two losses suggest taking cheap flier removal like Victim of Night earlier, since the guide's 'stay in colour' advice was respected while your removal count stayed thin.",
+    "Your 9 Forest/8 Plains split with 2 Avacyn's Pilgrim matches the guide's warning that 9/8 WGs went 0-3 and 1-2, so give green 10 sources or cut the Pilgrims and double-pip-free fixing becomes a real problem."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 14396,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 309,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 14396
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 309,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 14396,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 14396,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Draft more answers to fliers: my UB deck, built around ground bodies like Stromkirk Patrol and Village Cannibals, lost 0-2 in 15 and 12 turns to WU's Geist of Saint Traft and Silent Departure.",
+    "Take cheap instant removal early: Victim of Night and Corpse Lunge carried my 2-1 win over WG's 39-turn grind, but the 1-2 and 0-2 losses suggest I had too few early answers.",
+    "Count playables by mid pack 2: I needed to cut Laboratory Maniac to reach 23 spells, so prefer solid two-drops over speculative picks like Demonmail Hauberk."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3284,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2465,
+    "output_tokens_details": {
+     "thinking_tokens": 2229
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3284
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2465,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3284,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3284,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "My WU deck had only about three true fliers (Geist of Saint Traft and two Gallows Warden), and games ran 23 and 33 turns in round 2, so the guide's fliers-and-tempo plan needs more evasive threats to close.",
+    "Round 1 was a 1-2 loss to BR in 12-, 17- and 17-turn games, so don't assume 17 lands and slow removal will beat tribute and burn decks; prioritise cheap pressure.",
+    "Card-level causes of wins and losses were not recorded in the notes, so track which removal and fliers actually decided each game."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4947,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1985,
+    "output_tokens_details": {
+     "thinking_tokens": 1781
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4947
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1985,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4947,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4947,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Red was contested: the RG deck that beat me 2-1 ran my cut Reckless Waif and Riot Devils plus two Brimstone Volley, so take contested red removal early.",
+    "Games ran 12 to 33 turns, so removal density mattered; Tribute to Hunger and Harvest Pyre earned their slots over Feral Ridgewolf, which I cut for a 17th land.",
+    "Seat 5's RG deck went 3-0 sharing my red, so when red removal is flowing, commit early to it rather than splitting picks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3322,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2400,
+    "output_tokens_details": {
+     "thinking_tokens": 2210
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3322
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2400,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3322,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3322,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Give green 8+ Forests or cut Somberwald Spider's GG: my 10 Plains/7 Forest WG went 1-2 despite the guide calling WG the best big pair.",
+    "Both lost matches reached 26 turns with only four fliers (Angelic Overseer, Chapel Geist, Spectral Rider, Voiceless Spirit), so take a third cheap flier over Village Bell-Ringer or Silverchase Fox.",
+    "Settle your 16 creatures before the last picks: I ran the guide's two-colour plan but still had filler like Unruly Mob and Silverchase Fox while Ghostly Possession was taken twice, so take evasive creatures over duplicate tricks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 14381,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2842,
+    "output_tokens_details": {
+     "thinking_tokens": 2597
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 14381
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2842,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 14381,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 14381,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "RG",
+   "record": "3-0-0",
+   "lessons": [
+    "Green-based RG with Villagers of Estwald, Darkthicket Wolf and Ambush Viper beat the field 3-0, so take the efficient green commons early and keep red as a light splash for Brimstone Volley and Into the Maw of Hell.",
+    "Villagers of Estwald was the deck's backbone across all three rounds, and taking three copies over a Boneyard Wurm pair worked well, so prioritize playable two-drops over top-end stalls.",
+    "Wreath of Geists and Prey Upon were key removal-adjacent picks here, so don't pass them for speculative rares; the guide's Boneyard Wurm and Curse picks were the cuts that paid off."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3369,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 236,
+    "output_tokens_details": {
+     "thinking_tokens": 0
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3369
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 236,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3369,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3369,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide says Armored Skaab only works in UG, yet I ran two in UB without self-mill enablers, and they were poor blockers against RG's werewolf curve in my 1-2 loss.",
+    "Round 2's RG deck, built around Darkthicket Wolf and Villagers of Estwald, beat my UB deck 1-2; the guide's filler Walking Corpse was still in my list, so draft real two-drops instead.",
+    "Victim of Night cannot target Werewolves, Vampires or Zombies, so it could not answer RG's Villagers of Estwald; keep Dead Weight or Blazing Torch for those threats."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5030,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4178,
+    "output_tokens_details": {
+     "thinking_tokens": 3958
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5030
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4178,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5030,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5030,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "UR",
+   "record": "0-3-0",
+   "lessons": [
+    "My final UR list included Curse of the Pierced Heart, a black card my own notes said to cut, so check the final build against your stated colour plan before registering.",
+    "I spent late picks on Cellar Door, Fortress Crab, and Manor Skeleton, which left too few playables; take removal and efficient creatures over novelties once you pass the midpoint of pack 1.",
+    "Two of my three opponents, both WG, won through fliers like Chapel Geist and Voiceless Spirit, while my ground tempo creatures stalled, so prioritise evasive creatures and early flyers in blue."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3364,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1532,
+    "output_tokens_details": {
+     "thinking_tokens": 1329
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3364
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1532,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3364,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3364,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
