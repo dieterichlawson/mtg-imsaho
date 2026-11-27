@@ -45,11 +45,14 @@ commits what is here.
    stands. Sections in another order are put in order.
 5. `report.py` — `nights/DATE.md`, with what went wrong (re-asks, replies
    no answer could be read from, panics, substituted picks and decks)
-   counted from the run's log, and each re-ask's reason with the first
-   answer it quoted and what the seat thought when it gave it, so a
-   question that invited the wrong answer can be told from a model's slip
-   after the log is gone (#992, #1024). A refused deck and a sideboard
-   answer that could not be played are recorded the same way.
+   counted from the run's log, and each re-ask's reason with the answer
+   it quoted and what the seat thought when it gave it, so a question
+   that invited the wrong answer can be told from a model's slip after
+   the log is gone (#992, #1024). A refused deck and a sideboard answer
+   that could not be played are recorded the same way. The quote is the
+   first answer, a deck's answer at a later attempt says which, and a
+   kind the table settled (the deck it built, the deck it kept) quotes
+   the seat's last answer (#1097).
 
 A night that stopped partway carries on from its snapshot when
 `night.sh` is run again with the same date; a date already in the ledger
