@@ -2708,7 +2708,7 @@ fn a_cast_that_neither_resolved_nor_was_cleanly_refused_is_flagged() {
         mtg_engine::triggers::TriggerSource {
             target_zone_changes: Vec::new(),
             id: bear, card_id: p.get_object(bear).unwrap().card_id, controller: P0,
-            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, source_transforms: None, source_zone_changes: None,
+            description: "a trigger".into(), chosen_targets: vec![], from_back_face: false, source_transforms: None, source_zone_changes: None, subject_name: None,
         },
         mtg_engine::triggers::TriggerEvent::Upkeep,
     )));

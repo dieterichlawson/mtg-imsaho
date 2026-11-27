@@ -64,3 +64,57 @@ fn a_hand_object_keeps_its_own_zone_changes_when_its_card_is_dealt_anew() {
     let found = hidden_stays_hidden(&state, state.priority_player.unwrap_or(state.active_player), &legal, &registry);
     assert!(found.is_empty(), "{found:?}");
 }
+
+/// A trigger on the stack names its subject ("that creature") as it was
+/// when the trigger went on the stack. Read live, a subject bounced while
+/// the trigger waited was named through its object in a hidden hand, and
+/// the stack row changed when that hand was dealt anew (#1095).
+#[test]
+fn a_waiting_triggers_row_names_its_subject_as_it_was_not_through_a_hidden_hand() {
+    use mtg_engine::state::StackEntry;
+    use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+    let registry = CardRegistry::with_all_cards();
+    let deck = Decklist { entries: vec![("Markov Patrician".into(), 20), ("Kindercatch".into(), 20)] };
+    let config = GameConfig {
+        player_names: vec!["a".into(), "b".into()],
+        decklists: vec![deck.clone(), deck],
+        starting_life: 20,
+        starting_player: Some(P0),
+        rng_seed: Some(1),
+    };
+    let mut state = engine::setup_game(&config, &registry);
+    let hand: Vec<_> = state.objects_in_zone(Zone::Hand, P0).iter().map(|o| o.id).collect();
+    let name = |s: &mtg_engine::state::GameState, id| s.get_object(id).unwrap().name.clone();
+    // The subject is followed in the hand by a different card, so dealing
+    // the hand anew changes the card its object holds once it is back.
+    let watcher = *hand.last().unwrap();
+    let at = (0..hand.len() - 2).find(|&i| name(&state, hand[i]) != name(&state, hand[i + 1]))
+        .expect("two different cards side by side");
+    let subject = hand[at];
+
+    // The subject: a p0 creature that dealt combat damage, watched by a
+    // p0 permanent's "put a counter on that creature".
+    state.move_object(subject, Zone::Battlefield, &registry);
+    state.move_object(watcher, Zone::Battlefield, &registry);
+    let subject_name = name(&state, subject);
+    let card = state.get_object(watcher).unwrap().card_id;
+    state.put_on_stack(StackEntry::Trigger(PendingTrigger::new(
+        TriggerSource::new(watcher, card, P0, "put a +1/+1 counter on that creature"),
+        TriggerEvent::AnyCombatDamageToPlayer { dealer: subject, damaged_player: P1, amount: 2 },
+    )));
+
+    // Bounced while the trigger waits.
+    state.move_object(subject, Zone::Hand, &registry);
+    let StackEntry::Trigger(t) = state.stack.last().unwrap() else { panic!("a trigger") };
+    let row = t.description(&registry, Some(&state));
+    assert!(row.contains(&format!("{subject_name} (#{})", subject.0)), "{row}");
+
+    let dealt = hands_dealt_anew(&state, P1);
+    assert_ne!(name(&dealt, subject), subject_name, "the hand object holds another card once dealt anew");
+    let StackEntry::Trigger(t) = dealt.stack.last().unwrap() else { panic!("a trigger") };
+    assert_eq!(t.description(&registry, Some(&dealt)), row, "the row is the same game's");
+
+    let legal = engine::legal_actions(&state, &registry);
+    let found = hidden_stays_hidden(&state, state.priority_player.unwrap_or(state.active_player), &legal, &registry);
+    assert!(found.is_empty(), "{found:?}");
+}

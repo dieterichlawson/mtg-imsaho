@@ -66,13 +66,20 @@ pub struct TriggerSource {
     /// `GameState::is_new_source`.
     #[serde(default)]
     pub source_zone_changes: Option<u32>,
+    /// The name of the event's subject ("that Vampire", "blocked creature")
+    /// as the trigger went on the stack: last known information, stamped
+    /// by `GameState::put_on_stack` as an activated ability's `source_name`
+    /// is. Read live, a subject bounced while the trigger waited was named
+    /// through its object in a hidden hand (CR 400.7, #1095).
+    #[serde(default)]
+    pub subject_name: Option<String>,
 }
 
 impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
         Self { id, card_id, controller, description: description.into(),
-               chosen_targets: Vec::new(), target_zone_changes: Vec::new(), from_back_face: false, source_transforms: None, source_zone_changes: None }
+               chosen_targets: Vec::new(), target_zone_changes: Vec::new(), from_back_face: false, source_transforms: None, source_zone_changes: None, subject_name: None }
     }
 
     /// Record which face this triggered from (CR 712.8 — the faces have
@@ -267,7 +274,7 @@ impl TriggerEvent {
     /// trigger's own source — the one a watcher's text calls "that Vampire"
     /// or "blocked creature" — with its name as last known, where the event
     /// kept one (a token that died is gone from the game).
-    fn subject(&self) -> Option<(ObjectId, Option<&str>)> {
+    pub(crate) fn subject(&self) -> Option<(ObjectId, Option<&str>)> {
         match self {
             TriggerEvent::CreatureDied { dead } =>
                 Some((dead.id, Some(dead.name.as_str()).filter(|n| !n.is_empty()))),
@@ -479,7 +486,7 @@ impl PendingTrigger {
         if spans.is_empty() {
             return text.clone();
         }
-        let name = known.map(str::to_string).or_else(|| state
+        let name = known.map(str::to_string).or_else(|| self.source.subject_name.clone()).or_else(|| state
             .filter(|s| s.get_object(id).is_some())
             .map(|s| s.name_of(id, registry)));
         let mut out = String::with_capacity(text.len() + 16);

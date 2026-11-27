@@ -684,6 +684,9 @@ impl GameState {
                 t.source.source_transforms = source.map(|o| o.transforms);
                 t.source.source_zone_changes = source.map(|o| o.zone_change_count);
                 t.source.target_zone_changes = crate::stack::zone_changes_of(self, &t.source.chosen_targets);
+                if let Some((subject, None)) = t.event.subject() {
+                    t.source.subject_name = self.get_object(subject).map(|o| o.name.clone()).filter(|n| !n.is_empty());
+                }
             }
             StackEntry::Ability { source_id, source_transforms, source_zone_changes, source_name, targets, target_zone_changes, .. } => {
                 let source = self.get_object(*source_id);
