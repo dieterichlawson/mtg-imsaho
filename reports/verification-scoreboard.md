@@ -6,7 +6,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | Goal | Now | Done at |
 |---|---|---|
 | 1. cards with every proof written for them through the engine's cast, stack and resolution proved | 0 of 270 (and 158 with some not yet proved) | 270 |
-| 1. those proofs: proved of written | 14 of 825 (811 not yet run) | all |
+| 1. those proofs: proved of written | 0 of 825 (825 not yet run) | all |
 | 1. harnesses that call a card's hook directly | 604 | 0 |
 | 2. cards whose proofs cover every case that applies | not counted yet | all |
 | 3. changes to a card's code its proofs catch | not counted yet | every one |
@@ -43,7 +43,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | bonds_of_faith | - | 2 | 1 |
 | boneyard_wurm | - | 2 | 1 |
 | brain_weevil | 0 of 5 | 4 | 1 |
-| bramblecrush | 5 of 9 | 4 | 1 |
+| bramblecrush | 0 of 9 | 4 | 1 |
 | brimstone_volley | 0 of 12 | 6 | 1 |
 | bump_in_the_night | 0 of 6 | 1 | 0 |
 | burning_vengeance | - | 3 | 0 |
@@ -84,9 +84,9 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | diregraf_ghoul | - | 1 | 1 |
 | disciple_of_griselbrand | 0 of 5 | 1 | 1 |
 | dissipate | 0 of 4 | 2 | 1 |
-| divination | 3 of 5 | 8 | 0 |
+| divination | 0 of 5 | 8 | 0 |
 | divine_reckoning | - | 3 | 0 |
-| doom_blade | 6 of 12 | 1 | 1 |
+| doom_blade | 0 of 12 | 1 | 1 |
 | doomed_traveler | 0 of 5 | 1 | 0 |
 | dream_twist | 0 of 7 | 8 | 0 |
 | elder_cathar | 0 of 5 | 2 | 0 |
