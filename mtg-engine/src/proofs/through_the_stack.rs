@@ -39,10 +39,8 @@
 //! Not every row has been proved: `scripts/kani/times.txt` records each
 //! one's last result, NOT_RUN for one written and not yet run to a result,
 //! and `reports/verification-scoreboard.md` counts them by card. On a
-//! machine of 15 GB a spell after which no creature dies goes through
-//! every pass, and so does a cast the engine refuses; after a creature's
-//! death the check before priority does not finish (the death's event is
-//! read back from the list as of no known creature).
+//! machine of 15 GB a spell goes through every pass whether a creature
+//! dies of it or not, and so does a cast the engine refuses.
 //!
 //! These need `scripts/precise-enums.py --wide-pointer-free`, which
 //! `scripts/kani-bounded.py` gives every harness of this module: without
