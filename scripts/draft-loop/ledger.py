@@ -244,7 +244,7 @@ def log_health(path):
     # not be played (#1024's review).
     sideboard = {}
 
-    def note(who, text, thought=None, settled=None):
+    def note(who, text, thought=None, settled=None, attempt=None):
         why, answer = split_reask(text, cap=None)
         # An answer that carries its own `thoughts` (a pick, a deck, a
         # Gemini game seat's) has them taken out into `thought`, as a game
@@ -270,6 +270,11 @@ def log_health(path):
             # table did instead, so the list adds up to the count above it.
             if settled:
                 reasons[key]["settled"] = settled
+            # A deck is asked up to ten times; a reason first met at a
+            # later attempt quotes that attempt's answer, not the first
+            # one (#1097's review).
+            elif attempt and attempt > 1:
+                reasons[key]["attempt"] = attempt
         reasons[key]["count"] += 1
 
     def settle(p):
@@ -288,7 +293,8 @@ def log_health(path):
             # `who` carries the reason the deck was refused, and
             # `bracket` whether it was the last attempt.
             note("deck", f"{who}: {text}" if text else who,
-                 settled="not asked again: the table built the deck" if bracket == "last" else None)
+                 settled="not asked again: the table built the deck" if bracket == "last" else None,
+                 attempt=None if bracket == "last" else int(bracket))
         else:
             note(who, text, thoughts.get(bracket))
 
@@ -309,7 +315,7 @@ def log_health(path):
             # `fallback_deck` already counts as a deck substituted.
             if m.group(2) != m.group(3):
                 h["reasks"] += 1
-            pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(1), [m.group(5) or ""])
+            pending = ("DECK", m.group(4), "last" if m.group(2) == m.group(3) else m.group(2), [m.group(5) or ""])
             continue
         # A response's header carries it after a tab only when it is one
         # line; a pretty-printed one is on the lines below a header with no

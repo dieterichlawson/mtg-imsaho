@@ -92,7 +92,8 @@ def main():
                 # A settled kind is the answer the seat ended on: the deck
                 # kept after a re-ask, the table's deck after the last
                 # attempt. Its own first answer is the re-ask above (#1097).
-                said = "Its last answer" if r.get("settled") else "First answer"
+                said = ("Its last answer" if r.get("settled")
+                        else f"Its answer at attempt {r['attempt']}" if r.get("attempt") else "First answer")
                 seen = f" {said}: `{r['answer']}`" if r.get("answer") else ""
                 # What the seat thought when it gave it (#1024).
                 seen += f" It thought: \"{r['thought']}\"" if r.get("thought") else ""

@@ -99,7 +99,9 @@ fn the_night_report_says_one_call_in_the_singular() {
                                      // and a reason with its own full stop.
                                      {"who": "sideboard", "reason": "Add more cards or basic lands.", "count": 1,
                                       "answer": "{\"maindeck\":[2]}", "thought": "SECOND-TRY thought",
-                                      "settled": "asked again once, then the deck was kept"}]},
+                                      "settled": "asked again once, then the deck was kept"},
+                                     {"who": "deck", "reason": "Deck has 41 cards", "count": 1,
+                                      "answer": "{\"lands\":{\"Forest\":17}}", "attempt": 2}]},
     }).to_string()).unwrap();
     std::fs::write(dir.join("nights/2099-01-01-lessons.json"), serde_json::json!({
         "seats": [{"seat": 0, "colors": "G", "record": "1-0", "lessons": [], "usage": {"output_tokens": 5}}],
@@ -117,7 +119,8 @@ fn the_night_report_says_one_call_in_the_singular() {
                  "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |",
                  // #992: what the re-ask was for.
                  "- 1 \u{d7} game: `indices` has 0 entries; it needs at least 1. First answer: `{\"indices\": []}` It thought: \"I would rather wait\"",
-                 "- 1 \u{d7} sideboard (asked again once, then the deck was kept): Add more cards or basic lands. Its last answer: `{\"maindeck\":[2]}` It thought: \"SECOND-TRY thought\""] {
+                 "- 1 \u{d7} sideboard (asked again once, then the deck was kept): Add more cards or basic lands. Its last answer: `{\"maindeck\":[2]}` It thought: \"SECOND-TRY thought\"",
+                 "- 1 \u{d7} deck: Deck has 41 cards. Its answer at attempt 2: `{\"lands\":{\"Forest\":17}}`"] {
         assert!(report.contains(said), "{said:?} in:\n{report}");
     }
     assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");
@@ -692,6 +695,11 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         format!("{at}[Seat 2] DECK_RESPONSE attempt 2/3 (accepted)\t{{}}"),
         format!("{at}[Seat 4] DECK_RESPONSE attempt 1/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
         format!("{at}[Seat 4] DECK_RESPONSE attempt 2/2 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 16}}}}"),
+        // #1097's review: a reason first met at a later attempt quotes
+        // that attempt's answer, and says so.
+        format!("{at}[Seat 5] DECK_RESPONSE attempt 1/3 (invalid: Deck has 39 cards)\t{{\"lands\": {{\"Forest\": 15}}}}"),
+        format!("{at}[Seat 5] DECK_RESPONSE attempt 2/3 (invalid: Deck has 41 cards)\t{{\"lands\": {{\"Forest\": 17}}}}"),
+        format!("{at}[Seat 5] DECK_RESPONSE attempt 3/3 (accepted)\t{{}}"),
         // #1086: an answer that could not be played is asked again once,
         // a re-ask with its reason.
         // #1087: as the log writes them, pretty-printed on the lines below
@@ -714,17 +722,18 @@ fn a_game_reask_keeps_what_the_seat_thought() {
         .output().expect("python3 runs");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let h: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(h["reasks"], 6, "{h}");
+    assert_eq!(h["reasks"], 8, "{h}");
     // Neither a refused deck nor an unplayable sideboard answer is a game
     // answer the harness chose (#1024's second review).
     assert_eq!(h["harness_chose"], 0, "{h}");
     let long = format!("{}\u{2026}", "x".repeat(239));
     assert_eq!(h["reask_reasons"], serde_json::json!([
-        {"who": "deck", "reason": "Deck has 39 cards", "count": 2, "answer": "{\"lands\":{\"Forest\":16}}", "thought": "two colours"},
+        {"who": "deck", "reason": "Deck has 39 cards", "count": 3, "answer": "{\"lands\":{\"Forest\":16}}", "thought": "two colours"},
         // Seat 4's last refusal, for the same reason: the table's deck, its
         // own entry, so the list adds up to the count of re-asks.
         {"who": "deck", "reason": "Deck has 39 cards", "count": 1, "answer": "{\"lands\": {\"Forest\": 16}}",
          "settled": "not asked again: the table built the deck"},
+        {"who": "deck", "reason": "Deck has 41 cards", "count": 1, "answer": "{\"lands\": {\"Forest\": 17}}", "attempt": 2},
         {"who": "game", "reason": "`action` is missing", "count": 1, "answer": "{\"ask_again\":true,\"then\":[]}",
          "thought": "I want to see the next card first, so I will be asked again."},
         {"who": "game", "reason": "that block is not offered", "count": 1, "answer": "{\"blocks\":[]}"},
