@@ -67,9 +67,10 @@ pub struct TriggerSource {
     #[serde(default)]
     pub source_zone_changes: Option<u32>,
     /// The name of the event's subject ("that Vampire", "blocked creature")
-    /// as the trigger went on the stack: last known information, stamped
-    /// by `GameState::put_on_stack` as an activated ability's `source_name`
-    /// is. Read live, a subject bounced while the trigger waited was named
+    /// as the trigger was collected: last known information, stamped by
+    /// `PendingTrigger::stamp_subject` (or by `GameState::put_on_stack` for
+    /// a trigger put there directly), as an activated ability's
+    /// `source_name` is. Read live, a subject bounced while the trigger waited was named
     /// through its object in a hidden hand (CR 400.7, #1095).
     #[serde(default)]
     pub subject_name: Option<String>,
@@ -207,8 +208,13 @@ impl TriggerEvent {
     /// against others (issue #325): "Unruly Mob (#23) died", "the upkeep
     /// step began". Objects are named with their ids where they still exist.
     #[must_use]
-    pub fn cause(&self, state: &crate::state::GameState) -> String {
-        let name = |id: ObjectId| state.obj_name(id);
+    pub fn cause(&self, state: &crate::state::GameState, subject_name: Option<&str>) -> String {
+        // The subject as last known, where the trigger stamped it (#1095).
+        let subject = self.subject().map(|(id, _)| id);
+        let name = |id: ObjectId| match subject_name {
+            Some(n) if Some(id) == subject => format!("{n} (#{})", id.0),
+            _ => state.obj_name(id),
+        };
         match self {
             TriggerEvent::SelfDies => "it died".into(),
             TriggerEvent::CreatureDied { dead } => {
@@ -328,6 +334,21 @@ fn subject_phrases(description: &str) -> Vec<std::ops::Range<usize>> {
 }
 
 impl PendingTrigger {
+    /// Stamp the event's subject's name as last known information (CR
+    /// 400.7), the first time the trigger meets a state: as it is
+    /// collected, or as it goes on the stack if it was never collected.
+    /// Every row that names the subject after that (the order prompt, the
+    /// target prompt, the stack, the log) reads the stamp, not the object
+    /// the id names now, which may be a card in a hidden hand (#1095).
+    pub fn stamp_subject(&mut self, state: &crate::state::GameState) {
+        if self.source.subject_name.is_some() {
+            return;
+        }
+        if let Some((subject, None)) = self.event.subject() {
+            self.source.subject_name = state.get_object(subject).map(|o| o.name.clone()).filter(|n| !n.is_empty());
+        }
+    }
+
     #[must_use]
     pub fn new(source: TriggerSource, event: TriggerEvent) -> Self {
         Self { source, event, ordered: false }
@@ -354,7 +375,7 @@ impl PendingTrigger {
             power_toughness,
             kind: self.event.phrase().to_string(),
             ability: self.description(registry, Some(state)),
-            cause: self.event.cause(state),
+            cause: self.event.cause(state, self.source.subject_name.as_deref()),
         }
     }
 
@@ -602,6 +623,9 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
     // CR 603.3d: triggers go on the stack in APNAP order — AP first, then NAP.
     // For each trigger, if it has a target requirement, the player chooses the
     // target as it goes on the stack (handled by process_pending_trigger_pushes).
+    for t in c.ap.iter_mut().chain(c.nap.iter_mut()) {
+        t.stamp_subject(state);
+    }
     state.pending_trigger_pushes_ap.extend(c.ap);
     state.pending_trigger_pushes_nap.extend(c.nap);
 

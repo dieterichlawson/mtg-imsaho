@@ -162,3 +162,47 @@ fn an_oozes_row_does_not_read_its_creator_through_a_hidden_hand() {
     let found = hidden_stays_hidden(&state, state.priority_player.unwrap_or(state.active_player), &legal, &registry);
     assert!(found.is_empty(), "{found:?}");
 }
+
+/// The ordering prompt, which comes before the stack, names a trigger's
+/// subject as it was when the trigger was collected too: in the ability
+/// text and in the cause. Both read the object live, so a subject bounced
+/// between the event and the order named the card in a hidden hand (#1095).
+#[test]
+fn an_order_prompt_row_names_the_subject_as_collected() {
+    use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+    let registry = CardRegistry::with_all_cards();
+    let deck = Decklist { entries: vec![("Markov Patrician".into(), 20), ("Kindercatch".into(), 20)] };
+    let config = GameConfig {
+        player_names: vec!["a".into(), "b".into()],
+        decklists: vec![deck.clone(), deck],
+        starting_life: 20,
+        starting_player: Some(P0),
+        rng_seed: Some(1),
+    };
+    let mut state = engine::setup_game(&config, &registry);
+    let hand: Vec<_> = state.objects_in_zone(Zone::Hand, P0).iter().map(|o| o.id).collect();
+    let name = |s: &mtg_engine::state::GameState, id| s.get_object(id).unwrap().name.clone();
+    let watcher = *hand.last().unwrap();
+    let at = (0..hand.len() - 2).find(|&i| name(&state, hand[i]) != name(&state, hand[i + 1]))
+        .expect("two different cards side by side");
+    let subject = hand[at];
+    state.move_object(subject, Zone::Battlefield, &registry);
+    state.move_object(watcher, Zone::Battlefield, &registry);
+    let subject_name = name(&state, subject);
+    let card = state.get_object(watcher).unwrap().card_id;
+    let mut trigger = PendingTrigger::new(
+        TriggerSource::new(watcher, card, P0, "put a +1/+1 counter on that creature"),
+        TriggerEvent::CreatureAttacked { attacker: subject, attacker_controller: P0 },
+    );
+    trigger.stamp_subject(&state);
+    state.move_object(subject, Zone::Hand, &registry);
+
+    let dealt = hands_dealt_anew(&state, P1);
+    assert_ne!(name(&dealt, subject), subject_name, "the hand object holds another card once dealt anew");
+    let seen = trigger.order_option(&registry, &state);
+    let after = trigger.order_option(&registry, &dealt);
+    let want = format!("{subject_name} (#{})", subject.0);
+    assert!(seen.ability.contains(&want), "{}", seen.ability);
+    assert!(seen.cause.contains(&want), "{}", seen.cause);
+    assert_eq!((after.ability, after.cause), (seen.ability, seen.cause));
+}
