@@ -289,6 +289,98 @@ rest) are only ever the card being played. Done when all are pieces,
 and when the boards of three pieces have been played whole for every
 check, which is hundreds of core-hours.
 
+## What airtight takes (asked 2026-11-27)
+
+Where the coverage is thin, said plainly. Of 501 proofs through the
+game written, 14 are proved and the rest are running. They cover 50
+spells and 108 creatures arriving on the battlefield; no ability of any
+permanent, no combat, and no turn but the one a spell is cast in. Each
+is one fixed board. A spell's proof pays the cost the engine's own data
+gives the card. Nothing shows the proofs would notice a wrong card. And
+the program a proof checks is not quite the one shipped.
+
+Seven layers close that, each with a number to count. The pool, counted
+from its source: 270 cards, 77 with a triggered ability, 53 with an
+activated one, 50 with a static effect, 28 with flashback, 20
+double-faced, 20 with a mana ability.
+
+**A. Every ability of every card, through the game.** The Oracle's text
+for a card is its abilities, a line each. A script lists them; each line
+is claimed by a proof through the loop (a trigger put on the stack by
+the engine and resolved by it, an ability activated as an action, a
+static effect read back through the layers while its source is there
+and gone when it is not), or marked reminder text. Counted: lines
+claimed of lines printed. Now: spells' lines for 50 cards, and no line
+of a permanent's.
+
+**B. The rules the cards lean on, each proved once through the loop.**
+A creature's row says it has flying; what flying does is the engine's,
+and is proved of the engine once: combat for each of the fifteen
+keywords (attackers, blockers, damage, first and double strike, trample,
+deathtouch, lifelink, the evasions, vigilance, haste, defender), the
+turn (untap, upkeep, draw, cleanup: damage wears off, an effect "until
+end of turn" ends, summoning sickness lifts), two spells on the stack,
+countering, tokens, lands and mana abilities, the state-based actions.
+Counted: rules proved of a written list of the rules the pool uses.
+
+**C. Each proof airtight in itself.**
+1. The whole state compared before and after, every object and player,
+   and only what the text says may differ: "and nothing else" checked,
+   where now a neighbour and the life totals are.
+2. What the text does not mention left open to the solver (life totals,
+   damage, tapped, counters, what stands beside), so a proof is of every
+   such board and not of one.
+3. Every action played by the engine's own loop from the actions it
+   offers (being measured).
+4. A spell cast for the Oracle's cost, as the creatures' rows are, and
+   its flashback cost the same.
+5. What must be refused, written from the Oracle for every card: one
+   mana short, at the wrong time (a sorcery in response, a creature
+   without flash in the other player's turn), at each kind of thing its
+   text does not name.
+
+**D. Cards together.** A card alone on a board of blanks says little of
+how it meets the other 269.
+1. By proof, the meetings that have a rule: every targeted spell and
+   ability at a hexproof, a protected, an indestructible and a
+   regenerating permanent; every death trigger at every way to die;
+   every static effect beside every other (the layers).
+2. By exhaustion, the rest: every pair of the pool's cards, then every
+   three, played whole on small boards against the reader of card text
+   (`card_semantics`), which is a second implementation written from
+   the Oracle. 129 of 199 permanents can be pieces now (goal 7); boards
+   of three are hundreds of core-hours, which a rented machine has.
+
+**E. Evidence the proofs catch a wrong card.** Goals 3 and 5: each
+card's code, and the engine's rules, changed one way at a time, and
+every change must fail a proof or a small-board check or be shown to
+change nothing; the 578 official rulings played.
+
+**F. What the proofs themselves rest on.**
+1. The engine differs in a proof build in 31 places (`cfg(kani)`) in 11
+   files. Each is removed, or shown to change nothing a game reads. The
+   first, the events' field order, is tested gone.
+2. `scripts/precise-enums.py` rewrites every program before it is
+   checked, on an argument in prose that nothing observable changes;
+   today's fault in it was of the harmless kind (proofs too slow, not
+   proofs too easy). On a machine with the memory, proofs are run as
+   built, without it, and any that disagree are a fault in the script.
+3. The 165 stand-ins (goal 4), the five things taken out of a proof
+   through the game (formatting, the log, an object's name, the
+   allocator's growing and freeing: no rule may read them, which is to
+   be checked and not assumed), and the open proofs (goal 6).
+
+**G. Kept true.** The scoreboard counts A to F and runs in CI; rows
+written by a script are checked against it; a change to a card runs
+that card's proofs; the whole set is run on a rented machine on a
+schedule.
+
+In order: finish what is running and run the 2,000 older proofs again
+with today's fix; then C.1, C.4 and C.5, which are cheap and make every
+later proof worth more; then B, which every permanent's ability needs;
+then A, the largest; D.2 beside them, since it only needs machines; E
+once A has something to test; F throughout.
+
 ## What this will not be
 
 A proof that the engine implements the rules for every game of any
