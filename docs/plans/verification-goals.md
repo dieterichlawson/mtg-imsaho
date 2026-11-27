@@ -105,16 +105,46 @@ ran out of memory at 11 GB (with room for 96 too). With room for 32 the
 kind is known, and it is in no such collector. (Probed with one event
 in an empty list: known with room for 8, 10, 16, 21, 22 and 32; not
 with 40, 42 or 43. Divination ran out of memory at 11 GB with room for
-48 and proves with room for 32.) Second, what is left for Doom Blade is
-real work and slow: at 420 s it was in the collector for the creature's
-death, asking of each object whether it was on the battlefield when the
-creature died (`triggers::collect::zones::creature_died`, the watchers
-of a death).
+48 and proves with room for 32.) Second, what symbolic execution knew of an event stopped at its kind.
+Probed with one event in the list: it knew the object of `Tapped`,
+`CardDrawn` and `ManaPoolEmptied`, and not the object of `ObjectMoved`
+or `LeftBattlefield`, pushed by a proof or by the engine's
+`move_object`. A Kani build lays an enum out as declared, and CBMC
+keeps an event as its widest variant, `CreatureDied`; the two that were
+lost end in single bytes (a zone, a controller) after their object, and
+those bytes fell on the pointer of `CreatureDied`'s `name`. So after a
+permanent left the battlefield the trigger collectors looked up any
+object for the one that left and any card for its card, and went on to
+describe a trigger for it: when stopped, the proof was in the string
+search of that description. `CreatureDied` now has, in a Kani build
+only, its plain fields before its string and lists, and the damage
+events their amount first, so that no narrower event reaches a pointer
+of it. With that:
 
-So on this machine: a spell that leaves the battlefield as it was goes
-through every pass of the loop, and so does a cast the engine refuses.
-A spell that kills, moves or changes a permanent goes through the cast,
-the stack and the resolution, and not yet through the check after.
+| What runs, a creature beside the permanent | Before | After |
+|---|---|---|
+| a creature returned to its owner's hand by `move_object`, then what is checked before priority | not finished at 360 s | proves, 92 s |
+| an artifact destroyed by `try_destroy`, then the same | not measured | proves, 101 s |
+| a creature destroyed by `try_destroy`, then the same | not finished at 360 s | not finished at 420 s |
+
+The last row is what is left: `CreatureDied` itself, read back from the
+list, is of no known object or controller (the same probe). Why is not
+found yet. A guess, not measured: the event is built from the dying
+creature's toughness and subtypes as the layers read them, CBMC carries
+a value forward only when it knows all of it, and one of those is not a
+value it knows.
+
+28 existing proofs that build or collect these events were run again
+with the new order and all prove: 7 of `proofs::actions::damage`, 6 of
+`destruction`, 5 of `trigger_resolving`, 1 each of `triggering` and
+`moving`, and 8 of the card proofs. (The commit that made the change
+says nine card proofs; it was eight.) The other harnesses have not been
+run again with it.
+
+So on this machine: a spell after which no creature dies goes through
+every pass of the loop, and so does a cast the engine refuses. A spell
+that kills a creature goes through the cast, the stack and the
+resolution, and not yet through the check after.
 
 Two more limits of this machine: Kani's own compiler is stopped for
 memory building four of these proofs at once (two at a time build), and
@@ -142,9 +172,8 @@ hook harnesses go as each card's replacement proves.
 
 Two parts are not there yet, each for a measured reason above, and each
 is this goal's to close: the action is named by the proof and not taken
-from `legal_actions` (which alone is past 11 GB), and a spell that
-changes the battlefield does not finish the check before priority after
-it resolves.
+from `legal_actions` (which alone is past 11 GB), and a spell after
+which a creature dies does not finish the check before priority.
 
 **2. No card's proof is one scenario.** Each card's proofs through the
 stack cover at least: each player casting; each kind of thing its text
