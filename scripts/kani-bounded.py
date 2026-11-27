@@ -2,6 +2,7 @@
 """scripts/kani-bounded.py [NAME...] [--list FILE] [--results FILE] [--batch N] [--timeout S] [--bound B]
                           [--as-built] [--start-unwind U] [--loops FILE] [--jobs J --mem-cap GB]
                           [--memory-checks] [--shard K/N --times FILE] [--expect-open FILE]
+                          [--skip-not-run | --only-not-run]
 
 Run the Kani proofs in mtg-engine/src/proofs/ the way `cargo kani` does,
 with one addition: every function in a harness's final goto program that
@@ -75,6 +76,12 @@ result in RESULTS, or a last result other than SUCCESSFUL, unless it is
 named in --expect-open FILE (the harnesses known not to prove, in the
 form of --list); 0 otherwise. A harness expected open that proved is
 said so, for the list to be pruned.
+
+--times FILE also says which harnesses have been written and not yet run
+to a result (NOT_RUN there). --skip-not-run leaves them out, as the
+scheduled run does; --only-not-run selects only them, and then the exit
+status is 1 only if one of them still has no result: what each one's
+first result is, is what such a run is for.
 """
 import argparse, collections, concurrent.futures, fcntl, glob, json, os, re, subprocess, sys, tempfile, threading, time
 
@@ -637,6 +644,8 @@ def main():
     ap.add_argument('--expect-open', default=None, help='a file of the harnesses known not to prove')
     ap.add_argument('--skip-not-run', action='store_true',
                     help='leave out the harnesses --times records as NOT_RUN: written, and not yet run to a result')
+    ap.add_argument('--only-not-run', action='store_true',
+                    help='only the harnesses --times records as NOT_RUN; any result for each is the run\'s success')
     a = ap.parse_args()
     for f in a.list:
         a.harness += read_names(f)
@@ -673,14 +682,16 @@ def main():
             for w in unknown:
                 res.write(f"{'NOT_RUN':10s} {'-':>8s}  {w}  not a harness this script finds\n")
         print(f'not harnesses this script finds: {" ".join(unknown)}', file=sys.stderr)
-    if a.skip_not_run and a.times:
+    if a.skip_not_run and a.only_not_run:
+        ap.error('--skip-not-run and --only-not-run select nothing together')
+    if (a.skip_not_run or a.only_not_run) and a.times:
         # A harness recorded as NOT_RUN has been written and not yet run to
         # a result on a machine that fits it (docs/plans/verification-
         # goals.md, goal 1). The scheduled run proves what has been proved;
-        # such a harness joins it with its first result.
-        with open(a.times, errors='replace') as f:
-            not_run = {p[2] for p in (l.split() for l in f) if len(p) > 2 and p[0] == 'NOT_RUN'}
-        wanted = [h for h in wanted if h not in not_run]
+        # such a harness joins it with its first result, which a run of
+        # only these is for.
+        waiting = not_run(a.times)
+        wanted = [h for h in wanted if (h in waiting) == a.only_not_run]
     if a.shard:
         wanted = shard_of(wanted, a.shard, a.times)
     todo = [h for h in wanted if h not in done()]
@@ -733,7 +744,15 @@ def main():
         for h in again:
             one(h, *found[h], a.solo_cap)
 
+    if a.only_not_run:
+        return first_results(wanted, a.results)
     return verdict(wanted, a.results, read_names(a.expect_open) if a.expect_open else [])
+
+
+def not_run(times):
+    """The harnesses `times` records as NOT_RUN."""
+    with open(times, errors='replace') as f:
+        return {p[2] for p in (l.split() for l in f) if len(p) > 2 and p[0] == 'NOT_RUN'}
 
 
 def read_names(path):
@@ -752,7 +771,9 @@ def shard_of(wanted, shard, times):
             for l in f:
                 p = l.split()
                 m = re.match(r'(\d+)s$', p[1]) if len(p) > 2 else None
-                if m:
+                # A harness not yet run has no time to go by: two minutes,
+                # as one the file does not name.
+                if m and p[0] != 'NOT_RUN':
                     took[p[2]] = took.get(p[2], 0) + int(m.group(1))
     shares = [[0, []] for _ in range(n)]
     for h in sorted(wanted, key=lambda h: (-took.get(h, 120), h)):
@@ -762,6 +783,26 @@ def shard_of(wanted, shard, times):
     mine = set(shares[k - 1][1])
     print(f'shard {k}/{n}: {len(mine)} harnesses, about {shares[k - 1][0] / 3600:.1f} hours', flush=True)
     return [h for h in wanted if h in mine]
+
+
+def first_results(wanted, results):
+    """For a run of harnesses that had no result: each one's, counted by
+    kind, and exit status 1 only if one still has none (the run broke, or
+    its build did). A harness that did not prove is what the run was to
+    find out, and not its failure."""
+    last = {}
+    if os.path.exists(results):
+        with open(results, errors='replace') as res:
+            for l in res:
+                p = l.split()
+                if len(p) > 2:
+                    last[p[2]] = p[0]
+    kinds = collections.Counter(last.get(h, 'NOT_RUN') for h in wanted)
+    print(f'{len(wanted)} harnesses: ' + ', '.join(f'{n} {k}' for k, n in kinds.most_common()), flush=True)
+    for h in wanted:
+        if last.get(h, 'NOT_RUN') != 'SUCCESSFUL':
+            print(f'{last.get(h, "no result"):10s} {h}', flush=True)
+    return 1 if kinds['NOT_RUN'] else 0
 
 
 def verdict(wanted, results, expected_open):

@@ -2,7 +2,7 @@
 # Run the engine's proofs: Verus over mtg-kernel, then Kani over
 # mtg-engine/src/proofs/.
 #
-# Usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | exhaustive]
+# Usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | exhaustive]
 #   With no arguments, Verus and Kani. `verus` checks every contract in
 #   mtg-kernel (seconds, once vstd is built). `kani` runs every Kani proof,
 #   or only the named ones (a name may be the last part of the path, e.g.
@@ -13,7 +13,10 @@
 #   pr). `kani-shard K/N` is the Kth of the N jobs the scheduled run of
 #   every harness is (.github/workflows/proofs-full.yml). Both fail on a
 #   harness that does not prove unless scripts/kani/expected-open.txt names
-#   it. `exhaustive` runs the bounded
+#   it. `kani-new K/N` is the Kth of N shares of the harnesses written and
+#   not yet run to a result (NOT_RUN in scripts/kani/times.txt), which the
+#   other two leave out; it fails only if one of them is left with no
+#   result. `exhaustive` runs the bounded
 #   exhaustive checks at a larger scope than `cargo test` gives them, in
 #   release: the autotap planner against tapping by hand on every board of
 #   up to three sources with up to two mana floating (about 30 million
@@ -59,9 +62,9 @@ KANI_VERSION=0.68.0
 
 what="${1:-all}"
 case "$what" in
-    verus | kani | kani-pr | kani-shard | exhaustive) shift ;;
+    verus | kani | kani-pr | kani-shard | kani-new | exhaustive) shift ;;
     all) ;;
-    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | exhaustive]" >&2; exit 2 ;;
+    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | exhaustive]" >&2; exit 2 ;;
 esac
 
 prove_verus() {
@@ -127,6 +130,12 @@ case "$what" in
     kani-shard)
         prove_kani --shard "$1" --times scripts/kani/times.txt --skip-not-run --expect-open scripts/kani/expected-open.txt \
             --loops scripts/kani/loop-bounds.txt --batch 8 --timeout 1800 --solo-cap 12 \
+            --results "logs/kani/shard-${1%/*}.txt" ;;
+    kani-new)
+        # Two to a build: Kani's compiler is stopped for memory building
+        # four proofs of a whole game loop at once on 16 GB.
+        prove_kani --shard "$1" --times scripts/kani/times.txt --only-not-run \
+            --loops scripts/kani/loop-bounds.txt --batch 2 --timeout 1500 --solo-cap 12 \
             --results "logs/kani/shard-${1%/*}.txt" ;;
     exhaustive) check_exhaustively ;;
     all) prove_verus; prove_kani ;;
