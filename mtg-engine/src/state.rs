@@ -154,13 +154,14 @@ pub type CounterMap = crate::kind_map::KindMap<crate::types::CounterType>;
 /// `clear`.
 #[cfg(not(kani))]
 pub type CardState = std::collections::BTreeMap<String, ObjectId>;
-/// A token's link to the ability that defines its P/T (CR 604.3): its
-/// creator under [`crate::cards::PT_DEFINED_BY`], and the stamp
+#[cfg(kani)]
+pub type CardState = crate::vec_map::VecMap<String, ObjectId>;
+/// The link to the ability that defines a token's P/T (CR 604.3), which a
+/// copy of the token takes too (#1100): its creator under
+/// [`crate::cards::PT_DEFINED_BY`], and the stamp
 /// [`GameObject::pt_defined_by_card`] (`None` to take it from the creator
 /// as it is now).
 pub type PtLink = (ObjectId, Option<(CardId, u32)>);
-#[cfg(kani)]
-pub type CardState = crate::vec_map::VecMap<String, ObjectId>;
 
 /// A map from object ids, and a set of them, as the combat keeps its
 /// attackers, blockers and the rest (`CombatState`): a `BTreeMap` and a
@@ -4951,9 +4952,9 @@ pub struct GameObject {
     #[serde(default)]
     pub card_state: CardState,
 
-    /// For a token whose own ability defines its P/T (CR 604.3), the card
-    /// that prints the ability and its creator's `zone_change_count`, both
-    /// as the token was created. The creator under
+    /// For a token whose own ability defines its P/T (CR 604.3), or a
+    /// permanent that copies one (#1100), the card that prints the ability
+    /// and its creator's `zone_change_count`, both as the token was created. The creator under
     /// [`crate::cards::PT_DEFINED_BY`] is the same object only while its
     /// count still matches (CR 400.7). The ability text and the numbers
     /// come from the stamped card, never from whatever card the creator's

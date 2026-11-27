@@ -139,6 +139,11 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
             if obj.instance_continuous_effects.is_some() || obj.instance_oracle_text.is_some() {
                 v.push(format!("{tag} in {:?} keeps instance effects/text (CR 400.7)", obj.zone));
             }
+            // A card that copied a token with a P/T-defining ability (Evil
+            // Twin as a Gutter Grime Ooze) had it only as a copy (#1100).
+            if obj.card_state.get(crate::cards::PT_DEFINED_BY).is_some() || obj.pt_defined_by_card.is_some() {
+                v.push(format!("{tag} in {:?} keeps a token's P/T-defining ability (CR 400.7)", obj.zone));
+            }
             if let Some(d) = registry.card_data(obj.card_id) {
                 if (obj.power, obj.toughness) != (d.power, d.toughness) {
                     v.push(format!("{tag} in {:?} has P/T {:?}/{:?}, printed {:?}/{:?} (CR 400.7)",

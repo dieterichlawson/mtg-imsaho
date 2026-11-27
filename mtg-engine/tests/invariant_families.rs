@@ -124,6 +124,16 @@ fn object_zone_and_identity_rules_are_checked() {
     s.move_object(bear, Zone::Graveyard, &reg);
     s.get_object_mut(bear).unwrap().power = Some(9);
     flags_core(&s, &reg, "printed Some(2)/Some(2) (CR 400.7)");
+    // #1100: a card off the battlefield keeps no copied Ooze's ability.
+    let mut s = state.clone();
+    s.move_object(bear, Zone::Graveyard, &reg);
+    let card = s.get_object(bear).unwrap().card_id;
+    s.get_object_mut(bear).unwrap().pt_defined_by_card = Some((card, 0));
+    flags_core(&s, &reg, "keeps a token's P/T-defining ability");
+    let mut s = state.clone();
+    s.move_object(bear, Zone::Graveyard, &reg);
+    s.get_object_mut(bear).unwrap().card_state.insert(mtg_engine::cards::PT_DEFINED_BY.to_string(), bear);
+    flags_core(&s, &reg, "keeps a token's P/T-defining ability");
 
     let mut s = state.clone();
     s.get_object_mut(bear).unwrap().is_legendary = true;
