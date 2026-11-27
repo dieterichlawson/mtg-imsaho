@@ -27,7 +27,12 @@
 # repository's secrets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, and
 # costs the machine's hours; nothing is left running between runs.
 # `harnesses: none` there only rents the machine, says what it is and
-# gives it back.
+# gives it back. `harnesses: named` runs the harnesses or modules in
+# `names` there (scripts/prove.sh kani-these), `shares` solvers at a time
+# and one that runs out of `cap` again alone with the machine to itself:
+# to find out what a proof takes. It prints their results, records
+# nothing, and is green whatever they are, and when no machine was to be
+# had (it is said, and nothing was run).
 name: proofs-full
 
 on:
@@ -37,10 +42,13 @@ on:
   workflow_dispatch:
     inputs:
       harnesses:
-        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one. none (aws only): rent the machine and give it back."
+        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one. named (aws only): the ones in `names`. none (aws only): rent the machine and give it back."
         type: choice
-        options: [proved, new, none]
+        options: [proved, new, named, none]
         default: proved
+      names:
+        description: "harnesses: named only: the harnesses or modules, separated by spaces."
+        default: ""
       machine:
         description: "github: 30 jobs on GitHub's runners. aws: every share at once on one machine rented for the run."
         type: choice
@@ -72,7 +80,7 @@ permissions:
 
 jobs:
   shard:
-    if: inputs.machine != 'aws' && inputs.harnesses != 'none'
+    if: inputs.machine != 'aws' && inputs.harnesses != 'none' && inputs.harnesses != 'named'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     strategy:
@@ -136,6 +144,7 @@ jobs:
           EC2_MARKET: ${{ inputs.market }}
           EC2_REGION: ${{ inputs.region }}
           HARNESSES: ${{ inputs.harnesses }}
+          NAMES: ${{ inputs.names }}
           SHARES: ${{ inputs.shares }}
           CAP: ${{ inputs.cap }}
           TIMEOUT: ${{ inputs.timeout }}
@@ -143,15 +152,19 @@ jobs:
           for n in "$SHARES" "$CAP" "$TIMEOUT"; do
             [[ $n =~ ^[0-9]+$ ]] || { echo "shares, cap and timeout are whole numbers, not '$n'"; exit 2; }
           done
+          [[ $NAMES =~ ^[A-Za-z0-9_:\ ]*$ ]] || { echo "names are harness paths separated by spaces"; exit 2; }
           case "$HARNESSES" in
             none) EC2_SETUP=none EC2_MAX_HOURS=1 scripts/ec2-run.sh 'uname -srm; ls scripts/prove.sh' ;;
+            named)
+              [ -n "$NAMES" ] || { echo "harnesses: named needs names"; exit 2; }
+              EC2_IF_NONE=ok scripts/ec2-run.sh "KANI_JOBS=$SHARES KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-these $NAMES" ;;
             new) scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-new $SHARES" ;;
             *) scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-shard $SHARES" ;;
           esac
 
       # The loop bounds the harnesses needed, for scripts/kani/.
       - name: Loop bounds learned
-        if: always() && inputs.harnesses != 'none'
+        if: always() && inputs.harnesses != 'none' && inputs.harnesses != 'named'
         run: |
           for f in loop-bounds.txt loop-bounds.through-the-stack.txt; do
             echo "== $f"
@@ -168,7 +181,7 @@ jobs:
 
   report:
     needs: [shard, big]
-    if: always() && inputs.harnesses != 'none'
+    if: always() && inputs.harnesses != 'none' && inputs.harnesses != 'named'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

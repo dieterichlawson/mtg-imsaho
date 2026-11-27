@@ -22,6 +22,9 @@
 #                  six hours
 #   EC2_SSH_FROM   the address port 22 is opened to: this machine's, as
 #                  the world sees it, unless given
+#   EC2_IF_NONE    fail (the default) or ok: whether no machine to be had,
+#                  for want of capacity or of quota, is this script's
+#                  failure (status 2) or only said (status 0)
 #
 # What it costs is the machine's hours, to the minute it is terminated.
 # What is left behind costs nothing: a network of its own (a VPC, its
@@ -211,6 +214,10 @@ if [ -z "$id" ]; then
         echo "the account's vCPU quota is below a machine asked for: Service Quotas, EC2," >&2
         echo "'All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests' for Spot," >&2
         echo "'Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances' otherwise" >&2
+    fi
+    if [ "${EC2_IF_NONE:-fail}" = ok ]; then
+        echo "nothing was rented and nothing run"
+        exit 0
     fi
     exit 2
 fi

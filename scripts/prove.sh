@@ -3,7 +3,7 @@
 # mtg-engine/src/proofs/.
 #
 # Usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N |
-#                          kani-shares RUN N | exhaustive]
+#                          kani-shares RUN N | kani-these NAME... | exhaustive]
 #   With no arguments, Verus and Kani. `verus` checks every contract in
 #   mtg-kernel (seconds, once vstd is built). `kani` runs every Kani proof,
 #   or only the named ones (a name may be the last part of the path, e.g.
@@ -20,6 +20,9 @@
 #   result. `kani-shares RUN N` is all N shares of RUN (kani-shard or
 #   kani-new) at once, for one machine with the cores and memory: KANI_CAP
 #   (12) is the gigabytes a solver may take and KANI_TIMEOUT its seconds.
+#   `kani-these NAME...` runs the named harnesses KANI_JOBS at a time and
+#   gives one that runs out of KANI_CAP the machine to itself: for finding
+#   out what a proof takes, so it prints results and fails on none.
 #   `exhaustive` runs the bounded
 #   exhaustive checks at a larger scope than `cargo test` gives them, in
 #   release: the autotap planner against tapping by hand on every board of
@@ -66,9 +69,9 @@ KANI_VERSION=0.68.0
 
 what="${1:-all}"
 case "$what" in
-    verus | kani | kani-pr | kani-shard | kani-new | kani-shares | exhaustive) shift ;;
+    verus | kani | kani-pr | kani-shard | kani-new | kani-shares | kani-these | exhaustive) shift ;;
     all) ;;
-    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | kani-shares RUN N | exhaustive]" >&2; exit 2 ;;
+    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | kani-shares RUN N | kani-these NAME... | exhaustive]" >&2; exit 2 ;;
 esac
 
 prove_verus() {
@@ -154,6 +157,19 @@ case "$what" in
         prove_kani --shard "$1" --times scripts/kani/times.txt --only-not-run \
             --loops "$(loops_file)" --batch 2 --timeout "${KANI_TIMEOUT:-1500}" --solo-cap "${KANI_CAP:-12}" \
             --results "logs/kani/shard-${1%/*}.txt" ;;
+    kani-these)
+        # The named harnesses or modules, to find out what each takes on a
+        # machine with memory to spare: KANI_JOBS solvers at a time, each
+        # held to KANI_CAP gigabytes, and one that runs out of that run
+        # again alone with KANI_SOLO_CAP (nine tenths of the machine's
+        # memory unless given). A harness that does not prove is a result
+        # here and not a failure: the results are printed.
+        mkdir -p logs/kani
+        prove_kani "$@" --loops "$(loops_file)" --batch "${KANI_BATCH:-4}" --jobs "${KANI_JOBS:-1}" \
+            --mem-cap "${KANI_CAP:-12}" --solo-cap "${KANI_SOLO_CAP:-$(free -g | awk 'NR==2 {print int($2 * 9 / 10)}')}" \
+            --timeout "${KANI_TIMEOUT:-1800}" --results logs/kani/shard-named.txt || true
+        echo "== results"
+        cat logs/kani/shard-named.txt ;;
     kani-shares)
         # Every one of N shares at once, on one machine with the cores and
         # memory for it: at most one build or one solver a share, so about
