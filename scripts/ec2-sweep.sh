@@ -6,6 +6,10 @@
 # (us-east-1 us-east-2 us-west-2 unless given). They are the instances
 # tagged purpose=kani-proofs, and no other is looked at.
 #
+# With EC2_TERMINATE, a list of instance ids, those of them that are
+# this script's are terminated whatever their age: for a machine a
+# cancelled run left behind.
+#
 # With HOURS, those launched longer ago than that are terminated. A
 # machine of ec2-run.sh's turns itself off, and so is terminated, after
 # EC2_MAX_HOURS (6 unless given); one older than that is one both the
@@ -46,8 +50,11 @@ for region in $regions; do
         there=$((there + 1))
         minutes=$(((now - $(date -d "$launched" +%s)) / 60))
         echo "$region $id $type $state, launched $minutes minutes ago"
-        if [ -n "$older" ] && [ "$minutes" -gt $((older * 60)) ]; then
-            echo "  more than $older hours: terminating it"
+        why=""
+        case " ${EC2_TERMINATE:-} " in *" $id "*) why="asked for" ;; esac
+        if [ -n "$older" ] && [ "$minutes" -gt $((older * 60)) ]; then why="more than $older hours"; fi
+        if [ -n "$why" ]; then
+            echo "  $why: terminating it"
             aws ec2 terminate-instances --region "$region" --instance-ids "$id" \
                 --query 'TerminatingInstances[0].CurrentState.Name' --output text
         fi

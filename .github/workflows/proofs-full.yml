@@ -35,7 +35,8 @@
 # had (it is said, and nothing was run). `harnesses: sweep` rents
 # nothing: it lists the machines of these runs that are still there, and
 # terminates any older than seven hours, which is one that outlived both
-# its run and its own clock (scripts/ec2-sweep.sh).
+# its run and its own clock, and any whose id is in `names`
+# (scripts/ec2-sweep.sh).
 name: proofs-full
 
 on:
@@ -50,7 +51,7 @@ on:
         options: [proved, new, named, none, sweep]
         default: proved
       names:
-        description: "harnesses: named only: the harnesses or modules, separated by spaces."
+        description: "harnesses: named: the harnesses or modules, separated by spaces. harnesses: sweep: ids of machines to terminate."
         default: ""
       machine:
         description: "github: 30 jobs on GitHub's runners. aws: every share at once on one machine rented for the run."
@@ -155,15 +156,17 @@ jobs:
           for n in "$SHARES" "$CAP" "$TIMEOUT"; do
             [[ $n =~ ^[0-9]+$ ]] || { echo "shares, cap and timeout are whole numbers, not '$n'"; exit 2; }
           done
-          [[ $NAMES =~ ^[A-Za-z0-9_:\ ]*$ ]] || { echo "names are harness paths separated by spaces"; exit 2; }
+          [[ $NAMES =~ ^[A-Za-z0-9_:\ -]*$ ]] || { echo "names are harness paths, or instance ids, separated by spaces"; exit 2; }
+          # `exec`: the script in place of this shell, so that a cancelled
+          # run's signal reaches it and it gives its machine back.
           case "$HARNESSES" in
-            none) EC2_SETUP=none EC2_MAX_HOURS=1 scripts/ec2-run.sh 'uname -srm; ls scripts/prove.sh' ;;
-            sweep) scripts/ec2-sweep.sh 7 ;;
+            none) EC2_SETUP=none EC2_MAX_HOURS=1 exec scripts/ec2-run.sh 'uname -srm; ls scripts/prove.sh' ;;
+            sweep) EC2_TERMINATE="$NAMES" exec scripts/ec2-sweep.sh 7 ;;
             named)
               [ -n "$NAMES" ] || { echo "harnesses: named needs names"; exit 2; }
-              EC2_IF_NONE=ok scripts/ec2-run.sh "KANI_JOBS=$SHARES KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-these $NAMES" ;;
-            new) scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-new $SHARES" ;;
-            *) scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-shard $SHARES" ;;
+              EC2_IF_NONE=ok exec scripts/ec2-run.sh "KANI_JOBS=$SHARES KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-these $NAMES" ;;
+            new) exec scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-new $SHARES" ;;
+            *) exec scripts/ec2-run.sh "KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-shares kani-shard $SHARES" ;;
           esac
 
       # The loop bounds the harnesses needed, for scripts/kani/.

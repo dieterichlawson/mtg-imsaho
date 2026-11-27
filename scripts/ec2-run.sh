@@ -75,6 +75,9 @@ id="" group="" me=""
 give_back() {
     status=$?
     set +e
+    trap '' INT TERM
+    # What `patiently` left waiting.
+    kill $(jobs -p) 2> /dev/null
     if [ -n "$id" ]; then
         echo "terminating $id"
         aws ec2 terminate-instances --instance-ids "$id" --query 'TerminatingInstances[0].CurrentState.Name' --output text \
@@ -87,6 +90,16 @@ give_back() {
     exit $status
 }
 trap give_back EXIT
+# A run cancelled: GitHub signals the step's own process, waits ten
+# seconds and kills what is left. The machine is given back in those ten
+# seconds or it runs on until its own clock stops it, as the first
+# cancelled run's did (run 46054250686: still there a minute after). So
+# the signal ends this script, which gives the machine back as it ends;
+# the workflow runs this script in place of the step's shell, so that the
+# signal is this script's; and nothing here that takes long is waited for
+# in the foreground, where bash would finish it before acting on a signal.
+trap 'exit 130' INT TERM
+patiently() { "$@" <&0 & wait $!; }
 
 # This repository is public and so is a run's log: the account's number
 # is kept out of what AWS says of a refusal, and no address is printed.
@@ -228,7 +241,7 @@ me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
 aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
     || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
 
-aws ec2 wait instance-running --instance-ids "$id"
+patiently aws ec2 wait instance-running --instance-ids "$id"
 address=$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 case "$address" in [0-9]*) ;; *) echo "$id has no public address" >&2; exit 2 ;; esac
 there=(-i "$work/key" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$work/known_hosts" -o BatchMode=yes
@@ -236,17 +249,17 @@ there=(-i "$work/key" -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile
 on_it() { ssh "${there[@]}" "ubuntu@$address" "$@"; }
 reached=""
 for _ in $(seq 60); do
-    if on_it true 2> /dev/null; then reached=yes; break; fi
-    sleep 5
+    if patiently on_it true 2> /dev/null; then reached=yes; break; fi
+    patiently sleep 5
 done
 [ -n "$reached" ] || { echo "$id did not answer on port 22 in ten minutes" >&2; exit 2; }
-on_it 'cloud-init status --wait > /dev/null 2>&1; echo "$(nproc) cores, $(free -g | awk "NR==2{print \$2}") GB, $(df -h --output=avail / | tail -1 | tr -d " ") of disk free"'
+patiently on_it 'cloud-init status --wait > /dev/null 2>&1; echo "$(nproc) cores, $(free -g | awk "NR==2{print \$2}") GB, $(df -h --output=avail / | tail -1 | tr -d " ") of disk free"'
 
 # The checkout, by the commit: the repository is public, so the machine
 # holds no credential of any kind.
-on_it "git init -q repo && cd repo && git fetch -q --depth 1 '$repo' '$sha' && git checkout -q FETCH_HEAD && git log --oneline -1"
+patiently on_it "git init -q repo && cd repo && git fetch -q --depth 1 '$repo' '$sha' && git checkout -q FETCH_HEAD && git log --oneline -1"
 if [ "$setup" = kani ]; then
-    on_it 'bash -s' <<'EOF'
+    patiently on_it 'bash -s' <<'EOF'
 set -euo pipefail
 {
     export DEBIAN_FRONTEND=noninteractive
@@ -278,7 +291,7 @@ bring_back() {
 deadline=$(($(date +%s) + wait_minutes * 60))
 lost=0 minute=0
 while :; do
-    sleep 60
+    patiently sleep 60
     minute=$((minute + 1))
     if state=$(on_it 'cat run.exit 2> /dev/null || echo running' 2> /dev/null); then
         lost=0
