@@ -291,7 +291,7 @@ fn draws((card, n, cards, cast): (Box<dyn CardBehavior>, usize, usize, Cast)) {
     let spell = a_spell(&mut state, &registry, card, cast);
 
     if cards >= n {
-        let mut expected = everything(&state);
+        let mut expected = everything(&state, &registry);
         cast_and_resolve(&mut state, &registry, spell, Vec::new());
         // The whole game after is the game before with the top `n` cards
         // of the caster's library in their hand, the library that much
@@ -304,7 +304,7 @@ fn draws((card, n, cards, cast): (Box<dyn CardBehavior>, usize, usize, Cast)) {
             *slot = None;
         }
         expected.has_resolved(spell, cast, state.active_player);
-        assert!(everything(&state) == expected);
+        assert!(everything(&state, &registry) == expected);
     } else {
         // A draw from a library too small ends the game as the state-based
         // actions are checked, before anyone has priority again.
@@ -345,12 +345,12 @@ fn cast_is_refused_as(state: &mut GameState, registry: &CardRegistry, cast: Acti
     let Action::CastSpell { object_id: spell, .. } = cast else { panic!("a cast") };
     let caster = state.priority_player.expect("the caster has priority");
     let (pool, zone) = (state.players[usize::from(caster.0)].mana_pool.total(), state.get_object(spell).expect("an object").zone);
-    let before = everything(state);
+    let before = everything(state, registry);
     play(state, registry, &cast);
     assert!(state.get_object(spell).expect("still an object").zone == zone && state.stack.is_empty() && state.awaiting_action.is_none());
     assert!(state.players[usize::from(caster.0)].mana_pool.total() == pool && state.priority_player == Some(caster));
     // And nothing else of the game is other than it was.
-    assert!(everything(state) == before);
+    assert!(everything(state, registry) == before);
     std::mem::forget(cast);
 }
 
@@ -369,6 +369,10 @@ struct Seen {
     sick: bool,
     power: Option<i32>,
     toughness: Option<i32>,
+    /// Its power and toughness as the layers have them now (CR 613), of
+    /// a permanent: what every effect on it comes to.
+    power_now: Option<i32>,
+    toughness_now: Option<i32>,
     counters: u32,
     shields: u32,
     attached_to: Option<ObjectId>,
@@ -409,7 +413,7 @@ struct Everything {
     a_creature_died: bool,
 }
 
-fn everything(state: &GameState) -> Everything {
+fn everything(state: &GameState, registry: &CardRegistry) -> Everything {
     let mut objects = [None; 24];
     for o in state.objects.values() {
         let at = usize::try_from(o.id.0).expect("a small id");
@@ -423,6 +427,8 @@ fn everything(state: &GameState) -> Everything {
             sick: o.zone == Zone::Battlefield && o.summoning_sick,
             power: o.power,
             toughness: o.toughness,
+            power_now: if o.zone == Zone::Battlefield { state.effective_power(o.id, registry) } else { None },
+            toughness_now: if o.zone == Zone::Battlefield { state.effective_toughness(o.id, registry) } else { None },
             counters: o.counters.values().sum(),
             shields: o.regeneration_shields,
             attached_to: o.attached_to,
@@ -470,7 +476,7 @@ impl Everything {
     /// attachment, its front face up.
     fn goes_to(&mut self, id: ObjectId, zone: Zone) {
         let o = self.of(id);
-        *o = Seen { zone, controller: o.owner, tapped: false, damage: 0, sick: false, counters: 0, shields: 0, attached_to: None, attached_to_player: None, transformed: false, ..*o };
+        *o = Seen { zone, controller: o.owner, tapped: false, damage: 0, sick: false, power_now: None, toughness_now: None, counters: 0, shields: 0, attached_to: None, attached_to_player: None, transformed: false, ..*o };
     }
 
     /// `id` goes to its owner `player`'s graveyard, the newest card there.
@@ -685,7 +691,7 @@ fn destroys((card, what, cast, (owner, controller), guard): (Box<dyn CardBehavio
         in_the_declare_attackers_step(&mut state, controller);
     }
     let (before, beside_before) = (as_it_is(&state, target).expect("there"), as_it_is(&state, beside));
-    let mut expected = everything(&state);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
 
@@ -701,7 +707,7 @@ fn destroys((card, what, cast, (owner, controller), guard): (Box<dyn CardBehavio
         }
     }
     expected.has_resolved(spell, cast, state.active_player);
-    assert!(everything(&state) == expected);
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     let attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&target));
@@ -898,8 +904,20 @@ fn pumps((card, (power_up, toughness_up), keyword, untaps, cast, controller): (B
     let read = |state: &GameState, id| (state.effective_power(id, &registry), state.effective_toughness(id, &registry));
     let (pt, beside_pt) = (read(&state, target), read(&state, beside));
     let (before, beside_before) = (as_it_is(&state, target).expect("there"), as_it_is(&state, beside));
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the creature that much
+    // larger as the layers have it, untapped if the text untaps it, and
+    // the spell resolved. How many effects until end of turn the engine
+    // keeps for that is its own affair and is not held to a number: what
+    // they come to on every permanent is.
+    let pumped = expected.of(target);
+    *pumped = Seen { power_now: pumped.power_now.map(|p| p + power_up), toughness_now: pumped.toughness_now.map(|t| t + toughness_up), tapped: pumped.tapped && !untaps, ..*pumped };
+    expected.effects_until_end_of_turn = state.until_end_of_turn.len();
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(read(&state, target) == (pt.0.map(|p| p + power_up), pt.1.map(|t| t + toughness_up)));
     if let Some(keyword) = keyword {
@@ -1018,8 +1036,15 @@ fn damages_a_player((card, amount, cast, at): (Box<dyn CardBehavior>, Amount, Ca
     let n = amount.on(&mut state);
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = [as_it_is(&state, creatures[0]), as_it_is(&state, creatures[1])];
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Player(PlayerId(at))]);
+
+    // The whole game after is the game before with that much life gone
+    // from the player and the spell resolved: nothing else.
+    expected.players[usize::from(at)].life -= i32::try_from(n).expect("small");
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     for p in 0..2u8 {
         let lost = if p == at { i32::try_from(n).expect("small") } else { 0 };
@@ -2298,7 +2323,7 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
     let spell = state.create_object(card, caster, Zone::Hand, None, None);
     mana_for_symbols(&mut state, caster, printed.cost);
     let before = as_it_is(&state, beside);
-    let mut expected = everything(&state);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
 
@@ -2309,9 +2334,9 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
     assert!(state.players[0].graveyard_order.is_empty() && state.players[1].graveyard_order.is_empty());
     // The whole game after is the game before with the card on the
     // battlefield, new there this turn, and the mana spent: nothing else.
-    (expected.of(spell).zone, expected.of(spell).sick) = (Zone::Battlefield, true);
+    *expected.of(spell) = Seen { zone: Zone::Battlefield, sick: true, power_now: Some(printed.power), toughness_now: Some(printed.toughness), ..*expected.of(spell) };
     expected.players[usize::from(cast.by)].mana = 0;
-    assert!(everything(&state) == expected);
+    assert!(everything(&state, &registry) == expected);
     std::mem::forget((registry, state));
 }
 
@@ -2393,17 +2418,17 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
     state.priority_player = Some(caster);
     let spell = state.create_object(card, caster, Zone::Hand, None, None);
     mana_for_symbols(&mut state, caster, printed.cost);
-    let mut expected = everything(&state);
+    let mut expected = everything(&state, &registry);
 
     if printed.keywords.contains(&Keyword::Flash) {
         cast_and_resolve(&mut state, &registry, spell, Vec::new());
         is_there_as_printed(&state, &registry, spell, printed, caster);
         // As in its caster's own main phase, and priority is the active
         // player's once it has resolved (CR 117.3b).
-        (expected.of(spell).zone, expected.of(spell).sick) = (Zone::Battlefield, true);
+        *expected.of(spell) = Seen { zone: Zone::Battlefield, sick: true, power_now: Some(printed.power), toughness_now: Some(printed.toughness), ..*expected.of(spell) };
         expected.players[0].mana = 0;
         expected.priority = Some(state.active_player);
-        assert!(everything(&state) == expected);
+        assert!(everything(&state, &registry) == expected);
     } else {
         cast_is_refused(&mut state, &registry, spell, Vec::new());
     }
