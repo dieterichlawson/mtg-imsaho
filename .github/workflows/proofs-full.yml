@@ -10,6 +10,15 @@
 # one of them that now proves is said so in the summary, to be taken off.
 # The merged results are kept as an artifact: scripts/kani-tiers.py
 # write reads them to refresh the tiers' lists.
+#
+# Run by hand with `harnesses: new`, it is the other run: only the
+# harnesses written and not yet run to a result (NOT_RUN in
+# scripts/kani/times.txt), which the scheduled run leaves out, shared over
+# the same 30 jobs, two to a build. There GREEN means every one of them
+# now has a result, whatever it is, and the results are printed for
+# scripts/kani-tiers.py record; RED means one was left with none (a shard
+# broke). No issue is filed: a new harness that does not prove is what
+# that run is to find out.
 name: proofs-full
 
 on:
@@ -17,6 +26,12 @@ on:
     # The 1st and the 15th, before the day's other scheduled work.
     - cron: "23 2 1,15 * *"
   workflow_dispatch:
+    inputs:
+      harnesses:
+        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one."
+        type: choice
+        options: [proved, new]
+        default: proved
 
 permissions:
   contents: read
@@ -53,7 +68,12 @@ jobs:
           cargo kani setup
 
       - name: Prove shard ${{ matrix.shard }} of 30
-        run: scripts/prove.sh kani-shard ${{ matrix.shard }}/30
+        run: scripts/prove.sh ${{ inputs.harnesses == 'new' && 'kani-new' || 'kani-shard' }} ${{ matrix.shard }}/30
+
+      # The loop bounds a new harness needed, for scripts/kani/.
+      - name: Loop bounds learned
+        if: always() && inputs.harnesses == 'new'
+        run: git diff --unified=0 -- scripts/kani/ | grep '^+[^+]' || true
 
       - name: Keep the results
         if: always()
@@ -86,7 +106,26 @@ jobs:
           cat shards/*.txt > logs/kani/full.txt 2>/dev/null || true
           echo "$(wc -l < logs/kani/full.txt) result lines from $(ls shards | wc -l) shards"
 
+      - name: The new harnesses' first results
+        if: inputs.harnesses == 'new'
+        run: |
+          set +e
+          sort -k3 logs/kani/full.txt
+          python3 - > verdict.txt <<'EOF'
+          import importlib.util, sys
+          spec = importlib.util.spec_from_file_location('kb', 'scripts/kani-bounded.py')
+          kb = importlib.util.module_from_spec(spec); spec.loader.exec_module(kb)
+          waiting = kb.not_run('scripts/kani/times.txt')
+          new = [h for h in kb.list_harnesses('mtg-engine/src') if h in waiting]
+          sys.exit(kb.first_results(new, 'logs/kani/full.txt'))
+          EOF
+          status=$?
+          cat verdict.txt
+          { echo '```'; cat verdict.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
       - name: Compare with the harnesses known not to prove
+        if: inputs.harnesses != 'new'
         id: verdict
         run: |
           set +e
@@ -103,7 +142,7 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - name: File an issue for the harnesses that no longer prove
-        if: steps.verdict.outputs.status != '0'
+        if: inputs.harnesses != 'new' && steps.verdict.outputs.status != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
