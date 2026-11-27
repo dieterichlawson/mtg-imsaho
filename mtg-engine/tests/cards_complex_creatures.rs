@@ -3464,6 +3464,40 @@ fn the_oozes_die_when_gutter_grime_leaves() {
         "a 0-toughness token dies and, being a token, ceases to exist");
 }
 
+/// A Gutter Grime that left and came back is a new object (CR 400.7). Its
+/// slime counters are not the ones an Ooze made by the old Grime counts:
+/// "If Gutter Grime leaves the battlefield, the power and toughness of each
+/// Ooze token it created will become 0." The engine keeps an object's id
+/// across zones, so the Ooze read the new Grime's counters through the old
+/// id. The Ooze also keeps its own ability text, which reads the card
+/// stamped at creation rather than the card the id holds now (#1095).
+#[test]
+fn an_ooze_does_not_count_the_slime_on_a_gutter_grime_that_came_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grime = named_permanent(&mut state, &reg, "Gutter Grime", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    kill_by_damage(&mut state, &reg, creature);
+    triggers::process_triggers(&mut state, &reg);
+    let ooze = find_token_named(&state, "Ooze Token").expect("an Ooze was made");
+    // Keep the Ooze alive at 0 slime, so its size can be read afterwards.
+    state.add_counters(ooze, CounterType::PlusOnePlusOne, 1);
+    assert_eq!(state.effective_power(ooze, &reg), Some(2), "test precondition: 1 slime + 1 counter");
+
+    state.move_object(grime, Zone::Hand, &reg);
+    state.move_object(grime, Zone::Battlefield, &reg);
+    state.add_counters(grime, CounterType::Slime, 3);
+
+    assert_eq!(state.effective_power(ooze, &reg), Some(1),
+        "the returned Grime's three slime counters are not this Ooze's");
+    assert_eq!(state.effective_toughness(ooze, &reg), Some(1));
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let row = view.battlefield.iter().find(|p| p.object_id == ooze).expect("the Ooze");
+    assert!(row.oracle_text.contains("slime counters on Gutter Grime"), "{}", row.oracle_text);
+    assert!(row.star_pt);
+}
+
 // -------------------------------------------------------------------------
 // Unbreathing Horde
 // -------------------------------------------------------------------------

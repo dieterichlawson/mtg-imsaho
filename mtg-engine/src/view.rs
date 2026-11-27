@@ -588,7 +588,7 @@ impl GameView {
                     // (issue #505).
                     star_pt: registry.get(obj.card_id)
                         .is_some_and(super::cards::CardBehavior::prints_star_pt)
-                        || state.token_pt_source(obj.id).is_some(),
+                        || state.token_pt_card(obj.id).is_some(),
                     is_token: obj.is_token,
                     attacking: state.combat.as_ref().and_then(|c| {
                         c.attackers.get(&obj.id).map(|defender| {
@@ -617,9 +617,8 @@ impl GameView {
                     // from (issue #505).
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
-                        .or_else(|| state.token_pt_source(obj.id)
-                            .and_then(|src| state.get_object(src))
-                            .and_then(|src| registry.get(src.card_id))
+                        .or_else(|| state.token_pt_card(obj.id)
+                            .and_then(|card| registry.get(card))
                             .and_then(super::cards::CardBehavior::token_pt_text))
                         .unwrap_or_default(),
                     // A card that is a copy remembers what it is printed as;

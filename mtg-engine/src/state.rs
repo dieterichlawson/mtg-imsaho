@@ -944,6 +944,7 @@ impl GameState {
             instance_oracle_text: None,
             instance_continuous_effects: None,
             card_state: CardState::new(),
+            pt_defined_by_card: None,
             counters: CounterMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
@@ -1073,17 +1074,22 @@ impl GameState {
             colors, card_types, keywords, subtypes, None, Some(defined_by), registry)
     }
 
-    /// The permanent whose ability defines this token's power and toughness
-    /// (CR 604.3), if any.
+    /// The card that prints the ability defining this token's power and
+    /// toughness (CR 604.3), if any: as stamped when the token was created.
     ///
     /// The display half of [`token_defined_pt`](Self::token_defined_pt): a
     /// token has no card face, so the `i` screen had no `Printed P/T: */*`
     /// line and no ability text for one, and nothing on any pane said where
-    /// its size came from or that it would move (issue #505).
+    /// its size came from or that it would move (issue #505). The ability is
+    /// the token's own, so it stays when its creator leaves. It is read from
+    /// the stamp, not through the creator's id, which a bounce puts in a
+    /// hidden hand (#1095).
     #[must_use]
-    pub fn token_pt_source(&self, id: ObjectId) -> Option<ObjectId> {
-        let source = *self.get_object(id)?.card_state.get(crate::cards::PT_DEFINED_BY)?;
-        self.get_object(source).map(|o| o.id)
+    pub fn token_pt_card(&self, id: ObjectId) -> Option<CardId> {
+        let obj = self.get_object(id)?;
+        let source = *obj.card_state.get(crate::cards::PT_DEFINED_BY)?;
+        obj.pt_defined_by_card.map(|(card, _)| card)
+            .or_else(|| self.get_object(source).map(|o| o.card_id))
     }
 
     /// The same, for a token that copies a card (`create_token_copy`) and so
@@ -1230,6 +1236,7 @@ impl GameState {
         let keywords_printed = keywords.clone();
         let card_types_printed = card_types.clone();
         let subtypes_printed = subtypes.clone();
+        let pt_defined_by_card = pt_defined_by.and_then(|src| self.get_object(src)).map(|s| (s.card_id, s.zone_change_count));
         let obj = GameObject {
             id,
             // A token of no card is `CardId(0)`; a token copy carries the
@@ -1280,6 +1287,7 @@ impl GameState {
                 }
                 card_state
             },
+            pt_defined_by_card,
             counters: CounterMap::new(),
             regeneration_shields: 0,
             // CR 707.8a: a copy of a permanent with its back face up shows
@@ -2766,12 +2774,19 @@ impl GameState {
     /// [`crate::cards::PT_DEFINED_BY`] and that object's card says what the
     /// numbers are, so the rule stays on the card that prints it. `None` when
     /// the token carries no such ability, or when its creator has left the
-    /// game entirely — the token's own base P/T (0/0) is then the answer,
-    /// which is the same one its creator would give with its counters gone.
+    /// game entirely or changed zones since (CR 400.7: a new object, which a
+    /// re-cast Gutter Grime's new slime counters are on, not the one the
+    /// token's ability names). The token's own base P/T (0/0) is then the
+    /// answer, the one its creator would give with its counters gone.
     fn token_defined_pt(&self, obj: &GameObject, registry: &crate::cards::CardRegistry) -> Option<(i32, i32)> {
         let source_id = *obj.card_state.get(crate::cards::PT_DEFINED_BY)?;
         let source = self.get_object(source_id)?;
-        registry.get(source.card_id)?
+        let card = match obj.pt_defined_by_card {
+            Some((card, then)) if source.zone_change_count == then => card,
+            Some(_) => return None,
+            None => source.card_id,
+        };
+        registry.get(card)?
             .token_dynamic_pt(self, source_id, obj.id, registry)
     }
 
@@ -4899,6 +4914,17 @@ pub struct GameObject {
     /// Keyed by purpose string, value is an `ObjectId`.
     #[serde(default)]
     pub card_state: CardState,
+
+    /// For a token whose own ability defines its P/T (CR 604.3), the card
+    /// that prints the ability and its creator's `zone_change_count`, both
+    /// as the token was created. The creator under
+    /// [`crate::cards::PT_DEFINED_BY`] is the same object only while its
+    /// count still matches (CR 400.7). The ability text and the numbers
+    /// come from the stamped card, never from whatever card the creator's
+    /// id holds now, which could be a card in a hidden hand (#1095). `None`
+    /// on a save from before the stamp, which reads the creator as it is.
+    #[serde(default)]
+    pub pt_defined_by_card: Option<(CardId, u32)>,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
     pub counters: CounterMap,

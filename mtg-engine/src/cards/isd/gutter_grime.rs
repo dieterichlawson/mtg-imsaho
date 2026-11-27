@@ -90,8 +90,10 @@ slime counters on Gutter Grime.".into())
         //
         // `source_id` is the Gutter Grime that made this token. Ruling: "If
         // Gutter Grime leaves the battlefield, the power and toughness of each
-        // Ooze token it created will become 0" — which falls out, because a
-        // permanent that changes zones loses its counters (CR 400.7).
+        // Ooze token it created will become 0" — the engine never asks once
+        // this Grime has changed zones (`GameState::token_defined_pt` reads
+        // the zone-change count stamped on the token), so a re-cast Grime's
+        // new counters are not counted (CR 400.7).
         let n = i32::try_from(state.get_counter_count(source_id, CounterType::Slime))
             .unwrap_or(i32::MAX);
         Some((n, n))
