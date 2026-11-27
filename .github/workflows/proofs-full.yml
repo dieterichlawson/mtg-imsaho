@@ -32,7 +32,10 @@
 # and one that runs out of `cap` again alone with the machine to itself:
 # to find out what a proof takes. It prints their results, records
 # nothing, and is green whatever they are, and when no machine was to be
-# had (it is said, and nothing was run).
+# had (it is said, and nothing was run). `harnesses: sweep` rents
+# nothing: it lists the machines of these runs that are still there, and
+# terminates any older than seven hours, which is one that outlived both
+# its run and its own clock (scripts/ec2-sweep.sh).
 name: proofs-full
 
 on:
@@ -42,9 +45,9 @@ on:
   workflow_dispatch:
     inputs:
       harnesses:
-        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one. named (aws only): the ones in `names`. none (aws only): rent the machine and give it back."
+        description: "proved: every harness with a result, as on schedule. new: only those written and not yet run to one. named (aws only): the ones in `names`. none (aws only): rent the machine and give it back. sweep (aws only): list the machines still there."
         type: choice
-        options: [proved, new, named, none]
+        options: [proved, new, named, none, sweep]
         default: proved
       names:
         description: "harnesses: named only: the harnesses or modules, separated by spaces."
@@ -80,7 +83,7 @@ permissions:
 
 jobs:
   shard:
-    if: inputs.machine != 'aws' && inputs.harnesses != 'none' && inputs.harnesses != 'named'
+    if: inputs.machine != 'aws' && !contains(fromJSON('["none", "named", "sweep"]'), inputs.harnesses)
     runs-on: ubuntu-latest
     timeout-minutes: 355
     strategy:
@@ -155,6 +158,7 @@ jobs:
           [[ $NAMES =~ ^[A-Za-z0-9_:\ ]*$ ]] || { echo "names are harness paths separated by spaces"; exit 2; }
           case "$HARNESSES" in
             none) EC2_SETUP=none EC2_MAX_HOURS=1 scripts/ec2-run.sh 'uname -srm; ls scripts/prove.sh' ;;
+            sweep) scripts/ec2-sweep.sh 7 ;;
             named)
               [ -n "$NAMES" ] || { echo "harnesses: named needs names"; exit 2; }
               EC2_IF_NONE=ok scripts/ec2-run.sh "KANI_JOBS=$SHARES KANI_CAP=$CAP KANI_TIMEOUT=$TIMEOUT scripts/prove.sh kani-these $NAMES" ;;
@@ -164,7 +168,7 @@ jobs:
 
       # The loop bounds the harnesses needed, for scripts/kani/.
       - name: Loop bounds learned
-        if: always() && inputs.harnesses != 'none' && inputs.harnesses != 'named'
+        if: always() && !contains(fromJSON('["none", "named", "sweep"]'), inputs.harnesses)
         run: |
           for f in loop-bounds.txt loop-bounds.through-the-stack.txt; do
             echo "== $f"
@@ -172,7 +176,7 @@ jobs:
           done
 
       - name: Keep the results
-        if: always() && inputs.harnesses != 'none'
+        if: always() && !contains(fromJSON('["none", "sweep"]'), inputs.harnesses)
         uses: actions/upload-artifact@v4
         with:
           name: kani-shard-big
@@ -181,7 +185,7 @@ jobs:
 
   report:
     needs: [shard, big]
-    if: always() && inputs.harnesses != 'none' && inputs.harnesses != 'named'
+    if: always() && !contains(fromJSON('["none", "named", "sweep"]'), inputs.harnesses)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
