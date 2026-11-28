@@ -95,6 +95,8 @@ struct Args {
     /// The flags given on the command line, so a resume names only the
     /// ones the snapshot overrode (#1049).
     supplied: Vec<&'static str>,
+    /// `--ai`'s model, or the default: what a bare `ai` seat runs.
+    default_ai: String,
 }
 
 fn parse_args() -> Args {
@@ -123,6 +125,7 @@ fn parse_args() -> Args {
         save: None,
         resume: None,
         supplied: Vec::new(),
+        default_ai: String::new(),
     };
     let mut i = 0;
     let value = |i: &mut usize, flag: &str| -> String {
@@ -188,6 +191,7 @@ fn parse_args() -> Args {
         }
         i += 1;
     }
+    args.default_ai.clone_from(&default_ai);
     args.seats = parse_seats(&seats_spec, &default_ai).unwrap_or_else(|e| die(&format!("--seats: {e}")));
     args
 }
@@ -195,32 +199,42 @@ fn parse_args() -> Args {
 /// The flags a snapshot's own values replace on `--resume`.
 const SNAPSHOT_FLAGS: &[&str] = &["--seats", "--ai", "--seed", "--set", "--best-of"];
 
-/// The seats as `--seats` names them.
-fn seats_spec(seats: &[SeatKind]) -> String {
+/// The seats as `--seats` names them; with `models` false, an AI seat is
+/// a bare `ai`, so the layout is compared apart from what `--ai` sets.
+fn seats_spec(seats: &[SeatKind], models: bool) -> String {
     seats.iter().map(|s| match s {
         SeatKind::Human => "human".to_string(),
         SeatKind::Cli => "cli".to_string(),
-        SeatKind::Ai(m) => format!("ai:{m}"),
+        SeatKind::Ai(m) if models => format!("ai:{m}"),
+        SeatKind::Ai(_) => "ai".to_string(),
     }).collect::<Vec<_>>().join(",")
 }
 
-/// A note for each flag the operator gave that the snapshot overrode, in
-/// the batch runner's words ("--seed comes from the save (1 -> 2)"). The
-/// table replaced `--seats`, `--seed`, `--set` and `--best-of` with the
-/// snapshot's and said so only in `--help` (#1049). A flag that agrees
-/// with the snapshot, or one not given, is not noted.
+/// A note for each flag the operator gave that the snapshot overrode
+/// ("--seed comes from the snapshot (12 -> 11)"). The table replaced
+/// `--seats`, `--ai`, `--seed`, `--set` and `--best-of` with the
+/// snapshot's and said so only in `--help` (#1049). A flag left out, or
+/// one that agrees with the snapshot, is not noted. `--seats` is held to
+/// the snapshot's layout and, when `--ai` is given too, `--ai` to the
+/// snapshot's AI models: `--ai` alone must not be blamed for the default
+/// seat layout it never set.
 fn overridden_flag_notes(args: &Args, save: &TableSave) -> Vec<String> {
-    let saved_seats = save.seat_kinds().map(|s| seats_spec(&s)).unwrap_or_default();
-    let given_seats = seats_spec(&args.seats);
-    let seats_flag = if args.supplied.contains(&"--seats") { "--seats" } else { "--ai" };
+    let saved = save.seat_kinds().unwrap_or_default();
+    let given_ai = args.supplied.contains(&"--ai");
+    let saved_models: Vec<&str> = saved.iter().filter_map(|s| match s {
+        SeatKind::Ai(m) => Some(m.as_str()),
+        _ => None,
+    }).fold(Vec::new(), |mut v, m| { if !v.contains(&m) { v.push(m); } v });
+    let ai_moved = given_ai && saved_models.iter().any(|m| *m != args.default_ai);
     [
-        (seats_flag, given_seats, saved_seats),
-        ("--seed", args.seed.to_string(), save.seed.to_string()),
-        ("--set", args.set.clone(), save.set.clone()),
-        ("--best-of", args.best_of.to_string(), save.best_of.to_string()),
+        ("--seats", seats_spec(&args.seats, !given_ai), seats_spec(&saved, !given_ai), true),
+        ("--ai", args.default_ai.clone(), saved_models.join(","), ai_moved),
+        ("--seed", args.seed.to_string(), save.seed.to_string(), true),
+        ("--set", args.set.clone(), save.set.clone(), true),
+        ("--best-of", args.best_of.to_string(), save.best_of.to_string(), true),
     ].into_iter()
-        .filter(|(flag, given, saved)| given != saved && args.supplied.contains(flag))
-        .map(|(flag, given, saved)| format!("note: {flag} comes from the snapshot ({given} -> {saved})"))
+        .filter(|(flag, given, saved, moved)| *moved && given != saved && args.supplied.contains(flag))
+        .map(|(flag, given, saved, _)| format!("{flag} comes from the snapshot ({given} -> {saved})"))
         .collect()
 }
 
@@ -288,7 +302,13 @@ fn main() {
         save.check().unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
         save
     });
+    // Said on the terminal now, before the snapshot's own values are
+    // checked or loaded: a refusal of its model or its set, or a taken
+    // port, is explained by these. The log has them once it is ours (below).
     let overridden = save.as_ref().map_or_else(Vec::new, |save| overridden_flag_notes(&args, save));
+    for note in &overridden {
+        mtg_player::stderr_line!("note: {note}");
+    }
     if let Some(save) = &save {
         args.seats = save.seat_kinds().unwrap_or_else(|e| die(&format!("--resume: {e}")));
         args.seed = save.seed;
@@ -362,7 +382,7 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     // taken port it went into the log of the table still running there,
     // beside the FATAL (#893, as #745 for a fresh table).
     let mut resumed_note = None;
-    let mut resumed_warnings: Vec<String> = overridden;
+    let mut resumed_warnings: Vec<String> = Vec::new();
     if let (Some(save), Some(path)) = (&save, &args.resume) {
         lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
         // Which matches are played again, only when one is (#999).
@@ -433,6 +453,9 @@ record, so what its AI seats' replayed picks were made under is unknown"));
         let _ = DraftLogger::new(&log_path);
         mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
         mtg_player::stderr_line!("{note}");
+    }
+    for note in &overridden {
+        mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
     }
     for warning in &resumed_warnings {
         // A note is `NOTE` in the log, as the one above is.
@@ -530,5 +553,54 @@ client still works", shared.config.web_dir.display(), server::PAGE);
     if let Some(why) = mtg_player::game_log::write_failure() {
         mtg_player::stderr_line!("Error: {why}; the table's log is incomplete");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{overridden_flag_notes, Args, SeatKind};
+    use mtg_draft_runner::lobby::TableSave;
+
+    fn save(seats: &[&str]) -> TableSave {
+        let seats: Vec<_> = seats.iter().map(|k| serde_json::json!({
+            "kind": k, "name": k, "key": null, "joined": false, "kicked": false, "gave_up": false, "notes": null,
+        })).collect();
+        serde_json::from_value(serde_json::json!({
+            "version": 1, "set": "isd", "seed": 11, "best_of": 1, "seats": seats,
+            "picks": [], "decks": [], "matches": [],
+        })).unwrap()
+    }
+
+    fn args(seats: Vec<SeatKind>, default_ai: &str, supplied: &[&'static str]) -> Args {
+        Args {
+            seats, set: "isd".into(), bind: String::new(), port: 0, game_ports: (0, 0),
+            direct_game_ports: false, best_of: 1, seed: 11, guide: None, pick_seconds: None,
+            build_seconds: None, sideboard_seconds: None, log: String::new(), quiet: false,
+            save: None, resume: None, supplied: supplied.to_vec(), default_ai: default_ai.into(),
+        }
+    }
+
+    /// `--ai` alone is held to the snapshot's AI models, not blamed for the
+    /// default layout `human,ai,ai,ai` it never set (#1049's review).
+    #[test]
+    fn ai_alone_is_noted_only_for_a_model_the_snapshot_overrode() {
+        let default = vec![SeatKind::Human, SeatKind::Ai("cc:x".into()), SeatKind::Ai("cc:x".into()), SeatKind::Ai("cc:x".into())];
+        assert!(overridden_flag_notes(&args(default.clone(), "cc:x", &["--ai"]), &save(&["human", "human"])).is_empty());
+        assert!(overridden_flag_notes(&args(default.clone(), "cc:x", &["--ai"]), &save(&["human", "ai:cc:x"])).is_empty());
+        assert_eq!(overridden_flag_notes(&args(default, "cc:x", &["--ai"]), &save(&["human", "ai:cc:y"])),
+            vec!["--ai comes from the snapshot (cc:x -> cc:y)".to_string()]);
+    }
+
+    /// `--seats` is noted for a layout; with `--ai` given too, a model
+    /// difference is `--ai`'s, not `--seats`'.
+    #[test]
+    fn seats_are_noted_for_the_layout_and_ai_for_the_model() {
+        let given = vec![SeatKind::Human, SeatKind::Ai("cc:x".into())];
+        assert_eq!(overridden_flag_notes(&args(given.clone(), "cc:x", &["--seats"]), &save(&["human", "human"])),
+            vec!["--seats comes from the snapshot (human,ai:cc:x -> human,human)".to_string()]);
+        assert_eq!(overridden_flag_notes(&args(given.clone(), "cc:x", &["--seats", "--ai"]), &save(&["human", "ai:cc:y"])),
+            vec!["--ai comes from the snapshot (cc:x -> cc:y)".to_string()]);
+        assert!(overridden_flag_notes(&args(given, "cc:x", &["--seed", "--best-of"]), &save(&["human", "ai:cc:y"])).is_empty(),
+            "a flag left out is not noted, nor one that agrees");
     }
 }
