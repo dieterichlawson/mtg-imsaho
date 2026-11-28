@@ -497,13 +497,57 @@ impl Everything {
         self.priority = Some(active);
         if cast.flashback {
             self.goes_to(spell, Zone::Exile);
-            let graveyard = &mut self.players[caster].graveyard;
-            let at = graveyard.iter().position(|c| *c == Some(spell)).expect("cast from the graveyard");
-            graveyard.copy_within(at + 1.., at);
-            graveyard[5] = None;
+            self.leaves_the_graveyard(spell, cast.by);
         } else {
             self.is_buried(spell, cast.by);
         }
+    }
+
+    /// `id` is no longer in `player`'s graveyard, and the cards put there
+    /// after it are each one place nearer the bottom.
+    fn leaves_the_graveyard(&mut self, id: ObjectId, player: u8) {
+        let graveyard = &mut self.players[usize::from(player)].graveyard;
+        let at = graveyard.iter().position(|c| *c == Some(id)).expect("in that graveyard");
+        graveyard.copy_within(at + 1.., at);
+        graveyard[5] = None;
+    }
+
+    /// The top card of `player`'s library leaves it for `zone`: the hand
+    /// (a draw, CR 121.1) or the graveyard (a card milled, 701.17a), where
+    /// it is the newest.
+    fn takes_the_top_card(&mut self, player: u8, zone: Zone) {
+        let library = &mut self.players[usize::from(player)].library;
+        let id = library[0].expect("a card in the library");
+        library.copy_within(1.., 0);
+        library[5] = None;
+        if zone == Zone::Graveyard {
+            self.is_buried(id, player);
+        } else {
+            self.goes_to(id, zone);
+        }
+    }
+
+    /// `id` is put on top of its owner `player`'s library (CR 401.4), the
+    /// cards that were there under it in the order they were.
+    fn is_put_on_top(&mut self, id: ObjectId, player: u8) {
+        self.goes_to(id, Zone::Library);
+        let library = &mut self.players[usize::from(player)].library;
+        assert!(library[5].is_none());
+        library.copy_within(..5, 1);
+        library[0] = Some(id);
+    }
+
+    /// `id` is a new object: a creature token of that power and
+    /// toughness on the battlefield under `player`, who owns it (CR
+    /// 111.2), untapped and come under their control this turn.
+    fn is_a_new_token(&mut self, id: ObjectId, player: u8, (power, toughness): (i32, i32)) {
+        let at = usize::try_from(id.0).expect("a small id");
+        assert!(self.objects[at].is_none());
+        self.objects[at] = Some(Seen {
+            zone: Zone::Battlefield, owner: PlayerId(player), controller: PlayerId(player), tapped: false, damage: 0, sick: true,
+            power: Some(power), toughness: Some(toughness), power_now: Some(power), toughness_now: Some(toughness),
+            counters: 0, shields: 0, attached_to: None, attached_to_player: None, transformed: false, token: true,
+        });
     }
 }
 
@@ -788,12 +832,21 @@ fn does_nothing_once_its_target_is_gone((card, what, answer, cast): (Box<dyn Car
     all_pass(&mut state, &registry);
 
     // The whole game after is the game before with the target in its
-    // owner's graveyard by the answer, the answer after it there and its
-    // mana spent, and the first spell resolved for nothing (CR 608.2b):
-    // nothing else.
-    expected.is_buried(target, other);
+    // owner's graveyard by the answer, the answer there too and its mana
+    // spent, and the first spell resolved for nothing (CR 608.2b):
+    // nothing else. An answer that destroys puts the target there as it
+    // resolves, and is put there after it (608.2n); one that deals
+    // damage is there first, the target dying of the damage as the
+    // state-based actions are next checked (704.5g).
+    let by_damage = registry.card_data(answer).expect("registered").name == "Lightning Bolt";
+    if by_damage {
+        expected.is_buried(response, other);
+        expected.is_buried(target, other);
+    } else {
+        expected.is_buried(target, other);
+        expected.is_buried(response, other);
+    }
     expected.a_creature_died = what.is_a_creature();
-    expected.is_buried(response, other);
     expected.players[usize::from(other)].mana = 0;
     expected.has_resolved(spell, cast, state.active_player);
     assert!(everything(&state, &registry) == expected);
@@ -1034,16 +1087,19 @@ fn damages_a_creature((card, amount, (what, marked), cast, controller): (Box<dyn
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
 
-    // The whole game after is the game before with the damage marked on
-    // the creature, or the creature dead of it and in its owner's
-    // graveyard (CR 704.5g), and the spell resolved: nothing else.
+    // The whole game after is the game before with the spell resolved
+    // and the damage marked on the creature, or the creature dead of it
+    // and in its owner's graveyard: nothing else. It dies as the
+    // state-based actions are next checked (CR 704.5g), which is after
+    // the spell has been put into its graveyard (608.2n), so that the
+    // spell is under it there if one player owns both.
+    expected.has_resolved(spell, cast, state.active_player);
     if i64::from(marked + n) >= i64::from(toughness) {
         expected.is_buried(target, controller);
         expected.a_creature_died = true;
     } else {
         expected.of(target).damage = marked + n;
     }
-    expected.has_resolved(spell, cast, state.active_player);
     assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
@@ -1100,8 +1156,21 @@ fn damages_a_planeswalker((card, amount, loyalty, cast, controller): (Box<dyn Ca
     let n = amount.on(&mut state);
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = as_it_is(&state, target);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the spell resolved
+    // and that many counters gone from the planeswalker, or the
+    // planeswalker in its owner's graveyard, put there as the state-based
+    // actions are checked after the spell has resolved: nothing else.
+    expected.has_resolved(spell, cast, state.active_player);
+    if n >= loyalty {
+        expected.is_buried(target, controller);
+    } else {
+        expected.of(target).counters = loyalty - n;
+    }
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     if n >= loyalty {
@@ -1224,10 +1293,18 @@ fn mills((card, n, cards, cast, who): (Box<dyn CardBehavior>, usize, usize, Cast
     let library = a_library(&mut state, blank, who, cards);
     let other = a_library(&mut state, blank, 1 - who, 1);
     let spell = a_spell(&mut state, &registry, card, cast);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Player(PlayerId(who))]);
 
     let milled = n.min(cards);
+    // The whole game after is the game before with those cards in the
+    // player's graveyard, top first, and the spell resolved: nothing else.
+    for _ in 0..milled {
+        expected.takes_the_top_card(who, Zone::Graveyard);
+    }
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
     let player = &state.players[usize::from(who)];
     // The caster's graveyard holds the spell too, on top, if it rests there.
     let theirs = player.graveyard_order.len() - usize::from(cast.by == who && !cast.flashback);
@@ -1259,8 +1336,17 @@ fn makes_tokens((card, n, (power, toughness), colour, subtype, keyword, cast): (
     let spell = a_spell(&mut state, &registry, card, cast);
     let (objects, before) = (state.objects.len(), [as_it_is(&state, creatures[0]), as_it_is(&state, creatures[1])]);
     let you = PlayerId(cast.by);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
+
+    // The whole game after is the game before with the tokens made and
+    // the spell resolved: nothing else.
+    for k in 1..=n {
+        expected.is_a_new_token(ObjectId(spell.0 + k), cast.by, (power, toughness));
+    }
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(state.objects.len() == objects + usize::try_from(n).expect("a few"));
     for k in 1..=n {
@@ -1295,8 +1381,15 @@ fn gnaw_to_the_bone((creatures, cast): (usize, Cast)) {
     a_card_in(&mut state, blank, other, Zone::Graveyard, true);
     let spell = a_spell(&mut state, &registry, card, cast);
     let buried = [state.players[0].graveyard_order.len(), state.players[1].graveyard_order.len()];
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
+
+    // The whole game after is the game before with the life gained and
+    // the spell resolved: nothing else.
+    expected.players[usize::from(you)].life += 2 * i32::try_from(creatures).expect("a few");
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(state.players[usize::from(you)].life == 20 + 2 * i32::try_from(creatures).expect("a few"));
     assert!(state.players[usize::from(other)].life == 20);
@@ -1318,8 +1411,15 @@ fn bump_in_the_night(cast: Cast) {
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = [as_it_is(&state, creatures[0]), as_it_is(&state, creatures[1])];
     let at = 1 - cast.by;
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Player(PlayerId(at))]);
+
+    // The whole game after is the game before with the life lost and the
+    // spell resolved: nothing else.
+    expected.players[usize::from(at)].life -= 3;
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(state.players[usize::from(at)].life == 17 && state.players[usize::from(cast.by)].life == 20);
     assert!(!state.players[0].lost && !state.players[1].lost);
@@ -1433,6 +1533,7 @@ fn gives_each((card, does, cast): (Box<dyn CardBehavior>, ToAll, Cast)) {
     for (i, &c) in creatures.iter().enumerate() {
         before[i] = (read(&state, c), as_it_is(&state, c));
     }
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
 
@@ -1444,6 +1545,8 @@ fn gives_each((card, does, cast): (Box<dyn CardBehavior>, ToAll, Cast)) {
             ToAll::TheirsMinusFour => (if yours { 0 } else { -4 }, false, false),
             ToAll::YoursProtectionFromNonHumans => (0, false, yours),
         };
+        let seen = expected.of(c);
+        seen.power_now = seen.power_now.map(|p| p + up);
         let ((power, toughness), was) = before[i];
         assert!(read(&state, c) == (power.map(|p: i32| p + up), toughness) && as_it_is(&state, c) == was);
         assert!(state.has_keyword(c, Keyword::FirstStrike, &registry) == first_strike);
@@ -1453,6 +1556,13 @@ fn gives_each((card, does, cast): (Box<dyn CardBehavior>, ToAll, Cast)) {
             assert!(!state.has_protection_from(c, creatures[3], &registry));
         }
     }
+    // The whole game after is the game before with that power on each
+    // creature the text names and the spell resolved: nothing else. How
+    // many effects the engine keeps for it until end of turn is the
+    // engine's own; what they come to is what was read above.
+    expected.effects_until_end_of_turn = state.until_end_of_turn.len();
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
     assert!(rests(&state, spell, cast));
     std::mem::forget((registry, state));
 }
@@ -1493,6 +1603,7 @@ fn does_to_each_of_up_to_two((card, does, targets, cast): (Box<dyn CardBehavior>
     for (i, &c) in creatures.iter().enumerate() {
         before[i] = (read(&state, c), as_it_is(&state, c));
     }
+    let mut expected = everything(&state, &registry);
 
     if targets == 0 {
         let caster = PlayerId(cast.by);
@@ -1522,7 +1633,26 @@ fn does_to_each_of_up_to_two((card, does, targets, cast): (Box<dyn CardBehavior>
         assert!(as_it_is(&state, c) == Some(AsItWas { tapped: was.tapped || (hit && matches!(does, ToEach::Tap)), ..was }));
         assert!(read(&state, c) == (power.map(|p: i32| p + grown), toughness.map(|t: i32| t + grown)));
         assert!(state.can_block(c, &registry) != (hit && matches!(does, ToEach::CantBlock)));
+        if hit {
+            let seen = expected.of(c);
+            match does {
+                ToEach::Counter => {
+                    seen.counters += 1;
+                    seen.power_now = seen.power_now.map(|p| p + 1);
+                    seen.toughness_now = seen.toughness_now.map(|t| t + 1);
+                }
+                ToEach::Tap => seen.tapped = true,
+                ToEach::CantBlock => {}
+            }
+        }
     }
+    // The whole game after is the game before with that done to each
+    // creature targeted and the spell resolved: nothing else. The effects
+    // the engine keeps until end of turn are its own; that a creature
+    // cannot block was asked of the engine above.
+    expected.effects_until_end_of_turn = state.until_end_of_turn.len();
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
     assert!(rests(&state, spell, cast));
     std::mem::forget((registry, state));
 }
@@ -1596,8 +1726,15 @@ fn silent_departure((cast, (owner, controller)): (Cast, (u8, u8))) {
     let beside = a_permanent(&mut state, blank, Permanent::Creature, (owner, controller));
     let spell = a_spell(&mut state, &registry, card, cast);
     let beside_before = as_it_is(&state, beside);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the creature in its
+    // owner's hand and the spell resolved: nothing else.
+    expected.goes_to(target, Zone::Hand);
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     assert!(o.zone == Zone::Hand && o.controller == PlayerId(owner) && o.owner == PlayerId(owner) && !o.tapped && o.damage_marked == 0);
@@ -1617,8 +1754,15 @@ fn grasp_of_phantoms((cards, cast, (owner, controller)): (usize, Cast, (u8, u8))
     let library = a_library(&mut state, blank, owner, cards);
     let target = a_permanent(&mut state, blank, Permanent::Creature, (owner, controller));
     let spell = a_spell(&mut state, &registry, card, cast);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the creature on top
+    // of its owner's library and the spell resolved: nothing else.
+    expected.is_put_on_top(target, owner);
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     assert!(o.zone == Zone::Library && o.controller == PlayerId(owner) && !o.tapped && o.damage_marked == 0);
@@ -1644,8 +1788,17 @@ fn swords_to_plowshares((what, cast, (owner, controller)): (Permanent, Cast, (u8
     let spell = a_spell(&mut state, &registry, card, cast);
     let power = if what == Permanent::Monstrous { 4 } else { 2 };
     let beside_before = as_it_is(&state, beside);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the creature in
+    // exile, that life gained by the player who controlled it, and the
+    // spell resolved: nothing else.
+    expected.goes_to(target, Zone::Exile);
+    expected.players[usize::from(controller)].life += power;
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     assert!(o.zone == Zone::Exile && o.controller == PlayerId(owner) && o.owner == PlayerId(owner));
@@ -1672,8 +1825,22 @@ fn traitorous_blood((cast, controller): (Cast, u8)) {
     state.get_object_mut(beside).expect("just created").tapped = true;
     let spell = a_spell(&mut state, &registry, card, cast);
     let (before, beside_before) = (as_it_is(&state, target).expect("there"), as_it_is(&state, beside));
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the creature untapped
+    // under the spell's caster, come under their control this turn if it
+    // was not theirs (CR 302.6), and the spell resolved: nothing else.
+    // The effects the engine keeps until end of turn are its own; the
+    // keywords they give are asked of the engine below.
+    let seen = expected.of(target);
+    seen.tapped = false;
+    seen.controller = PlayerId(cast.by);
+    seen.sick = seen.sick || controller != cast.by;
+    expected.effects_until_end_of_turn = state.until_end_of_turn.len();
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(as_it_is(&state, target) == Some(AsItWas { tapped: false, controller: PlayerId(cast.by), ..before }));
     assert!(state.get_object(target).expect("still an object").owner == PlayerId(controller));
@@ -1695,8 +1862,24 @@ fn moves_a_card((card, from, to, cast, whose): (Box<dyn CardBehavior>, Zone, Zon
     let target = a_card_in(&mut state, blank, whose, from, true);
     let beside = a_card_in(&mut state, blank, whose, from, true);
     let spell = a_spell(&mut state, &registry, card, cast);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the card in the zone
+    // the text names, a 2/2 creature come under its owner's control this
+    // turn if that is the battlefield, and the spell resolved: nothing
+    // else.
+    if from == Zone::Graveyard {
+        expected.leaves_the_graveyard(target, whose);
+    }
+    let seen = expected.of(target);
+    seen.zone = to;
+    if to == Zone::Battlefield {
+        (seen.sick, seen.power_now, seen.toughness_now) = (true, Some(2), Some(2));
+    }
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     let o = state.get_object(target).expect("still an object");
     assert!(o.zone == to && o.owner == PlayerId(whose) && o.controller == PlayerId(whose) && !o.tapped);
@@ -1738,7 +1921,13 @@ fn runic_repetition((cast, yours): (Cast, bool)) {
     let spell = a_spell(&mut state, &registry, card, cast);
 
     if yours {
+        let mut expected = everything(&state, &registry);
         cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+        // The whole game after is the game before with the card in its
+        // owner's hand and the spell resolved: nothing else.
+        expected.of(target).zone = Zone::Hand;
+        expected.has_resolved(spell, cast, state.active_player);
+        assert!(everything(&state, &registry) == expected);
         let o = state.get_object(target).expect("still an object");
         assert!(o.zone == Zone::Hand && o.owner == PlayerId(owner) && o.controller == PlayerId(owner));
         assert!(rests(&state, spell, cast));
@@ -1850,6 +2039,7 @@ fn counters((card, fate, first, by, flashback): (Box<dyn CardBehavior>, Countere
     let library = a_library(&mut state, blank, first, 2);
     let victim = a_spell(&mut state, &registry, victim_card, Cast { by: first, flashback });
     let counter = holds(&mut state, &registry, card, PlayerId(by));
+    let mut expected = everything(&state, &registry);
 
     // The spell to be countered, cast first; mana for both is in the pool
     // of a player who casts both, so the pool is not empty between them.
@@ -1875,6 +2065,21 @@ fn counters((card, fate, first, by, flashback): (Box<dyn CardBehavior>, Countere
     assert!(state.players[usize::from(first)].library_order.len() == 2);
     assert!(rests(&state, counter, Cast { by, flashback: false }));
     assert!(state.players[0].life == 20 && state.players[1].life == 20);
+    // The whole game after is the game before both were cast with the
+    // mana of both spent, the countered spell where the text puts it (it
+    // goes there as the counter resolves, and so before the counter goes
+    // to its own graveyard) and the counter resolved: nothing else.
+    expected.players[usize::from(first)].mana = 0;
+    if exiled {
+        expected.goes_to(victim, Zone::Exile);
+        if flashback {
+            expected.leaves_the_graveyard(victim, first);
+        }
+    } else {
+        expected.is_buried(victim, first);
+    }
+    expected.has_resolved(counter, Cast { by, flashback: false }, state.active_player);
+    assert!(everything(&state, &registry) == expected);
     std::mem::forget((registry, state, action));
 }
 
@@ -1893,6 +2098,7 @@ fn lost_in_the_mist(controller: u8) {
     let victim = a_spell(&mut state, &registry, victim_card, FIRST);
     let counter = holds(&mut state, &registry, card, PlayerId(1));
     let beside_before = as_it_is(&state, beside);
+    let mut expected = everything(&state, &registry);
 
     casts(&mut state, &registry, victim, Vec::new());
     play(&mut state, &registry, &Action::PassPriority);
@@ -1907,6 +2113,14 @@ fn lost_in_the_mist(controller: u8) {
     assert!(o.zone == Zone::Hand && o.controller == PlayerId(controller) && !o.tapped && o.damage_marked == 0);
     assert!(as_it_is(&state, beside) == beside_before && beside_before.is_some());
     assert!(rests(&state, counter, SECOND));
+    // The whole game after is the game before both were cast with the
+    // mana of both spent, Divination in its owner's graveyard, the
+    // creature in its owner's hand and the counter resolved: nothing else.
+    expected.players[0].mana = 0;
+    expected.is_buried(victim, 0);
+    expected.goes_to(permanent, Zone::Hand);
+    expected.has_resolved(counter, SECOND, state.active_player);
+    assert!(everything(&state, &registry) == expected);
     std::mem::forget((registry, state));
 }
 
@@ -1926,6 +2140,7 @@ fn sacrifices_a_creature_to((card, draws, cast): (Box<dyn CardBehavior>, bool, C
     let theirs = a_permanent(&mut state, blank, Permanent::Creature, (1 - you, 1 - you));
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = [as_it_is(&state, kept), as_it_is(&state, theirs)];
+    let mut expected = everything(&state, &registry);
     let Action::CastSpell { object_id, targets, exile_count, exile_ids, alternative_cost, tap_plan, .. } = the_cast(spell, Vec::new()) else { panic!("a cast") };
     let action = Action::CastSpell { object_id, targets, sacrifice: Some(paid), exile_count, exile_ids, alternative_cost, tap_plan };
 
@@ -1950,6 +2165,20 @@ fn sacrifices_a_creature_to((card, draws, cast): (Box<dyn CardBehavior>, bool, C
     }
     assert!(state.players[usize::from(1 - you)].mana_pool.total() == 0);
     assert!(rests(&state, spell, cast));
+    // The whole game after is the game before with the creature paid in
+    // its owner's graveyard, under the spell (it went there as the spell
+    // was cast) and a creature dead this turn (CR 700.4), what the spell
+    // does done, and the spell resolved: nothing else.
+    expected.is_buried(paid, you);
+    expected.a_creature_died = true;
+    expected.has_resolved(spell, cast, state.active_player);
+    if draws {
+        expected.takes_the_top_card(you, Zone::Hand);
+        expected.takes_the_top_card(you, Zone::Hand);
+    } else {
+        expected.players[usize::from(you)].mana = 3;
+    }
+    assert!(everything(&state, &registry) == expected);
     std::mem::forget((registry, state));
 }
 
@@ -1989,18 +2218,29 @@ fn prey_upon((cast, theirs): (Cast, Permanent)) {
         before[i] = (as_it_is(&state, f), state.get_object(f).expect("just created").toughness.expect("a creature"));
     }
     let beside_before = as_it_is(&state, beside);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(fighters[0]), Target::Object(fighters[1])]);
 
+    // The whole game after is the game before with the spell resolved
+    // and each fighter with 2 more damage, or dead of it and in its
+    // owner's graveyard (above the spell, which went to its own first:
+    // a creature dies as the state-based actions are checked, after the
+    // spell has resolved): nothing else.
+    expected.has_resolved(spell, cast, state.active_player);
     for (i, &f) in fighters.iter().enumerate() {
         let (was, toughness) = before[i];
         let was = was.expect("there");
         if i64::from(was.damage + 2) >= i64::from(toughness) {
             assert!(state.get_object(f).expect("still an object").zone == Zone::Graveyard);
+            expected.is_buried(f, if i == 0 { you } else { other });
+            expected.a_creature_died = true;
         } else {
             assert!(as_it_is(&state, f) == Some(AsItWas { damage: was.damage + 2, ..was }));
+            expected.of(f).damage = was.damage + 2;
         }
     }
+    assert!(everything(&state, &registry) == expected);
     assert!(as_it_is(&state, beside) == beside_before);
     assert!(state.players[0].life == 20 && state.players[1].life == 20);
     assert!(rests(&state, spell, cast));
@@ -2036,8 +2276,24 @@ fn destroys_a_land_and((card, thirteen, cast, controller): (Box<dyn CardBehavior
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = [as_it_is(&state, other_land), as_it_is(&state, creatures[0]), as_it_is(&state, creatures[1])];
     let targets = if thirteen { vec![Target::Object(land), Target::Object(creatures[0])] } else { vec![Target::Object(land)] };
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, targets);
+
+    // The whole game after is the game before with the land in its
+    // owner's graveyard, destroyed as the spell resolved and so under
+    // it; the spell resolved; and the life gained, or the creature dead
+    // of its 13 damage as the state-based actions were checked after:
+    // nothing else.
+    expected.is_buried(land, controller);
+    expected.has_resolved(spell, cast, state.active_player);
+    if thirteen {
+        expected.is_buried(creatures[0], 1 - cast.by);
+        expected.a_creature_died = true;
+    } else {
+        expected.players[usize::from(cast.by)].life += 4;
+    }
+    assert!(everything(&state, &registry) == expected);
 
     let l = state.get_object(land).expect("still an object");
     assert!(l.zone == Zone::Graveyard && l.owner == PlayerId(controller));
@@ -2140,8 +2396,20 @@ fn paraselene((cast, indestructible): (Cast, bool)) {
     }
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = as_it_is(&state, creature);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
+
+    // The whole game after is the game before with each enchantment
+    // that is not indestructible in its owner's graveyard, a life gained
+    // for each, and the spell resolved: nothing else.
+    expected.is_buried(enchantments[0], 0);
+    if !indestructible {
+        expected.is_buried(enchantments[1], 1);
+    }
+    expected.players[usize::from(cast.by)].life += if indestructible { 1 } else { 2 };
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(state.get_object(enchantments[0]).expect("still an object").zone == Zone::Graveyard);
     assert!(state.get_object(enchantments[1]).expect("still an object").zone == if indestructible { Zone::Battlefield } else { Zone::Graveyard });
@@ -2169,8 +2437,16 @@ fn rolling_temblor((cast, flying): (Cast, bool)) {
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = [as_it_is(&state, creatures[0]).expect("there"), as_it_is(&state, creatures[1]).expect("there")];
     let artifact_before = as_it_is(&state, artifact);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
+
+    // The whole game after is the game before with 2 damage on each
+    // creature without flying and the spell resolved: nothing else.
+    expected.of(creatures[0]).damage = 2;
+    expected.of(creatures[1]).damage = if flying { 0 } else { 2 };
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(as_it_is(&state, creatures[0]) == Some(AsItWas { damage: 2, ..before[0] }));
     assert!(as_it_is(&state, creatures[1]) == Some(AsItWas { damage: if flying { 0 } else { 2 }, ..before[1] }));
@@ -2198,6 +2474,7 @@ fn blasphemous_act((creatures, cast): (usize, Cast)) {
     let artifact = a_permanent(&mut state, blank, Permanent::Artifact, (1 - cast.by, 1 - cast.by));
     let spell = a_spell(&mut state, &registry, card, cast);
     let artifact_before = as_it_is(&state, artifact);
+    let mut expected = everything(&state, &registry);
     let action = the_cast(spell, Vec::new());
 
     play(&mut state, &registry, &action);
@@ -2206,9 +2483,18 @@ fn blasphemous_act((creatures, cast): (usize, Cast)) {
     all_pass(&mut state, &registry);
 
     assert!(state.stack.is_empty());
-    for creature in made.iter().take(creatures) {
+    // The whole game after is the game before with the spell resolved,
+    // the mana it did not cost still in its caster's pool, and every
+    // creature dead of its damage as the state-based actions were
+    // checked after: nothing else.
+    expected.has_resolved(spell, cast, state.active_player);
+    expected.players[usize::from(cast.by)].mana = u32::try_from(creatures).expect("a few");
+    for (k, creature) in made.iter().take(creatures).enumerate() {
         assert!(state.get_object(creature.expect("made")).expect("still an object").zone == Zone::Graveyard);
+        expected.is_buried(creature.expect("made"), if k == 0 { cast.by } else { 1 - cast.by });
+        expected.a_creature_died = true;
     }
+    assert!(everything(&state, &registry) == expected);
     assert!(as_it_is(&state, artifact) == artifact_before && artifact_before.is_some());
     assert!(state.players[0].life == 20 && state.players[1].life == 20);
     assert!(rests(&state, spell, cast));
@@ -2229,8 +2515,16 @@ fn sever_the_bloodline(cast: Cast) {
     let stranger = a_permanent(&mut state, unlike, Permanent::Creature, (other, other));
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = as_it_is(&state, stranger);
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, vec![Target::Object(target)]);
+
+    // The whole game after is the game before with the two creatures of
+    // that name in exile and the spell resolved: nothing else.
+    expected.goes_to(target, Zone::Exile);
+    expected.goes_to(namesake, Zone::Exile);
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     let (t, n) = (state.get_object(target).expect("still an object"), state.get_object(namesake).expect("still an object"));
     assert!(t.zone == Zone::Exile && t.owner == PlayerId(other) && n.zone == Zone::Exile && n.owner == PlayerId(you));
@@ -2256,8 +2550,17 @@ fn spider_spawning((creatures, cast): (u64, Cast)) {
     let you = PlayerId(cast.by);
     let spell = a_spell(&mut state, &registry, card, cast);
     let objects = state.objects.len();
+    let mut expected = everything(&state, &registry);
 
     cast_and_resolve(&mut state, &registry, spell, Vec::new());
+
+    // The whole game after is the game before with the Spiders made and
+    // the spell resolved: nothing else.
+    for k in 1..=creatures {
+        expected.is_a_new_token(ObjectId(spell.0 + k), cast.by, (1, 2));
+    }
+    expected.has_resolved(spell, cast, state.active_player);
+    assert!(everything(&state, &registry) == expected);
 
     assert!(state.objects.len() == objects + usize::try_from(creatures).expect("a few"));
     for k in 1..=creatures {
