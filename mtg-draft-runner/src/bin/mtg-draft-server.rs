@@ -97,6 +97,8 @@ struct Args {
     supplied: Vec<&'static str>,
     /// `--ai`'s model, or the default: what a bare `ai` seat runs.
     default_ai: String,
+    /// Which of `seats` were a bare `ai`, the only seats `--ai` sets.
+    bare_ai: Vec<bool>,
 }
 
 fn parse_args() -> Args {
@@ -126,6 +128,7 @@ fn parse_args() -> Args {
         resume: None,
         supplied: Vec::new(),
         default_ai: String::new(),
+        bare_ai: Vec::new(),
     };
     let mut i = 0;
     let value = |i: &mut usize, flag: &str| -> String {
@@ -192,6 +195,10 @@ fn parse_args() -> Args {
         i += 1;
     }
     args.default_ai.clone_from(&default_ai);
+    // A bare `ai` is the only seat parsed with an empty model (`ai:` alone
+    // is refused), so parsing with none says which seats `--ai` set.
+    args.bare_ai = parse_seats(&seats_spec, "").map_or_else(|_| Vec::new(), |seats| seats.iter()
+        .map(|s| matches!(s, SeatKind::Ai(m) if m.is_empty())).collect());
     args.seats = parse_seats(&seats_spec, &default_ai).unwrap_or_else(|e| die(&format!("--seats: {e}")));
     args
 }
@@ -199,41 +206,58 @@ fn parse_args() -> Args {
 /// The flags a snapshot's own values replace on `--resume`.
 const SNAPSHOT_FLAGS: &[&str] = &["--seats", "--ai", "--seed", "--set", "--best-of"];
 
-/// The seats as `--seats` names them; with `models` false, an AI seat is
-/// a bare `ai`, so the layout is compared apart from what `--ai` sets.
-fn seats_spec(seats: &[SeatKind], models: bool) -> String {
-    seats.iter().map(|s| match s {
+/// The seats as `--seats` names them.
+fn seats_spec(seats: &[SeatKind]) -> String {
+    seats.iter().map(seat_word).collect::<Vec<_>>().join(",")
+}
+
+fn seat_word(seat: &SeatKind) -> String {
+    match seat {
         SeatKind::Human => "human".to_string(),
         SeatKind::Cli => "cli".to_string(),
-        SeatKind::Ai(m) if models => format!("ai:{m}"),
-        SeatKind::Ai(_) => "ai".to_string(),
-    }).collect::<Vec<_>>().join(",")
+        SeatKind::Ai(m) => format!("ai:{m}"),
+    }
 }
 
 /// A note for each flag the operator gave that the snapshot overrode
 /// ("--seed comes from the snapshot (12 -> 11)"). The table replaced
 /// `--seats`, `--ai`, `--seed`, `--set` and `--best-of` with the
 /// snapshot's and said so only in `--help` (#1049). A flag left out, or
-/// one that agrees with the snapshot, is not noted. `--seats` is held to
-/// the snapshot's layout and, when `--ai` is given too, `--ai` to the
-/// snapshot's AI models: `--ai` alone must not be blamed for the default
-/// seat layout it never set.
+/// one that agrees with the snapshot, is not noted.
+///
+/// The seats are compared seat by seat. `--seats` answers for each seat it
+/// named, except a bare `ai`'s model when `--ai` is given; `--ai` answers for
+/// those models alone, and only where the layout stands, so `--ai` given
+/// without `--seats` is never blamed for the default layout it never set
+/// (#1049's review).
 fn overridden_flag_notes(args: &Args, save: &TableSave) -> Vec<String> {
     let saved = save.seat_kinds().unwrap_or_default();
+    let same_layout = saved.len() == args.seats.len() && saved.iter().zip(&args.seats)
+        .all(|(a, b)| std::mem::discriminant(a) == std::mem::discriminant(b));
+    // Without `--ai`, a bare seat's model is the built-in default, and a
+    // snapshot that differs is `--seats`' to answer for.
     let given_ai = args.supplied.contains(&"--ai");
-    let saved_models: Vec<&str> = saved.iter().filter_map(|s| match s {
-        SeatKind::Ai(m) => Some(m.as_str()),
-        _ => None,
-    }).fold(Vec::new(), |mut v, m| { if !v.contains(&m) { v.push(m); } v });
-    let ai_moved = given_ai && saved_models.iter().any(|m| *m != args.default_ai);
+    let bare = |i: usize| given_ai && args.bare_ai.get(i).copied().unwrap_or(false);
+    let seats_moved = !same_layout || saved.iter().zip(&args.seats).enumerate()
+        .any(|(i, (a, b))| !bare(i) && a != b);
+    let mut ai_saved: Vec<&str> = Vec::new();
+    if same_layout {
+        for (i, seat) in saved.iter().enumerate() {
+            if let SeatKind::Ai(m) = seat {
+                if bare(i) && *m != args.default_ai && !ai_saved.contains(&m.as_str()) {
+                    ai_saved.push(m);
+                }
+            }
+        }
+    }
     [
-        ("--seats", seats_spec(&args.seats, !given_ai), seats_spec(&saved, !given_ai), true),
-        ("--ai", args.default_ai.clone(), saved_models.join(","), ai_moved),
-        ("--seed", args.seed.to_string(), save.seed.to_string(), true),
-        ("--set", args.set.clone(), save.set.clone(), true),
-        ("--best-of", args.best_of.to_string(), save.best_of.to_string(), true),
+        ("--seats", seats_spec(&args.seats), seats_spec(&saved), seats_moved),
+        ("--ai", args.default_ai.clone(), ai_saved.join(","), !ai_saved.is_empty()),
+        ("--seed", args.seed.to_string(), save.seed.to_string(), args.seed != save.seed),
+        ("--set", args.set.clone(), save.set.clone(), args.set != save.set),
+        ("--best-of", args.best_of.to_string(), save.best_of.to_string(), args.best_of != save.best_of),
     ].into_iter()
-        .filter(|(flag, given, saved, moved)| *moved && given != saved && args.supplied.contains(flag))
+        .filter(|(flag, _, _, moved)| *moved && args.supplied.contains(flag))
         .map(|(flag, given, saved, _)| format!("{flag} comes from the snapshot ({given} -> {saved})"))
         .collect()
 }
@@ -558,7 +582,7 @@ client still works", shared.config.web_dir.display(), server::PAGE);
 
 #[cfg(test)]
 mod tests {
-    use super::{overridden_flag_notes, Args, SeatKind};
+    use super::{overridden_flag_notes, parse_seats, Args, SeatKind};
     use mtg_draft_runner::lobby::TableSave;
 
     fn save(seats: &[&str]) -> TableSave {
@@ -571,36 +595,47 @@ mod tests {
         })).unwrap()
     }
 
-    fn args(seats: Vec<SeatKind>, default_ai: &str, supplied: &[&'static str]) -> Args {
+    /// Args as `parse_args` makes them from `--seats spec --ai default_ai`.
+    fn args(spec: &str, default_ai: &str, supplied: &[&'static str]) -> Args {
+        let seats = parse_seats(spec, default_ai).unwrap();
+        let bare_ai = parse_seats(spec, "").unwrap().iter().map(|s| matches!(s, SeatKind::Ai(m) if m.is_empty())).collect();
         Args {
             seats, set: "isd".into(), bind: String::new(), port: 0, game_ports: (0, 0),
             direct_game_ports: false, best_of: 1, seed: 11, guide: None, pick_seconds: None,
             build_seconds: None, sideboard_seconds: None, log: String::new(), quiet: false,
             save: None, resume: None, supplied: supplied.to_vec(), default_ai: default_ai.into(),
+            bare_ai,
         }
     }
 
-    /// `--ai` alone is held to the snapshot's AI models, not blamed for the
-    /// default layout `human,ai,ai,ai` it never set (#1049's review).
+    /// `--ai` alone is held to the AI models of the seats it set, not
+    /// blamed for the default layout `human,ai,ai,ai` it never set
+    /// (#1049's review).
     #[test]
     fn ai_alone_is_noted_only_for_a_model_the_snapshot_overrode() {
-        let default = vec![SeatKind::Human, SeatKind::Ai("cc:x".into()), SeatKind::Ai("cc:x".into()), SeatKind::Ai("cc:x".into())];
-        assert!(overridden_flag_notes(&args(default.clone(), "cc:x", &["--ai"]), &save(&["human", "human"])).is_empty());
-        assert!(overridden_flag_notes(&args(default.clone(), "cc:x", &["--ai"]), &save(&["human", "ai:cc:x"])).is_empty());
-        assert_eq!(overridden_flag_notes(&args(default, "cc:x", &["--ai"]), &save(&["human", "ai:cc:y"])),
-            vec!["--ai comes from the snapshot (cc:x -> cc:y)".to_string()]);
+        let ai = |snap: &[&str]| overridden_flag_notes(&args("human,3xai", "cc:x", &["--ai"]), &save(snap));
+        assert!(ai(&["human", "human"]).is_empty());
+        assert!(ai(&["human", "ai:cc:x", "ai:cc:x", "ai:cc:x"]).is_empty());
+        assert_eq!(ai(&["human", "ai:cc:x", "ai:cc:y", "ai:cc:y"]), vec!["--ai comes from the snapshot (cc:x -> cc:y)".to_string()]);
     }
 
-    /// `--seats` is noted for a layout; with `--ai` given too, a model
-    /// difference is `--ai`'s, not `--seats`'.
+    /// `--seats` answers for each seat it named except a bare `ai`'s model,
+    /// which is `--ai`'s; a seat named with its own model is `--seats`'.
     #[test]
-    fn seats_are_noted_for_the_layout_and_ai_for_the_model() {
-        let given = vec![SeatKind::Human, SeatKind::Ai("cc:x".into())];
-        assert_eq!(overridden_flag_notes(&args(given.clone(), "cc:x", &["--seats"]), &save(&["human", "human"])),
+    fn seats_answer_for_the_seats_they_named_and_ai_for_the_bare_ones() {
+        let notes = |spec: &str, supplied: &[&'static str], snap: &[&str]| overridden_flag_notes(&args(spec, "cc:x", supplied), &save(snap));
+        assert_eq!(notes("human,ai", &["--seats"], &["human", "human"]),
             vec!["--seats comes from the snapshot (human,ai:cc:x -> human,human)".to_string()]);
-        assert_eq!(overridden_flag_notes(&args(given.clone(), "cc:x", &["--seats", "--ai"]), &save(&["human", "ai:cc:y"])),
+        assert_eq!(notes("human,ai", &["--seats", "--ai"], &["human", "ai:cc:y"]),
             vec!["--ai comes from the snapshot (cc:x -> cc:y)".to_string()]);
-        assert!(overridden_flag_notes(&args(given, "cc:x", &["--seed", "--best-of"]), &save(&["human", "ai:cc:y"])).is_empty(),
+        assert!(notes("human,ai:cc:z", &["--seats", "--ai"], &["human", "ai:cc:z"]).is_empty(),
+            "a seat named with its own model ignores --ai");
+        assert_eq!(notes("human,ai:cc:a", &["--seats", "--ai"], &["human", "ai:cc:b"]),
+            vec!["--seats comes from the snapshot (human,ai:cc:a -> human,ai:cc:b)".to_string()]);
+        assert_eq!(notes("human,ai", &["--seats"], &["human", "ai:cc:y"]),
+            vec!["--seats comes from the snapshot (human,ai:cc:x -> human,ai:cc:y)".to_string()],
+            "without --ai, a bare seat's default model is --seats'");
+        assert!(notes("human,ai", &["--seed", "--best-of"], &["human", "ai:cc:y"]).is_empty(),
             "a flag left out is not noted, nor one that agrees");
     }
 }
