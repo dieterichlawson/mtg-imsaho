@@ -198,7 +198,10 @@ def list_harnesses(src):
             if n: out += [path + '::' + n.group(1) + '::of_a_card', path + '::' + n.group(1) + '::of_a_token']
         # Any other macro whose definition writes a proof is a table too
         # (`proof_macros`).
-        for name in tables:
+        # In one order every time: a set's order is another in each
+        # process, and the files written from this list were written in
+        # another order by each run.
+        for name in sorted(tables):
             for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*[{(]', t):
                 body = t[m.end()-1:block(t, m.end()-1)+1]
                 for e in re.finditer(r'(?m)^\s{4}(\w+):', body):
