@@ -306,9 +306,11 @@ Built-in names (aliases in parentheses): `red-green` (`rg`), `white-black`
 `red-green` for seat 1 and `white-black` for seat 2.
 
 Anything else is read as a deck file: one `COUNT CARD NAME` per line, `#`
-comments and blank lines ignored, every name checked against the card
-registry. A deck holds from 7 cards (an opening hand) to 10,000. The checked-in decks live in `decks/` (`gw-humans.txt`,
-`rb-vampires.txt`, `ub-zombies.txt`, `ug-spider-spawning.txt`) and
+comments and blank lines ignored, a leading byte-order mark read past,
+every name checked against the card registry. A deck holds from 7 cards
+(an opening hand) to 10,000. The checked-in decks live in `decks/`
+(`gw-humans.txt`, `rb-vampires.txt`, `ub-zombies.txt`,
+`ug-spider-spawning.txt`) and
 `decks/coverage/` (one two-color file per pair, `wu-coverage.txt` and friends).
 
 ```bash

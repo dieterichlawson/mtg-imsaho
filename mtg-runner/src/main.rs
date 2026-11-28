@@ -1839,7 +1839,9 @@ fn builtin_deck(name: &str) -> Option<Decklist> {
 const MAX_DECK_FILE_CARDS: u64 = 10_000;
 
 /// Load a deck from a text file. Format: one "COUNT CARD NAME" per line.
-/// Lines starting with # or empty lines are ignored.
+/// Lines starting with # or empty lines are ignored, as is a leading UTF-8
+/// byte-order mark. A deck holds from an opening hand to
+/// `MAX_DECK_FILE_CARDS` cards; anything else is refused with the line.
 ///
 /// Example:
 ///   4 Lightning Bolt
