@@ -316,11 +316,16 @@ type line, power and toughness) and each line of its text, and is on the
 scoreboard. Counted on 2026-11-28, a frame being two lines (its cost,
 if it has one, and its type line): 998 lines on the 270 cards (253
 costs, 290 type lines, 455 lines of text; 5 more are reminder text
-alone). 437 are claimed, on 158 cards: the cost and the type line of
-each of the 108 creatures with rows and of each of the 50 spells, 49 of
-the creatures' keyword lines (48 of which wait on the keyword's rule,
-layer B), and 72 lines of the spells' text. None is proved, the rows
-being unrun. No ability of a permanent is claimed, and no back face.
+alone). 499 are claimed, on 189 cards: the cost and the type line of
+each of the 139 permanents with rows (108 creatures; 31 artifacts,
+enchantments and planeswalkers, written since) and of each of the 50
+spells, 49 of the creatures' keyword lines (48 of which wait on the
+keyword's rule, layer B), and 72 lines of the spells' text. None is
+proved, the rows being unrun. No ability of a permanent is claimed, and
+no back face. Of the cards that are cast, 45 permanents have no row yet
+(19 Auras, which are cast at what they enchant; 23 with something
+happening as they enter; 3 creatures of power */*), and 19 instants and
+sorceries; the 17 lands are played and not cast, and have none.
 
 **B. The rules the cards lean on, each proved once through the loop.**
 A creature's row says it has flying; what flying does is the engine's,

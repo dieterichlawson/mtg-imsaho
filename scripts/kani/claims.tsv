@@ -16,8 +16,8 @@ forest	Forest	({T}: Add {G}.)	reminder
 giant_growth	Giant Growth	cost {G}	giant_growth_is_not_cast_for_one_mana_less
 giant_growth	Giant Growth	type Instant	giant_growth_is_cast_in_the_other_players_turn giant_growth_is_cast_in_its_casters_upkeep
 giant_growth	Giant Growth	Target creature gets +3/+3 until end of turn.	giant_growth_gives_your_creature_three_and_three giant_growth_gives_the_other_players_creature_three_and_three giant_growth_cast_by_the_second_player_gives_their_creature_three_and_three giant_growth_is_not_cast_at_an_artifact giant_growth_does_nothing_once_its_target_is_gone
-glorious_anthem	Glorious Anthem	cost {1}{W}{W}	-
-glorious_anthem	Glorious Anthem	type Enchantment	-
+glorious_anthem	Glorious Anthem	cost {1}{W}{W}	glorious_anthem_cast_by_the_first_player_enters_as_printed glorious_anthem_cast_by_the_second_player_enters_as_printed glorious_anthem_is_not_cast_for_one_mana_less
+glorious_anthem	Glorious Anthem	type Enchantment	glorious_anthem_cast_by_the_first_player_enters_as_printed glorious_anthem_cast_by_the_second_player_enters_as_printed glorious_anthem_is_not_cast_in_the_other_players_turn glorious_anthem_is_not_cast_in_its_casters_upkeep
 glorious_anthem	Glorious Anthem	Creatures you control get +1/+1.	-
 goblin_piker	Goblin Piker	cost {1}{R}	goblin_piker_cast_by_the_first_player_enters_as_printed goblin_piker_cast_by_the_second_player_enters_as_printed goblin_piker_is_not_cast_for_one_mana_less
 goblin_piker	Goblin Piker	type Creature — Goblin Warrior 2/1	goblin_piker_cast_by_the_first_player_enters_as_printed goblin_piker_cast_by_the_second_player_enters_as_printed goblin_piker_is_not_cast_in_the_other_players_turn goblin_piker_is_not_cast_in_its_casters_upkeep
@@ -70,8 +70,8 @@ avacynian_priest	Avacynian Priest	{1}, {T}: Tap target non-Human creature.	-
 avacyns_pilgrim	Avacyn's Pilgrim	cost {G}	avacyns_pilgrim_cast_by_the_first_player_enters_as_printed avacyns_pilgrim_cast_by_the_second_player_enters_as_printed avacyns_pilgrim_is_not_cast_for_one_mana_less
 avacyns_pilgrim	Avacyn's Pilgrim	type Creature — Human Monk 1/1	avacyns_pilgrim_cast_by_the_first_player_enters_as_printed avacyns_pilgrim_cast_by_the_second_player_enters_as_printed avacyns_pilgrim_is_not_cast_in_the_other_players_turn avacyns_pilgrim_is_not_cast_in_its_casters_upkeep
 avacyns_pilgrim	Avacyn's Pilgrim	{T}: Add {W}.	-
-back_from_the_brink	Back from the Brink	cost {4}{U}{U}	-
-back_from_the_brink	Back from the Brink	type Enchantment	-
+back_from_the_brink	Back from the Brink	cost {4}{U}{U}	back_from_the_brink_cast_by_the_first_player_enters_as_printed back_from_the_brink_cast_by_the_second_player_enters_as_printed back_from_the_brink_is_not_cast_for_one_mana_less
+back_from_the_brink	Back from the Brink	type Enchantment	back_from_the_brink_cast_by_the_first_player_enters_as_printed back_from_the_brink_cast_by_the_second_player_enters_as_printed back_from_the_brink_is_not_cast_in_the_other_players_turn back_from_the_brink_is_not_cast_in_its_casters_upkeep
 back_from_the_brink	Back from the Brink	Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card. Activate only as a sorcery.	-
 balefire_dragon	Balefire Dragon	cost {5}{R}{R}	balefire_dragon_cast_by_the_first_player_enters_as_printed balefire_dragon_cast_by_the_second_player_enters_as_printed balefire_dragon_is_not_cast_for_one_mana_less
 balefire_dragon	Balefire Dragon	type Creature — Dragon 6/6	balefire_dragon_cast_by_the_first_player_enters_as_printed balefire_dragon_cast_by_the_second_player_enters_as_printed balefire_dragon_is_not_cast_in_the_other_players_turn balefire_dragon_is_not_cast_in_its_casters_upkeep
@@ -89,8 +89,8 @@ blasphemous_act	Blasphemous Act	cost {8}{R}	blasphemous_act_is_not_cast_for_one_
 blasphemous_act	Blasphemous Act	type Sorcery	blasphemous_act_is_not_cast_in_the_other_players_turn blasphemous_act_is_not_cast_in_its_casters_upkeep
 blasphemous_act	Blasphemous Act	This spell costs {1} less to cast for each creature on the battlefield.	blasphemous_act_with_no_creature_costs_all_nine blasphemous_act_with_one_creature_costs_one_less_and_destroys_it blasphemous_act_with_two_creatures_costs_two_less_and_destroys_both blasphemous_act_cast_by_the_second_player_costs_two_less_and_destroys_both
 blasphemous_act	Blasphemous Act	Blasphemous Act deals 13 damage to each creature.	blasphemous_act_with_one_creature_costs_one_less_and_destroys_it blasphemous_act_with_two_creatures_costs_two_less_and_destroys_both blasphemous_act_cast_by_the_second_player_costs_two_less_and_destroys_both
-blazing_torch	Blazing Torch	cost {1}	-
-blazing_torch	Blazing Torch	type Artifact — Equipment	-
+blazing_torch	Blazing Torch	cost {1}	blazing_torch_cast_by_the_first_player_enters_as_printed blazing_torch_cast_by_the_second_player_enters_as_printed blazing_torch_is_not_cast_for_one_mana_less
+blazing_torch	Blazing Torch	type Artifact — Equipment	blazing_torch_cast_by_the_first_player_enters_as_printed blazing_torch_cast_by_the_second_player_enters_as_printed blazing_torch_is_not_cast_in_the_other_players_turn blazing_torch_is_not_cast_in_its_casters_upkeep
 blazing_torch	Blazing Torch	Equipped creature can't be blocked by Vampires or Zombies.	-
 blazing_torch	Blazing Torch	Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target."	-
 blazing_torch	Blazing Torch	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	-
@@ -133,11 +133,11 @@ bump_in_the_night	Bump in the Night	cost {B}	bump_in_the_night_is_not_cast_for_o
 bump_in_the_night	Bump in the Night	type Sorcery	bump_in_the_night_is_not_cast_in_the_other_players_turn bump_in_the_night_is_not_cast_in_its_casters_upkeep
 bump_in_the_night	Bump in the Night	Target opponent loses 3 life.	bump_in_the_night_takes_three_life_from_the_second_player bump_in_the_night_cast_by_the_second_player_takes_three_life_from_the_first bump_in_the_night_is_not_cast_at_its_caster bump_in_the_night_cast_by_the_second_player_is_not_cast_at_themselves bump_in_the_night_is_not_cast_at_a_creature
 bump_in_the_night	Bump in the Night	Flashback {5}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	bump_in_the_night_is_not_flashed_back_for_one_mana_less bump_in_the_night_is_not_flashed_back_in_the_other_players_turn bump_in_the_night_is_not_flashed_back_in_its_casters_upkeep bump_in_the_night_flashed_back_takes_three_life_and_is_exiled
-burning_vengeance	Burning Vengeance	cost {2}{R}	-
-burning_vengeance	Burning Vengeance	type Enchantment	-
+burning_vengeance	Burning Vengeance	cost {2}{R}	burning_vengeance_cast_by_the_first_player_enters_as_printed burning_vengeance_cast_by_the_second_player_enters_as_printed burning_vengeance_is_not_cast_for_one_mana_less
+burning_vengeance	Burning Vengeance	type Enchantment	burning_vengeance_cast_by_the_first_player_enters_as_printed burning_vengeance_cast_by_the_second_player_enters_as_printed burning_vengeance_is_not_cast_in_the_other_players_turn burning_vengeance_is_not_cast_in_its_casters_upkeep
 burning_vengeance	Burning Vengeance	Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.	-
-butchers_cleaver	Butcher's Cleaver	cost {3}	-
-butchers_cleaver	Butcher's Cleaver	type Artifact — Equipment	-
+butchers_cleaver	Butcher's Cleaver	cost {3}	butchers_cleaver_cast_by_the_first_player_enters_as_printed butchers_cleaver_cast_by_the_second_player_enters_as_printed butchers_cleaver_is_not_cast_for_one_mana_less
+butchers_cleaver	Butcher's Cleaver	type Artifact — Equipment	butchers_cleaver_cast_by_the_first_player_enters_as_printed butchers_cleaver_cast_by_the_second_player_enters_as_printed butchers_cleaver_is_not_cast_in_the_other_players_turn butchers_cleaver_is_not_cast_in_its_casters_upkeep
 butchers_cleaver	Butcher's Cleaver	Equipped creature gets +3/+0.	-
 butchers_cleaver	Butcher's Cleaver	As long as equipped creature is a Human, it has lifelink.	-
 butchers_cleaver	Butcher's Cleaver	Equip {3}	-
@@ -149,8 +149,8 @@ caravan_vigil	Caravan Vigil	cost {G}	-
 caravan_vigil	Caravan Vigil	type Sorcery	-
 caravan_vigil	Caravan Vigil	Search your library for a basic land card, reveal it, put it into your hand, then shuffle.	-
 caravan_vigil	Caravan Vigil	Morbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.	-
-cellar_door	Cellar Door	cost {2}	-
-cellar_door	Cellar Door	type Artifact	-
+cellar_door	Cellar Door	cost {2}	cellar_door_cast_by_the_first_player_enters_as_printed cellar_door_cast_by_the_second_player_enters_as_printed cellar_door_is_not_cast_for_one_mana_less
+cellar_door	Cellar Door	type Artifact	cellar_door_cast_by_the_first_player_enters_as_printed cellar_door_cast_by_the_second_player_enters_as_printed cellar_door_is_not_cast_in_the_other_players_turn cellar_door_is_not_cast_in_its_casters_upkeep
 cellar_door	Cellar Door	{3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.	-
 champion_of_the_parish	Champion of the Parish	cost {W}	-
 champion_of_the_parish	Champion of the Parish	type Creature — Human Soldier 1/1	-
@@ -180,8 +180,8 @@ cloistered_youth	Cloistered Youth	type Creature — Human 1/1	cloistered_youth_c
 cloistered_youth	Cloistered Youth	At the beginning of your upkeep, you may transform this creature.	-
 cloistered_youth	Unholy Fiend	type Creature — Horror 3/3	-
 cloistered_youth	Unholy Fiend	At the beginning of your end step, you lose 1 life.	-
-cobbled_wings	Cobbled Wings	cost {2}	-
-cobbled_wings	Cobbled Wings	type Artifact — Equipment	-
+cobbled_wings	Cobbled Wings	cost {2}	cobbled_wings_cast_by_the_first_player_enters_as_printed cobbled_wings_cast_by_the_second_player_enters_as_printed cobbled_wings_is_not_cast_for_one_mana_less
+cobbled_wings	Cobbled Wings	type Artifact — Equipment	cobbled_wings_cast_by_the_first_player_enters_as_printed cobbled_wings_cast_by_the_second_player_enters_as_printed cobbled_wings_is_not_cast_in_the_other_players_turn cobbled_wings_is_not_cast_in_its_casters_upkeep
 cobbled_wings	Cobbled Wings	Equipped creature has flying.	-
 cobbled_wings	Cobbled Wings	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	-
 corpse_lunge	Corpse Lunge	cost {2}{B}	-
@@ -250,8 +250,8 @@ delver_of_secrets	Delver of Secrets	type Creature — Human Wizard 1/1	delver_of
 delver_of_secrets	Delver of Secrets	At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.	-
 delver_of_secrets	Insectile Aberration	type Creature — Human Insect 3/2	-
 delver_of_secrets	Insectile Aberration	Flying	-
-demonmail_hauberk	Demonmail Hauberk	cost {4}	-
-demonmail_hauberk	Demonmail Hauberk	type Artifact — Equipment	-
+demonmail_hauberk	Demonmail Hauberk	cost {4}	demonmail_hauberk_cast_by_the_first_player_enters_as_printed demonmail_hauberk_cast_by_the_second_player_enters_as_printed demonmail_hauberk_is_not_cast_for_one_mana_less
+demonmail_hauberk	Demonmail Hauberk	type Artifact — Equipment	demonmail_hauberk_cast_by_the_first_player_enters_as_printed demonmail_hauberk_cast_by_the_second_player_enters_as_printed demonmail_hauberk_is_not_cast_in_the_other_players_turn demonmail_hauberk_is_not_cast_in_its_casters_upkeep
 demonmail_hauberk	Demonmail Hauberk	Equipped creature gets +4/+2.	-
 demonmail_hauberk	Demonmail Hauberk	Equip—Sacrifice a creature.	-
 deranged_assistant	Deranged Assistant	cost {1}{U}	deranged_assistant_cast_by_the_first_player_enters_as_printed deranged_assistant_cast_by_the_second_player_enters_as_printed deranged_assistant_is_not_cast_for_one_mana_less
@@ -295,8 +295,8 @@ elite_inquisitor	Elite Inquisitor	cost {W}{W}	elite_inquisitor_cast_by_the_first
 elite_inquisitor	Elite Inquisitor	type Creature — Human Soldier 2/2	elite_inquisitor_cast_by_the_first_player_enters_as_printed elite_inquisitor_cast_by_the_second_player_enters_as_printed elite_inquisitor_is_not_cast_in_the_other_players_turn elite_inquisitor_is_not_cast_in_its_casters_upkeep
 elite_inquisitor	Elite Inquisitor	First strike, vigilance	elite_inquisitor_cast_by_the_first_player_enters_as_printed elite_inquisitor_cast_by_the_second_player_enters_as_printed rule:first_strike rule:vigilance
 elite_inquisitor	Elite Inquisitor	Protection from Vampires, from Werewolves, and from Zombies	-
-endless_ranks_of_the_dead	Endless Ranks of the Dead	cost {2}{B}{B}	-
-endless_ranks_of_the_dead	Endless Ranks of the Dead	type Enchantment	-
+endless_ranks_of_the_dead	Endless Ranks of the Dead	cost {2}{B}{B}	endless_ranks_of_the_dead_cast_by_the_first_player_enters_as_printed endless_ranks_of_the_dead_cast_by_the_second_player_enters_as_printed endless_ranks_of_the_dead_is_not_cast_for_one_mana_less
+endless_ranks_of_the_dead	Endless Ranks of the Dead	type Enchantment	endless_ranks_of_the_dead_cast_by_the_first_player_enters_as_printed endless_ranks_of_the_dead_cast_by_the_second_player_enters_as_printed endless_ranks_of_the_dead_is_not_cast_in_the_other_players_turn endless_ranks_of_the_dead_is_not_cast_in_its_casters_upkeep
 endless_ranks_of_the_dead	Endless Ranks of the Dead	At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.	-
 essence_of_the_wild	Essence of the Wild	cost {3}{G}{G}{G}	essence_of_the_wild_cast_by_the_first_player_enters_as_printed essence_of_the_wild_cast_by_the_second_player_enters_as_printed essence_of_the_wild_is_not_cast_for_one_mana_less
 essence_of_the_wild	Essence of the Wild	type Creature — Avatar 6/6	essence_of_the_wild_cast_by_the_first_player_enters_as_printed essence_of_the_wild_cast_by_the_second_player_enters_as_printed essence_of_the_wild_is_not_cast_in_the_other_players_turn essence_of_the_wild_is_not_cast_in_its_casters_upkeep
@@ -338,8 +338,8 @@ fortress_crab	Fortress Crab	type Creature — Crab 1/6	fortress_crab_cast_by_the
 frightful_delusion	Frightful Delusion	cost {2}{U}	-
 frightful_delusion	Frightful Delusion	type Instant	-
 frightful_delusion	Frightful Delusion	Counter target spell unless its controller pays {1}. That player discards a card.	-
-full_moons_rise	Full Moon's Rise	cost {1}{G}	-
-full_moons_rise	Full Moon's Rise	type Enchantment	-
+full_moons_rise	Full Moon's Rise	cost {1}{G}	full_moons_rise_cast_by_the_first_player_enters_as_printed full_moons_rise_cast_by_the_second_player_enters_as_printed full_moons_rise_is_not_cast_for_one_mana_less
+full_moons_rise	Full Moon's Rise	type Enchantment	full_moons_rise_cast_by_the_first_player_enters_as_printed full_moons_rise_cast_by_the_second_player_enters_as_printed full_moons_rise_is_not_cast_in_the_other_players_turn full_moons_rise_is_not_cast_in_its_casters_upkeep
 full_moons_rise	Full Moon's Rise	Werewolf creatures you control get +1/+0 and have trample.	-
 full_moons_rise	Full Moon's Rise	Sacrifice this enchantment: Regenerate all Werewolf creatures you control.	-
 furor_of_the_bitten	Furor of the Bitten	cost {R}	-
@@ -355,8 +355,8 @@ galvanic_juggernaut	Galvanic Juggernaut	type Artifact Creature — Juggernaut 5/
 galvanic_juggernaut	Galvanic Juggernaut	This creature attacks each combat if able.	-
 galvanic_juggernaut	Galvanic Juggernaut	This creature doesn't untap during your untap step.	-
 galvanic_juggernaut	Galvanic Juggernaut	Whenever another creature dies, untap this creature.	-
-garruk_relentless	Garruk Relentless	cost {3}{G}	-
-garruk_relentless	Garruk Relentless	type Legendary Planeswalker — Garruk, loyalty 3	-
+garruk_relentless	Garruk Relentless	cost {3}{G}	garruk_relentless_cast_by_the_first_player_enters_as_printed garruk_relentless_cast_by_the_second_player_enters_as_printed garruk_relentless_is_not_cast_for_one_mana_less
+garruk_relentless	Garruk Relentless	type Legendary Planeswalker — Garruk, loyalty 3	garruk_relentless_cast_by_the_first_player_enters_as_printed garruk_relentless_cast_by_the_second_player_enters_as_printed garruk_relentless_is_not_cast_in_the_other_players_turn garruk_relentless_is_not_cast_in_its_casters_upkeep
 garruk_relentless	Garruk Relentless	When Garruk has two or fewer loyalty counters on him, transform him.	-
 garruk_relentless	Garruk Relentless	0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.	-
 garruk_relentless	Garruk Relentless	0: Create a 2/2 green Wolf creature token.	-
@@ -397,8 +397,8 @@ ghostly_possession	Ghostly Possession	type Enchantment — Aura	-
 ghostly_possession	Ghostly Possession	Enchant creature	-
 ghostly_possession	Ghostly Possession	Enchanted creature has flying.	-
 ghostly_possession	Ghostly Possession	Prevent all combat damage that would be dealt to and dealt by enchanted creature.	-
-ghoulcallers_bell	Ghoulcaller's Bell	cost {1}	-
-ghoulcallers_bell	Ghoulcaller's Bell	type Artifact	-
+ghoulcallers_bell	Ghoulcaller's Bell	cost {1}	ghoulcallers_bell_cast_by_the_first_player_enters_as_printed ghoulcallers_bell_cast_by_the_second_player_enters_as_printed ghoulcallers_bell_is_not_cast_for_one_mana_less
+ghoulcallers_bell	Ghoulcaller's Bell	type Artifact	ghoulcallers_bell_cast_by_the_first_player_enters_as_printed ghoulcallers_bell_cast_by_the_second_player_enters_as_printed ghoulcallers_bell_is_not_cast_in_the_other_players_turn ghoulcallers_bell_is_not_cast_in_its_casters_upkeep
 ghoulcallers_bell	Ghoulcaller's Bell	{T}: Each player mills a card.	-
 ghoulcallers_chant	Ghoulcaller's Chant	cost {B}	-
 ghoulcallers_chant	Ghoulcaller's Chant	type Sorcery	-
@@ -419,16 +419,16 @@ grasp_of_phantoms	Grasp of Phantoms	Flashback {7}{U} (You may cast this card fro
 grave_bramble	Grave Bramble	cost {1}{G}{G}	grave_bramble_cast_by_the_first_player_enters_as_printed grave_bramble_cast_by_the_second_player_enters_as_printed grave_bramble_is_not_cast_for_one_mana_less
 grave_bramble	Grave Bramble	type Creature — Plant 3/4	grave_bramble_cast_by_the_first_player_enters_as_printed grave_bramble_cast_by_the_second_player_enters_as_printed grave_bramble_is_not_cast_in_the_other_players_turn grave_bramble_is_not_cast_in_its_casters_upkeep
 grave_bramble	Grave Bramble	Defender, protection from Zombies	-
-graveyard_shovel	Graveyard Shovel	cost {2}	-
-graveyard_shovel	Graveyard Shovel	type Artifact	-
+graveyard_shovel	Graveyard Shovel	cost {2}	graveyard_shovel_cast_by_the_first_player_enters_as_printed graveyard_shovel_cast_by_the_second_player_enters_as_printed graveyard_shovel_is_not_cast_for_one_mana_less
+graveyard_shovel	Graveyard Shovel	type Artifact	graveyard_shovel_cast_by_the_first_player_enters_as_printed graveyard_shovel_cast_by_the_second_player_enters_as_printed graveyard_shovel_is_not_cast_in_the_other_players_turn graveyard_shovel_is_not_cast_in_its_casters_upkeep
 graveyard_shovel	Graveyard Shovel	{2}, {T}: Target player exiles a card from their graveyard. If it's a creature card, you gain 2 life.	-
 grimgrin_corpse_born	Grimgrin, Corpse-Born	cost {3}{U}{B}	-
 grimgrin_corpse_born	Grimgrin, Corpse-Born	type Legendary Creature — Zombie Warrior 5/5	-
 grimgrin_corpse_born	Grimgrin, Corpse-Born	Grimgrin enters tapped and doesn't untap during your untap step.	-
 grimgrin_corpse_born	Grimgrin, Corpse-Born	Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.	-
 grimgrin_corpse_born	Grimgrin, Corpse-Born	Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.	-
-grimoire_of_the_dead	Grimoire of the Dead	cost {4}	-
-grimoire_of_the_dead	Grimoire of the Dead	type Legendary Artifact	-
+grimoire_of_the_dead	Grimoire of the Dead	cost {4}	grimoire_of_the_dead_cast_by_the_first_player_enters_as_printed grimoire_of_the_dead_cast_by_the_second_player_enters_as_printed grimoire_of_the_dead_is_not_cast_for_one_mana_less
+grimoire_of_the_dead	Grimoire of the Dead	type Legendary Artifact	grimoire_of_the_dead_cast_by_the_first_player_enters_as_printed grimoire_of_the_dead_cast_by_the_second_player_enters_as_printed grimoire_of_the_dead_is_not_cast_in_the_other_players_turn grimoire_of_the_dead_is_not_cast_in_its_casters_upkeep
 grimoire_of_the_dead	Grimoire of the Dead	{1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.	-
 grimoire_of_the_dead	Grimoire of the Dead	{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.	-
 grizzled_outcasts	Grizzled Outcasts	cost {4}{G}	grizzled_outcasts_cast_by_the_first_player_enters_as_printed grizzled_outcasts_cast_by_the_second_player_enters_as_printed grizzled_outcasts_is_not_cast_for_one_mana_less
@@ -440,8 +440,8 @@ gruesome_deformity	Gruesome Deformity	cost {B}	-
 gruesome_deformity	Gruesome Deformity	type Enchantment — Aura	-
 gruesome_deformity	Gruesome Deformity	Enchant creature	-
 gruesome_deformity	Gruesome Deformity	Enchanted creature has intimidate. (It can't be blocked except by artifact creatures and/or creatures that share a color with it.)	-
-gutter_grime	Gutter Grime	cost {4}{G}	-
-gutter_grime	Gutter Grime	type Enchantment	-
+gutter_grime	Gutter Grime	cost {4}{G}	gutter_grime_cast_by_the_first_player_enters_as_printed gutter_grime_cast_by_the_second_player_enters_as_printed gutter_grime_is_not_cast_for_one_mana_less
+gutter_grime	Gutter Grime	type Enchantment	gutter_grime_cast_by_the_first_player_enters_as_printed gutter_grime_cast_by_the_second_player_enters_as_printed gutter_grime_is_not_cast_in_the_other_players_turn gutter_grime_is_not_cast_in_its_casters_upkeep
 gutter_grime	Gutter Grime	Whenever a nontoken creature you control dies, put a slime counter on this enchantment, then create a green Ooze creature token with "This token's power and toughness are each equal to the number of slime counters on Gutter Grime."	-
 hamlet_captain	Hamlet Captain	cost {1}{G}	hamlet_captain_cast_by_the_first_player_enters_as_printed hamlet_captain_cast_by_the_second_player_enters_as_printed hamlet_captain_is_not_cast_for_one_mana_less
 hamlet_captain	Hamlet Captain	type Creature — Human Warrior 2/2	hamlet_captain_cast_by_the_first_player_enters_as_printed hamlet_captain_cast_by_the_second_player_enters_as_printed hamlet_captain_is_not_cast_in_the_other_players_turn hamlet_captain_is_not_cast_in_its_casters_upkeep
@@ -457,12 +457,12 @@ harvest_pyre	Harvest Pyre	cost {1}{R}	-
 harvest_pyre	Harvest Pyre	type Instant	-
 harvest_pyre	Harvest Pyre	As an additional cost to cast this spell, exile X cards from your graveyard.	-
 harvest_pyre	Harvest Pyre	Harvest Pyre deals X damage to target creature.	-
-heartless_summoning	Heartless Summoning	cost {1}{B}	-
-heartless_summoning	Heartless Summoning	type Enchantment	-
+heartless_summoning	Heartless Summoning	cost {1}{B}	heartless_summoning_cast_by_the_first_player_enters_as_printed heartless_summoning_cast_by_the_second_player_enters_as_printed heartless_summoning_is_not_cast_for_one_mana_less
+heartless_summoning	Heartless Summoning	type Enchantment	heartless_summoning_cast_by_the_first_player_enters_as_printed heartless_summoning_cast_by_the_second_player_enters_as_printed heartless_summoning_is_not_cast_in_the_other_players_turn heartless_summoning_is_not_cast_in_its_casters_upkeep
 heartless_summoning	Heartless Summoning	Creature spells you cast cost {2} less to cast.	-
 heartless_summoning	Heartless Summoning	Creatures you control get -1/-1.	-
-heretics_punishment	Heretic's Punishment	cost {4}{R}	-
-heretics_punishment	Heretic's Punishment	type Enchantment	-
+heretics_punishment	Heretic's Punishment	cost {4}{R}	heretics_punishment_cast_by_the_first_player_enters_as_printed heretics_punishment_cast_by_the_second_player_enters_as_printed heretics_punishment_is_not_cast_for_one_mana_less
+heretics_punishment	Heretic's Punishment	type Enchantment	heretics_punishment_cast_by_the_first_player_enters_as_printed heretics_punishment_cast_by_the_second_player_enters_as_printed heretics_punishment_is_not_cast_in_the_other_players_turn heretics_punishment_is_not_cast_in_its_casters_upkeep
 heretics_punishment	Heretic's Punishment	{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards.	-
 hinterland_harbor	Hinterland Harbor	type Land	-
 hinterland_harbor	Hinterland Harbor	This land enters tapped unless you control a Forest or an Island.	-
@@ -477,8 +477,8 @@ infernal_plunge	Infernal Plunge	cost {R}	infernal_plunge_is_not_cast_for_one_man
 infernal_plunge	Infernal Plunge	type Sorcery	infernal_plunge_is_not_cast_in_the_other_players_turn infernal_plunge_is_not_cast_in_its_casters_upkeep
 infernal_plunge	Infernal Plunge	As an additional cost to cast this spell, sacrifice a creature.	infernal_plunge_sacrifices_a_creature_as_it_is_cast_and_adds_three_red infernal_plunge_cast_by_the_second_player_sacrifices_theirs_and_adds_three_red infernal_plunge_is_not_cast_sacrificing_the_other_players_creature infernal_plunge_is_not_cast_with_no_creature_to_sacrifice
 infernal_plunge	Infernal Plunge	Add {R}{R}{R}.	infernal_plunge_sacrifices_a_creature_as_it_is_cast_and_adds_three_red infernal_plunge_cast_by_the_second_player_sacrifices_theirs_and_adds_three_red
-inquisitors_flail	Inquisitor's Flail	cost {2}	-
-inquisitors_flail	Inquisitor's Flail	type Artifact — Equipment	-
+inquisitors_flail	Inquisitor's Flail	cost {2}	inquisitors_flail_cast_by_the_first_player_enters_as_printed inquisitors_flail_cast_by_the_second_player_enters_as_printed inquisitors_flail_is_not_cast_for_one_mana_less
+inquisitors_flail	Inquisitor's Flail	type Artifact — Equipment	inquisitors_flail_cast_by_the_first_player_enters_as_printed inquisitors_flail_cast_by_the_second_player_enters_as_printed inquisitors_flail_is_not_cast_in_the_other_players_turn inquisitors_flail_is_not_cast_in_its_casters_upkeep
 inquisitors_flail	Inquisitor's Flail	If equipped creature would deal combat damage, it deals double that damage instead.	-
 inquisitors_flail	Inquisitor's Flail	If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.	-
 inquisitors_flail	Inquisitor's Flail	Equip {2}	-
@@ -490,8 +490,8 @@ instigator_gang	Wildblood Pack	type Creature — Werewolf 5/5	-
 instigator_gang	Wildblood Pack	Trample	-
 instigator_gang	Wildblood Pack	Attacking creatures you control get +3/+0.	-
 instigator_gang	Wildblood Pack	At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.	-
-intangible_virtue	Intangible Virtue	cost {1}{W}	-
-intangible_virtue	Intangible Virtue	type Enchantment	-
+intangible_virtue	Intangible Virtue	cost {1}{W}	intangible_virtue_cast_by_the_first_player_enters_as_printed intangible_virtue_cast_by_the_second_player_enters_as_printed intangible_virtue_is_not_cast_for_one_mana_less
+intangible_virtue	Intangible Virtue	type Enchantment	intangible_virtue_cast_by_the_first_player_enters_as_printed intangible_virtue_cast_by_the_second_player_enters_as_printed intangible_virtue_is_not_cast_in_the_other_players_turn intangible_virtue_is_not_cast_in_its_casters_upkeep
 intangible_virtue	Intangible Virtue	Creature tokens you control get +1/+1 and have vigilance.	-
 into_the_maw_of_hell	Into the Maw of Hell	cost {4}{R}{R}	into_the_maw_of_hell_is_not_cast_for_one_mana_less
 into_the_maw_of_hell	Into the Maw of Hell	type Sorcery	into_the_maw_of_hell_is_not_cast_in_the_other_players_turn into_the_maw_of_hell_is_not_cast_in_its_casters_upkeep
@@ -529,8 +529,8 @@ lantern_spirit	Lantern Spirit	cost {2}{U}	lantern_spirit_cast_by_the_first_playe
 lantern_spirit	Lantern Spirit	type Creature — Spirit 2/1	lantern_spirit_cast_by_the_first_player_enters_as_printed lantern_spirit_cast_by_the_second_player_enters_as_printed lantern_spirit_is_not_cast_in_the_other_players_turn lantern_spirit_is_not_cast_in_its_casters_upkeep
 lantern_spirit	Lantern Spirit	Flying	lantern_spirit_cast_by_the_first_player_enters_as_printed lantern_spirit_cast_by_the_second_player_enters_as_printed rule:flying
 lantern_spirit	Lantern Spirit	{U}: Return this creature to its owner's hand.	-
-liliana_of_the_veil	Liliana of the Veil	cost {1}{B}{B}	-
-liliana_of_the_veil	Liliana of the Veil	type Legendary Planeswalker — Liliana, loyalty 3	-
+liliana_of_the_veil	Liliana of the Veil	cost {1}{B}{B}	liliana_of_the_veil_cast_by_the_first_player_enters_as_printed liliana_of_the_veil_cast_by_the_second_player_enters_as_printed liliana_of_the_veil_is_not_cast_for_one_mana_less
+liliana_of_the_veil	Liliana of the Veil	type Legendary Planeswalker — Liliana, loyalty 3	liliana_of_the_veil_cast_by_the_first_player_enters_as_printed liliana_of_the_veil_cast_by_the_second_player_enters_as_printed liliana_of_the_veil_is_not_cast_in_the_other_players_turn liliana_of_the_veil_is_not_cast_in_its_casters_upkeep
 liliana_of_the_veil	Liliana of the Veil	+1: Each player discards a card.	-
 liliana_of_the_veil	Liliana of the Veil	−2: Target player sacrifices a creature.	-
 liliana_of_the_veil	Liliana of the Veil	−6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.	-
@@ -565,8 +565,8 @@ manor_skeleton	Manor Skeleton	{1}{B}: Regenerate this creature.	-
 markov_patrician	Markov Patrician	cost {2}{B}	markov_patrician_cast_by_the_first_player_enters_as_printed markov_patrician_cast_by_the_second_player_enters_as_printed markov_patrician_is_not_cast_for_one_mana_less
 markov_patrician	Markov Patrician	type Creature — Vampire 3/1	markov_patrician_cast_by_the_first_player_enters_as_printed markov_patrician_cast_by_the_second_player_enters_as_printed markov_patrician_is_not_cast_in_the_other_players_turn markov_patrician_is_not_cast_in_its_casters_upkeep
 markov_patrician	Markov Patrician	Lifelink (Damage dealt by this creature also causes you to gain that much life.)	markov_patrician_cast_by_the_first_player_enters_as_printed markov_patrician_cast_by_the_second_player_enters_as_printed rule:lifelink
-mask_of_avacyn	Mask of Avacyn	cost {2}	-
-mask_of_avacyn	Mask of Avacyn	type Artifact — Equipment	-
+mask_of_avacyn	Mask of Avacyn	cost {2}	mask_of_avacyn_cast_by_the_first_player_enters_as_printed mask_of_avacyn_cast_by_the_second_player_enters_as_printed mask_of_avacyn_is_not_cast_for_one_mana_less
+mask_of_avacyn	Mask of Avacyn	type Artifact — Equipment	mask_of_avacyn_cast_by_the_first_player_enters_as_printed mask_of_avacyn_cast_by_the_second_player_enters_as_printed mask_of_avacyn_is_not_cast_in_the_other_players_turn mask_of_avacyn_is_not_cast_in_its_casters_upkeep
 mask_of_avacyn	Mask of Avacyn	Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)	-
 mask_of_avacyn	Mask of Avacyn	Equip {3}	-
 mausoleum_guard	Mausoleum Guard	cost {3}{W}	mausoleum_guard_cast_by_the_first_player_enters_as_printed mausoleum_guard_cast_by_the_second_player_enters_as_printed mausoleum_guard_is_not_cast_for_one_mana_less
@@ -668,8 +668,8 @@ one_eyed_scarecrow	One-Eyed Scarecrow	Creatures with flying your opponents contr
 orchard_spirit	Orchard Spirit	cost {2}{G}	orchard_spirit_cast_by_the_first_player_enters_as_printed orchard_spirit_cast_by_the_second_player_enters_as_printed orchard_spirit_is_not_cast_for_one_mana_less
 orchard_spirit	Orchard Spirit	type Creature — Spirit 2/2	orchard_spirit_cast_by_the_first_player_enters_as_printed orchard_spirit_cast_by_the_second_player_enters_as_printed orchard_spirit_is_not_cast_in_the_other_players_turn orchard_spirit_is_not_cast_in_its_casters_upkeep
 orchard_spirit	Orchard Spirit	This creature can't be blocked except by creatures with flying or reach.	-
-parallel_lives	Parallel Lives	cost {3}{G}	-
-parallel_lives	Parallel Lives	type Enchantment	-
+parallel_lives	Parallel Lives	cost {3}{G}	parallel_lives_cast_by_the_first_player_enters_as_printed parallel_lives_cast_by_the_second_player_enters_as_printed parallel_lives_is_not_cast_for_one_mana_less
+parallel_lives	Parallel Lives	type Enchantment	parallel_lives_cast_by_the_first_player_enters_as_printed parallel_lives_cast_by_the_second_player_enters_as_printed parallel_lives_is_not_cast_in_the_other_players_turn parallel_lives_is_not_cast_in_its_casters_upkeep
 parallel_lives	Parallel Lives	If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.	-
 paraselene	Paraselene	cost {2}{W}	paraselene_is_not_cast_for_one_mana_less
 paraselene	Paraselene	type Sorcery	paraselene_is_not_cast_in_the_other_players_turn paraselene_is_not_cast_in_its_casters_upkeep
@@ -719,13 +719,13 @@ rolling_temblor	Rolling Temblor	cost {2}{R}	rolling_temblor_is_not_cast_for_one_
 rolling_temblor	Rolling Temblor	type Sorcery	rolling_temblor_is_not_cast_in_the_other_players_turn rolling_temblor_is_not_cast_in_its_casters_upkeep
 rolling_temblor	Rolling Temblor	Rolling Temblor deals 2 damage to each creature without flying.	rolling_temblor_marks_two_on_each_creature rolling_temblor_cast_by_the_second_player_marks_two_on_each_creature rolling_temblor_spares_a_creature_with_flying
 rolling_temblor	Rolling Temblor	Flashback {4}{R}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	rolling_temblor_is_not_flashed_back_for_one_mana_less rolling_temblor_is_not_flashed_back_in_the_other_players_turn rolling_temblor_is_not_flashed_back_in_its_casters_upkeep rolling_temblor_flashed_back_marks_two_on_each_creature_and_is_exiled
-rooftop_storm	Rooftop Storm	cost {5}{U}	-
-rooftop_storm	Rooftop Storm	type Enchantment	-
+rooftop_storm	Rooftop Storm	cost {5}{U}	rooftop_storm_cast_by_the_first_player_enters_as_printed rooftop_storm_cast_by_the_second_player_enters_as_printed rooftop_storm_is_not_cast_for_one_mana_less
+rooftop_storm	Rooftop Storm	type Enchantment	rooftop_storm_cast_by_the_first_player_enters_as_printed rooftop_storm_cast_by_the_second_player_enters_as_printed rooftop_storm_is_not_cast_in_the_other_players_turn rooftop_storm_is_not_cast_in_its_casters_upkeep
 rooftop_storm	Rooftop Storm	You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.	-
 rotting_fensnake	Rotting Fensnake	cost {3}{B}	rotting_fensnake_cast_by_the_first_player_enters_as_printed rotting_fensnake_cast_by_the_second_player_enters_as_printed rotting_fensnake_is_not_cast_for_one_mana_less
 rotting_fensnake	Rotting Fensnake	type Creature — Zombie Snake 5/1	rotting_fensnake_cast_by_the_first_player_enters_as_printed rotting_fensnake_cast_by_the_second_player_enters_as_printed rotting_fensnake_is_not_cast_in_the_other_players_turn rotting_fensnake_is_not_cast_in_its_casters_upkeep
-runechanters_pike	Runechanter's Pike	cost {2}	-
-runechanters_pike	Runechanter's Pike	type Artifact — Equipment	-
+runechanters_pike	Runechanter's Pike	cost {2}	runechanters_pike_cast_by_the_first_player_enters_as_printed runechanters_pike_cast_by_the_second_player_enters_as_printed runechanters_pike_is_not_cast_for_one_mana_less
+runechanters_pike	Runechanter's Pike	type Artifact — Equipment	runechanters_pike_cast_by_the_first_player_enters_as_printed runechanters_pike_cast_by_the_second_player_enters_as_printed runechanters_pike_is_not_cast_in_the_other_players_turn runechanters_pike_is_not_cast_in_its_casters_upkeep
 runechanters_pike	Runechanter's Pike	Equipped creature has first strike and gets +X/+0, where X is the number of instant and sorcery cards in your graveyard.	-
 runechanters_pike	Runechanter's Pike	Equip {2}	-
 runic_repetition	Runic Repetition	cost {2}{U}	runic_repetition_is_not_cast_for_one_mana_less
@@ -754,8 +754,8 @@ sever_the_bloodline	Sever the Bloodline	cost {3}{B}	sever_the_bloodline_is_not_c
 sever_the_bloodline	Sever the Bloodline	type Sorcery	sever_the_bloodline_is_not_cast_in_the_other_players_turn sever_the_bloodline_is_not_cast_in_its_casters_upkeep
 sever_the_bloodline	Sever the Bloodline	Exile target creature and all other creatures with the same name as that creature.	sever_the_bloodline_exiles_a_creature_and_its_namesake_and_no_other sever_the_bloodline_cast_by_the_second_player_exiles_a_creature_and_its_namesake sever_the_bloodline_is_not_cast_at_an_artifact sever_the_bloodline_does_nothing_once_its_target_is_gone
 sever_the_bloodline	Sever the Bloodline	Flashback {5}{B}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	sever_the_bloodline_is_not_flashed_back_for_one_mana_less sever_the_bloodline_is_not_flashed_back_in_the_other_players_turn sever_the_bloodline_is_not_flashed_back_in_its_casters_upkeep sever_the_bloodline_flashed_back_exiles_both_and_is_exiled
-sharpened_pitchfork	Sharpened Pitchfork	cost {2}	-
-sharpened_pitchfork	Sharpened Pitchfork	type Artifact — Equipment	-
+sharpened_pitchfork	Sharpened Pitchfork	cost {2}	sharpened_pitchfork_cast_by_the_first_player_enters_as_printed sharpened_pitchfork_cast_by_the_second_player_enters_as_printed sharpened_pitchfork_is_not_cast_for_one_mana_less
+sharpened_pitchfork	Sharpened Pitchfork	type Artifact — Equipment	sharpened_pitchfork_cast_by_the_first_player_enters_as_printed sharpened_pitchfork_cast_by_the_second_player_enters_as_printed sharpened_pitchfork_is_not_cast_in_the_other_players_turn sharpened_pitchfork_is_not_cast_in_its_casters_upkeep
 sharpened_pitchfork	Sharpened Pitchfork	Equipped creature has first strike.	-
 sharpened_pitchfork	Sharpened Pitchfork	As long as equipped creature is a Human, it gets +1/+1.	-
 sharpened_pitchfork	Sharpened Pitchfork	Equip {1}	-
@@ -766,8 +766,8 @@ silent_departure	Silent Departure	cost {U}	silent_departure_is_not_cast_for_one_
 silent_departure	Silent Departure	type Sorcery	silent_departure_is_not_cast_in_the_other_players_turn silent_departure_is_not_cast_in_its_casters_upkeep
 silent_departure	Silent Departure	Return target creature to its owner's hand.	silent_departure_returns_the_other_players_creature silent_departure_cast_by_the_second_player_returns_the_first_players silent_departure_returns_your_own_creature silent_departure_returns_a_creature_to_its_owner_not_its_controller silent_departure_is_not_cast_at_an_artifact silent_departure_does_nothing_once_its_target_is_gone
 silent_departure	Silent Departure	Flashback {4}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	silent_departure_is_not_flashed_back_for_one_mana_less silent_departure_is_not_flashed_back_in_the_other_players_turn silent_departure_is_not_flashed_back_in_its_casters_upkeep silent_departure_flashed_back_returns_a_creature_and_is_exiled
-silver_inlaid_dagger	Silver-Inlaid Dagger	cost {1}	-
-silver_inlaid_dagger	Silver-Inlaid Dagger	type Artifact — Equipment	-
+silver_inlaid_dagger	Silver-Inlaid Dagger	cost {1}	silver_inlaid_dagger_cast_by_the_first_player_enters_as_printed silver_inlaid_dagger_cast_by_the_second_player_enters_as_printed silver_inlaid_dagger_is_not_cast_for_one_mana_less
+silver_inlaid_dagger	Silver-Inlaid Dagger	type Artifact — Equipment	silver_inlaid_dagger_cast_by_the_first_player_enters_as_printed silver_inlaid_dagger_cast_by_the_second_player_enters_as_printed silver_inlaid_dagger_is_not_cast_in_the_other_players_turn silver_inlaid_dagger_is_not_cast_in_its_casters_upkeep
 silver_inlaid_dagger	Silver-Inlaid Dagger	Equipped creature gets +2/+0.	-
 silver_inlaid_dagger	Silver-Inlaid Dagger	As long as equipped creature is a Human, it gets an additional +1/+0.	-
 silver_inlaid_dagger	Silver-Inlaid Dagger	Equip {2}	-
@@ -839,8 +839,8 @@ stitched_drake	Stitched Drake	Flying	stitched_drake_cast_by_the_first_player_ent
 stitchers_apprentice	Stitcher's Apprentice	cost {1}{U}	stitchers_apprentice_cast_by_the_first_player_enters_as_printed stitchers_apprentice_cast_by_the_second_player_enters_as_printed stitchers_apprentice_is_not_cast_for_one_mana_less
 stitchers_apprentice	Stitcher's Apprentice	type Creature — Homunculus 1/2	stitchers_apprentice_cast_by_the_first_player_enters_as_printed stitchers_apprentice_cast_by_the_second_player_enters_as_printed stitchers_apprentice_is_not_cast_in_the_other_players_turn stitchers_apprentice_is_not_cast_in_its_casters_upkeep
 stitchers_apprentice	Stitcher's Apprentice	{1}{U}, {T}: Create a 2/2 blue Homunculus creature token, then sacrifice a creature.	-
-stony_silence	Stony Silence	cost {1}{W}	-
-stony_silence	Stony Silence	type Enchantment	-
+stony_silence	Stony Silence	cost {1}{W}	stony_silence_cast_by_the_first_player_enters_as_printed stony_silence_cast_by_the_second_player_enters_as_printed stony_silence_is_not_cast_for_one_mana_less
+stony_silence	Stony Silence	type Enchantment	stony_silence_cast_by_the_first_player_enters_as_printed stony_silence_cast_by_the_second_player_enters_as_printed stony_silence_is_not_cast_in_the_other_players_turn stony_silence_is_not_cast_in_its_casters_upkeep
 stony_silence	Stony Silence	Activated abilities of artifacts can't be activated.	-
 stromkirk_noble	Stromkirk Noble	cost {R}	stromkirk_noble_cast_by_the_first_player_enters_as_printed stromkirk_noble_cast_by_the_second_player_enters_as_printed stromkirk_noble_is_not_cast_for_one_mana_less
 stromkirk_noble	Stromkirk Noble	type Creature — Vampire Noble 1/1	stromkirk_noble_cast_by_the_first_player_enters_as_printed stromkirk_noble_cast_by_the_second_player_enters_as_printed stromkirk_noble_is_not_cast_in_the_other_players_turn stromkirk_noble_is_not_cast_in_its_casters_upkeep
@@ -881,15 +881,15 @@ travel_preparations	Travel Preparations	cost {1}{G}	travel_preparations_is_not_c
 travel_preparations	Travel Preparations	type Sorcery	travel_preparations_is_not_cast_in_the_other_players_turn travel_preparations_is_not_cast_in_its_casters_upkeep
 travel_preparations	Travel Preparations	Put a +1/+1 counter on each of up to two target creatures.	travel_preparations_at_no_creature_puts_no_counter travel_preparations_at_one_creature_puts_a_counter_on_it travel_preparations_at_two_creatures_puts_a_counter_on_each travel_preparations_cast_by_the_second_player_puts_a_counter_on_each_of_two travel_preparations_is_not_cast_at_an_enchantment
 travel_preparations	Travel Preparations	Flashback {1}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	travel_preparations_is_not_flashed_back_for_one_mana_less travel_preparations_is_not_flashed_back_in_the_other_players_turn travel_preparations_is_not_flashed_back_in_its_casters_upkeep travel_preparations_flashed_back_puts_two_counters_and_is_exiled
-travelers_amulet	Traveler's Amulet	cost {1}	-
-travelers_amulet	Traveler's Amulet	type Artifact	-
+travelers_amulet	Traveler's Amulet	cost {1}	travelers_amulet_cast_by_the_first_player_enters_as_printed travelers_amulet_cast_by_the_second_player_enters_as_printed travelers_amulet_is_not_cast_for_one_mana_less
+travelers_amulet	Traveler's Amulet	type Artifact	travelers_amulet_cast_by_the_first_player_enters_as_printed travelers_amulet_cast_by_the_second_player_enters_as_printed travelers_amulet_is_not_cast_in_the_other_players_turn travelers_amulet_is_not_cast_in_its_casters_upkeep
 travelers_amulet	Traveler's Amulet	{1}, Sacrifice this artifact: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.	-
 tree_of_redemption	Tree of Redemption	cost {3}{G}	tree_of_redemption_cast_by_the_first_player_enters_as_printed tree_of_redemption_cast_by_the_second_player_enters_as_printed tree_of_redemption_is_not_cast_for_one_mana_less
 tree_of_redemption	Tree of Redemption	type Creature — Plant 0/13	tree_of_redemption_cast_by_the_first_player_enters_as_printed tree_of_redemption_cast_by_the_second_player_enters_as_printed tree_of_redemption_is_not_cast_in_the_other_players_turn tree_of_redemption_is_not_cast_in_its_casters_upkeep
 tree_of_redemption	Tree of Redemption	Defender	tree_of_redemption_cast_by_the_first_player_enters_as_printed tree_of_redemption_cast_by_the_second_player_enters_as_printed rule:defender
 tree_of_redemption	Tree of Redemption	{T}: Exchange your life total with this creature's toughness.	-
-trepanation_blade	Trepanation Blade	cost {3}	-
-trepanation_blade	Trepanation Blade	type Artifact — Equipment	-
+trepanation_blade	Trepanation Blade	cost {3}	trepanation_blade_cast_by_the_first_player_enters_as_printed trepanation_blade_cast_by_the_second_player_enters_as_printed trepanation_blade_is_not_cast_for_one_mana_less
+trepanation_blade	Trepanation Blade	type Artifact — Equipment	trepanation_blade_cast_by_the_first_player_enters_as_printed trepanation_blade_cast_by_the_second_player_enters_as_printed trepanation_blade_is_not_cast_in_the_other_players_turn trepanation_blade_is_not_cast_in_its_casters_upkeep
 trepanation_blade	Trepanation Blade	Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard.	-
 trepanation_blade	Trepanation Blade	Equip {2}	-
 tribute_to_hunger	Tribute to Hunger	cost {2}{B}	-
@@ -960,8 +960,8 @@ witchbane_orb	Witchbane Orb	cost {4}	-
 witchbane_orb	Witchbane Orb	type Artifact	-
 witchbane_orb	Witchbane Orb	When this artifact enters, destroy all Curses attached to you.	-
 witchbane_orb	Witchbane Orb	You have hexproof. (You can't be the target of spells or abilities your opponents control, including Aura spells.)	-
-wooden_stake	Wooden Stake	cost {2}	-
-wooden_stake	Wooden Stake	type Artifact — Equipment	-
+wooden_stake	Wooden Stake	cost {2}	wooden_stake_cast_by_the_first_player_enters_as_printed wooden_stake_cast_by_the_second_player_enters_as_printed wooden_stake_is_not_cast_for_one_mana_less
+wooden_stake	Wooden Stake	type Artifact — Equipment	wooden_stake_cast_by_the_first_player_enters_as_printed wooden_stake_cast_by_the_second_player_enters_as_printed wooden_stake_is_not_cast_in_the_other_players_turn wooden_stake_is_not_cast_in_its_casters_upkeep
 wooden_stake	Wooden Stake	Equipped creature gets +1/+0.	-
 wooden_stake	Wooden Stake	Whenever equipped creature blocks or becomes blocked by a Vampire, destroy that creature. It can't be regenerated.	-
 wooden_stake	Wooden Stake	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	-
@@ -995,8 +995,8 @@ plains	Plains	type Basic Land — Plains	-
 plains	Plains	({T}: Add {W}.)	reminder
 savannah_lions	Savannah Lions	cost {W}	savannah_lions_cast_by_the_first_player_enters_as_printed savannah_lions_cast_by_the_second_player_enters_as_printed savannah_lions_is_not_cast_for_one_mana_less
 savannah_lions	Savannah Lions	type Creature — Cat 2/1	savannah_lions_cast_by_the_first_player_enters_as_printed savannah_lions_cast_by_the_second_player_enters_as_printed savannah_lions_is_not_cast_in_the_other_players_turn savannah_lions_is_not_cast_in_its_casters_upkeep
-sol_ring	Sol Ring	cost {1}	-
-sol_ring	Sol Ring	type Artifact	-
+sol_ring	Sol Ring	cost {1}	sol_ring_cast_by_the_first_player_enters_as_printed sol_ring_cast_by_the_second_player_enters_as_printed sol_ring_is_not_cast_for_one_mana_less
+sol_ring	Sol Ring	type Artifact	sol_ring_cast_by_the_first_player_enters_as_printed sol_ring_cast_by_the_second_player_enters_as_printed sol_ring_is_not_cast_in_the_other_players_turn sol_ring_is_not_cast_in_its_casters_upkeep
 sol_ring	Sol Ring	{T}: Add {C}{C}.	-
 swamp	Swamp	type Basic Land — Swamp	-
 swamp	Swamp	({T}: Add {B}.)	reminder

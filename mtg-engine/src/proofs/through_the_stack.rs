@@ -2763,28 +2763,35 @@ through_the_stack! {
 #[derive(Clone, Copy)]
 struct Printed {
     cost: &'static [ManaSymbol],
+    legendary: bool,
     types: &'static [CardType],
     subtypes: &'static [&'static str],
-    power: i32,
-    toughness: i32,
+    /// A creature's, and no other card's.
+    power: Option<i32>,
+    toughness: Option<i32>,
+    /// A planeswalker's.
+    loyalty: Option<u32>,
     keywords: &'static [Keyword],
 }
 
-/// A creature card cast by `cast` for exactly the mana its printed cost
+/// A permanent card cast by `cast` for exactly the mana its printed cost
 /// asks for, and resolved: the cast is accepted and leaves the pool
 /// empty, so the engine's cost for it is the printed one and neither more
 /// nor less (CR 601.2f-h); the card is on the battlefield under its
-/// caster's control (608.3), untapped and undamaged; its power and
-/// toughness, each card type, its subtypes and each of the engine's
-/// keywords are the printed ones and no others, as the engine's layers
-/// report them (208, 205, 702); and it is summoning-sick unless it has
-/// haste (302.6). A creature of the other player's beside it is as it
-/// was, no life has changed, and nothing is left on the stack or asked of
-/// anyone.
+/// caster's control (608.3), untapped and undamaged; it is legendary or
+/// not, and each card type, its subtypes, its power and toughness if it
+/// is a creature and each of the engine's keywords are the printed ones
+/// and no others, as the engine's layers report them (205, 208, 702); a
+/// creature is summoning-sick unless it has haste (302.6); and a
+/// planeswalker has its printed loyalty in counters and no other counter
+/// (306.5b). A creature of the other player's beside it is as it was, no
+/// life has changed, and nothing is left on the stack or asked of anyone.
 ///
-/// A row is written for each creature card whose text has nothing happen
-/// as it enters: `scripts/kani-printed-rows.py` writes them from the
-/// Oracle's text, and says which cards it leaves and why.
+/// A row is written for each creature, artifact, enchantment and
+/// planeswalker card that is cast with no target (not an Aura) and whose
+/// text has nothing happen as it enters: `scripts/kani-printed-rows.py`
+/// writes them from the Oracle's text, and says which cards it leaves
+/// and why.
 fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cast)) {
     let (registry, mut state, blank, card) = board(card);
     let caster = PlayerId(cast.by);
@@ -2806,20 +2813,33 @@ fn enters_as_printed((card, printed, cast): (Box<dyn CardBehavior>, Printed, Cas
     assert!(state.players[0].graveyard_order.is_empty() && state.players[1].graveyard_order.is_empty());
     // The whole game after is the game before with the card on the
     // battlefield, new there this turn, and the mana spent: nothing else.
-    *expected.of(spell) = Seen { zone: Zone::Battlefield, sick: true, power_now: Some(printed.power), toughness_now: Some(printed.toughness), ..*expected.of(spell) };
+    *expected.of(spell) = printed.on_the_battlefield(*expected.of(spell));
     expected.players[usize::from(cast.by)].mana = 0;
     assert!(everything(&state, &registry) == expected);
     std::mem::forget((registry, state));
 }
 
-/// `spell`, a creature card just resolved, is on the battlefield under
+impl Printed {
+    /// What is seen of the card once it has resolved, `card` being what
+    /// was seen of it in its caster's hand: on the battlefield, come
+    /// under its controller's control this turn, with its printed power
+    /// and toughness and its printed loyalty in counters.
+    fn on_the_battlefield(self, card: Seen) -> Seen {
+        Seen { zone: Zone::Battlefield, sick: true, power_now: self.power, toughness_now: self.toughness, counters: self.loyalty.unwrap_or(0), ..card }
+    }
+}
+
+/// `spell`, a permanent card just resolved, is on the battlefield under
 /// `caster` as `printed` says ([`enters_as_printed`] says what that is).
 fn is_there_as_printed(state: &GameState, registry: &CardRegistry, spell: ObjectId, printed: Printed, caster: PlayerId) {
     let o = state.get_object(spell).expect("still an object");
     assert!(o.zone == Zone::Battlefield && o.controller == caster && o.owner == caster);
     assert!(!o.tapped && o.damage_marked == 0);
-    assert!(state.effective_power(spell, registry) == Some(printed.power));
-    assert!(state.effective_toughness(spell, registry) == Some(printed.toughness));
+    assert!(state.effective_power(spell, registry) == printed.power);
+    assert!(state.effective_toughness(spell, registry) == printed.toughness);
+    assert!(o.counters.get(&crate::types::CounterType::Loyalty).copied() == printed.loyalty);
+    assert!(o.counters.len() == usize::from(printed.loyalty.is_some()));
+    assert!(state.is_legendary(spell, registry) == printed.legendary);
     for t in [CardType::Land, CardType::Creature, CardType::Instant, CardType::Sorcery, CardType::Enchantment, CardType::Artifact, CardType::Planeswalker] {
         assert!(state.has_card_type(spell, t, registry) == printed.types.contains(&t));
     }
@@ -2831,11 +2851,12 @@ fn is_there_as_printed(state: &GameState, registry: &CardRegistry, spell: Object
     for k in Keyword::ALL {
         assert!(state.has_keyword(spell, k, registry) == printed.keywords.contains(&k));
     }
-    assert!(state.has_summoning_sickness(spell, registry) != printed.keywords.contains(&Keyword::Haste));
+    let sick = printed.types.contains(&CardType::Creature) && !printed.keywords.contains(&Keyword::Haste);
+    assert!(state.has_summoning_sickness(spell, registry) == sick);
     std::mem::forget(subtypes);
 }
 
-/// A creature card cast for its printed cost less one mana, a generic one
+/// A permanent card cast for its printed cost less one mana, a generic one
 /// if the cost has any and a coloured one if not: the cast is refused and
 /// nothing is done (CR 601.2h). With [`enters_as_printed`], the engine's
 /// cost for the card is the printed cost from both sides.
@@ -2854,7 +2875,7 @@ fn is_not_cast_for_one_mana_less((card, printed): (Box<dyn CardBehavior>, Printe
     std::mem::forget((registry, state));
 }
 
-/// When a creature card is cast other than in its caster's own main
+/// When a permanent card is cast other than in its caster's own main
 /// phase with the stack empty.
 #[derive(Clone, Copy, PartialEq)]
 enum At {
@@ -2864,8 +2885,8 @@ enum At {
     ItsCastersUpkeep,
 }
 
-/// A creature card cast, for its printed cost, at a time only a card
-/// with flash may be (CR 307.1, 702.8a): with flash it is cast, resolves
+/// A permanent card cast, for its printed cost, at a time only a card
+/// with flash may be (CR 301.1, 302.1, 303.1, 306.1, 702.8a): with flash it is cast, resolves
 /// and is there as printed; without, the cast is refused and nothing is
 /// done.
 fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed, At)) {
@@ -2885,7 +2906,7 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
         is_there_as_printed(&state, &registry, spell, printed, caster);
         // As in its caster's own main phase, and priority is the active
         // player's once it has resolved (CR 117.3b).
-        *expected.of(spell) = Seen { zone: Zone::Battlefield, sick: true, power_now: Some(printed.power), toughness_now: Some(printed.toughness), ..*expected.of(spell) };
+        *expected.of(spell) = printed.on_the_battlefield(*expected.of(spell));
         expected.players[0].mana = 0;
         expected.priority = Some(state.active_player);
         assert!(everything(&state, &registry) == expected);

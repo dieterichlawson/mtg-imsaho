@@ -7,12 +7,14 @@ each card of the pool: what a proof gives a caster to cast a card with
 (`a_spell`), so that the cost the engine asks is held against the printed
 one and not against the engine's own data for the card.
 
-`printed.rs` is, for each creature card, the rows of what casting it
-through the engine comes to: for exactly its printed cost, by each player
-in their own main phase, it is on the battlefield as its printed text says
-(`enters_as_printed` in `through_the_stack.rs`); for one mana less it is
-not cast; and in the other player's turn, or in its caster's upkeep, it is
-cast if it has flash and not otherwise (`is_cast_only_at_its_time`).
+`printed.rs` is, for each permanent card that is cast with no target (a
+creature, an artifact, an enchantment that is no Aura, a planeswalker),
+the rows of what casting it through the engine comes to: for exactly its
+printed cost, by each player in their own main phase, it is on the
+battlefield as its printed text says (`enters_as_printed` in
+`through_the_stack.rs`); for one mana less it is not cast; and in the
+other player's turn, or in its caster's upkeep, it is cast if it has
+flash and not otherwise (`is_cast_only_at_its_time`).
 
 `short.rs` is, for each card with rows written by hand in
 `through_the_stack.rs` (the instants and sorceries), that card cast for
@@ -38,7 +40,8 @@ spell that counters one, cast in response; Rebuke, cast at an attacker).
 What a row holds a card against is the Oracle's text for it
 (`data/oracle_cache.json`, from Scryfall, which `scripts/oracle_lookup.py`
 keeps), and nothing of the engine's own data for the card: its mana cost,
-the card types and subtypes of its type line, its power and toughness, and
+whether its type line has it legendary, the card types and subtypes of
+that line, a creature's power and toughness, a planeswalker's loyalty, and
 the keyword abilities it has. A card's own keywords are the ones on a line
 of nothing but keywords ("Flying", "First strike, lifelink"), their
 reminder text aside: a keyword it has only while something holds, or gives
@@ -52,7 +55,10 @@ A card is left out, and said so at the foot of the file, when:
   to say;
 - its cost has a symbol the proofs' mana does not know (X, hybrid), or it
   has none;
-- its power or toughness is not a number.
+- its power or toughness is not a number;
+- it is an Aura, which is cast at what it will enchant: its rows are to be
+  written with that. (A land is played and not cast, and an instant or a
+  sorcery is no permanent: neither is a card these rows are of.)
 
 With --check, exits 1 if the file is not what this would write: the rows
 are the Oracle's, and are not edited by hand.
@@ -171,8 +177,11 @@ def printed(card):
     """`card`'s row data as Rust, or why it has no row."""
     front = (card.get('type_line') or '').split('//')[0]
     types, _, subtypes = front.partition('—')
-    if 'Creature' not in types.split():
+    creature = 'Creature' in types.split()
+    if not {'Creature', 'Artifact', 'Enchantment', 'Planeswalker'} & set(types.split()):
         return None, None
+    if 'Aura' in subtypes.split():
+        return None, 'it is an Aura, cast at what it will enchant'
     text = card.get('oracle_text') or ''
     if re.search(r'\benters\b', text):
         return None, 'its text has something happen as it enters'
@@ -181,12 +190,25 @@ def printed(card):
         return None, f'its cost has {{{odd or "X"}}}'
     if not cost:
         return None, 'it has no mana cost'
-    power, toughness = str(card.get('power')), str(card.get('toughness'))
-    if not re.fullmatch(r'-?\d+', power) or not re.fullmatch(r'-?\d+', toughness):
-        return None, f'its power and toughness are {power}/{toughness}'
-    return ('Printed { cost: &[%s], types: &[%s], subtypes: &[%s], power: %s, toughness: %s, keywords: &[%s] }' % (
-        ', '.join(cost), ', '.join(f'CardType::{t}' for t in TYPES if t in types.split()),
-        ', '.join(json.dumps(s) for s in subtypes.split()), power, toughness,
+    power, toughness, loyalty = 'None', 'None', 'None'
+    if creature:
+        power, toughness = str(card.get('power')), str(card.get('toughness'))
+        if not re.fullmatch(r'-?\d+', power) or not re.fullmatch(r'-?\d+', toughness):
+            return None, f'its power and toughness are {power}/{toughness}'
+        power, toughness = f'Some({power})', f'Some({toughness})'
+    elif card.get('power') is not None:
+        return None, 'it has a power and is no creature'
+    if 'Planeswalker' in types.split():
+        if not re.fullmatch(r'\d+', str(card.get('loyalty'))):
+            return None, f'its loyalty is {card.get("loyalty")}'
+        loyalty = f'Some({card["loyalty"]})'
+    unknown = set(types.split()) - set(TYPES) - {'Legendary'}
+    if unknown:
+        return None, f'its type line has {" ".join(sorted(unknown))}'
+    return ('Printed { cost: &[%s], legendary: %s, types: &[%s], subtypes: &[%s], power: %s, toughness: %s, loyalty: %s, keywords: &[%s] }' % (
+        ', '.join(cost), 'true' if 'Legendary' in types.split() else 'false',
+        ', '.join(f'CardType::{t}' for t in TYPES if t in types.split()),
+        ', '.join(json.dumps(s) for s in subtypes.split()), power, toughness, loyalty,
         ', '.join(f'Keyword::{k}' for k in own_keywords(text)))), None
 
 
@@ -211,13 +233,13 @@ def render():
         for when, at in (('in_the_other_players_turn', 'At::TheOtherPlayersTurn'), ('in_its_casters_upkeep', 'At::ItsCastersUpkeep')):
             rows.append(f'    {module}_{"is" if flash else "is_not"}_cast_{when}: is_cast_only_at_its_time((Box::new({path}), {data}, {at}));')
     out = ['//! Written by `scripts/kani-printed-rows.py` from the Oracle\'s text',
-           '//! (`data/oracle_cache.json`); not to be edited by hand. Each creature',
-           '//! card of the pool whose text has nothing happen as it enters, cast by',
-           '//! each player for its printed cost, is on the battlefield as printed',
-           '//! (`enters_as_printed`).', '',
+           '//! (`data/oracle_cache.json`); not to be edited by hand. Each permanent',
+           '//! card of the pool that is cast with no target and whose text has',
+           '//! nothing happen as it enters, cast by each player for its printed',
+           '//! cost, is on the battlefield as printed (`enters_as_printed`).', '',
            'use super::*;', 'use crate::types::Color;', '',
            'through_the_stack! {'] + rows + ['}', '',
-           f'// {len(rows)} rows for {len(rows) // 5} cards. Creature cards with no row here, and why:']
+           f'// {len(rows)} rows for {len(rows) // 5} cards. Permanent cards that are cast, with no row here, and why:']
     out += [f'// - {module}: {why}' for module, why in left]
     return '\n'.join(out) + '\n'
 
