@@ -29,8 +29,11 @@ line (on the battlefield with those types and that power and toughness,
 and cast at no other time than its own) and, with the keyword's rule,
 each of its keyword lines (it is on the battlefield with those keywords).
 Of a spell: its cost and its flashback line, by the row that casts it a
-mana short of each. Every other claim is written by hand, by whoever
-writes the proof, and kept when the file is written again. A spell's cost
+mana short of each; and its type line and again its flashback line, by
+the rows that cast it at another time than its caster's own main phase,
+where an instant is cast and a sorcery is not. Every other claim is
+written by hand, by whoever writes the proof, and kept when the file is
+written again. A spell's cost
 has only that one claim written here; that it is cast for exactly its
 cost is every other row of the card, each of which gives its caster the
 Oracle's cost and no more.
@@ -61,8 +64,12 @@ HEAD = ('# Written by scripts/kani-claims.py from the Oracle\'s text; the claims
 ENTERS = ('_cast_by_the_first_player_enters_as_printed', '_cast_by_the_second_player_enters_as_printed')
 TIMES = ('_is_cast_in_the_other_players_turn', '_is_not_cast_in_the_other_players_turn',
          '_is_cast_in_its_casters_upkeep', '_is_not_cast_in_its_casters_upkeep')
-SHORT, FLASHBACK_SHORT = ('_is_not_cast_for_one_mana_less',), ('_is_not_flashed_back_for_one_mana_less',)
-WRITTEN = ENTERS + TIMES + SHORT + FLASHBACK_SHORT
+SHORT = ('_is_not_cast_for_one_mana_less',)
+# And of a card cast with flashback: a mana short, and at another time.
+FLASHED_BACK = ('_is_not_flashed_back_for_one_mana_less',
+                '_is_flashed_back_in_the_other_players_turn', '_is_not_flashed_back_in_the_other_players_turn',
+                '_is_flashed_back_in_its_casters_upkeep', '_is_not_flashed_back_in_its_casters_upkeep')
+WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK
 
 
 def load(name):
@@ -155,7 +162,7 @@ def render(of=None):
         elif kind == 'type':
             written = rows_of(ENTERS + TIMES) if front else []
         elif line.startswith('Flashback '):
-            written = rows_of(FLASHBACK_SHORT)
+            written = rows_of(FLASHED_BACK)
         elif keywords:
             # Flash is when a card may be cast, which the rows that cast
             # it at other times than its own are the proof of; every

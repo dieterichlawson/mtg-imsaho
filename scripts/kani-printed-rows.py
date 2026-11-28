@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """kani-printed-rows.py [--check]: write, from the Oracle's text, the
-three files of `mtg-engine/src/proofs/through_the_stack/` no hand writes.
+four files of `mtg-engine/src/proofs/through_the_stack/` no hand writes.
 
 `oracle.rs` is the mana cost and the flashback cost the Oracle prints for
 each card of the pool: what a proof gives a caster to cast a card with
@@ -24,6 +24,16 @@ flashback), under `one_mana_short!`: the same board and the same cast,
 the caster a mana short. Rows that are of a refusal already, of a spell
 that does nothing, or of a cast that names no target (which the engine
 answers with a question before it asks for the mana) are not such rows.
+
+`times.rs` is the same cards cast at two other times than their
+caster's own main phase: the other player's first main phase, and their
+own upkeep, the stack empty in each. A card the Oracle's type line has an
+instant is the row over again at that time, every assertion of it
+(`an_instant_at!`); one it has a sorcery is refused and nothing is done
+(`a_sorcery_at!`), and so is one flashed back, which is cast when the card
+could be (CR 702.34a). Left out, and said so at the foot of the file: a
+card whose first row is already of a cast in the other player's turn (a
+spell that counters one, cast in response; Rebuke, cast at an attacker).
 
 What a row holds a card against is the Oracle's text for it
 (`data/oracle_cache.json`, from Scryfall, which `scripts/oracle_lookup.py`
@@ -54,6 +64,12 @@ CARDS = f'{ROOT}/mtg-engine/src/cards'
 OUT = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/printed.rs'
 COSTS = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/oracle.rs'
 SHORT = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/short.rs'
+TIMES = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/times.rs'
+# The families whose rows are of a cast in the other player's turn as written.
+ALREADY_AT_ANOTHER_TIME = {'counterspell': 'cast in response to the other player\'s spell, in their turn',
+                           'dissipate': 'cast in response to the other player\'s spell, in their turn',
+                           'lost_in_the_mist': 'cast in response to the other player\'s spell, in their turn',
+                           'rebuke': 'cast at an attacking creature, in the declare attackers step of the other player\'s turn'}
 BY_HAND = f'{ROOT}/mtg-engine/src/proofs/through_the_stack.rs'
 # The rows by hand that are not of a card cast and resolved as its text says.
 NOT_A_CAST = re.compile(r'is_not_cast|does_nothing|in_the_game_loop|at_no_creature')
@@ -206,8 +222,10 @@ def render():
     return '\n'.join(out) + '\n'
 
 
-def short():
-    """`short.rs`: each card with rows by hand, cast a mana short."""
+def first_rows():
+    """For each card with rows by hand, the first of them that casts it
+    from a hand and has it resolve, and the first that does so with
+    flashback: each as (the row's name, its family's call)."""
     modules = sorted((module for module, _, _, _ in pool()), key=len, reverse=True)
     first, flashed = {}, {}
     for name, call in re.findall(r'^    ([a-z0-9_]+): ([a-z_]+\(.*\));$', open(BY_HAND).read(), re.M):
@@ -216,10 +234,51 @@ def short():
             sys.exit(f'{name}: a row of through_the_stack.rs that is of no card of the pool')
         if not NOT_A_CAST.search(name):
             (flashed if 'flashed_back' in name else first).setdefault(module, (name, call))
-    rows = []
-    for module in sorted(set(first) | set(flashed)):
+    for module in flashed:
         if module not in first:
             sys.exit(f'{module}: no row of through_the_stack.rs casts it from a hand and has it resolve')
+    return first, flashed
+
+
+def times():
+    """`times.rs`: each card with rows by hand, cast at another time."""
+    oracle = json.load(open(f'{ROOT}/data/oracle_cache.json'))['cards']
+    names = {module: name for module, _, name, _ in pool()}
+    first, flashed = first_rows()
+    tables = {(kind, when): [] for kind in ('an_instant_at', 'a_sorcery_at') for when in (1, 2)}
+    left = []
+    for module in sorted(first):
+        if module in ALREADY_AT_ANOTHER_TIME:
+            left.append((module, ALREADY_AT_ANOTHER_TIME[module]))
+            continue
+        types = oracle[names[module]]['type_line'].split('—')[0].split()
+        if ('Instant' in types) == ('Sorcery' in types):
+            sys.exit(f'{module}: a card with rows by hand that is not an instant or a sorcery, or is both')
+        instant = 'Instant' in types
+        for when, time in ((1, 'in_the_other_players_turn'), (2, 'in_its_casters_upkeep')):
+            table = tables['an_instant_at' if instant else 'a_sorcery_at', when]
+            table.append(f'    // {first[module][0]}\n    {module}_{"is" if instant else "is_not"}_cast_{time}: {first[module][1]};')
+            if module in flashed:
+                table.append(f'    // {flashed[module][0]}\n    {module}_{"is" if instant else "is_not"}_flashed_back_{time}: {flashed[module][1]};')
+    out = ['//! Written by `scripts/kani-printed-rows.py` from the rows of',
+           '//! `through_the_stack.rs` and the Oracle\'s type lines; not to be edited',
+           '//! by hand. Each card with rows there, cast in the other player\'s first',
+           '//! main phase (1) and in its caster\'s own upkeep (2): an instant is the',
+           '//! row named above it over again at that time, and a sorcery is refused',
+           '//! and nothing is done.', '', 'use super::*;']
+    for (kind, when), rows in tables.items():
+        out += ['', f'{kind}! {{ {when}'] + rows + ['}']
+    count = sum(len(rows) for rows in tables.values())
+    out += ['', f'// {count} rows for {len(first) - len(left)} cards. Cards with rows by hand and none here, and why:']
+    out += [f'// - {module}: {why}' for module, why in left]
+    return '\n'.join(out) + '\n'
+
+
+def short():
+    """`short.rs`: each card with rows by hand, cast a mana short."""
+    first, flashed = first_rows()
+    rows = []
+    for module in sorted(first):
         rows.append(f'    // {first[module][0]}\n    {module}_is_not_cast_for_one_mana_less: {first[module][1]};')
         if module in flashed:
             rows.append(f'    // {flashed[module][0]}\n    {module}_is_not_flashed_back_for_one_mana_less: {flashed[module][1]};')
@@ -236,7 +295,7 @@ def short():
 
 
 def main():
-    files = {OUT: render(), COSTS: costs(), SHORT: short()}
+    files = {OUT: render(), COSTS: costs(), SHORT: short(), TIMES: times()}
     if sys.argv[1:] == ['--check']:
         for path, text in files.items():
             if not os.path.exists(path) or open(path).read() != text:
@@ -248,7 +307,8 @@ def main():
             f.write(text)
     print(f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[OUT]))} rows written to {os.path.relpath(OUT, ROOT)}, '
           f'{files[COSTS].count(" => &[")} costs to {os.path.relpath(COSTS, ROOT)}, '
-          f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[SHORT]))} rows to {os.path.relpath(SHORT, ROOT)}')
+          f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[SHORT]))} rows to {os.path.relpath(SHORT, ROOT)}, '
+          f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[TIMES]))} rows to {os.path.relpath(TIMES, ROOT)}')
 
 
 if __name__ == '__main__':

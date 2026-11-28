@@ -316,12 +316,11 @@ type line, power and toughness) and each line of its text, and is on the
 scoreboard. Counted on 2026-11-28, a frame being two lines (its cost,
 if it has one, and its type line): 998 lines on the 270 cards (253
 costs, 290 type lines, 455 lines of text; 5 more are reminder text
-alone). 387 are claimed, on 158 cards: the cost and the type line of
-each of the 108 creatures with rows, the cost of each of the 50 spells,
-49 of the creatures' keyword lines (48 of which wait on the keyword's
-rule, layer B), and 72 lines of the spells' text. None is proved, the
-rows being unrun. No spell's type line is claimed (nothing yet refuses a
-sorcery at the wrong time), no ability of a permanent, and no back face.
+alone). 437 are claimed, on 158 cards: the cost and the type line of
+each of the 108 creatures with rows and of each of the 50 spells, 49 of
+the creatures' keyword lines (48 of which wait on the keyword's rule,
+layer B), and 72 lines of the spells' text. None is proved, the rows
+being unrun. No ability of a permanent is claimed, and no back face.
 
 **B. The rules the cards lean on, each proved once through the loop.**
 A creature's row says it has flying; what flying does is the engine's,
@@ -358,8 +357,16 @@ Counted: rules proved of a written list of the rules the pool uses.
    the 18 with a flashback row flashed back for one less than its
    flashback cost, on the board and with the cast of the card's own
    first row (`through_the_stack/short.rs`, 68 rows written by
-   `scripts/kani-printed-rows.py`). To be proved; the spells' wrong
-   times are still to write.
+   `scripts/kani-printed-rows.py`). And each of 46 of them cast in the
+   other player's first main phase and in its caster's own upkeep, from
+   its hand and with flashback: an instant is its own row over again at
+   that time and a sorcery is refused (`through_the_stack/times.rs`, 128
+   rows; the other four are instants whose first row is already cast in
+   the other player's turn). A sorcery cast with a spell on the stack is
+   not yet a row. To be proved; and a sorcery's refusal will not be until
+   `play` asks the engine what it offers (C.3): the engine refuses a
+   cast at the wrong time by not offering it, which the rows' `play`
+   does not yet ask.
 
 **D. Cards together.** A card alone on a board of blanks says little of
 how it meets the other 269.

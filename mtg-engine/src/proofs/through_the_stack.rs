@@ -58,12 +58,13 @@ use crate::types::{CardType, ManaSymbol, ManaType, Step, Zone};
 /// on (117.3-117.4), the top of the stack resolved if that was the last
 /// player's pass.
 fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
-    if ONE_MANA_SHORT.load(core::sync::atomic::Ordering::Relaxed) {
+    if TO_BE_REFUSED.load(core::sync::atomic::Ordering::Relaxed) {
         if let Action::CastSpell { object_id, .. } = action {
             let card = state.get_object(*object_id).expect("an object").card_id;
             if card.0 == THE_CARD.load(core::sync::atomic::Ordering::Relaxed) {
-                // The cast the row is of, its caster a mana short: it
-                // is refused, and the game is as it was.
+                // The cast the row is of, its caster a mana short or
+                // the time not one for a sorcery: it is refused, and
+                // the game is as it was.
                 cast_is_refused_as(state, registry, action.clone());
                 // And the row ends here. What its family goes on to
                 // ask is of a cast that went through, which this one
@@ -94,6 +95,18 @@ fn played(state: &mut GameState, registry: &CardRegistry, action: &Action) {
 /// Oracle's cost for the card ([`mana_to_cast`]), and what it asks is
 /// that the engine refuses that cast and does nothing ([`play`]).
 static ONE_MANA_SHORT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Whether the row is of a cast of its card the engine is to refuse
+/// ([`one_mana_short`], [`a_sorcery_at`]): [`play`] then holds that cast
+/// to being refused with the whole game as it was, and the row ends
+/// there.
+static TO_BE_REFUSED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// When the card a row is of is cast, where that is not its caster's own
+/// first main phase ([`an_instant_at`], [`a_sorcery_at`]): 1 for the
+/// other player's first main phase, 2 for its caster's own upkeep, the
+/// caster holding priority and the stack empty in each ([`a_spell`]).
+static AT_ANOTHER_TIME: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
 
 /// The card a row is of: the one [`board`] was given.
 static THE_CARD: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(u32::MAX);
@@ -242,8 +255,12 @@ fn holds(state: &mut GameState, registry: &CardRegistry, card: CardId, player: P
 /// with its printed flashback cost, each as the Oracle has it.
 fn a_spell(state: &mut GameState, registry: &CardRegistry, card: CardId, cast: Cast) -> ObjectId {
     let caster = PlayerId(cast.by);
-    state.active_player = caster;
-    state.step = Step::PrecombatMain;
+    let of_the_row = card.0 == THE_CARD.load(core::sync::atomic::Ordering::Relaxed);
+    (state.active_player, state.step) = match AT_ANOTHER_TIME.load(core::sync::atomic::Ordering::Relaxed) {
+        1 if of_the_row => (PlayerId(1 - cast.by), Step::PrecombatMain),
+        2 if of_the_row => (caster, Step::Upkeep),
+        _ => (caster, Step::PrecombatMain),
+    };
     state.priority_player = Some(caster);
     if !cast.flashback {
         return holds(state, registry, card, caster);
@@ -662,6 +679,46 @@ macro_rules! one_mana_short {
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
         fn $name() {
             ONE_MANA_SHORT.store(true, core::sync::atomic::Ordering::Relaxed);
+            TO_BE_REFUSED.store(true, core::sync::atomic::Ordering::Relaxed);
+            $proof($open);
+        }
+    )*};
+}
+
+/// The same row with the card it is of cast at another time than its
+/// caster's own main phase (CR 304.1, 307.1): `an_instant_at!` is the row
+/// as its family has it, every assertion of it, at that time;
+/// `a_sorcery_at!` is the cast refused there and nothing done. The rows
+/// are written by `scripts/kani-printed-rows.py`, the Oracle's type line
+/// saying which a card is (`through_the_stack/times.rs`).
+macro_rules! an_instant_at {
+    ($when:literal $($name:ident: $proof:ident($open:expr);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(26)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        fn $name() {
+            AT_ANOTHER_TIME.store($when, core::sync::atomic::Ordering::Relaxed);
+            $proof($open);
+        }
+    )*};
+}
+
+macro_rules! a_sorcery_at {
+    ($when:literal $($name:ident: $proof:ident($open:expr);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(26)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        fn $name() {
+            AT_ANOTHER_TIME.store($when, core::sync::atomic::Ordering::Relaxed);
+            TO_BE_REFUSED.store(true, core::sync::atomic::Ordering::Relaxed);
             $proof($open);
         }
     )*};
@@ -2842,6 +2899,7 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
 mod oracle;
 mod printed;
 mod short;
+mod times;
 
 // The engine's own game loop playing each action, where the rows above
 // name the action to the engine themselves. Four rows to begin with, one
