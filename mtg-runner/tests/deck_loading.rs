@@ -264,3 +264,28 @@ fn a_deck_file_past_the_card_bound_is_refused_at_the_line_that_crosses_it() {
 
     fs::remove_dir_all(&dir).ok();
 }
+
+/// A deck file saved with a UTF-8 byte-order mark (Notepad's default) was
+/// refused as "invalid count '40'", the mark invisible inside the quote, and
+/// a BOM before a `#` comment as "invalid count '#'" (#1102). The mark is
+/// read past, as most text readers do; CRLF endings were already fine.
+#[test]
+fn a_deck_file_with_a_byte_order_mark_loads() {
+    let dir = std::env::temp_dir().join(format!("deck_bom_{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    for (name, body) in [
+        ("bom.txt", &b"\xef\xbb\xbf40 Plains\n"[..]),
+        ("bom_comment.txt", &b"\xef\xbb\xbf# deck\r\n40 Plains\r\n"[..]),
+    ] {
+        let path = dir.join(name);
+        fs::write(&path, body).unwrap();
+        let output = runner()
+            .args(["--p1", "random", "--p2", "random", "--deck1", path.to_str().unwrap(),
+                   "--deck2", "rg", "--seed", "1", "-q", "--stop-after", "1"])
+            .output()
+            .expect("failed to run");
+        assert!(output.status.success(), "{name} loads: {}",
+            String::from_utf8_lossy(&output.stderr));
+    }
+    fs::remove_dir_all(&dir).ok();
+}

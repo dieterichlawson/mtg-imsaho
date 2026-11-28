@@ -1850,6 +1850,12 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
         .unwrap_or_else(|e| die(&format!(
             "'{path}' is not a built-in deck name and could not be read as a deck file: {e}")));
 
+    // Notepad and other editors save UTF-8 with a byte-order mark. `trim`
+    // does not remove U+FEFF, so it stuck to the first token: `40 Plains`
+    // was refused as "invalid count '40'" with the mark invisible inside
+    // the quote, and a first-line `#` comment was not a comment (#1102).
+    let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+
     let mut entries = Vec::new();
     let mut total: u64 = 0;
     for (line_num, line) in content.lines().enumerate() {
