@@ -94,13 +94,14 @@ fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
 /// What the loop has besides and this has not: it plays the answer on a
 /// copy of the game and keeps the copy (`submit_action`, where this is
 /// `submit_action_on`, the same function on the game itself), and it
-/// passes for a player it has nothing worth a decision to offer.
+/// passes for a player it has nothing worth a decision to offer. What it
+/// does before it asks anyone is [`to_the_next_decision`].
 /// [`play_in_the_game_loop`] is the loop itself.
 fn played(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     if IN_THE_GAME_LOOP.load(core::sync::atomic::Ordering::Relaxed) {
         return play_in_the_game_loop(state, registry, action);
     }
-    crate::engine::before_priority(state, registry);
+    to_the_next_decision(state, registry);
     let legal = crate::engine::legal_actions(state, registry);
     let offered = legal.permits(action);
     std::mem::forget(legal);
@@ -110,6 +111,28 @@ fn played(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     let cast_prompt_player = crate::engine::cast_time_prompt_player(state);
     crate::engine::submit_action_on(state, action, registry);
     crate::engine::hand_on_priority(state, action, cast_prompt_player, 2, registry);
+}
+
+/// The engine's game loop from where the game stands to the next time it
+/// asks a player for anything, as `engine::run_game_loop_inner` has it:
+/// what is checked before a player would receive priority (CR 117.5); and
+/// while no player has priority and nothing is asked of one, the step is
+/// ended and the next begun, and that checked again. Those are the steps
+/// in which no player receives priority, the cleanup step (514.3) and
+/// the untap step after it (502.4). Three in a row is as many as there
+/// are, and a fourth is a failure.
+fn to_the_next_decision(state: &mut GameState, registry: &CardRegistry) {
+    crate::engine::before_priority(state, registry);
+    for _ in 0..3 {
+        if state.priority_player.is_none() && state.awaiting_action.is_none() && !state.is_game_over() {
+            // The loop resolves the top of the stack here if there is
+            // one; no row leaves a spell there with nobody to pass.
+            assert!(state.stack.is_empty());
+            crate::engine::advance_step(state, registry);
+            crate::engine::before_priority(state, registry);
+        }
+    }
+    assert!(state.priority_player.is_some() || state.awaiting_action.is_some() || state.is_game_over());
 }
 
 /// Whether the row is of its card cast for one mana less than its cost
@@ -359,7 +382,7 @@ fn all_pass(state: &mut GameState, registry: &CardRegistry) {
     play(state, registry, &Action::PassPriority);
     assert!(state.priority_player == Some(PlayerId(1 - first.0)) && state.stack.len() == depth);
     play(state, registry, &Action::PassPriority);
-    crate::engine::before_priority(state, registry);
+    to_the_next_decision(state, registry);
     assert!(state.priority_player == Some(state.active_player));
 }
 
@@ -427,7 +450,7 @@ fn draws((card, n, cards, cast): (Box<dyn CardBehavior>, usize, usize, Cast)) {
         play(&mut state, &registry, &action);
         play(&mut state, &registry, &Action::PassPriority);
         play(&mut state, &registry, &Action::PassPriority);
-        crate::engine::before_priority(&mut state, &registry);
+        to_the_next_decision(&mut state, &registry);
         std::mem::forget(action);
     }
 

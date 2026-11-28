@@ -1204,6 +1204,10 @@ proofs::through_the_stack::rules::combat_two_blockers_are_dealt_damage_in_the_or
 proofs::through_the_stack::rules::combat_damage_past_lethal_goes_to_the_next_blocker_in_the_order  # NOT_RUN
 proofs::through_the_stack::rules::menace_is_blocked_by_two_creatures  # NOT_RUN
 proofs::through_the_stack::rules::menace_is_not_blocked_by_one_creature  # NOT_RUN
+proofs::through_the_stack::rules::turn_the_end_step_ends_through_cleanup_and_untap_into_the_next_players_upkeep  # NOT_RUN
+proofs::through_the_stack::rules::turn_the_draw_step_draws_the_active_player_a_card  # NOT_RUN
+proofs::through_the_stack::rules::turn_the_player_on_the_play_has_no_draw_step_in_the_first_turn  # NOT_RUN
+proofs::through_the_stack::rules::turn_a_hand_of_eight_is_discarded_to_seven_in_the_cleanup_step  # NOT_RUN
 proofs::through_the_stack::rules::hexproof_is_not_the_target_of_an_opponents_spell  # NOT_RUN
 proofs::through_the_stack::rules::hexproof_is_the_target_of_its_controllers_own_spell  # NOT_RUN
 proofs::through_the_stack::short::altars_reap_is_not_cast_for_one_mana_less  # NOT_RUN

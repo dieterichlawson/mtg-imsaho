@@ -113,7 +113,7 @@ def render():
            f'| 1. harnesses that call a card\'s hook directly | {hooks} | 0 |',
            f'| A. lines the cards print (each face\'s frame and each line of its text) that a proof through the game claims '
            f'| {claimed} of {lines} ({lines_proved} with every such proof proved) | {lines}, proved |',
-           f'| B. rules the cards lean on (the keywords, combat, summoning sickness) with every row written for them through the game proved '
+           f'| B. rules the cards lean on (the keywords, combat, the turn, summoning sickness) with every row written for them through the game proved '
            f'| {rules_proved} of {rules} ({rules_with_rows} with rows, {rule_rows} rows) | {rules} |',
            '| 2. cards whose proofs cover every case that applies | not counted yet | all |',
            '| 3. changes to a card\'s code its proofs catch | not counted yet | every one |',

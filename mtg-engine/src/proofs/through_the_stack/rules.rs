@@ -19,8 +19,11 @@
 //! until end of turn. That is one of the ways a creature has a keyword,
 //! and the rules ask the same question of every way (`has_keyword`).
 //!
+//! And the turn around a combat: its end, the cleanup and untap steps no
+//! player has priority in, the draw, and the hand a player keeps.
+//!
 //! What is not here yet: a planeswalker attacked, more than two blockers
-//! on an attacker, and the turn outside combat.
+//! on an attacker, and the phases of a turn in their whole order.
 
 use super::*;
 use crate::actions::ResolvedChoice;
@@ -242,13 +245,13 @@ fn a_combat((attacker, blocker, assigns, outcome): (Fighter, Option<Fighter>, Op
     }
     the_step_ends(&mut state, &registry, Step::CombatDamage);
     the_damage_is_divided(&mut state, &registry, attacking, assigns);
-    crate::engine::before_priority(&mut state, &registry);
+    to_the_next_decision(&mut state, &registry);
     let strikes_first = |f: Fighter| f.keywords.contains(&Keyword::FirstStrike) || f.keywords.contains(&Keyword::DoubleStrike);
     if strikes_first(attacker) || blocker.is_some_and(strikes_first) {
         // A second combat damage step, for the creatures that did not
         // deal theirs in the first and for double strike (CR 510.4).
         the_step_ends(&mut state, &registry, Step::CombatDamage);
-        crate::engine::before_priority(&mut state, &registry);
+        to_the_next_decision(&mut state, &registry);
     }
 
     assert!(state.stack.is_empty() && state.awaiting_action.is_none() && state.pending_damage.is_empty());
@@ -332,7 +335,7 @@ fn a_double_block((attacker, first, more, outcome, second): (Fighter, usize, Opt
 
     the_step_ends(&mut state, &registry, Step::CombatDamage);
     the_damage_is_divided(&mut state, &registry, attacking, more);
-    crate::engine::before_priority(&mut state, &registry);
+    to_the_next_decision(&mut state, &registry);
 
     assert!(state.stack.is_empty() && state.awaiting_action.is_none() && state.pending_damage.is_empty());
     expected.step = Step::CombatDamage;
@@ -444,6 +447,124 @@ through_the_stack! {
     combat_damage_past_lethal_goes_to_the_next_blocker_in_the_order: a_double_block((Fighter { keywords: &[], ..A_TRAMPLER }, 0, Some(0), Outcome { to_the_player: 0, gained: 0, attacker: Fate::Dead, blocker: Fate::Dead }, Fate::Dead));
     menace_is_blocked_by_two_creatures: a_double_block((with(&[Keyword::Menace]), 0, None, Outcome { to_the_player: 0, gained: 0, attacker: Fate::Dead, blocker: Fate::Dead }, UNHURT));
     menace_is_not_blocked_by_one_creature: menace_is_not_blocked_by_one(());
+}
+
+/// The first player's end step, each player passing with the stack
+/// empty. The turn ends: in the cleanup step the damage marked on every
+/// permanent is removed and the effects that last until end of turn end
+/// (CR 514.2), and no player receives priority (514.3); the mana in a
+/// pool is lost as the step it was added in ends (500.4); the next turn
+/// is the second player's (500.7), in whose untap step their permanents
+/// untap (502.3), their creatures are no longer new this turn (302.6)
+/// and their land play is theirs again (305.2), and no player receives
+/// priority (502.4); and the game comes to that player's upkeep with
+/// priority theirs (503.1). The first player's tapped creature stays
+/// tapped: it is not its controller's untap step. Nothing else of the
+/// game has changed.
+fn the_turn_ends((): ()) {
+    let (registry, mut state, blank, _) = board(Box::new(crate::proofs::cards::OtherBlank));
+    let mine = a_fighter(&mut state, blank, 0, Fighter { tapped: true, ..with(&[Keyword::Flying]) });
+    let theirs = a_fighter(&mut state, blank, 1, Fighter { tapped: true, sick: true, ..A_WALL });
+    state.get_object_mut(mine).expect("just created").damage_marked = 1;
+    state.get_object_mut(theirs).expect("just created").damage_marked = 3;
+    state.players[0].mana_pool.add(ManaType::Colorless, 2);
+    state.players[1].land_plays_remaining = 0;
+    state.creature_died_this_turn = true;
+    state.active_player = PlayerId(0);
+    state.step = Step::EndStep;
+    state.priority_player = Some(PlayerId(0));
+    let mut expected = everything(&state, &registry);
+    assert!(state.has_keyword(mine, Keyword::Flying, &registry));
+
+    the_step_ends(&mut state, &registry, Step::Cleanup);
+    // Cleanup is done, and nobody has priority in it.
+    assert!(state.priority_player.is_none() && state.awaiting_action.is_none());
+    to_the_next_decision(&mut state, &registry);
+
+    assert!(!state.has_keyword(mine, Keyword::Flying, &registry));
+    expected.turn += 1;
+    expected.active = PlayerId(1);
+    expected.step = Step::Upkeep;
+    expected.priority = Some(PlayerId(1));
+    expected.of(mine).damage = 0;
+    *expected.of(theirs) = Seen { tapped: false, sick: false, damage: 0, ..*expected.of(theirs) };
+    expected.players[0].mana = 0;
+    expected.players[1].land_plays = 1;
+    expected.effects_until_end_of_turn = 0;
+    expected.a_creature_died = false;
+    assert!(everything(&state, &registry) == expected);
+    std::mem::forget((registry, state));
+}
+
+/// The first player's upkeep, each player passing with the stack empty.
+/// In a turn that is not the game's first the draw step follows, and as
+/// it begins the active player draws the top card of their library (CR
+/// 504.1); in the first turn of a two-player game the player on the play
+/// has no draw step and the first main phase follows (103.7a). The mana
+/// left in a pool is lost as the upkeep ends (500.4). Priority is the
+/// active player's, and nothing else of the game has changed.
+fn the_upkeep_ends(first_turn: bool) {
+    let (registry, mut state, blank, _) = board(Box::new(crate::proofs::cards::OtherBlank));
+    a_library(&mut state, blank, 0, 2);
+    a_library(&mut state, blank, 1, 1);
+    state.players[1].mana_pool.add(ManaType::Green, 1);
+    state.is_first_turn = first_turn;
+    state.active_player = PlayerId(0);
+    state.step = Step::Upkeep;
+    state.priority_player = Some(PlayerId(0));
+    let mut expected = everything(&state, &registry);
+
+    the_step_ends(&mut state, &registry, if first_turn { Step::PrecombatMain } else { Step::Draw });
+
+    expected.step = state.step;
+    expected.players[1].mana = 0;
+    if !first_turn {
+        expected.takes_the_top_card(0, Zone::Hand);
+    }
+    assert!(state.priority_player == Some(PlayerId(0)) && state.awaiting_action.is_none());
+    assert!(everything(&state, &registry) == expected);
+    std::mem::forget((registry, state));
+}
+
+/// The first player's end step with eight cards in their hand, each
+/// player passing. As the cleanup step begins the engine asks the active
+/// player to discard down to seven (CR 514.1) before anything else of
+/// the step is done; answered with one card, that card is in their
+/// graveyard, the seven are still in their hand, and the turn goes on to
+/// the second player's upkeep. Nothing else of the game has changed.
+fn the_hand_is_discarded_to_seven((): ()) {
+    let (registry, mut state, blank, _) = board(Box::new(crate::proofs::cards::OtherBlank));
+    let mut hand = [ObjectId(0); 8];
+    for slot in &mut hand {
+        *slot = state.create_object(blank, PlayerId(0), Zone::Hand, None, None);
+    }
+    state.active_player = PlayerId(0);
+    state.step = Step::EndStep;
+    state.priority_player = Some(PlayerId(0));
+    let mut expected = everything(&state, &registry);
+
+    the_step_ends(&mut state, &registry, Step::Cleanup);
+    assert!(matches!(state.awaiting_action, Some(AwaitingAction::DiscardToHandSize { player, discard_count: 1 }) if player == PlayerId(0)));
+    let discard = Action::DiscardCards { cards: vec![hand[3]] };
+    play(&mut state, &registry, &discard);
+    assert!(state.awaiting_action.is_none());
+    to_the_next_decision(&mut state, &registry);
+
+    expected.is_buried(hand[3], 0);
+    expected.turn += 1;
+    expected.active = PlayerId(1);
+    expected.step = Step::Upkeep;
+    expected.priority = Some(PlayerId(1));
+    assert!(everything(&state, &registry) == expected);
+    std::mem::forget((registry, state, discard));
+}
+
+// The turn outside combat (CR 500-514).
+through_the_stack! {
+    turn_the_end_step_ends_through_cleanup_and_untap_into_the_next_players_upkeep: the_turn_ends(());
+    turn_the_draw_step_draws_the_active_player_a_card: the_upkeep_ends(false);
+    turn_the_player_on_the_play_has_no_draw_step_in_the_first_turn: the_upkeep_ends(true);
+    turn_a_hand_of_eight_is_discarded_to_seven_in_the_cleanup_step: the_hand_is_discarded_to_seven(());
 }
 
 // Hexproof is of targeting, not of combat (CR 702.11b).

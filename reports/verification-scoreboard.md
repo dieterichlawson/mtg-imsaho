@@ -9,12 +9,12 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | 1. those proofs: proved of written | 0 of 1344 | all |
 | 1. harnesses that call a card's hook directly | 604 | 0 |
 | A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 571 of 998 (0 with every such proof proved) | 998, proved |
-| B. rules the cards lean on (the keywords, combat, summoning sickness) with every row written for them through the game proved | 0 of 16 (16 with rows, 44 rows) | 16 |
+| B. rules the cards lean on (the keywords, combat, the turn, summoning sickness) with every row written for them through the game proved | 0 of 17 (17 with rows, 48 rows) | 17 |
 | 2. cards whose proofs cover every case that applies | not counted yet | all |
 | 3. changes to a card's code its proofs catch | not counted yet | every one |
 | 4. engine functions a proof stands in for, unchecked | 165 | 0 |
 | 5. official rulings accounted for | not counted yet | 578 |
-| 6. proofs that do not finish | 12 (and 1388 written and not yet run) | 0 |
+| 6. proofs that do not finish | 12 (and 1392 written and not yet run) | 0 |
 | 7. permanents that can be pieces of the small boards | 129 of 199 (counted by hand, 2026-11-27) | 199 |
 
 ## Cards through the stack

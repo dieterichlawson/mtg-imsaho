@@ -361,9 +361,16 @@ indestructible), with hexproof by a spell. A row's name begins with its
 rule, and a keyword line of a card counts as proved when every row of
 the keyword's rule is. Added the same day: trample (the engine asks how
 much the blocker is assigned, and is answered), two blockers on one
-attacker (it asks their order), and menace: 44 rows over all 16 rules.
-Not yet written: a planeswalker attacked, three or more blockers, and
-the turn outside combat. None is run.
+attacker (it asks their order), and menace: 44 rows over 16 rules. And
+the turn around a combat, a seventeenth: the end step through cleanup
+(damage off, effects until end of turn ended, mana lost) and the next
+player's untap into their upkeep; the draw step, and none in the first
+turn for the player on the play; a hand of eight discarded to seven: 4
+rows. For those `play` has the rest of the loop's body: where no player
+has priority and nothing is asked, the step is ended and the next
+begun, as in cleanup and untap. Not yet written: a planeswalker
+attacked, three or more blockers, and the phases of a turn in their
+whole order. None is run.
 
 **C. Each proof airtight in itself.**
 1. The whole state compared before and after, every object and player,

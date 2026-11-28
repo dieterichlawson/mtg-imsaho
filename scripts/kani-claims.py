@@ -85,7 +85,7 @@ FLASHED_BACK = ('_is_not_flashed_back_for_one_mana_less',
 WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK + LAND + ATTACHED + NOT_ENCHANTED
 # The rules the rows of proofs::through_the_stack::rules are of, each the
 # beginning of its rows' names: the keywords, and what is no keyword's.
-RULES = ('combat', 'summoning_sickness', 'flying', 'reach', 'intimidate', 'first_strike', 'double_strike', 'deathtouch',
+RULES = ('combat', 'turn', 'summoning_sickness', 'flying', 'reach', 'intimidate', 'first_strike', 'double_strike', 'deathtouch',
          'lifelink', 'indestructible', 'vigilance', 'haste', 'defender', 'hexproof', 'trample', 'menace')
 OF_THE_RULES = 'the rules'
 
