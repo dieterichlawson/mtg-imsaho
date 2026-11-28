@@ -2919,6 +2919,7 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
 
 mod oracle;
 mod printed;
+mod rules;
 mod short;
 mod times;
 

@@ -21,6 +21,8 @@ What is counted:
 - layer A: the lines the Oracle prints on the cards, a face's frame and
   each line of its text, and how many of them a proof through the game
   claims (`scripts/kani-claims.py`, `scripts/kani/claims.tsv`);
+- layer B: the rules of `scripts/kani-claims.py`'s list, and how many
+  have rows in `proofs::through_the_stack::rules` and every one proved;
 - goal 4: the engine functions a proof stands in for with `kani::stub`,
   other than the five outside the rules (`format!`, an object's name for
   the log, the log, the allocator's growing and freeing);
@@ -93,7 +95,9 @@ def numbers():
 
 def render():
     per, unplaced, stubs, open_proofs, not_run = numbers()
-    lines, claimed, lines_proved = load('kani-claims').numbers()
+    claims = load('kani-claims')
+    lines, claimed, lines_proved = claims.numbers()
+    rules, rules_with_rows, rules_proved, rule_rows = claims.rule_numbers()
     through = sum(1 for c in per.values() if c['through'] and c['proved'] == c['through'])
     partly = sum(1 for c in per.values() if c['through'] and c['proved'] != c['through'])
     hooks = sum(c['hook'] for c in per.values()) + unplaced['hook']
@@ -105,15 +109,17 @@ def render():
            '| Goal | Now | Done at |', '|---|---|---|',
            f'| 1. cards with every proof written for them through the engine\'s cast, stack and resolution proved | {through} of {len(per)}'
            f'{f" (and {partly} with some not yet proved)" if partly else ""} | {len(per)} |',
-           f'| 1. those proofs: proved of written | {proved} of {cases} ({len(not_run)} not yet run) | all |',
+           f'| 1. those proofs: proved of written | {proved} of {cases} | all |',
            f'| 1. harnesses that call a card\'s hook directly | {hooks} | 0 |',
            f'| A. lines the cards print (each face\'s frame and each line of its text) that a proof through the game claims '
            f'| {claimed} of {lines} ({lines_proved} with every such proof proved) | {lines}, proved |',
+           f'| B. rules the cards lean on (the keywords, combat, summoning sickness) with every row written for them through the game proved '
+           f'| {rules_proved} of {rules} ({rules_with_rows} with rows, {rule_rows} rows) | {rules} |',
            '| 2. cards whose proofs cover every case that applies | not counted yet | all |',
            '| 3. changes to a card\'s code its proofs catch | not counted yet | every one |',
            f'| 4. engine functions a proof stands in for, unchecked | {len(stubs)} | 0 |',
            '| 5. official rulings accounted for | not counted yet | 578 |',
-           f'| 6. proofs that do not finish | {len(open_proofs)} | 0 |',
+           f'| 6. proofs that do not finish | {len(open_proofs)} (and {len(not_run)} written and not yet run) | 0 |',
            '| 7. permanents that can be pieces of the small boards | 129 of 199 (counted by hand, 2026-11-27) | 199 |',
            '', '## Cards through the stack', '',
            '| card | through the stack, proved of written | by its hook alone | declared |', '|---|---|---|---|']
@@ -135,7 +141,9 @@ def main():
         lines_were = re.search(r'game claims \| (\d+) of', was)
         if all(m):
             # Proofs that were waiting and have since been run to a result.
-            waited = re.search(r'\((\d+) not yet run\)', was)
+            # Said on the first of these rows until 2026-11-28, of the
+            # cards' rows, though it counted every proof waiting.
+            waited = re.search(r'\(and (\d+) written and not yet run\)', was) or re.search(r'\((\d+) not yet run\)', was)
             run_since = max(0, int(waited.group(1)) - waiting) if waited else 0
             before = (int(m[0].group(1)), -int(m[1].group(1)), -int(m[2].group(1)), -int(m[3].group(1)) - run_since,
                       int(lines_were.group(1)) if lines_were else 0)

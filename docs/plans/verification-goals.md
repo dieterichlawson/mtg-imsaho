@@ -337,6 +337,28 @@ end of turn" ends, summoning sickness lifts), two spells on the stack,
 countering, tokens, lands and mana abilities, the state-based actions.
 Counted: rules proved of a written list of the rules the pool uses.
 
+What there was before (read through on 2026-11-28, by an agent, and to
+be checked again rule by rule as each is written): the older proofs of
+combat, the turn and the state-based actions each call one function of
+the engine with the functions under it stood in for, and none plays an
+action. Seven things had no proof of any kind: menace and the least
+number of blockers, deathtouch with trample, haste lifting summoning
+sickness, playing a land, the mana pools emptying, the end of combat,
+and a combat damage step as a whole.
+
+Begun on 2026-11-28 in `through_the_stack/rules.rs`: 34 rows over 14
+rules, each a combat the engine runs from the beginning of combat step
+(each player passes, it asks for attackers, then blockers, and deals the
+damage), the whole game compared after. Who may attack (tapped,
+summoning sick, haste, defender, vigilance), who may block whom (tapped,
+flying, reach, intimidate), and what the damage does (unblocked,
+blocked, first strike, double strike, deathtouch, lifelink,
+indestructible), with hexproof by a spell. A row's name begins with its
+rule, and a keyword line of a card counts as proved when every row of
+the keyword's rule is. Not yet written: trample and a second blocker
+(the engine asks how damage is divided and ordered), menace, a
+planeswalker attacked, and the turn outside combat. None is run.
+
 **C. Each proof airtight in itself.**
 1. The whole state compared before and after, every object and player,
    and only what the text says may differ: "and nothing else" checked,

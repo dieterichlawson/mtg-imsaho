@@ -15,9 +15,10 @@ A claim is one of:
   is: a proof that plays the card through the engine and holds what comes
   of it against this line;
 - `rule:NAME`, for a line that is a keyword: what the keyword does is the
-  engine's and is proved of the engine once, for every card that has it
-  (`scripts/kani/rules.tsv`, which is not written yet: until it is, no
-  rule is proved and no keyword line counts as proved);
+  engine's and is proved of the engine once, for every card that has it,
+  by the rows of `proofs::through_the_stack::rules` whose names begin
+  with NAME (`flying_...`). The rule is proved when there is such a row
+  and every one of them is;
 - `-`: nothing claims the line yet;
 - `reminder`: the line is reminder text and nothing but, which says again
   what a rule says and is no ability.
@@ -70,6 +71,11 @@ FLASHED_BACK = ('_is_not_flashed_back_for_one_mana_less',
                 '_is_flashed_back_in_the_other_players_turn', '_is_not_flashed_back_in_the_other_players_turn',
                 '_is_flashed_back_in_its_casters_upkeep', '_is_not_flashed_back_in_its_casters_upkeep')
 WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK
+# The rules the rows of proofs::through_the_stack::rules are of, each the
+# beginning of its rows' names: the keywords, and what is no keyword's.
+RULES = ('combat', 'summoning_sickness', 'flying', 'reach', 'intimidate', 'first_strike', 'double_strike', 'deathtouch',
+         'lifelink', 'indestructible', 'vigilance', 'haste', 'defender', 'hexproof', 'trample', 'menace')
+OF_THE_RULES = 'the rules'
 
 
 def load(name):
@@ -123,10 +129,24 @@ def harnesses():
         if h.startswith(THROUGH):
             leaf = h.rsplit('::', 1)[1]
             card = next((m for n, m in by_name if leaf == n or leaf.startswith(n + '_')), None)
+            if h.startswith(THROUGH + 'rules::'):
+                card = OF_THE_RULES
             if leaf in found.setdefault(card, {}):
                 sys.exit(f'two harnesses of proofs::through_the_stack are named {leaf}')
             found[card][leaf] = h
     return found
+
+
+def rules(of):
+    """Each rule's rows, by their paths: those of the rules' module whose
+    names begin with the rule's."""
+    by_rule = {rule: [] for rule in RULES}
+    for leaf, path in of.get(OF_THE_RULES, {}).items():
+        rule = max((r for r in RULES if leaf.startswith(r + '_')), key=len, default=None)
+        if rule is None:
+            sys.exit(f'{leaf}: a row of the rules whose name begins with no rule kani-claims.py knows ({", ".join(RULES)})')
+        by_rule[rule].append(path)
+    return by_rule
 
 
 def kept():
@@ -194,8 +214,25 @@ def numbers(rows=None, of=None):
     last = results()
     lines = [(m, c) for m, _, _, c in rows if c != ['reminder']]
     claimed = [(m, c) for m, c in lines if c != ['-']]
-    proved = [c for m, c in claimed if all(last.get(of.get(m, {}).get(h)) == 'SUCCESSFUL' for h in c)]
+    by_rule = rules(of)
+
+    def is_proved(module, claim):
+        if claim.startswith('rule:'):
+            of_it = by_rule.get(claim[len('rule:'):], [])
+            return bool(of_it) and all(last.get(p) == 'SUCCESSFUL' for p in of_it)
+        return last.get(of.get(module, {}).get(claim)) == 'SUCCESSFUL'
+
+    proved = [c for m, c in claimed if all(is_proved(m, h) for h in c)]
     return len(lines), len(claimed), len(proved)
+
+
+def rule_numbers(of=None):
+    """The rules with rows, those with every row proved, and the rows."""
+    of = of if of is not None else harnesses()
+    last, by_rule = results(), rules(of)
+    with_rows = [r for r in RULES if by_rule[r]]
+    proved = [r for r in with_rows if all(last.get(p) == 'SUCCESSFUL' for p in by_rule[r])]
+    return len(RULES), len(with_rows), len(proved), sum(len(v) for v in by_rule.values())
 
 
 def main():
@@ -210,13 +247,16 @@ def main():
         bad = []
         for module, face, line, claims in rows:
             for c in claims:
+                if c.startswith('rule:') and c[len('rule:'):] not in RULES:
+                    bad.append(f'{module}: {c} claims "{line[:50]}" and is no rule kani-claims.py knows')
                 if c in ('-', 'reminder') or c.startswith('rule:'):
                     continue
                 if c not in of.get(module, []):
                     bad.append(f'{module}: {c} claims "{line[:50]}" and is not a harness of this card in proofs::through_the_stack')
         claiming = {(module, c) for module, _, _, claims in rows for c in claims}
         bad += [f'{module}: {h} claims no line of its card: say in scripts/kani/claims.tsv what it is a proof of'
-                for module in of for h in of[module] if (module, h) not in claiming]
+                for module in of if module != OF_THE_RULES for h in of[module] if (module, h) not in claiming]
+        rules(of)
         if bad:
             sys.exit('\n'.join(bad))
         return
