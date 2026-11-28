@@ -12,21 +12,22 @@
 //! targets on that state, or what the engine does around it. Here each
 //! harness plays the actions the game loop would
 //! (`engine::run_game_loop_inner`), each as the loop plays it ([`play`]):
-//! `before_priority`, the action itself by `submit_action_on` (all of
-//! `submit_action` but its copy of the game, which is more than symbolic
-//! execution gets through, and which `submit_action` is defined as), and
-//! `hand_on_priority`, which resolves the top of the stack when every
-//! player has passed.
+//! `before_priority`; `legal_actions`, and the action only if what it
+//! offers has it (`permits`); the action itself by `submit_action_on`
+//! (all of `submit_action` but its copy of the game, which is more than
+//! symbolic execution gets through, and which `submit_action` is defined
+//! as); and `hand_on_priority`, which resolves the top of the stack when
+//! every player has passed. Only `format!`, an object's name for the
+//! log, the log and the allocator's growing and freeing are taken out, as
+//! in `engine_under_card`.
 //!
-//! What a harness here leaves to other proofs: which actions the engine
-//! offers a player. The loop asks `legal_actions` and plays only an
-//! action it offered; a harness names the cast and the passes itself,
-//! because `legal_actions` alone, on a board of three objects, ran out of
-//! memory at 11 GB (`docs/plans/verification-goals.md` has this and every
-//! other measurement these were shaped by). What it offers is proved of
-//! it in `proofs::actions::offering` and `priority`. Only `format!`, an
-//! object's name for the log, the log and the allocator's growing and
-//! freeing are taken out, as in `engine_under_card`.
+//! Until 2026-11-28 a harness named its action to the engine without
+//! asking what was on offer: `legal_actions` alone, on a board of three
+//! objects, ran out of memory at 11 GB. It did so in the seeded hashing
+//! of four small tables it kept in `HashMap`, which are ordered maps
+//! now; with them it is a minute's proof
+//! (`docs/plans/verification-goals.md` has this and every other
+//! measurement these were shaped by).
 //!
 //! Each row is one case of one card, nothing on its board left to the
 //! solver: which player casts, whose the target is, what the target is, a
@@ -54,9 +55,10 @@ use crate::state::GameState;
 use crate::types::{CardType, ManaSymbol, ManaType, Step, Zone};
 
 /// One action as a pass of the game loop plays it: what is checked before
-/// a player receives priority (CR 117.5), the action, and priority handed
-/// on (117.3-117.4), the top of the stack resolved if that was the last
-/// player's pass.
+/// a player receives priority (CR 117.5); what the engine offers the
+/// player it is asking, and its refusal to play an answer it did not
+/// offer; the action; and priority handed on (117.3-117.4), the top of
+/// the stack resolved if that was the last player's pass.
 fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     if TO_BE_REFUSED.load(core::sync::atomic::Ordering::Relaxed) {
         if let Action::CastSpell { object_id, .. } = action {
@@ -77,12 +79,34 @@ fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     played(state, registry, action);
 }
 
-/// [`play`], of every row.
+/// [`play`], of every row: the body of the engine's game loop for one
+/// decision (`engine::run_game_loop_inner`), line for line. The loop
+/// works out what the player may do (`legal_actions`) before it asks
+/// them, and plays their answer only if that offer has it (`permits`):
+/// an answer it did not offer is not played, and the game is left as it
+/// was. That is the engine's one refusal of a spell cast at a time its
+/// card type does not allow, of a land played out of turn and of an
+/// ability activated when it may not be: `submit_action` does not ask
+/// again what time it is. A proof that handed the engine its action
+/// without asking what was on offer had a creature card cast in the other
+/// player's turn go on the stack.
+///
+/// What the loop has besides and this has not: it plays the answer on a
+/// copy of the game and keeps the copy (`submit_action`, where this is
+/// `submit_action_on`, the same function on the game itself), and it
+/// passes for a player it has nothing worth a decision to offer.
+/// [`play_in_the_game_loop`] is the loop itself.
 fn played(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     if IN_THE_GAME_LOOP.load(core::sync::atomic::Ordering::Relaxed) {
         return play_in_the_game_loop(state, registry, action);
     }
     crate::engine::before_priority(state, registry);
+    let legal = crate::engine::legal_actions(state, registry);
+    let offered = legal.permits(action);
+    std::mem::forget(legal);
+    if !offered {
+        return;
+    }
     let cast_prompt_player = crate::engine::cast_time_prompt_player(state);
     crate::engine::submit_action_on(state, action, registry);
     crate::engine::hand_on_priority(state, action, cast_prompt_player, 2, registry);
@@ -287,8 +311,21 @@ fn rests(state: &GameState, spell: ObjectId, cast: Cast) -> bool {
 }
 
 /// The cast of `spell` at `targets`, with no additional cost named.
-fn the_cast(spell: ObjectId, targets: Vec<Target>) -> Action {
-    Action::CastSpell { object_id: spell, targets, sacrifice: None, exile_count: None, exile_ids: Vec::new(), alternative_cost: None, tap_plan: Vec::new() }
+fn the_cast(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>) -> Action {
+    // A card cast from a graveyard is cast for its flashback cost, and
+    // the cast says for what (CR 702.34a): the engine offers that cast
+    // and no other of the card, so the cost a row names is held to the
+    // engine's own as the cast is offered. It is the Oracle's.
+    let card = state.get_object(spell).expect("an object");
+    let alternative_cost = if card.zone == Zone::Graveyard {
+        let name = registry.get(card.card_id).expect("registered").card_data().name;
+        let cost = crate::types::ManaCost::new(oracle::flashback_cost(&name).to_vec());
+        std::mem::forget(name);
+        Some(cost)
+    } else {
+        None
+    };
+    Action::CastSpell { object_id: spell, targets, sacrifice: None, exile_count: None, exile_ids: Vec::new(), alternative_cost, tap_plan: Vec::new() }
 }
 
 /// `cast` (a `CastSpell`) played by the player with priority: the spell is
@@ -307,7 +344,8 @@ fn casts_as(state: &mut GameState, registry: &CardRegistry, cast: Action) {
 
 /// `spell` cast at `targets` by the player with priority ([`casts_as`]).
 fn casts(state: &mut GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>) {
-    casts_as(state, registry, the_cast(spell, targets));
+    let cast = the_cast(state, registry, spell, targets);
+    casts_as(state, registry, cast);
 }
 
 /// Each player passes in turn, the one with priority first (CR 117.4): the
@@ -329,7 +367,8 @@ fn all_pass(state: &mut GameState, registry: &CardRegistry) {
 /// pass in turn, and what is checked before the next player would receive
 /// priority: the whole of a spell's life from a hand to where it rests.
 fn cast_and_resolve(state: &mut GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>) {
-    cast_and_resolve_as(state, registry, the_cast(spell, targets));
+    let cast = the_cast(state, registry, spell, targets);
+    cast_and_resolve_as(state, registry, cast);
 }
 
 /// The same of a cast with its additional costs named.
@@ -384,7 +423,7 @@ fn draws((card, n, cards, cast): (Box<dyn CardBehavior>, usize, usize, Cast)) {
     } else {
         // A draw from a library too small ends the game as the state-based
         // actions are checked, before anyone has priority again.
-        let action = the_cast(spell, Vec::new());
+        let action = the_cast(&state, &registry, spell, Vec::new());
         play(&mut state, &registry, &action);
         play(&mut state, &registry, &Action::PassPriority);
         play(&mut state, &registry, &Action::PassPriority);
@@ -413,7 +452,8 @@ fn draws((card, n, cards, cast): (Box<dyn CardBehavior>, usize, usize, Cast)) {
 /// cast is refused and nothing is done. The card is still where it was,
 /// the mana still in the pool, the stack empty and priority where it was.
 fn cast_is_refused(state: &mut GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>) {
-    cast_is_refused_as(state, registry, the_cast(spell, targets));
+    let cast = the_cast(state, registry, spell, targets);
+    cast_is_refused_as(state, registry, cast);
 }
 
 /// The same of a cast with its additional costs named (601.2h).
@@ -1743,7 +1783,7 @@ fn does_to_each_of_up_to_two((card, does, targets, cast): (Box<dyn CardBehavior>
 
     if targets == 0 {
         let caster = PlayerId(cast.by);
-        let action = the_cast(spell, Vec::new());
+        let action = the_cast(&state, &registry, spell, Vec::new());
         play(&mut state, &registry, &action);
         // Asked which, with nothing paid and the card where it was.
         assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTargetSet { min: 0, max: 2, .. }, .. }) if *player == caster));
@@ -2179,7 +2219,7 @@ fn counters((card, fate, first, by, flashback): (Box<dyn CardBehavior>, Countere
 
     // The spell to be countered, cast first; mana for both is in the pool
     // of a player who casts both, so the pool is not empty between them.
-    let action = the_cast(victim, Vec::new());
+    let action = the_cast(&state, &registry, victim, Vec::new());
     play(&mut state, &registry, &action);
     assert!(state.stack.len() == 1 && state.stack[0].as_spell() == Some(victim) && state.priority_player == Some(PlayerId(first)));
     if by != first {
@@ -2277,7 +2317,7 @@ fn sacrifices_a_creature_to((card, draws, cast): (Box<dyn CardBehavior>, bool, C
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = [as_it_is(&state, kept), as_it_is(&state, theirs)];
     let mut expected = everything(&state, &registry);
-    let Action::CastSpell { object_id, targets, exile_count, exile_ids, alternative_cost, tap_plan, .. } = the_cast(spell, Vec::new()) else { panic!("a cast") };
+    let Action::CastSpell { object_id, targets, exile_count, exile_ids, alternative_cost, tap_plan, .. } = the_cast(&state, &registry, spell, Vec::new()) else { panic!("a cast") };
     let action = Action::CastSpell { object_id, targets, sacrifice: Some(paid), exile_count, exile_ids, alternative_cost, tap_plan };
 
     casts_as(&mut state, &registry, action);
@@ -2327,7 +2367,7 @@ fn is_not_cast_without_its_sacrifice((card, names_theirs, cast): (Box<dyn CardBe
     let theirs = a_permanent(&mut state, blank, Permanent::Creature, (1 - cast.by, 1 - cast.by));
     let spell = a_spell(&mut state, &registry, card, cast);
     let before = as_it_is(&state, theirs);
-    let Action::CastSpell { object_id, targets, exile_count, exile_ids, alternative_cost, tap_plan, .. } = the_cast(spell, Vec::new()) else { panic!("a cast") };
+    let Action::CastSpell { object_id, targets, exile_count, exile_ids, alternative_cost, tap_plan, .. } = the_cast(&state, &registry, spell, Vec::new()) else { panic!("a cast") };
     let action = Action::CastSpell { object_id, targets, sacrifice: names_theirs.then_some(theirs), exile_count, exile_ids, alternative_cost, tap_plan };
 
     cast_is_refused_as(&mut state, &registry, action);
@@ -2611,7 +2651,7 @@ fn blasphemous_act((creatures, cast): (usize, Cast)) {
     let spell = a_spell(&mut state, &registry, card, cast);
     let artifact_before = as_it_is(&state, artifact);
     let mut expected = everything(&state, &registry);
-    let action = the_cast(spell, Vec::new());
+    let action = the_cast(&state, &registry, spell, Vec::new());
 
     play(&mut state, &registry, &action);
     assert!(state.stack.len() == 1 && state.stack[0].as_spell() == Some(spell));
@@ -2924,13 +2964,13 @@ mod short;
 mod times;
 
 // The engine's own game loop playing each action, where the rows above
-// name the action to the engine themselves. Four rows to begin with, one
-// of each kind of thing a spell does here (it resolves and nothing dies,
-// it is refused, a permanent is destroyed, a creature dies), to find out
-// what the loop takes: `legal_actions` alone ran out of memory at 11 GB
-// and `submit_action`'s copy at 6 GB on a machine of 15 GB. If the loop
-// fits a larger machine, every row above is to be played this way and
-// `play`'s other half goes.
+// play the loop's body for one decision ([`played`]). Four rows to begin
+// with, one of each kind of thing a spell does here (it resolves and
+// nothing dies, it is refused, a permanent is destroyed, a creature
+// dies), to find out what the loop takes: `submit_action`'s copy of the
+// game ran out of memory at 6 GB on a machine of 15 GB. If the loop fits
+// a larger machine, every row above is to be played this way and
+// `played`'s other half goes.
 in_the_game_loop! {
     divination_in_the_game_loop_draws_the_top_two_of_three: draws((Box::new(Divination), 2, 3, FIRST));
     doom_blade_in_the_game_loop_is_not_cast_at_an_artifact: is_not_cast_at((Box::new(DoomBlade), Permanent::Artifact, FIRST, 1));

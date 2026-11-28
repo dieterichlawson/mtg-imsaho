@@ -367,7 +367,23 @@ planeswalker attacked, and the turn outside combat. None is run.
    damage, tapped, counters, what stands beside), so a proof is of every
    such board and not of one.
 3. Every action played by the engine's own loop from the actions it
-   offers (being measured).
+   offers. Done in source on 2026-11-28 for every row: `play` is the
+   body of the loop for one decision (what is checked before priority,
+   `legal_actions`, the action only if `permits` has it, the action,
+   priority handed on), where it named its action to the engine
+   unasked. That mattered: the engine refuses a spell at the wrong time
+   only by not offering it, and a creature card cast in the other
+   player's turn had gone on the stack. A flashback cast now names its
+   flashback cost, the Oracle's, as the cast the engine offers does.
+   What made `legal_actions` too big to ask was four small tables kept
+   in `HashMap`: measured on one board (a creature card in hand, its
+   mana in the pool), asking and checking the offer ran out of memory at
+   11 GB after 2,359,953 steps of symbolic execution with them, and
+   proves in 68 s (633,888 steps) with ordered maps; the same in the
+   other player's turn, where the cast is not offered, in 52 s. The
+   loop itself for one decision (`resume_game_loop`, which plays the
+   answer on a copy of the game) still ran out of 11 GB, after 1,346 s:
+   four rows are played that way, for a larger machine.
 4. A spell cast for the Oracle's cost, as the creatures' rows are, and
    its flashback cost the same. Done for every cast of every row
    (`through_the_stack/oracle.rs`); to be proved.
