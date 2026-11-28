@@ -23,15 +23,22 @@ What is counted:
   claims (`scripts/kani-claims.py`, `scripts/kani/claims.tsv`);
 - layer B: the rules of `scripts/kani-claims.py`'s list, and how many
   have rows in `proofs::through_the_stack::rules` and every one proved;
+- layer F: the lines of the engine's source, outside the proofs and
+  outside comments, that name `cfg(kani)`: where the program proved is
+  not the program shipped;
 - goal 4: the engine functions a proof stands in for with `kani::stub`,
   other than the five outside the rules (`format!`, an object's name for
   the log, the log, the allocator's growing and freeing);
 - goal 6: the harnesses whose last recorded result is neither SUCCESSFUL
   nor NOT_RUN (written, and not yet run to a result).
 
-Goals 2, 3, 5 and 7 are counted from ledgers that do not exist yet
-(`reports/card-mutants.tsv`, `reports/rulings-ledger.tsv`); each is said
-to be uncounted until its ledger is there.
+- goal 5: the official rulings in the Oracle cache, and how many of
+  those of the pool's cards a proof accounts for
+  (`scripts/kani-rulings.py`, `scripts/kani/rulings.tsv`).
+
+Goals 2, 3 and 7 are counted from ledgers that do not exist yet
+(`reports/card-mutants.tsv`); each is said to be uncounted until its
+ledger is there.
 """
 import collections, glob, importlib.util, os, re, sys
 
@@ -56,6 +63,22 @@ def stand_ins():
         for m in re.finditer(r'kani::stub\(\s*\$?(?:crate::)?([A-Za-z0-9_:$]+)\s*,', open(f).read()):
             if not any(o in m.group(1) for o in OUTSIDE):
                 found.add(m.group(1))
+    return found
+
+
+def proof_only():
+    """The places the engine's own source is another under `cfg(kani)`: each
+    line outside the proofs, and outside a comment, that names it, by file."""
+    found = collections.Counter()
+    for crate in ('mtg-engine', 'mtg-kernel'):
+        for f in glob.glob(f'{ROOT}/{crate}/src/**/*.rs', recursive=True):
+            rel = os.path.relpath(f, ROOT)
+            if '/src/proofs/' in rel + '/':
+                continue
+            for line in open(f, errors='replace'):
+                code = line.split('//', 1)[0]
+                if re.search(r'cfg\(kani\)|cfg\(not\(kani\)\)|cfg_attr\(kani\b', code):
+                    found[rel] += 1
     return found
 
 
@@ -98,6 +121,9 @@ def render():
     claims = load('kani-claims')
     lines, claimed, lines_proved = claims.numbers()
     rules, rules_with_rows, rules_proved, rule_rows = claims.rule_numbers()
+    differs = proof_only()
+    rulings = load('kani-rulings')
+    in_cache, not_ours, ours, accounted, rulings_proved = rulings.numbers(claims)
     through = sum(1 for c in per.values() if c['through'] and c['proved'] == c['through'])
     partly = sum(1 for c in per.values() if c['through'] and c['proved'] != c['through'])
     hooks = sum(c['hook'] for c in per.values()) + unplaced['hook']
@@ -118,7 +144,10 @@ def render():
            '| 2. cards whose proofs cover every case that applies | not counted yet | all |',
            '| 3. changes to a card\'s code its proofs catch | not counted yet | every one |',
            f'| 4. engine functions a proof stands in for, unchecked | {len(stubs)} | 0 |',
-           '| 5. official rulings accounted for | not counted yet | 578 |',
+           f'| F. lines of the engine\'s source that are another under `cfg(kani)`, the build the proofs are of '
+           f'| {sum(differs.values())} in {len(differs)} files | 0, or each proved to change nothing |',
+           f'| 5. official rulings of the pool\'s cards that a proof through the game accounts for | {accounted} of {ours} ({rulings_proved} proved); '
+           f'the Oracle cache has {in_cache + rulings.twice()}, {not_ours} of them of cards not in the pool and {rulings.twice()} twice | {ours}, proved |',
            f'| 6. proofs that do not finish | {len(open_proofs)} (and {len(not_run)} written and not yet run) | 0 |',
            '| 7. permanents that can be pieces of the small boards | 129 of 199 (counted by hand, 2026-11-27) | 199 |',
            '', '## Cards through the stack', '',
@@ -128,7 +157,10 @@ def render():
         mark = f'{c["proved"]} of {c["through"]}' if c['through'] else '-'
         out.append(f'| {m} | {mark} | {c["hook"]} | {c["declared"]} |')
     out += ['', '## Engine functions stood in for', '', ', '.join(f'`{s}`' for s in stubs), '']
-    return '\n'.join(out), (through, -hooks, -len(stubs), -len(open_proofs), claimed), len(not_run)
+    out += ['## Where the engine proved is not the engine shipped', '',
+            'Lines of the engine\'s source, outside the proofs, that are another under `cfg(kani)`:', '']
+    out += [f'- `{f}`: {n}' for f, n in sorted(differs.items())] + ['']
+    return '\n'.join(out), (through, -hooks, -len(stubs), -len(open_proofs), claimed, accounted), len(not_run)
 
 
 def main():
@@ -145,10 +177,11 @@ def main():
             # cards' rows, though it counted every proof waiting.
             waited = re.search(r'\(and (\d+) written and not yet run\)', was) or re.search(r'\((\d+) not yet run\)', was)
             run_since = max(0, int(waited.group(1)) - waiting) if waited else 0
+            rulings_were = re.search(r'accounts for \| (\d+) of', was)
             before = (int(m[0].group(1)), -int(m[1].group(1)), -int(m[2].group(1)), -int(m[3].group(1)) - run_since,
-                      int(lines_were.group(1)) if lines_were else 0)
-            worse = [name for name, a, b in zip(('cards through the stack', 'hook harnesses', 'stand-ins', 'open proofs', 'printed lines claimed'),
-                                                before, now) if b < a]
+                      int(lines_were.group(1)) if lines_were else 0, int(rulings_were.group(1)) if rulings_were else 0)
+            worse = [name for name, a, b in zip(('cards through the stack', 'hook harnesses', 'stand-ins', 'open proofs', 'printed lines claimed',
+                                                 'rulings accounted for'), before, now) if b < a]
             if worse:
                 sys.exit(f'the scoreboard went the wrong way: {", ".join(worse)} (was {before}, now {now})')
     print(text)

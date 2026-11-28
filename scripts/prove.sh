@@ -237,6 +237,7 @@ case "$what" in
     guards)
         python3 scripts/kani-printed-rows.py --check
         python3 scripts/kani-claims.py --check
+        python3 scripts/kani-rulings.py --check
         python3 scripts/verification-scoreboard.py --check reports/verification-scoreboard.md | cmp -s - reports/verification-scoreboard.md \
             || { echo "reports/verification-scoreboard.md is not what scripts/verification-scoreboard.py prints, or went the wrong way" >&2; exit 1; }
         # Every test of the engine that reads its sources (grep the tests

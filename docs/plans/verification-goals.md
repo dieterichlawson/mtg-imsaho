@@ -277,6 +277,15 @@ rulings on 175 of these cards. Each is either played through the engine
 and holds, or is marked as not a statement about behaviour. Baseline:
 not tracked. Done when all 578 are accounted for.
 
+Counted on 2026-11-28 (`scripts/kani-rulings.py`, ledger
+`scripts/kani/rulings.tsv`, a row a ruling): the 578 are not all of
+these cards. 448 are, on 154 cards of the pool; 128 are of 21 cards the
+cache holds and the engine does not (looked up for other reasons), and
+are listed as that; and 2 are in the cache twice. So the count to
+account for is 448, each row of which names the proofs that play it or
+has none yet: 0 have. Whether the cache has every ruling there is for a
+card is not something the ledger can say.
+
 **6. Nothing left open.** The 12 engine proofs that do not finish, One-
 Eyed Scarecrow (the one card with no engine proof), and `submit_action`
 with its copy. First tried again with the fix above; what still does
