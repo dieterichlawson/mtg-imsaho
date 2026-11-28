@@ -18,6 +18,8 @@
 #   EC2_MAX_HOURS  6: the machine turns itself off after this long whatever
 #                  becomes of this script, and a machine turned off is one
 #                  given back (it is launched to terminate on shutdown)
+#   EC2_SILENCE_MINUTES  15: the machine turns itself off when this script
+#                  has not looked at it for this long
 #   EC2_WAIT_MINUTES  320: how long to wait for COMMAND; a GitHub job has
 #                  six hours
 #   EC2_SSH_FROM   the address port 22 is opened to: this machine's, as
@@ -31,6 +33,16 @@
 #   EC2_IF_NONE    fail (the default) or ok: whether no machine to be had,
 #                  for want of capacity or of quota, is this script's
 #                  failure (status 2) or only said (status 0)
+#
+# No machine outlives its run, whoever is or is not there to end it. This
+# script terminates the machine as it ends, however it ends: the command
+# done, a failure, the run cancelled. Should the script itself be gone
+# (its runner lost), the machine turns itself off when nothing has looked
+# at it for EC2_SILENCE_MINUTES. And whatever becomes of both, it turns
+# itself off EC2_MAX_HOURS after it was launched. A machine turned off is
+# terminated, and the script does not begin the command on a machine it
+# has not seen arm both of those. Nothing here waits on a person, or on
+# whoever dispatched the run, to give a machine back.
 #
 # What it costs is the machine's hours, to the minute it is terminated.
 # What is left behind costs nothing: a network of its own (a VPC, its
@@ -64,6 +76,7 @@ disk=${EC2_DISK_GB:-500}
 setup=${EC2_SETUP:-kani}
 max_hours=${EC2_MAX_HOURS:-6}
 wait_minutes=${EC2_WAIT_MINUTES:-320}
+silence=${EC2_SILENCE_MINUTES:-15}
 export AWS_DEFAULT_REGION=${regions%% *} AWS_PAGER=""
 repo=${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:?GITHUB_REPOSITORY: owner/name of the repository to check out}
 sha=${GITHUB_SHA:-$(git rev-parse HEAD)}
@@ -293,6 +306,16 @@ EOF
     # instead of watching (run 46053007731 brought nothing back until its
     # end, and run 46058836105 learned its machine was gone only when the
     # connection dropped).
+    # The machine's own two clocks, armed here and seen to be, before the
+    # command is begun: off after max_hours whatever happens (cloud-init
+    # set this as it booted; set again, it is the same clock), and off when
+    # this script has not looked at it for $silence minutes. A machine
+    # that will not arm them is not used.
+    on_it "sudo shutdown -h +$((max_hours * 60)) > /dev/null 2>&1" || { echo "$id would not set its own time to turn off" >&2; exit 102; }
+    on_it "touch looked-at; rm -f watching; nohup setsid bash -c 'echo \$\$ > ~/watching; while sleep 60; do [ \$(( \$(date +%s) - \$(stat -c %Y ~/looked-at) )) -lt $((silence * 60)) ] || sudo shutdown -h now; done' > /dev/null 2>&1 < /dev/null &"
+    on_it 'for _ in 1 2 3 4 5; do [ -s watching ] && break; sleep 1; done; kill -0 "$(cat watching)"' || { echo "$id is not watching for this script's silence" >&2; exit 102; }
+    echo "it turns itself off after $silence minutes unwatched, and in $max_hours hours whatever happens"
+
     printf '%s\n' "$command" | on_it 'cat > run.sh'
     on_it 'nohup setsid bash -c "cd ~/repo; [ -f ~/.cargo/env ] && . ~/.cargo/env; bash ~/run.sh; echo \$? > ~/run.exit" > ~/run.log 2>&1 < /dev/null &'
     echo "running: $command"
@@ -301,7 +324,7 @@ EOF
     while :; do
         sleep 60
         minute=$((minute + 1))
-        if state=$(on_it 'cat run.exit 2> /dev/null || echo running' 2> /dev/null); then
+        if state=$(on_it 'touch looked-at; cat run.exit 2> /dev/null || echo running' 2> /dev/null); then
             lost=0
         else
             lost=$((lost + 1))
