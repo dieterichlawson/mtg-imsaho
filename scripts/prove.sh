@@ -17,9 +17,11 @@
 #   it. `kani-new K/N` is the Kth of N shares of the harnesses written and
 #   not yet run to a result (NOT_RUN in scripts/kani/times.txt), which the
 #   other two leave out; it fails only if one of them is left with no
-#   result. `kani-shares RUN N` is all N shares of RUN (kani-shard or
+#   result. `kani-shares RUN N [K/M]` is N shares of RUN (kani-shard or
 #   kani-new) at once, for one machine with the cores and memory: KANI_CAP
 #   (12) is the gigabytes a solver may take and KANI_TIMEOUT its seconds.
+#   With K/M the run is dealt among M machines, N shares each, and these
+#   are the Kth machine's: shares K, K+M, K+2M and so on of N times M.
 #   `kani-these NAME...` runs the named harnesses KANI_JOBS at a time and
 #   gives one that runs out of KANI_CAP the machine to itself: for finding
 #   out what a proof takes, so it prints results and fails on none.
@@ -186,13 +188,18 @@ case "$what" in
         # KANI_CAP gigabytes each. Each share builds in its own target
         # directory and learns loop bounds in its own copy of the lists, so
         # that none waits for another or writes over it.
-        run=$1 n=$2
+        run=$1 n=$2 slice=${3:-1/1}
         case "$run" in kani-shard | kani-new) ;; *) echo "kani-shares: kani-shard or kani-new, not $run" >&2; exit 2 ;; esac
+        machine=${slice%/*} machines=${slice#*/}
+        if ! [ "$machine" -ge 1 ] 2> /dev/null || ! [ "$machine" -le "$machines" ] 2> /dev/null; then
+            echo "kani-shares: K/M with K from 1 to M, not $slice" >&2; exit 2
+        fi
         mkdir -p logs/kani
         pids=()
-        for k in $(seq 1 "$n"); do
+        for j in $(seq 0 $((n - 1))); do
+            k=$((machine + j * machines))
             CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}/kani-share-$k" KANI_LOOPS_DIR="logs/kani/share-$k" \
-                KANI_BOUNDED_CODEGEN_SLOTS="$n" bash scripts/prove.sh "$run" "$k/$n" > "logs/kani/share-$k.log" 2>&1 &
+                KANI_BOUNDED_CODEGEN_SLOTS="$n" bash scripts/prove.sh "$run" "$k/$((n * machines))" > "logs/kani/share-$k.log" 2>&1 &
             pids+=($!)
         done
         status=0
