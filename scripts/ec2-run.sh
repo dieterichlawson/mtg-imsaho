@@ -7,11 +7,13 @@
 # .github/workflows/proofs-full.yml (machine: aws), or by hand with AWS
 # credentials in the environment.
 #
-#   EC2_TYPE       the instance types, tried in order (r7a.8xlarge: 32
-#                  cores, 256 GB)
+#   EC2_TYPE       the instance types, tried in order in each zone
+#                  (r7a.8xlarge: 32 cores, 256 GB)
 #   EC2_MARKET     spot (the default) or on-demand
 #   EC2_MAX_PRICE  1.25: the most a Spot machine may cost, dollars an hour
-#   EC2_REGION     the regions, tried in order (us-east-1)
+#   EC2_REGION     the regions (us-east-1). Their zones are tried in the
+#                  order of AWS's Spot placement score for the types,
+#                  best first; on-demand, in the order given
 #   EC2_DISK_GB    500
 #   EC2_SETUP      kani (Rust and Kani installed before COMMAND, the
 #                  default) or none
@@ -24,12 +26,14 @@
 #                  six hours
 #   EC2_SSH_FROM   the address port 22 is opened to: this machine's, as
 #                  the world sees it, unless given
-#   EC2_ATTEMPTS   3: how many machines in all are rented for one run. A
+#   EC2_ATTEMPTS   6: how many machines in all are rented for one run. A
 #                  Spot machine may be reclaimed at two minutes' notice
 #                  (the second one rented here was, four minutes in);
-#                  another is then rented and COMMAND run again on it
-#                  with the results brought back so far, which the proof
-#                  driver goes on from
+#                  another is then rented, in another zone while there
+#                  is one, and COMMAND run again on it with the results
+#                  brought back so far, which the proof driver goes on
+#                  from. EC2_WAIT_MINUTES is the bound on all of them
+#                  together
 #   EC2_IF_NONE    fail (the default) or ok: whether no machine to be had,
 #                  for want of capacity or of quota, is this script's
 #                  failure (status 2) or only said (status 0)
@@ -90,7 +94,15 @@ if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
 fi
 
 work=$(mktemp -d)
-id="" group="" me=""
+id="" group="" me="" door="" lost=""
+# Port 22 as it is between runs: closed. `door` is the region and the
+# security group it was opened in, which is not the region a later
+# machine of the same run need be rented in.
+shut_door() {
+    [ -n "$door" ] || return 0
+    aws ec2 revoke-security-group-ingress --region "${door% *}" --group-id "${door#* }" --protocol tcp --port 22 --cidr "$me/32" > /dev/null
+    door=""
+}
 give_back() {
     status=$?
     set +e
@@ -102,9 +114,7 @@ give_back() {
         aws ec2 terminate-instances --instance-ids "$id" --query 'TerminatingInstances[0].CurrentState.Name' --output text \
             || echo "COULD NOT TERMINATE $id: it turns itself off within $max_hours hours of its launch; terminate it in the console" >&2
     fi
-    if [ -n "$group" ] && [ -n "$me" ]; then
-        aws ec2 revoke-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null
-    fi
+    shut_door
     rm -rf "$work"
     exit $status
 }
@@ -150,8 +160,15 @@ EOF
 # account has. Each piece is looked for before it is made, so that a run
 # stopped half-way through making them is finished by the next.
 tags='Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs}]'
+declare -A known
 in_region() {
     local found gateway table
+    # Asked once of a region in a run: the zones are tried best first, and
+    # the best of them are not all in one region.
+    if [ -n "${known[$AWS_DEFAULT_REGION]:-}" ]; then
+        read -r image root vpc group <<< "${known[$AWS_DEFAULT_REGION]}"
+        return 0
+    fi
     found=$(aws ec2 describe-images --owners 099720109477 \
         --filters 'Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*' 'Name=state,Values=available' \
         --query 'sort_by(Images,&CreationDate)[-1].[ImageId,RootDeviceName]' --output text)
@@ -184,6 +201,7 @@ in_region() {
         group=$(aws ec2 create-security-group --group-name kani-proofs --vpc-id "$vpc" \
             --description "SSH to the Kani proof machines, opened for a run and closed after" --query GroupId --output text)
     fi
+    known[$AWS_DEFAULT_REGION]="$image $root $vpc $group"
 }
 
 # The network's subnet in a zone, made if it is not there: 10.77.0.0/24 in
@@ -200,29 +218,77 @@ subnet_in() {
     echo "$found"
 }
 
-# Each region, each type, each zone that offers it, in turn, until one has
-# a machine: a zone may have none of a type to spare, above all on the
-# Spot market, where the third run here found none of the one type it
-# asked for in any zone of its one region. Leaves the machine's id in
-# `id`, or nothing there if none was to be had.
+# The zones of the regions, a line each (score, region, zone), in the
+# order they are to be tried. For a Spot machine AWS is asked first how
+# likely a request for these types is to be filled in each zone (its
+# Spot placement score, 1 to 10), and the likeliest are first: a zone
+# with the most to spare is also the one least likely to want its machine
+# back, though that is not what the score promises. The run this was
+# written after (46061355449) took the first zone that had a machine,
+# three times over, and lost all three: after 80, 23 and 38 minutes. A
+# zone AWS gives no score to counts as 0; with no scores at all, and for
+# an on-demand machine, the order is the regions' and AWS's own.
+zones_in_order() {
+    local scored="" region zid zone score
+    if [ "$market" = spot ]; then
+        # shellcheck disable=SC2086
+        scored=$(aws ec2 get-spot-placement-scores --region "${regions%% *}" --instance-types $types --target-capacity 1 \
+            --single-availability-zone --region-names $regions \
+            --query 'SpotPlacementScores[].[Score,Region,AvailabilityZoneId]' --output text) || scored=""
+        [ -n "$scored" ] || echo "AWS gave no Spot placement scores: the zones are tried in the order it lists them" >&2
+    fi
+    for region in $regions; do
+        aws ec2 describe-availability-zones --region "$region" --filters Name=zone-type,Values=availability-zone \
+            --query 'AvailabilityZones[].[ZoneId,ZoneName]' --output text > "$work/zones" \
+            || { echo "the zones of $region cannot be listed: none of it is tried" >&2; continue; }
+        while read -r zid zone; do
+            [ -n "$zone" ] || continue
+            score=$(awk -v zid="$zid" '$3 == zid { print $1; exit }' <<< "$scored")
+            echo "${score:-0} $region $zone"
+        done < "$work/zones"
+    done | sort -s -k1,1nr
+}
+
+# The types of EC2_TYPE a zone of the region at hand offers.
+offered_in() {
+    local file="$work/offered.$AWS_DEFAULT_REGION"
+    [ -f "$file" ] || aws ec2 describe-instance-type-offerings --location-type availability-zone \
+        --filters "Name=instance-type,Values=${types// /,}" --query 'InstanceTypeOfferings[].[Location,InstanceType]' --output text > "$file"
+    awk -v zone="$1" '$1 == zone { print $2 }' "$file" | tr '\n' ' '
+}
+
+# Each zone in that order, and in it each type it offers, until one has a
+# machine: a zone may have none of a type to spare, above all on the Spot
+# market, where the third run here found none of the one type it asked
+# for in any zone of its one region. A zone a machine of this run was
+# reclaimed in (`lost`) is tried only when every other has been. Leaves
+# the machine's id in `id`, or nothing there if none was to be had.
 rent() {
     quota="" id=""
-    for region in $regions; do
-        export AWS_DEFAULT_REGION=$region
-        in_region
-        for type in $types; do
-            zones=$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
-                --filters "Name=instance-type,Values=$type" --query 'InstanceTypeOfferings[].Location' --output text)
-            [ -n "$zones" ] || { echo "$type is not offered in $region"; continue; }
-            launch=(--image-id "$image" --instance-type "$type" --count 1
-                    --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
-                    --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
-                    --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
-                                         "ResourceType=volume,Tags=[{Key=purpose,Value=kani-proofs}]")
-            if [ "$market" = spot ]; then
-                launch+=(--instance-market-options "MarketType=spot,SpotOptions={MaxPrice=$max_price,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}")
-            fi
-            for zone in $zones; do
+    local order pass line score refused="" offered
+    zones_in_order > "$work/order"
+    mapfile -t order < "$work/order"
+    ! grep -qv '^0 ' "$work/order" || echo "zones by Spot placement score: $(awk '{ printf "%s%s %s", sep, $3, $1; sep = ", " }' "$work/order")"
+    for pass in others lost; do
+        for line in "${order[@]}"; do
+            read -r score region zone <<< "$line"
+            case " $lost " in *" $zone "*) [ $pass = lost ] || continue ;; *) [ $pass = others ] || continue ;; esac
+            export AWS_DEFAULT_REGION=$region
+            in_region
+            offered=$(offered_in "$zone")
+            for type in $types; do
+                case " $offered " in *" $type "*) ;; *) continue ;; esac
+                # What the account may have at once in a region, which
+                # another zone of it does not change and a smaller type may.
+                case " $refused " in *" $region:$type "*) continue ;; esac
+                launch=(--image-id "$image" --instance-type "$type" --count 1
+                        --instance-initiated-shutdown-behavior terminate --user-data "file://$work/user-data"
+                        --block-device-mappings "DeviceName=$root,Ebs={VolumeSize=$disk,VolumeType=gp3,Iops=6000,Throughput=500,DeleteOnTermination=true}"
+                        --tag-specifications "ResourceType=instance,Tags=[{Key=purpose,Value=kani-proofs},{Key=Name,Value=kani-proofs-${GITHUB_RUN_ID:-by-hand}}]"
+                                             "ResourceType=volume,Tags=[{Key=purpose,Value=kani-proofs}]")
+                if [ "$market" = spot ]; then
+                    launch+=(--instance-market-options "MarketType=spot,SpotOptions={MaxPrice=$max_price,SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}")
+                fi
                 subnet=$(subnet_in "$zone")
                 if id=$(aws ec2 run-instances "${launch[@]}" \
                         --network-interfaces "DeviceIndex=0,SubnetId=$subnet,AssociatePublicIpAddress=true,Groups=$group" \
@@ -233,9 +299,7 @@ rent() {
                 why=$(sed -n 's/.*An error occurred (\([A-Za-z.]*\)).*/\1/p' "$work/launch.err" | head -n 1)
                 echo "no $market $type in $zone: ${why:-$(tail -n 1 "$work/launch.err")}"
                 case "$why" in
-                    # What the account may have at once, which another zone
-                    # does not change and a smaller type may.
-                    MaxSpotInstanceCountExceeded | VcpuLimitExceeded) quota=yes; break ;;
+                    MaxSpotInstanceCountExceeded | VcpuLimitExceeded) quota=yes refused="$refused $region:$type" ;;
                     # What no other zone, type or region changes.
                     UnauthorizedOperation | PendingVerification | OptInRequired | AuthFailure) cat "$work/launch.err" >&2; exit 2 ;;
                 esac
@@ -353,7 +417,7 @@ EOF
 )
 
 deadline=$(($(date +%s) + wait_minutes * 60))
-attempts=${EC2_ATTEMPTS:-3}
+attempts=${EC2_ATTEMPTS:-6}
 attempt=1
 while :; do
     rent
@@ -374,6 +438,7 @@ while :; do
 
     # Port 22, opened to this machine's address for the run and closed after.
     me=${EC2_SSH_FROM:-$(curl -fsS https://checkip.amazonaws.com)}
+    door="$AWS_DEFAULT_REGION $group"
     aws ec2 authorize-security-group-ingress --group-id "$group" --protocol tcp --port 22 --cidr "$me/32" > /dev/null 2> "$work/ingress.err" \
         || grep -q InvalidPermission.Duplicate "$work/ingress.err" || { cat "$work/ingress.err" >&2; exit 2; }
 
@@ -400,6 +465,8 @@ while :; do
     echo "the machine went away under the run: it is ${its:-not to be found}" >&2
     aws ec2 terminate-instances --instance-ids "$id" > /dev/null 2>&1 || true
     id=""
+    shut_door || true
+    lost="$lost $zone"
     if [ $attempt -ge "$attempts" ]; then
         echo "that was machine $attempt of the $attempts a run may rent" >&2
         exit 3
