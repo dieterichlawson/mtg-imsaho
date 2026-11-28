@@ -23,11 +23,19 @@
 
 use std::path::{Path, PathBuf};
 
-/// Engine modules — everything in `src/` that is not `src/cards/`.
+/// Engine modules — everything in `src/` that is not `src/cards/` or
+/// `src/proofs/`.
 ///
 /// Walked recursively. This used to read only the top level of `src/`, which
 /// left the whole of `src/engine/` unguarded — and that is where the engine
 /// actually lives now, `submit_action` and the choice handlers included.
+///
+/// `src/proofs/` is the Kani proofs, and no part of the engine a game runs:
+/// the module is compiled only under `cfg(kani)`
+/// ([`the_proofs_are_no_part_of_the_engine_that_ships`] holds it to that).
+/// A proof of a card names the card, as a `#[cfg(test)]` fixture does, and
+/// the proofs hold each card to the Oracle's cost for it by its name
+/// (`proofs/through_the_stack/oracle.rs`).
 fn engine_sources() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut out = Vec::new();
@@ -36,7 +44,7 @@ fn engine_sources() -> Vec<PathBuf> {
         for entry in std::fs::read_dir(&dir).expect("src should be readable").flatten() {
             let p = entry.path();
             if p.is_dir() {
-                if p.file_name().is_some_and(|n| n == "cards") {
+                if p.file_name().is_some_and(|n| n == "cards") || p == root.join("proofs") {
                     continue;
                 }
                 stack.push(p);
@@ -47,6 +55,26 @@ fn engine_sources() -> Vec<PathBuf> {
     }
     out.sort();
     out
+}
+
+/// What lets [`engine_sources`] leave `src/proofs/` out: the module is
+/// declared once, in `lib.rs`, and only for a Kani build. Were it ever part
+/// of the engine a game runs, its card names would be the engine's.
+#[test]
+fn the_proofs_are_no_part_of_the_engine_that_ships() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let lib = std::fs::read_to_string(root.join("lib.rs")).expect("lib.rs should be readable");
+    let lines: Vec<&str> = lib.lines().map(str::trim).collect();
+    let declared: Vec<usize> = lines.iter().enumerate()
+        .filter(|(_, l)| l.ends_with("mod proofs;")).map(|(i, _)| i).collect();
+    assert_eq!(declared.len(), 1, "`mod proofs;` is declared once in lib.rs");
+    assert!(declared[0] > 0 && lines[declared[0] - 1] == "#[cfg(kani)]",
+        "`mod proofs;` is behind `#[cfg(kani)]`, on the line above it");
+    for path in engine_sources() {
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("crate::proofs::") || text.lines().all(|l| !l.contains("crate::proofs::") || l.trim_start().starts_with("//")),
+            "{}: the engine names `crate::proofs`, which a game's build does not have", label(&path));
+    }
 }
 
 /// A path shown relative to `src/`, so the failure message points at a file.
