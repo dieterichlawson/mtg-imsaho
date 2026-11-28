@@ -1,0 +1,373 @@
+{
+ "night": "2026-11-28",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "guide": "loop",
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Falkenrath Noble (3BB) was my only flier and I ran it on 6 Swamps beside 11 Forests; the guide's double-pip rule says go 9 Swamps or cut it for a castable flier.",
+    "My BG had two evasive threats (Falkenrath Noble, Orchard Spirit) and I played Festerhide Boar and Kindercatch over a third flier, then lost 1-2 to WR and 0-2 to UB; take the flier, as the guide advises."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 14749,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4030,
+    "output_tokens_details": {
+     "thinking_tokens": 3858
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 14749
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4030,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 14749,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 14749,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Take cheap pressure creatures over Stitcher's Apprentice-style value; my UB deck's 39- and 25-turn losses to BG show it lacked a clock to end games.",
+    "Stay on-colour late: my pack 3 first pick Olivia Voldaren was never played, wasting a high pick in a UB deck.",
+    "Prioritise evasive finishers like Stitched Drake over defensive filler; my 0-2 loss to WR and 1-2 loss to BG came from long games that stalled without a winning threat."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3414,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2618,
+    "output_tokens_details": {
+     "thinking_tokens": 2435
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3414
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2618,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3414,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3414,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Prioritise evasion: my WR deck had only Voiceless Spirit and Balefire Dragon as fliers, and lost 0-2 to WU's fliers, Moon Heron and Spectral Rider.",
+    "Skip Bloodcrazed Neonate and Ghoulcaller's Bell as the guide says; I spent late picks on them and Cobbled Wings and never played any.",
+    "Games of 25-26 turns vs BG suggest my 17-land, 15-creature aggro deck stalled; the guide's 16 lands for a low curve fits better."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5011,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3172,
+    "output_tokens_details": {
+     "thinking_tokens": 2975
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5011
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3172,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5011,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5011,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "guide": null,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "U/B was open and worked: Victim of Night, Sever the Bloodline and Corpse Lunge plus blue fliers went 2-1 against the UB seat and 2-0 against BG, so take black removal early.",
+    "My one loss, 0-2 to the WR seat in 16 and 23 turns, came against Balefire Dragon, Fiend Hunter and Blazing Torch, so prioritise cheap early blockers and removal when white-red is open.",
+    "I cut Think Twice to run 23 spells with 17 lands, 9 Swamp and 8 Island for the BB costs; that mana held, so keep the Swamp weighting for black-heavy UB."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3292,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1000,
+    "output_tokens_details": {
+     "thinking_tokens": 770
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3292
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1000,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3292,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3292,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "guide": "loop",
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight's WR with four fliers (Abbey Griffin, Chapel Geist, Voiceless Spirit, Gallows Warden) went 2-1, contradicting the guide's claim that four fliers was not enough, though that claim was about WG, not WR.",
+    "The guide's 6-7 Mountain warning did not hold: my WR ran 10 Plains and 7 Mountain with seven red cards and went 2-1, so 7 red sources can work for a red-heavy load.",
+    "Round 1's 0-2 loss to BG in 20 and 28 turns, with ground filler like Riot Devils and Village Bell-Ringer, suggests taking a third cheap flier over them."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 14674,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3568,
+    "output_tokens_details": {
+     "thinking_tokens": 3330
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 14674
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3568,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 14674,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 14674,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "guide": null,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Take Dead Weight and Victim of Night early, since they won games, but our BG deck had almost no answers to fliers like Moon Heron and Spectral Rider, which beat us 0-2 in round 2.",
+    "Round 3's game losses came to fast RG starts from Villagers of Estwald and Ashmouth Hound, so draft more two-drops, because our 2x Gatstaf Shepherd and Walking Corpse were too slow.",
+    "Commit to a colour pair by pick 3 instead of taking off-colour cards like Lost in the Mist, which we ended up cutting, and spend those picks on playables for the deck you will actually play."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3305,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2058,
+    "output_tokens_details": {
+     "thinking_tokens": 1835
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3305
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2058,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3305,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3305,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "guide": "conventional",
+   "colors": "WU",
+   "record": "3-0-0",
+   "lessons": [
+    "Confirmed the guide: WU fliers went 6-0 in games. Moon Heron and Battleground Geist in the air, with Slayer of the Wicked and Fiend Hunter clearing blockers, won the 22- and 24-turn grinds.",
+    "Silent Departure x2 and Feeling of Dread answered the one blocker that mattered in most games, so take cheap blue answers over marginal fliers once your air force is set.",
+    "Cutting Dissipate, Ghost Quarter and Mask of Avacyn for 17 lands and 23 spells on a 10-7 split caused no colour problems in six games, so that build is worth copying."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5004,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2225,
+    "output_tokens_details": {
+     "thinking_tokens": 2002
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5004
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2225,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5004,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5004,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "guide": null,
+   "colors": "RG",
+   "record": "1-2-0",
+   "lessons": [
+    "Take flier answers over filler: my RG deck had only Geistflame against WU and WR fliers like Moon Heron, Chapel Geist and Abbey Griffin, and lost both matches.",
+    "Stop taking Mulch: I picked it twice and cut it both times, with Naturalize and Gnaw to the Bone also benched; late picks should go to creatures or answers.",
+    "Green and red creatures were the deepest part of this pool; Geistflame and Curse of the Pierced Heart supplied reach, and that shell won 2-1 against BG."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3336,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2674,
+    "output_tokens_details": {
+     "thinking_tokens": 2482
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3336
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2674,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3336,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3336,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
