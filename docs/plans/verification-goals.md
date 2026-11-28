@@ -316,16 +316,16 @@ type line, power and toughness) and each line of its text, and is on the
 scoreboard. Counted on 2026-11-28, a frame being two lines (its cost,
 if it has one, and its type line): 998 lines on the 270 cards (253
 costs, 290 type lines, 455 lines of text; 5 more are reminder text
-alone). 499 are claimed, on 189 cards: the cost and the type line of
+alone). 511 are claimed, on 201 cards: the cost and the type line of
 each of the 139 permanents with rows (108 creatures; 31 artifacts,
-enchantments and planeswalkers, written since) and of each of the 50
-spells, 49 of the creatures' keyword lines (48 of which wait on the
-keyword's rule, layer B), and 72 lines of the spells' text. None is
-proved, the rows being unrun. No ability of a permanent is claimed, and
-no back face. Of the cards that are cast, 45 permanents have no row yet
-(19 Auras, which are cast at what they enchant; 23 with something
-happening as they enter; 3 creatures of power */*), and 19 instants and
-sorceries; the 17 lands are played and not cast, and have none.
+enchantments and planeswalkers) and of each of the 50 spells, the type
+line of each of 12 lands (played, and not played when it may not be),
+49 of the creatures' keyword lines (48 of which wait on the keyword's
+rule, layer B), and 72 lines of the spells' text. None is proved, the
+rows being unrun. No ability of a permanent is claimed, and no back
+face. Still with no row: 50 permanents (19 Auras, which are cast at what
+they enchant; 28 with something happening as they enter, 5 of them
+lands; 3 creatures of power */*) and 19 instants and sorceries.
 
 **B. The rules the cards lean on, each proved once through the loop.**
 A creature's row says it has flying; what flying does is the engine's,
@@ -355,9 +355,11 @@ flying, reach, intimidate), and what the damage does (unblocked,
 blocked, first strike, double strike, deathtouch, lifelink,
 indestructible), with hexproof by a spell. A row's name begins with its
 rule, and a keyword line of a card counts as proved when every row of
-the keyword's rule is. Not yet written: trample and a second blocker
-(the engine asks how damage is divided and ordered), menace, a
-planeswalker attacked, and the turn outside combat. None is run.
+the keyword's rule is. Added the same day: trample (the engine asks how
+much the blocker is assigned, and is answered), two blockers on one
+attacker (it asks their order), and menace: 44 rows over all 16 rules.
+Not yet written: a planeswalker attacked, three or more blockers, and
+the turn outside combat. None is run.
 
 **C. Each proof airtight in itself.**
 1. The whole state compared before and after, every object and player,

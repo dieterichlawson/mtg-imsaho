@@ -29,6 +29,8 @@ card: its cost (cast for exactly that, and not for a mana less), its type
 line (on the battlefield with those types and that power and toughness,
 and cast at no other time than its own) and, with the keyword's rule,
 each of its keyword lines (it is on the battlefield with those keywords).
+Of a land: its type line (played, it is on the battlefield with those
+types, and it is played once a turn, in its owner's own main phase).
 Of a spell: its cost and its flashback line, by the row that casts it a
 mana short of each; and its type line and again its flashback line, by
 the rows that cast it at another time than its caster's own main phase,
@@ -66,11 +68,14 @@ ENTERS = ('_cast_by_the_first_player_enters_as_printed', '_cast_by_the_second_pl
 TIMES = ('_is_cast_in_the_other_players_turn', '_is_not_cast_in_the_other_players_turn',
          '_is_cast_in_its_casters_upkeep', '_is_not_cast_in_its_casters_upkeep')
 SHORT = ('_is_not_cast_for_one_mana_less',)
+# And of a land: played as printed, and not played when it may not be.
+LAND = ('_played_by_the_first_player_is_there_as_printed', '_played_by_the_second_player_is_there_as_printed',
+        '_is_not_played_a_second_time_in_a_turn', '_is_not_played_in_the_other_players_turn', '_is_not_played_in_its_owners_upkeep')
 # And of a card cast with flashback: a mana short, and at another time.
 FLASHED_BACK = ('_is_not_flashed_back_for_one_mana_less',
                 '_is_flashed_back_in_the_other_players_turn', '_is_not_flashed_back_in_the_other_players_turn',
                 '_is_flashed_back_in_its_casters_upkeep', '_is_not_flashed_back_in_its_casters_upkeep')
-WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK
+WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK + LAND
 # The rules the rows of proofs::through_the_stack::rules are of, each the
 # beginning of its rows' names: the keywords, and what is no keyword's.
 RULES = ('combat', 'summoning_sickness', 'flying', 'reach', 'intimidate', 'first_strike', 'double_strike', 'deathtouch',
@@ -180,7 +185,7 @@ def render(of=None):
         if kind == 'cost':
             written = rows_of(ENTERS + SHORT) if front else []
         elif kind == 'type':
-            written = rows_of(ENTERS + TIMES) if front else []
+            written = rows_of(ENTERS + TIMES + LAND) if front else []
         elif line.startswith('Flashback '):
             written = rows_of(FLASHED_BACK)
         elif keywords:

@@ -16,6 +16,12 @@ battlefield as its printed text says (`enters_as_printed` in
 other player's turn, or in its caster's upkeep, it is cast if it has
 flash and not otherwise (`is_cast_only_at_its_time`).
 
+And for each land card whose text has nothing happen as it enters: played
+by each player in their own main phase it is on the battlefield as its
+type line says, and its owner's land play for the turn is spent
+(`is_played_as_printed`); and it is not played a second time in a turn,
+in the other player's turn, or in its owner's upkeep (`is_not_played`).
+
 `short.rs` is, for each card with rows written by hand in
 `through_the_stack.rs` (the instants and sorceries), that card cast for
 one mana less than the Oracle's cost for it, and cast with flashback for
@@ -57,8 +63,8 @@ A card is left out, and said so at the foot of the file, when:
   has none;
 - its power or toughness is not a number;
 - it is an Aura, which is cast at what it will enchant: its rows are to be
-  written with that. (A land is played and not cast, and an instant or a
-  sorcery is no permanent: neither is a card these rows are of.)
+  written with that. (An instant or a sorcery is no permanent, and is not
+  a card these rows are of.)
 
 With --check, exits 1 if the file is not what this would write: the rows
 are the Oracle's, and are not edited by hand.
@@ -177,8 +183,8 @@ def printed(card):
     """`card`'s row data as Rust, or why it has no row."""
     front = (card.get('type_line') or '').split('//')[0]
     types, _, subtypes = front.partition('—')
-    creature = 'Creature' in types.split()
-    if not {'Creature', 'Artifact', 'Enchantment', 'Planeswalker'} & set(types.split()):
+    creature, land = 'Creature' in types.split(), 'Land' in types.split()
+    if not {'Creature', 'Artifact', 'Enchantment', 'Planeswalker', 'Land'} & set(types.split()):
         return None, None
     if 'Aura' in subtypes.split():
         return None, 'it is an Aura, cast at what it will enchant'
@@ -188,8 +194,8 @@ def printed(card):
     cost, odd = symbols(card.get('mana_cost'))
     if cost is None or 'ManaSymbol::X' in cost:
         return None, f'its cost has {{{odd or "X"}}}'
-    if not cost:
-        return None, 'it has no mana cost'
+    if bool(cost) == land:
+        return None, 'it is a land with a mana cost' if land else 'it has no mana cost'
     power, toughness, loyalty = 'None', 'None', 'None'
     if creature:
         power, toughness = str(card.get('power')), str(card.get('toughness'))
@@ -202,11 +208,11 @@ def printed(card):
         if not re.fullmatch(r'\d+', str(card.get('loyalty'))):
             return None, f'its loyalty is {card.get("loyalty")}'
         loyalty = f'Some({card["loyalty"]})'
-    unknown = set(types.split()) - set(TYPES) - {'Legendary'}
+    unknown = set(types.split()) - set(TYPES) - {'Legendary', 'Basic'}
     if unknown:
         return None, f'its type line has {" ".join(sorted(unknown))}'
-    return ('Printed { cost: &[%s], legendary: %s, types: &[%s], subtypes: &[%s], power: %s, toughness: %s, loyalty: %s, keywords: &[%s] }' % (
-        ', '.join(cost), 'true' if 'Legendary' in types.split() else 'false',
+    return ('Printed { cost: &[%s], basic: %s, legendary: %s, types: &[%s], subtypes: &[%s], power: %s, toughness: %s, loyalty: %s, keywords: &[%s] }' % (
+        ', '.join(cost), 'true' if 'Basic' in types.split() else 'false', 'true' if 'Legendary' in types.split() else 'false',
         ', '.join(f'CardType::{t}' for t in TYPES if t in types.split()),
         ', '.join(json.dumps(s) for s in subtypes.split()), power, toughness, loyalty,
         ', '.join(f'Keyword::{k}' for k in own_keywords(text)))), None
@@ -214,7 +220,7 @@ def printed(card):
 
 def render():
     oracle = json.load(open(f'{ROOT}/data/oracle_cache.json'))['cards']
-    rows, left = [], []
+    rows, left, lands = [], [], 0
     for module, path, name, creature in pool():
         card = oracle.get(name)
         if card is None:
@@ -226,6 +232,13 @@ def render():
             if why:
                 left.append((module, why))
             continue
+        if 'CardType::Land' in data:
+            lands += 1
+            for who, by in (('first', 0), ('second', 1)):
+                rows.append(f'    {module}_played_by_the_{who}_player_is_there_as_printed: is_played_as_printed((Box::new({path}), {data}, {by}));')
+            for when, no in (('a_second_time_in_a_turn', 'ASecondThisTurn'), ('in_the_other_players_turn', 'InTheOtherPlayersTurn'), ('in_its_owners_upkeep', 'InItsOwnersUpkeep')):
+                rows.append(f'    {module}_is_not_played_{when}: is_not_played((Box::new({path}), NoLand::{no}));')
+            continue
         for who, cast in (('first', 'FIRST'), ('second', 'SECOND')):
             rows.append(f'    {module}_cast_by_the_{who}_player_enters_as_printed: enters_as_printed((Box::new({path}), {data}, {cast}));')
         rows.append(f'    {module}_is_not_cast_for_one_mana_less: is_not_cast_for_one_mana_less((Box::new({path}), {data}));')
@@ -236,10 +249,11 @@ def render():
            '//! (`data/oracle_cache.json`); not to be edited by hand. Each permanent',
            '//! card of the pool that is cast with no target and whose text has',
            '//! nothing happen as it enters, cast by each player for its printed',
-           '//! cost, is on the battlefield as printed (`enters_as_printed`).', '',
+           '//! cost, is on the battlefield as printed (`enters_as_printed`); and',
+           '//! each such land, played (`is_played_as_printed`).', '',
            'use super::*;', 'use crate::types::Color;', '',
            'through_the_stack! {'] + rows + ['}', '',
-           f'// {len(rows)} rows for {len(rows) // 5} cards. Permanent cards that are cast, with no row here, and why:']
+           f'// {len(rows)} rows for {len(rows) // 5} cards, {lands} of them lands. Permanent cards with no row here, and why:']
     out += [f'// - {module}: {why}' for module, why in left]
     return '\n'.join(out) + '\n'
 

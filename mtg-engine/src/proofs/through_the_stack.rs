@@ -2803,6 +2803,8 @@ through_the_stack! {
 #[derive(Clone, Copy)]
 struct Printed {
     cost: &'static [ManaSymbol],
+    /// A basic land.
+    basic: bool,
     legendary: bool,
     types: &'static [CardType],
     subtypes: &'static [&'static str],
@@ -2865,7 +2867,11 @@ impl Printed {
     /// under its controller's control this turn, with its printed power
     /// and toughness and its printed loyalty in counters.
     fn on_the_battlefield(self, card: Seen) -> Seen {
-        Seen { zone: Zone::Battlefield, sick: true, power_now: self.power, toughness_now: self.toughness, counters: self.loyalty.unwrap_or(0), ..card }
+        // A land played is not marked as new this turn: the engine keeps
+        // that mark for what was cast or put there, and asks it only of
+        // a creature (CR 302.6). No land of the pool is one.
+        let sick = !self.types.contains(&CardType::Land);
+        Seen { zone: Zone::Battlefield, sick, power_now: self.power, toughness_now: self.toughness, counters: self.loyalty.unwrap_or(0), ..card }
     }
 }
 
@@ -2880,6 +2886,7 @@ fn is_there_as_printed(state: &GameState, registry: &CardRegistry, spell: Object
     assert!(o.counters.get(&crate::types::CounterType::Loyalty).copied() == printed.loyalty);
     assert!(o.counters.len() == usize::from(printed.loyalty.is_some()));
     assert!(state.is_legendary(spell, registry) == printed.legendary);
+    assert!(state.face_supertypes(spell, registry).contains(&crate::types::Supertype::Basic) == printed.basic);
     for t in [CardType::Land, CardType::Creature, CardType::Instant, CardType::Sorcery, CardType::Enchantment, CardType::Artifact, CardType::Planeswalker] {
         assert!(state.has_card_type(spell, t, registry) == printed.types.contains(&t));
     }
@@ -2955,6 +2962,71 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
     }
     assert!(state.players[0].life == 20 && state.players[1].life == 20);
     std::mem::forget((registry, state));
+}
+
+/// A land card played by the player `by` names from their hand, in their
+/// own main phase with the stack empty and their land play for the turn
+/// unspent (CR 305.1, 305.2, 116.2a): it is on the battlefield under
+/// them, untapped, with the supertypes, types and subtypes its type line
+/// prints and no keyword; their land play for the turn is spent; it did
+/// not go on the stack, and nothing else of the game has changed, a
+/// creature of the other player's beside it among it.
+fn is_played_as_printed((card, printed, by): (Box<dyn CardBehavior>, Printed, u8)) {
+    let (registry, mut state, blank, card) = board(card);
+    let player = PlayerId(by);
+    a_permanent(&mut state, blank, Permanent::Creature, (1 - by, 1 - by));
+    state.active_player = player;
+    state.step = Step::PrecombatMain;
+    state.priority_player = Some(player);
+    let land = state.create_card(card, player, Zone::Hand, &registry);
+    assert!(state.players[usize::from(by)].land_plays_remaining == 1);
+    let mut expected = everything(&state, &registry);
+
+    let action = Action::PlayLand { object_id: land };
+    play(&mut state, &registry, &action);
+
+    is_there_as_printed(&state, &registry, land, printed, player);
+    assert!(state.stack.is_empty() && state.awaiting_action.is_none());
+    *expected.of(land) = printed.on_the_battlefield(*expected.of(land));
+    expected.players[usize::from(by)].land_plays = 0;
+    assert!(everything(&state, &registry) == expected);
+    std::mem::forget((registry, state, action));
+}
+
+/// When a land may not be played (CR 305.2-305.3, 116.2a).
+#[derive(Clone, Copy, PartialEq)]
+enum NoLand {
+    /// Its owner has played a land this turn already.
+    ASecondThisTurn,
+    /// The other player's first main phase, its owner holding priority.
+    InTheOtherPlayersTurn,
+    /// Its owner's own upkeep.
+    InItsOwnersUpkeep,
+}
+
+/// A land card its owner tries to play when they may not: it is not
+/// played. It is still in their hand, and the whole game is as it was.
+fn is_not_played((card, when): (Box<dyn CardBehavior>, NoLand)) {
+    let (registry, mut state, _, card) = board(card);
+    let player = PlayerId(0);
+    (state.active_player, state.step) = match when {
+        NoLand::ASecondThisTurn => (player, Step::PrecombatMain),
+        NoLand::InTheOtherPlayersTurn => (PlayerId(1), Step::PrecombatMain),
+        NoLand::InItsOwnersUpkeep => (player, Step::Upkeep),
+    };
+    state.priority_player = Some(player);
+    if when == NoLand::ASecondThisTurn {
+        state.players[0].land_plays_remaining = 0;
+    }
+    let land = state.create_card(card, player, Zone::Hand, &registry);
+    let before = everything(&state, &registry);
+
+    let action = Action::PlayLand { object_id: land };
+    play(&mut state, &registry, &action);
+
+    assert!(state.get_object(land).expect("still an object").zone == Zone::Hand);
+    assert!(everything(&state, &registry) == before);
+    std::mem::forget((registry, state, action));
 }
 
 mod oracle;

@@ -11,7 +11,7 @@ divination	Divination	Draw two cards.	divination_in_the_game_loop_draws_the_top_
 doom_blade	Doom Blade	cost {1}{B}	doom_blade_is_not_cast_for_one_mana_less
 doom_blade	Doom Blade	type Instant	doom_blade_is_cast_in_the_other_players_turn doom_blade_is_cast_in_its_casters_upkeep
 doom_blade	Doom Blade	Destroy target nonblack creature.	doom_blade_in_the_game_loop_is_not_cast_at_an_artifact doom_blade_in_the_game_loop_destroys_the_second_players_creature doom_blade_destroys_the_second_players_creature doom_blade_cast_by_the_second_player_destroys_the_first_players doom_blade_destroys_your_own_creature doom_blade_destroys_a_creature_you_control_and_the_other_player_owns doom_blade_at_an_indestructible_creature_does_nothing_to_it doom_blade_at_a_creature_with_a_regeneration_shield_taps_it_and_uses_the_shield doom_blade_is_not_cast_at_the_other_players_black_creature doom_blade_is_not_cast_at_your_own_black_creature doom_blade_is_not_cast_at_an_artifact doom_blade_does_nothing_once_its_target_is_gone
-forest	Forest	type Basic Land — Forest	-
+forest	Forest	type Basic Land — Forest	forest_played_by_the_first_player_is_there_as_printed forest_played_by_the_second_player_is_there_as_printed forest_is_not_played_a_second_time_in_a_turn forest_is_not_played_in_the_other_players_turn forest_is_not_played_in_its_owners_upkeep
 forest	Forest	({T}: Add {G}.)	reminder
 giant_growth	Giant Growth	cost {G}	giant_growth_is_not_cast_for_one_mana_less
 giant_growth	Giant Growth	type Instant	giant_growth_is_cast_in_the_other_players_turn giant_growth_is_cast_in_its_casters_upkeep
@@ -370,7 +370,7 @@ gatstaf_shepherd	Gatstaf Shepherd	At the beginning of each upkeep, if no spells 
 gatstaf_shepherd	Gatstaf Howler	type Creature — Werewolf 3/3	-
 gatstaf_shepherd	Gatstaf Howler	Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)	-
 gatstaf_shepherd	Gatstaf Howler	At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.	-
-gavony_township	Gavony Township	type Land	-
+gavony_township	Gavony Township	type Land	gavony_township_played_by_the_first_player_is_there_as_printed gavony_township_played_by_the_second_player_is_there_as_printed gavony_township_is_not_played_a_second_time_in_a_turn gavony_township_is_not_played_in_the_other_players_turn gavony_township_is_not_played_in_its_owners_upkeep
 gavony_township	Gavony Township	{T}: Add {C}.	-
 gavony_township	Gavony Township	{2}{G}{W}, {T}: Put a +1/+1 counter on each creature you control.	-
 geist_honored_monk	Geist-Honored Monk	cost {3}{W}{W}	-
@@ -389,7 +389,7 @@ geistflame	Geistflame	cost {R}	geistflame_is_not_cast_for_one_mana_less
 geistflame	Geistflame	type Instant	geistflame_is_cast_in_the_other_players_turn geistflame_is_cast_in_its_casters_upkeep
 geistflame	Geistflame	Geistflame deals 1 damage to any target.	geistflame_marks_one_on_the_other_players_creature geistflame_cast_by_the_second_player_marks_one_on_the_first_players geistflame_marks_one_on_your_own_creature geistflame_destroys_a_creature_with_a_point_of_damage_already geistflame_takes_one_life_from_the_other_player geistflame_cast_by_the_second_player_takes_one_life_from_the_first geistflame_takes_one_loyalty_of_three geistflame_takes_the_last_loyalty geistflame_is_not_cast_at_an_artifact geistflame_does_nothing_once_its_target_is_gone
 geistflame	Geistflame	Flashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	geistflame_is_not_flashed_back_for_one_mana_less geistflame_is_flashed_back_in_the_other_players_turn geistflame_is_flashed_back_in_its_casters_upkeep geistflame_flashed_back_takes_one_life_and_is_exiled geistflame_flashed_back_marks_one_on_a_creature_and_is_exiled
-ghost_quarter	Ghost Quarter	type Land	-
+ghost_quarter	Ghost Quarter	type Land	ghost_quarter_played_by_the_first_player_is_there_as_printed ghost_quarter_played_by_the_second_player_is_there_as_printed ghost_quarter_is_not_played_a_second_time_in_a_turn ghost_quarter_is_not_played_in_the_other_players_turn ghost_quarter_is_not_played_in_its_owners_upkeep
 ghost_quarter	Ghost Quarter	{T}: Add {C}.	-
 ghost_quarter	Ghost Quarter	{T}, Sacrifice this land: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.	-
 ghostly_possession	Ghostly Possession	cost {2}{W}	-
@@ -509,7 +509,7 @@ kessig_cagebreakers	Kessig Cagebreakers	Whenever this creature attacks, create a
 kessig_wolf	Kessig Wolf	cost {2}{R}	kessig_wolf_cast_by_the_first_player_enters_as_printed kessig_wolf_cast_by_the_second_player_enters_as_printed kessig_wolf_is_not_cast_for_one_mana_less
 kessig_wolf	Kessig Wolf	type Creature — Wolf 3/1	kessig_wolf_cast_by_the_first_player_enters_as_printed kessig_wolf_cast_by_the_second_player_enters_as_printed kessig_wolf_is_not_cast_in_the_other_players_turn kessig_wolf_is_not_cast_in_its_casters_upkeep
 kessig_wolf	Kessig Wolf	{1}{R}: This creature gains first strike until end of turn.	-
-kessig_wolf_run	Kessig Wolf Run	type Land	-
+kessig_wolf_run	Kessig Wolf Run	type Land	kessig_wolf_run_played_by_the_first_player_is_there_as_printed kessig_wolf_run_played_by_the_second_player_is_there_as_printed kessig_wolf_run_is_not_played_a_second_time_in_a_turn kessig_wolf_run_is_not_played_in_the_other_players_turn kessig_wolf_run_is_not_played_in_its_owners_upkeep
 kessig_wolf_run	Kessig Wolf Run	{T}: Add {C}.	-
 kessig_wolf_run	Kessig Wolf Run	{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.	-
 kindercatch	Kindercatch	cost {3}{G}{G}{G}	kindercatch_cast_by_the_first_player_enters_as_printed kindercatch_cast_by_the_second_player_enters_as_printed kindercatch_is_not_cast_for_one_mana_less
@@ -623,7 +623,7 @@ moon_heron	Moon Heron	Flying	moon_heron_cast_by_the_first_player_enters_as_print
 moonmist	Moonmist	cost {1}{G}	-
 moonmist	Moonmist	type Instant	-
 moonmist	Moonmist	Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves. (Only double-faced cards can be transformed.)	-
-moorland_haunt	Moorland Haunt	type Land	-
+moorland_haunt	Moorland Haunt	type Land	moorland_haunt_played_by_the_first_player_is_there_as_printed moorland_haunt_played_by_the_second_player_is_there_as_printed moorland_haunt_is_not_played_a_second_time_in_a_turn moorland_haunt_is_not_played_in_the_other_players_turn moorland_haunt_is_not_played_in_its_owners_upkeep
 moorland_haunt	Moorland Haunt	{T}: Add {C}.	-
 moorland_haunt	Moorland Haunt	{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.	-
 morkrut_banshee	Morkrut Banshee	cost {3}{B}{B}	-
@@ -639,7 +639,7 @@ murder_of_crows	Murder of Crows	Whenever another creature dies, you may draw a c
 naturalize	Naturalize	cost {1}{G}	naturalize_is_not_cast_for_one_mana_less
 naturalize	Naturalize	type Instant	naturalize_is_cast_in_the_other_players_turn naturalize_is_cast_in_its_casters_upkeep
 naturalize	Naturalize	Destroy target artifact or enchantment.	naturalize_destroys_the_second_players_artifact naturalize_cast_by_the_second_player_destroys_the_first_players_artifact naturalize_destroys_your_own_enchantment naturalize_destroys_the_second_players_enchantment naturalize_at_an_indestructible_artifact_does_nothing_to_it naturalize_is_not_cast_at_a_creature naturalize_is_not_cast_at_a_land naturalize_is_not_cast_at_a_planeswalker naturalize_does_nothing_once_its_target_is_gone
-nephalia_drownyard	Nephalia Drownyard	type Land	-
+nephalia_drownyard	Nephalia Drownyard	type Land	nephalia_drownyard_played_by_the_first_player_is_there_as_printed nephalia_drownyard_played_by_the_second_player_is_there_as_printed nephalia_drownyard_is_not_played_a_second_time_in_a_turn nephalia_drownyard_is_not_played_in_the_other_players_turn nephalia_drownyard_is_not_played_in_its_owners_upkeep
 nephalia_drownyard	Nephalia Drownyard	{T}: Add {C}.	-
 nephalia_drownyard	Nephalia Drownyard	{1}{U}{B}, {T}: Target player mills three cards.	-
 nevermore	Nevermore	cost {1}{W}{W}	-
@@ -759,7 +759,7 @@ sharpened_pitchfork	Sharpened Pitchfork	type Artifact — Equipment	sharpened_pi
 sharpened_pitchfork	Sharpened Pitchfork	Equipped creature has first strike.	-
 sharpened_pitchfork	Sharpened Pitchfork	As long as equipped creature is a Human, it gets +1/+1.	-
 sharpened_pitchfork	Sharpened Pitchfork	Equip {1}	-
-shimmering_grotto	Shimmering Grotto	type Land	-
+shimmering_grotto	Shimmering Grotto	type Land	shimmering_grotto_played_by_the_first_player_is_there_as_printed shimmering_grotto_played_by_the_second_player_is_there_as_printed shimmering_grotto_is_not_played_a_second_time_in_a_turn shimmering_grotto_is_not_played_in_the_other_players_turn shimmering_grotto_is_not_played_in_its_owners_upkeep
 shimmering_grotto	Shimmering Grotto	{T}: Add {C}.	-
 shimmering_grotto	Shimmering Grotto	{1}, {T}: Add one mana of any color.	-
 silent_departure	Silent Departure	cost {U}	silent_departure_is_not_cast_for_one_mana_less
@@ -829,7 +829,7 @@ splinterfright	Splinterfright	type Creature — Elemental */*	-
 splinterfright	Splinterfright	Trample	-
 splinterfright	Splinterfright	Splinterfright's power and toughness are each equal to the number of creature cards in your graveyard.	-
 splinterfright	Splinterfright	At the beginning of your upkeep, mill two cards. (Put the top two cards of your library into your graveyard.)	-
-stensia_bloodhall	Stensia Bloodhall	type Land	-
+stensia_bloodhall	Stensia Bloodhall	type Land	stensia_bloodhall_played_by_the_first_player_is_there_as_printed stensia_bloodhall_played_by_the_second_player_is_there_as_printed stensia_bloodhall_is_not_played_a_second_time_in_a_turn stensia_bloodhall_is_not_played_in_the_other_players_turn stensia_bloodhall_is_not_played_in_its_owners_upkeep
 stensia_bloodhall	Stensia Bloodhall	{T}: Add {C}.	-
 stensia_bloodhall	Stensia Bloodhall	{3}{B}{R}, {T}: This land deals 2 damage to target player or planeswalker.	-
 stitched_drake	Stitched Drake	cost {1}{U}{U}	stitched_drake_cast_by_the_first_player_enters_as_printed stitched_drake_cast_by_the_second_player_enters_as_printed stitched_drake_is_not_cast_for_one_mana_less
@@ -975,7 +975,7 @@ wreath_of_geists	Wreath of Geists	cost {G}	-
 wreath_of_geists	Wreath of Geists	type Enchantment — Aura	-
 wreath_of_geists	Wreath of Geists	Enchant creature	-
 wreath_of_geists	Wreath of Geists	Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.	-
-island	Island	type Basic Land — Island	-
+island	Island	type Basic Land — Island	island_played_by_the_first_player_is_there_as_printed island_played_by_the_second_player_is_there_as_printed island_is_not_played_a_second_time_in_a_turn island_is_not_played_in_the_other_players_turn island_is_not_played_in_its_owners_upkeep
 island	Island	({T}: Add {U}.)	reminder
 kalonian_tusker	Kalonian Tusker	cost {G}{G}	kalonian_tusker_cast_by_the_first_player_enters_as_printed kalonian_tusker_cast_by_the_second_player_enters_as_printed kalonian_tusker_is_not_cast_for_one_mana_less
 kalonian_tusker	Kalonian Tusker	type Creature — Beast 3/3	kalonian_tusker_cast_by_the_first_player_enters_as_printed kalonian_tusker_cast_by_the_second_player_enters_as_printed kalonian_tusker_is_not_cast_in_the_other_players_turn kalonian_tusker_is_not_cast_in_its_casters_upkeep
@@ -985,20 +985,20 @@ lava_axe	Lava Axe	Lava Axe deals 5 damage to target player or planeswalker.	lava
 lightning_bolt	Lightning Bolt	cost {R}	lightning_bolt_is_not_cast_for_one_mana_less
 lightning_bolt	Lightning Bolt	type Instant	lightning_bolt_is_cast_in_the_other_players_turn lightning_bolt_is_cast_in_its_casters_upkeep
 lightning_bolt	Lightning Bolt	Lightning Bolt deals 3 damage to any target.	lightning_bolt_destroys_the_other_players_small_creature lightning_bolt_cast_by_the_second_player_destroys_the_first_players_small_creature lightning_bolt_destroys_your_own_small_creature lightning_bolt_marks_three_on_a_stout_creature lightning_bolt_takes_three_life_from_the_other_player lightning_bolt_takes_three_life_from_its_caster lightning_bolt_cast_by_the_second_player_takes_three_life_from_the_first lightning_bolt_takes_three_loyalty_of_five lightning_bolt_takes_the_last_three_loyalty lightning_bolt_is_not_cast_at_an_artifact lightning_bolt_is_not_cast_at_a_land lightning_bolt_does_nothing_once_its_target_is_gone
-mountain	Mountain	type Basic Land — Mountain	-
+mountain	Mountain	type Basic Land — Mountain	mountain_played_by_the_first_player_is_there_as_printed mountain_played_by_the_second_player_is_there_as_printed mountain_is_not_played_a_second_time_in_a_turn mountain_is_not_played_in_the_other_players_turn mountain_is_not_played_in_its_owners_upkeep
 mountain	Mountain	({T}: Add {R}.)	reminder
 pacifism	Pacifism	cost {1}{W}	-
 pacifism	Pacifism	type Enchantment — Aura	-
 pacifism	Pacifism	Enchant creature	-
 pacifism	Pacifism	Enchanted creature can't attack or block.	-
-plains	Plains	type Basic Land — Plains	-
+plains	Plains	type Basic Land — Plains	plains_played_by_the_first_player_is_there_as_printed plains_played_by_the_second_player_is_there_as_printed plains_is_not_played_a_second_time_in_a_turn plains_is_not_played_in_the_other_players_turn plains_is_not_played_in_its_owners_upkeep
 plains	Plains	({T}: Add {W}.)	reminder
 savannah_lions	Savannah Lions	cost {W}	savannah_lions_cast_by_the_first_player_enters_as_printed savannah_lions_cast_by_the_second_player_enters_as_printed savannah_lions_is_not_cast_for_one_mana_less
 savannah_lions	Savannah Lions	type Creature — Cat 2/1	savannah_lions_cast_by_the_first_player_enters_as_printed savannah_lions_cast_by_the_second_player_enters_as_printed savannah_lions_is_not_cast_in_the_other_players_turn savannah_lions_is_not_cast_in_its_casters_upkeep
 sol_ring	Sol Ring	cost {1}	sol_ring_cast_by_the_first_player_enters_as_printed sol_ring_cast_by_the_second_player_enters_as_printed sol_ring_is_not_cast_for_one_mana_less
 sol_ring	Sol Ring	type Artifact	sol_ring_cast_by_the_first_player_enters_as_printed sol_ring_cast_by_the_second_player_enters_as_printed sol_ring_is_not_cast_in_the_other_players_turn sol_ring_is_not_cast_in_its_casters_upkeep
 sol_ring	Sol Ring	{T}: Add {C}{C}.	-
-swamp	Swamp	type Basic Land — Swamp	-
+swamp	Swamp	type Basic Land — Swamp	swamp_played_by_the_first_player_is_there_as_printed swamp_played_by_the_second_player_is_there_as_printed swamp_is_not_played_a_second_time_in_a_turn swamp_is_not_played_in_the_other_players_turn swamp_is_not_played_in_its_owners_upkeep
 swamp	Swamp	({T}: Add {B}.)	reminder
 swords_to_plowshares	Swords to Plowshares	cost {W}	swords_to_plowshares_is_not_cast_for_one_mana_less
 swords_to_plowshares	Swords to Plowshares	type Instant	swords_to_plowshares_is_cast_in_the_other_players_turn swords_to_plowshares_is_cast_in_its_casters_upkeep
