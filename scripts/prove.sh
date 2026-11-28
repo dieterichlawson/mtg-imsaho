@@ -22,9 +22,11 @@
 #   (12) is the gigabytes a solver may take and KANI_TIMEOUT its seconds.
 #   With K/M the run is dealt among M machines, N shares each, and these
 #   are the Kth machine's: shares K, K+M, K+2M and so on of N times M.
-#   `kani-these NAME...` runs the named harnesses KANI_JOBS at a time and
-#   gives one that runs out of KANI_CAP the machine to itself: for finding
-#   out what a proof takes, so it prints results and fails on none.
+#   `kani-these NAME...` runs the named harnesses (or `--list FILE` of
+#   them), for finding out what a proof takes, so it prints results and
+#   fails on none: one at a time, giving one that runs out of KANI_CAP
+#   the machine to itself, or with KANI_JOBS above 1 that many shares of
+#   them at once, each held to KANI_CAP.
 #   `guards` is what a change to the proofs or their ledgers is held to
 #   before it is pushed, in a minute or two: the files written from the
 #   Oracle are what their scripts write, every proof through the game
@@ -170,18 +172,43 @@ case "$what" in
             --loops "$(loops_file)" --batch 2 --timeout "${KANI_TIMEOUT:-1500}" --solo-cap "${KANI_CAP:-12}" \
             --results "logs/kani/shard-${1%/*}.txt" ;;
     kani-these)
-        # The named harnesses or modules, to find out what each takes on a
-        # machine with memory to spare: KANI_JOBS solvers at a time, each
-        # held to KANI_CAP gigabytes, and one that runs out of that run
-        # again alone with KANI_SOLO_CAP (nine tenths of the machine's
-        # memory unless given). A harness that does not prove is a result
-        # here and not a failure: the results are printed.
+        # The named harnesses or modules, to find out what each takes. A
+        # harness that does not prove is a result here and not a failure:
+        # the results are printed.
         mkdir -p logs/kani
-        prove_kani "$@" --loops "$(loops_file)" --batch "${KANI_BATCH:-4}" --jobs "${KANI_JOBS:-1}" \
-            --mem-cap "${KANI_CAP:-12}" --solo-cap "${KANI_SOLO_CAP:-$(free -g | awk 'NR==2 {print int($2 * 9 / 10)}')}" \
-            --timeout "${KANI_TIMEOUT:-1800}" --results logs/kani/shard-named.txt || true
-        echo "== results"
-        cat logs/kani/shard-named.txt ;;
+        if [ -n "${KANI_SHARD:-}" ]; then
+            # One share of them (below): a build and then a solver at a
+            # time, two harnesses to a build, each solver held to KANI_CAP.
+            prove_kani "$@" --shard "$KANI_SHARD" --times scripts/kani/times.txt --loops "$(loops_file)" --batch "${KANI_BATCH:-2}" \
+                --solo-cap "${KANI_CAP:-12}" --timeout "${KANI_TIMEOUT:-1800}" --results "logs/kani/shard-named-${KANI_SHARD%/*}.txt" || true
+        elif [ "${KANI_JOBS:-1}" -gt 1 ]; then
+            # KANI_JOBS shares of them at once, each its own run of this
+            # script with its own target directory and loop bounds, as
+            # kani-shares has them: so that the builds run side by side
+            # too. One run building four harnesses and then solving those
+            # four kept a machine of 32 cores to four of them, and 34
+            # harnesses took it over fifty minutes.
+            pids=()
+            for k in $(seq 1 "$KANI_JOBS"); do
+                CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}/kani-share-$k" KANI_LOOPS_DIR="logs/kani/share-$k" \
+                    KANI_BOUNDED_CODEGEN_SLOTS="$KANI_JOBS" KANI_SHARD="$k/$KANI_JOBS" \
+                    bash scripts/prove.sh kani-these "$@" > "logs/kani/share-$k.log" 2>&1 &
+                pids+=($!)
+            done
+            for pid in "${pids[@]}"; do wait "$pid" || true; done
+            echo "== results"
+            cat logs/kani/shard-named-*.txt 2> /dev/null | sort -k3
+            exit 0
+        else
+            # One run, a harness that runs out of KANI_CAP run again alone
+            # with KANI_SOLO_CAP (nine tenths of the machine's memory
+            # unless given).
+            prove_kani "$@" --loops "$(loops_file)" --batch "${KANI_BATCH:-4}" --jobs 1 \
+                --mem-cap "${KANI_CAP:-12}" --solo-cap "${KANI_SOLO_CAP:-$(free -g | awk 'NR==2 {print int($2 * 9 / 10)}')}" \
+                --timeout "${KANI_TIMEOUT:-1800}" --results logs/kani/shard-named.txt || true
+            echo "== results"
+            cat logs/kani/shard-named.txt
+        fi ;;
     kani-shares)
         # Every one of N shares at once, on one machine with the cores and
         # memory for it: at most one build or one solver a share, so about
