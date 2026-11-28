@@ -942,6 +942,52 @@ through_the_stack! {
 }
 
 // 50 rows of equipping for 10 Equipment. With none, their equip being no cost of mana: demonmail_hauberk.
+
+// Each permanent with one mana ability that taps for given mana, tapped for it and not.
+through_the_stack! {
+    forest_taps_for_its_mana: taps_for((Box::new(crate::cards::forest::Forest), &[(ManaType::Green, 1)], Tap::ForItsMana));
+    forest_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::forest::Forest), &[(ManaType::Green, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    forest_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::forest::Forest), &[(ManaType::Green, 1)], Tap::NotWhenTapped));
+    avacyns_pilgrim_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), &[(ManaType::White, 1)], Tap::ForItsMana));
+    avacyns_pilgrim_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), &[(ManaType::White, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    avacyns_pilgrim_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), &[(ManaType::White, 1)], Tap::NotWhenTapped));
+    avacyns_pilgrim_does_not_tap_for_mana_the_turn_it_arrives: taps_for((Box::new(crate::cards::isd::avacyns_pilgrim::AvacynsPilgrim), &[(ManaType::White, 1)], Tap::NotTheTurnItArrives));
+    gavony_township_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::gavony_township::GavonyTownship), &[(ManaType::Colorless, 1)], Tap::ForItsMana));
+    gavony_township_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::gavony_township::GavonyTownship), &[(ManaType::Colorless, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    gavony_township_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::gavony_township::GavonyTownship), &[(ManaType::Colorless, 1)], Tap::NotWhenTapped));
+    ghost_quarter_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::ghost_quarter::GhostQuarter), &[(ManaType::Colorless, 1)], Tap::ForItsMana));
+    ghost_quarter_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::ghost_quarter::GhostQuarter), &[(ManaType::Colorless, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    ghost_quarter_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::ghost_quarter::GhostQuarter), &[(ManaType::Colorless, 1)], Tap::NotWhenTapped));
+    kessig_wolf_run_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::kessig_wolf_run::KessigWolfRun), &[(ManaType::Colorless, 1)], Tap::ForItsMana));
+    kessig_wolf_run_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::kessig_wolf_run::KessigWolfRun), &[(ManaType::Colorless, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    kessig_wolf_run_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::kessig_wolf_run::KessigWolfRun), &[(ManaType::Colorless, 1)], Tap::NotWhenTapped));
+    moorland_haunt_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::moorland_haunt::MoorlandHaunt), &[(ManaType::Colorless, 1)], Tap::ForItsMana));
+    moorland_haunt_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::moorland_haunt::MoorlandHaunt), &[(ManaType::Colorless, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    moorland_haunt_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::moorland_haunt::MoorlandHaunt), &[(ManaType::Colorless, 1)], Tap::NotWhenTapped));
+    nephalia_drownyard_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::nephalia_drownyard::NephaliaDrownyard), &[(ManaType::Colorless, 1)], Tap::ForItsMana));
+    nephalia_drownyard_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::nephalia_drownyard::NephaliaDrownyard), &[(ManaType::Colorless, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    nephalia_drownyard_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::nephalia_drownyard::NephaliaDrownyard), &[(ManaType::Colorless, 1)], Tap::NotWhenTapped));
+    stensia_bloodhall_taps_for_its_mana: taps_for((Box::new(crate::cards::isd::stensia_bloodhall::StensiaBloodhall), &[(ManaType::Colorless, 1)], Tap::ForItsMana));
+    stensia_bloodhall_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::isd::stensia_bloodhall::StensiaBloodhall), &[(ManaType::Colorless, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    stensia_bloodhall_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::isd::stensia_bloodhall::StensiaBloodhall), &[(ManaType::Colorless, 1)], Tap::NotWhenTapped));
+    island_taps_for_its_mana: taps_for((Box::new(crate::cards::island::Island), &[(ManaType::Blue, 1)], Tap::ForItsMana));
+    island_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::island::Island), &[(ManaType::Blue, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    island_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::island::Island), &[(ManaType::Blue, 1)], Tap::NotWhenTapped));
+    mountain_taps_for_its_mana: taps_for((Box::new(crate::cards::mountain::Mountain), &[(ManaType::Red, 1)], Tap::ForItsMana));
+    mountain_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::mountain::Mountain), &[(ManaType::Red, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    mountain_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::mountain::Mountain), &[(ManaType::Red, 1)], Tap::NotWhenTapped));
+    plains_taps_for_its_mana: taps_for((Box::new(crate::cards::plains::Plains), &[(ManaType::White, 1)], Tap::ForItsMana));
+    plains_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::plains::Plains), &[(ManaType::White, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    plains_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::plains::Plains), &[(ManaType::White, 1)], Tap::NotWhenTapped));
+    sol_ring_taps_for_its_mana: taps_for((Box::new(crate::cards::sol_ring::SolRing), &[(ManaType::Colorless, 2)], Tap::ForItsMana));
+    sol_ring_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::sol_ring::SolRing), &[(ManaType::Colorless, 2)], Tap::ForItsManaInTheOtherPlayersTurn));
+    sol_ring_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::sol_ring::SolRing), &[(ManaType::Colorless, 2)], Tap::NotWhenTapped));
+    swamp_taps_for_its_mana: taps_for((Box::new(crate::cards::swamp::Swamp), &[(ManaType::Black, 1)], Tap::ForItsMana));
+    swamp_taps_for_its_mana_in_the_other_players_turn: taps_for((Box::new(crate::cards::swamp::Swamp), &[(ManaType::Black, 1)], Tap::ForItsManaInTheOtherPlayersTurn));
+    swamp_does_not_tap_for_mana_when_tapped: taps_for((Box::new(crate::cards::swamp::Swamp), &[(ManaType::Black, 1)], Tap::NotWhenTapped));
+}
+
+// 40 rows of tapping for mana.
 // 863 rows of being cast or played for 169 cards, 12 of them lands and 18 Auras. Permanent cards with none, and why:
 // - armored_skaab: its text has something happen as it enters
 // - boneyard_wurm: its power and toughness are */*

@@ -39,6 +39,13 @@ and the ability is not activated at the other player's creature, for a
 mana less, in the other player's turn or in its controller's upkeep
 (`equips`).
 
+And for each permanent whose text has one mana ability and that
+"{T}: Add" so much mana of given types (a basic land's is in its reminder
+text, its type line giving it): tapped for it by the action the engine
+offers, in its controller's main phase and in the other player's turn,
+it is tapped and the pool has that mana; and it is not tapped for mana
+once tapped, nor, a creature, in the turn it arrives (`taps_for`).
+
 `short.rs` is, for each card with rows written by hand in
 `through_the_stack.rs` (the instants and sorceries), that card cast for
 one mana less than the Oracle's cost for it, and cast with flashback for
@@ -196,6 +203,26 @@ def costs():
         '    }', '}', '']) + '\n'
 
 
+MANA = {'W': 'White', 'U': 'Blue', 'B': 'Black', 'R': 'Red', 'G': 'Green', 'C': 'Colorless'}
+
+
+def mana_reads(card):
+    """The one mana ability of a card whose text has one, and that
+    "{T}: Add" given mana: its line, and the mana as (type, amount) pairs.
+    None for a card with none such, or with another line that adds mana."""
+    lines = [l.strip() for l in (card.get('oracle_text') or '').split('\n') if l.strip()]
+    adds = [l for l in lines if re.search(r'\bAdd\b', l) and ':' in l]
+    if len(adds) != 1:
+        return None
+    m = re.fullmatch(r'\(?\{T\}: Add ((?:\{[WUBRGC]\})+)\.\)?', adds[0])
+    if not m:
+        return None
+    made = {}
+    for sym in re.findall(r'\{(.)\}', m.group(1)):
+        made[MANA[sym]] = made.get(MANA[sym], 0) + 1
+    return adds[0], sorted(made.items())
+
+
 def equipment_reads(card):
     """What an Equipment's text says, as far as these rows read it: its
     equip cost as Rust (None if its equip is not "Equip" and a cost of
@@ -290,13 +317,24 @@ def render():
     # An Aura's rows cast a mana short and at another time are its own
     # row over again under the macros that make a cast one to be refused.
     short, at_time = [], {1: [], 2: []}
-    equips, unequipped = [], []
+    equips, unequipped, taps = [], [], []
     for module, path, name, creature in pool():
         card = oracle.get(name)
         if card is None:
             if creature:
                 left.append((module, 'the Oracle cache has no card of its name'))
             continue
+        # What a permanent taps for is its own rows, whatever else its
+        # text has happen.
+        tap = mana_reads(card)
+        if tap:
+            made = ', '.join(f'(ManaType::{t}, {n})' for t, n in tap[1])
+            hows = [('taps_for_its_mana', 'ForItsMana'), ('taps_for_its_mana_in_the_other_players_turn', 'ForItsManaInTheOtherPlayersTurn'),
+                    ('does_not_tap_for_mana_when_tapped', 'NotWhenTapped')]
+            if 'Creature' in card['type_line'].split('—')[0].split():
+                hows.append(('does_not_tap_for_mana_the_turn_it_arrives', 'NotTheTurnItArrives'))
+            for row, how in hows:
+                taps.append(f'    {module}_{row}: taps_for((Box::new({path}), &[{made}], Tap::{how}));')
         data, why = printed(card)
         if data is None:
             if why:
@@ -356,7 +394,9 @@ def render():
            'a_sorcery_at! { 1'] + at_time[1] + ['}', '', 'a_sorcery_at! { 2'] + at_time[2] + ['}', '',
            '// Each Equipment with "Equip" and a cost of mana, equipped and not.',
            'through_the_stack! {'] + equips + ['}', '',
-           f'// {len(equips)} rows of equipping for {len(equips) // 5} Equipment. With none, their equip being no cost of mana: {", ".join(unequipped) or "none"}.']
+           f'// {len(equips)} rows of equipping for {len(equips) // 5} Equipment. With none, their equip being no cost of mana: {", ".join(unequipped) or "none"}.',
+           '', '// Each permanent with one mana ability that taps for given mana, tapped for it and not.',
+           'through_the_stack! {'] + taps + ['}', '', f'// {len(taps)} rows of tapping for mana.']
     count = len(rows) + len(short) + len(at_time[1]) + len(at_time[2])
     out += [f'// {count} rows of being cast or played for {(count - auras * 6) // 5 + auras} cards, {lands} of them lands and {auras} Auras. Permanent cards with none, and why:']
     out += [f'// - {module}: {why}' for module, why in left]

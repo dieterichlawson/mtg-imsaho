@@ -6,15 +6,15 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | Goal | Now | Done at |
 |---|---|---|
 | 1. cards with every proof written for them through the engine's cast, stack and resolution proved | 0 of 270 (and 219 with some not yet proved) | 270 |
-| 1. those proofs: proved of written | 0 of 1394 | all |
+| 1. those proofs: proved of written | 0 of 1434 | all |
 | 1. harnesses that call a card's hook directly | 604 | 0 |
-| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 587 of 998 (0 with every such proof proved) | 998, proved |
+| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 595 of 998 (0 with every such proof proved) | 998, proved |
 | B. rules the cards lean on (the keywords, combat, the turn, summoning sickness) with every row written for them through the game proved | 0 of 17 (17 with rows, 48 rows) | 17 |
 | 2. cards whose proofs cover every case that applies | not counted yet | all |
 | 3. changes to a card's code its proofs catch | not counted yet | every one |
 | 4. engine functions a proof stands in for, unchecked | 165 | 0 |
 | 5. official rulings accounted for | not counted yet | 578 |
-| 6. proofs that do not finish | 12 (and 1442 written and not yet run) | 0 |
+| 6. proofs that do not finish | 12 (and 1482 written and not yet run) | 0 |
 | 7. permanents that can be pieces of the small boards | 129 of 199 (counted by hand, 2026-11-27) | 199 |
 
 ## Cards through the stack
@@ -32,7 +32,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | army_of_the_damned | - | 1 | 0 |
 | ashmouth_hound | 0 of 5 | 2 | 0 |
 | avacynian_priest | 0 of 5 | 1 | 2 |
-| avacyns_pilgrim | 0 of 5 | 1 | 1 |
+| avacyns_pilgrim | 0 of 9 | 1 | 1 |
 | back_from_the_brink | 0 of 5 | 2 | 8 |
 | balefire_dragon | 0 of 5 | 2 | 0 |
 | battleground_geist | 0 of 5 | 1 | 1 |
@@ -104,7 +104,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | festerhide_boar | - | 2 | 1 |
 | fiend_hunter | - | 5 | 1 |
 | forbidden_alchemy | - | 3 | 0 |
-| forest | 0 of 5 | 1 | 1 |
+| forest | 0 of 8 | 1 | 1 |
 | fortress_crab | 0 of 5 | 1 | 0 |
 | frightful_delusion | - | 3 | 2 |
 | full_moons_rise | 0 of 5 | 1 | 2 |
@@ -113,12 +113,12 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | galvanic_juggernaut | 0 of 5 | 2 | 0 |
 | garruk_relentless | 0 of 5 | 8 | 2 |
 | gatstaf_shepherd | 0 of 5 | 2 | 0 |
-| gavony_township | 0 of 5 | 1 | 2 |
+| gavony_township | 0 of 8 | 1 | 2 |
 | geist_honored_monk | - | 1 | 0 |
 | geist_of_saint_traft | 0 of 5 | 1 | 0 |
 | geistcatchers_rig | - | 1 | 1 |
 | geistflame | 0 of 18 | 3 | 1 |
-| ghost_quarter | 0 of 5 | 2 | 2 |
+| ghost_quarter | 0 of 8 | 2 | 2 |
 | ghostly_possession | 0 of 6 | 1 | 1 |
 | ghoulcallers_bell | 0 of 5 | 3 | 1 |
 | ghoulcallers_chant | - | 2 | 0 |
@@ -151,12 +151,12 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | intangible_virtue | 0 of 5 | 1 | 1 |
 | into_the_maw_of_hell | 0 of 6 | 1 | 0 |
 | invisible_stalker | 0 of 5 | 2 | 1 |
-| island | 0 of 5 | 1 | 1 |
+| island | 0 of 8 | 1 | 1 |
 | isolated_chapel | - | 3 | 2 |
 | kalonian_tusker | 0 of 5 | 1 | 0 |
 | kessig_cagebreakers | 0 of 5 | 1 | 0 |
 | kessig_wolf | 0 of 5 | 1 | 2 |
-| kessig_wolf_run | 0 of 5 | 2 | 2 |
+| kessig_wolf_run | 0 of 8 | 2 | 2 |
 | kindercatch | 0 of 5 | 1 | 0 |
 | kruin_outlaw | 0 of 5 | 4 | 0 |
 | laboratory_maniac | 0 of 5 | 3 | 0 |
@@ -187,13 +187,13 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | moment_of_heroism | 0 of 8 | 1 | 0 |
 | moon_heron | 0 of 5 | 1 | 0 |
 | moonmist | - | 1 | 0 |
-| moorland_haunt | 0 of 5 | 1 | 9 |
+| moorland_haunt | 0 of 8 | 1 | 9 |
 | morkrut_banshee | - | 2 | 1 |
-| mountain | 0 of 5 | 1 | 1 |
+| mountain | 0 of 8 | 1 | 1 |
 | mulch | - | 3 | 0 |
 | murder_of_crows | 0 of 5 | 4 | 0 |
 | naturalize | 0 of 12 | 2 | 1 |
-| nephalia_drownyard | 0 of 5 | 4 | 1 |
+| nephalia_drownyard | 0 of 8 | 4 | 1 |
 | nevermore | - | 1 | 6 |
 | night_revelers | 0 of 5 | 2 | 1 |
 | night_terrors | - | 4 | 0 |
@@ -206,7 +206,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | paraselene | 0 of 6 | 2 | 0 |
 | past_in_flames | - | 1 | 16 |
 | pitchburn_devils | 0 of 5 | 3 | 0 |
-| plains | 0 of 5 | 1 | 1 |
+| plains | 0 of 8 | 1 | 1 |
 | prey_upon | 0 of 9 | 1 | 0 |
 | purify_the_grave | 0 of 12 | 2 | 0 |
 | rage_thrower | 0 of 5 | 1 | 0 |
@@ -242,7 +242,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | slayer_of_the_wicked | - | 1 | 1 |
 | smite_the_monstrous | 0 of 9 | 1 | 1 |
 | snapcaster_mage | - | 1 | 2 |
-| sol_ring | 0 of 5 | 1 | 1 |
+| sol_ring | 0 of 8 | 1 | 1 |
 | somberwald_spider | - | 2 | 1 |
 | spare_from_evil | 0 of 5 | 1 | 1 |
 | spectral_flight | 0 of 6 | 1 | 1 |
@@ -250,7 +250,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | spider_spawning | 0 of 11 | 3 | 0 |
 | spidery_grasp | 0 of 8 | 1 | 0 |
 | splinterfright | - | 4 | 0 |
-| stensia_bloodhall | 0 of 5 | 2 | 1 |
+| stensia_bloodhall | 0 of 8 | 2 | 1 |
 | stitched_drake | 0 of 5 | 1 | 0 |
 | stitchers_apprentice | 0 of 5 | 2 | 1 |
 | stony_silence | 0 of 5 | 2 | 1 |
@@ -258,7 +258,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | stromkirk_patrol | 0 of 5 | 2 | 0 |
 | sturmgeist | - | 6 | 0 |
 | sulfur_falls | - | 3 | 2 |
-| swamp | 0 of 5 | 1 | 1 |
+| swamp | 0 of 8 | 1 | 1 |
 | swords_to_plowshares | 0 of 10 | 2 | 0 |
 | think_twice | 0 of 10 | 6 | 0 |
 | thraben_purebloods | 0 of 5 | 1 | 0 |

@@ -104,13 +104,40 @@ fn played(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     to_the_next_decision(state, registry);
     let legal = crate::engine::legal_actions(state, registry);
     let offered = legal.permits(action);
+    // An action that is played is one a seat was asked for: the loop
+    // passes for a player it has nothing worth a decision to offer, and
+    // such a player is never asked for anything.
+    let asked = !offered || matches!(action, Action::PassPriority) || the_loop_asks(state, registry, &legal);
     std::mem::forget(legal);
+    assert!(asked);
     if !offered {
         return;
     }
     let cast_prompt_player = crate::engine::cast_time_prompt_player(state);
     crate::engine::submit_action_on(state, action, registry);
     crate::engine::hand_on_priority(state, action, cast_prompt_player, 2, registry);
+}
+
+/// Whether the game loop asks the player it has come to for a decision,
+/// where it would otherwise pass for them: as `engine::
+/// run_game_loop_inner` has it, a declaration or a question is theirs to
+/// answer, or what it offers them has something other than a pass, a
+/// concession and tapping for mana with no more to it, or they could cast
+/// something with the mana they could make.
+fn the_loop_asks(state: &GameState, registry: &CardRegistry, legal: &crate::engine::LegalActions) -> bool {
+    let only_mana = |action: &Action| match action {
+        Action::ActivateManaAbility { object_id, ability_index } => {
+            let abilities = crate::engine::available_mana_abilities(state, *object_id, registry);
+            let has_more_to_it = abilities.iter().any(|a| a.ability_index == *ability_index && a.has_side_effects);
+            std::mem::forget(abilities);
+            !has_more_to_it
+        }
+        _ => false,
+    };
+    legal.combat_prompt.is_some()
+        || state.awaiting_action.is_some()
+        || legal.actions.iter().any(|a| !matches!(a, Action::PassPriority | Action::Concede) && !only_mana(a))
+        || state.player_to_act().is_some_and(|player| crate::engine::has_castable_with_potential_mana(state, player, registry))
 }
 
 /// The engine's game loop from where the game stands to the next time it
@@ -3177,6 +3204,83 @@ fn equips((card, cost, gets, has, exactly, how): (Box<dyn CardBehavior>, &'stati
     assert!(state.stack.is_empty() && state.awaiting_action.is_none());
     assert!(everything(&state, &registry) == before);
     std::mem::forget((registry, state, action));
+}
+
+/// How a permanent's mana ability is tried.
+#[derive(Clone, Copy, PartialEq)]
+enum Tap {
+    ForItsMana,
+    ForItsManaInTheOtherPlayersTurn,
+    NotWhenTapped,
+    /// A creature that came under its controller's control this turn.
+    NotTheTurnItArrives,
+}
+
+/// A permanent with one mana ability, "{T}: Add" so much mana, on the
+/// battlefield under the first player, who has priority and holds a card
+/// they could cast with a mana (so that the engine's loop asks them for a
+/// decision and does not pass for them). The engine offers them exactly
+/// one mana ability of the permanent, and the row takes that action from
+/// the offer, as a seat would.
+///
+/// Played, in their own main phase or in the other player's turn alike
+/// (CR 605.3a), the permanent is tapped and their pool has the mana the
+/// Oracle prints, of those types and no other (106.4); it did not go on
+/// the stack (605.3b) and priority is still theirs; and nothing else of
+/// the game has changed.
+///
+/// The same action is not played, and the whole game is as it was, once
+/// the permanent is tapped (602.5b), or, of a creature, in the turn it
+/// came under its controller's control (302.6).
+fn taps_for((card, mana, how): (Box<dyn CardBehavior>, &'static [(ManaType, u32)], Tap)) {
+    let (mut registry, mut state, _, card) = board(card);
+    let to_cast = registry.register(Box::new(crate::cards::isd::blazing_torch::BlazingTorch));
+    let you = PlayerId(0);
+    let source = state.create_card(card, you, Zone::Battlefield, &registry);
+    state.get_object_mut(source).expect("just created").summoning_sick = false;
+    state.create_card(to_cast, you, Zone::Hand, &registry);
+    state.active_player = if how == Tap::ForItsManaInTheOtherPlayersTurn { PlayerId(1) } else { you };
+    state.step = Step::PrecombatMain;
+    state.priority_player = Some(you);
+    let legal = crate::engine::legal_actions(&state, &registry);
+    let (mut tap, mut offered) = (None, 0);
+    for action in &legal.actions {
+        if matches!(action, Action::ActivateManaAbility { object_id, .. } if *object_id == source) {
+            offered += 1;
+            tap = Some(action.clone());
+        }
+    }
+    std::mem::forget(legal);
+    assert!(offered == 1);
+    let tap = tap.expect("offered");
+
+    if matches!(how, Tap::ForItsMana | Tap::ForItsManaInTheOtherPlayersTurn) {
+        let mut expected = everything(&state, &registry);
+        play(&mut state, &registry, &tap);
+        let pool = &state.players[0].mana_pool;
+        let mut total = 0;
+        for kind in [ManaType::White, ManaType::Blue, ManaType::Black, ManaType::Red, ManaType::Green, ManaType::Colorless] {
+            let printed = mana.iter().find(|(k, _)| *k == kind).map_or(0, |(_, n)| *n);
+            assert!(pool.get(kind) == printed);
+            total += printed;
+        }
+        assert!(state.stack.is_empty() && state.awaiting_action.is_none() && state.priority_player == Some(you));
+        expected.of(source).tapped = true;
+        expected.players[0].mana = total;
+        assert!(everything(&state, &registry) == expected);
+    } else {
+        let o = state.get_object_mut(source).expect("just created");
+        if how == Tap::NotWhenTapped {
+            o.tapped = true;
+        } else {
+            o.summoning_sick = true;
+        }
+        let before = everything(&state, &registry);
+        play(&mut state, &registry, &tap);
+        assert!(state.players[0].mana_pool.total() == 0);
+        assert!(everything(&state, &registry) == before);
+    }
+    std::mem::forget((registry, state, tap));
 }
 
 /// A land card played by the player `by` names from their hand, in their
