@@ -349,7 +349,13 @@ hangs, stuck prompts, corrupted state and nonsense output do.
 - V16 deck-file abuse: empty, comments-only, zero/negative/overflowing
   counts, unknown and unicode card names, missing counts, no separator,
   duplicate lines, binary bytes, CRLF, absurdly long names; every failure
-  must be a clean error with a non-zero exit, never a panic
+  must be a clean error with a non-zero exit, never a panic. "Overflowing"
+  is not only past `u32`: a count that parses but is absurd (`3000000
+  Plains` is 7 GB of RSS, `100000000` is an OOM kill with exit 137, #1101)
+  is the edge the 09-01 run missed. Also the bytes an editor adds that
+  `str::trim` keeps: a UTF-8 BOM (refused as an invisible "invalid count
+  '40'", #1102), a tab separator, a non-breaking space. Watch `VmHWM` in
+  `/proc/<pid>/status`, not just the exit code (2026-11-28)
 - V17 CLI flag abuse: bad/negative/overflowing --seed, missing flag
   values, unknown flags, unknown player-type values, --resume on a
   missing file or a directory, and --log/--save pointed at unwritable
