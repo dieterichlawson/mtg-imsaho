@@ -11,7 +11,7 @@
 //! this funding choice) before the spell is moved to the stack (CR 601.2b
 //! announce X → 601.2i spell becomes cast).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -490,10 +490,10 @@ pub fn build_options(
     let pool_total: u32 = pool.values().sum();
 
     // Bucket-building scratch: key -> (category, mana_per_tap, colors, source_ids).
-    let mut buckets: HashMap<
+    let mut buckets: BTreeMap<
         String,
         (FundingCategory, u32, Vec<Color>, Vec<ObjectId>),
-    > = HashMap::new();
+    > = BTreeMap::new();
 
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         if obj.tapped {
@@ -677,7 +677,7 @@ pub fn apply(
     // Step 2: tap sources in each group. Track how much each mana type was
     // added by the taps so we can drain exactly that much afterwards
     // (without touching mana the player wanted to preserve).
-    let mut tap_added: HashMap<ManaType, u32> = HashMap::new();
+    let mut tap_added: BTreeMap<ManaType, u32> = BTreeMap::new();
     for (group_name, &amount) in &response.taps {
         let group = options
             .groups

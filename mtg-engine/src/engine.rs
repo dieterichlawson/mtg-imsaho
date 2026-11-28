@@ -482,8 +482,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     // de-duplicated target list. We capture the tap_plan from the first action in
     // each group so player UIs can display "(tap Forest, Mountain)" alongside the
     // ability label, like Cast does.
-    let mut ability_map: std::collections::HashMap<(ObjectId, Option<crate::ids::CardId>, usize), AbilityGroup> =
-        std::collections::HashMap::new();
+    let mut ability_map: std::collections::BTreeMap<(ObjectId, Option<crate::ids::CardId>, usize), AbilityGroup> =
+        std::collections::BTreeMap::new();
     for action in &actions {
         if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, source_card_id, .. } = action {
             let entry = ability_map.entry((*object_id, *source_card_id, *ability_index)).or_insert_with(|| {
@@ -520,9 +520,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             });
         }
     }
-    // Sorted: `ability_map` is a HashMap, and this list is what the player
-    // picks an ability from by position. Draining it in map order offered the
-    // same abilities under different indices on a replay of the same game.
+    // Sorted: this list is what the player picks an ability from by
+    // position. `ability_map` was a `HashMap`, and draining it in map order
+    // offered the same abilities under different indices on a replay of
+    // the same game; it is ordered now, and the sort says by what.
     let mut ability_entries: Vec<_> = ability_map.into_iter().collect();
     ability_entries.sort_by_key(|((object_id, source_card_id, ability_index), _)| {
         (object_id.0, source_card_id.map_or(0, |c| c.0), *ability_index)

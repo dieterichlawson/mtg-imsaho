@@ -367,7 +367,7 @@ pub(crate) fn additional_cost_is_payable(
     };
     // A card named twice is one card (CR 601.2h pays with distinct objects).
     let distinct = |ids: &[ObjectId]| {
-        let set: std::collections::HashSet<_> = ids.iter().collect();
+        let set: std::collections::BTreeSet<_> = ids.iter().collect();
         set.len() == ids.len()
     };
     let in_own_graveyard_card = |id: ObjectId| {

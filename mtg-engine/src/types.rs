@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use serde::{Serialize, Deserialize};
 
 /// The 5 colors of Magic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Color {
     White,
     Blue,
@@ -157,10 +157,13 @@ impl ManaCost {
         }).sum()
     }
 
-    /// How much colored mana of each color is required.
+    /// How much colored mana of each color is required, in colour order.
+    /// Ordered, not hashed: a `HashMap` is read back in an order seeded
+    /// per process, and a proof of the code that asks has the hashing of
+    /// every key to unwind.
     #[must_use]
-    pub fn colored_requirements(&self) -> HashMap<Color, u32> {
-        let mut reqs = HashMap::new();
+    pub fn colored_requirements(&self) -> BTreeMap<Color, u32> {
+        let mut reqs = BTreeMap::new();
         for sym in &self.symbols {
             if let ManaSymbol::Colored(c) = sym {
                 *reqs.entry(*c).or_insert(0) += 1;
