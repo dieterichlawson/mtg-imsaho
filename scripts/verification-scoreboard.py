@@ -18,6 +18,9 @@ What is counted:
   of them last ended SUCCESSFUL; and the harnesses of
   `proofs::engine_under_card`, which call a card's hook directly and are
   to go;
+- layer A: the lines the Oracle prints on the cards, a face's frame and
+  each line of its text, and how many of them a proof through the game
+  claims (`scripts/kani-claims.py`, `scripts/kani/claims.tsv`);
 - goal 4: the engine functions a proof stands in for with `kani::stub`,
   other than the five outside the rules (`format!`, an object's name for
   the log, the log, the allocator's growing and freeing);
@@ -90,6 +93,7 @@ def numbers():
 
 def render():
     per, unplaced, stubs, open_proofs, not_run = numbers()
+    lines, claimed, lines_proved = load('kani-claims').numbers()
     through = sum(1 for c in per.values() if c['through'] and c['proved'] == c['through'])
     partly = sum(1 for c in per.values() if c['through'] and c['proved'] != c['through'])
     hooks = sum(c['hook'] for c in per.values()) + unplaced['hook']
@@ -103,6 +107,8 @@ def render():
            f'{f" (and {partly} with some not yet proved)" if partly else ""} | {len(per)} |',
            f'| 1. those proofs: proved of written | {proved} of {cases} ({len(not_run)} not yet run) | all |',
            f'| 1. harnesses that call a card\'s hook directly | {hooks} | 0 |',
+           f'| A. lines the cards print (each face\'s frame and each line of its text) that a proof through the game claims '
+           f'| {claimed} of {lines} ({lines_proved} with every such proof proved) | {lines}, proved |',
            '| 2. cards whose proofs cover every case that applies | not counted yet | all |',
            '| 3. changes to a card\'s code its proofs catch | not counted yet | every one |',
            f'| 4. engine functions a proof stands in for, unchecked | {len(stubs)} | 0 |',
@@ -116,7 +122,7 @@ def render():
         mark = f'{c["proved"]} of {c["through"]}' if c['through'] else '-'
         out.append(f'| {m} | {mark} | {c["hook"]} | {c["declared"]} |')
     out += ['', '## Engine functions stood in for', '', ', '.join(f'`{s}`' for s in stubs), '']
-    return '\n'.join(out), (through, -hooks, -len(stubs), -len(open_proofs)), len(not_run)
+    return '\n'.join(out), (through, -hooks, -len(stubs), -len(open_proofs), claimed), len(not_run)
 
 
 def main():
@@ -125,12 +131,16 @@ def main():
         was = open(sys.argv[2]).read()
         m = (re.search(r'resolution proved \| (\d+) of', was), re.search(r'hook directly \| (\d+)', was),
              re.search(r'unchecked \| (\d+)', was), re.search(r'do not finish \| (\d+)', was))
+        # Counted since 2026-11-28; a scoreboard from before has no such row.
+        lines_were = re.search(r'game claims \| (\d+) of', was)
         if all(m):
             # Proofs that were waiting and have since been run to a result.
             waited = re.search(r'\((\d+) not yet run\)', was)
             run_since = max(0, int(waited.group(1)) - waiting) if waited else 0
-            before = (int(m[0].group(1)), -int(m[1].group(1)), -int(m[2].group(1)), -int(m[3].group(1)) - run_since)
-            worse = [name for name, a, b in zip(('cards through the stack', 'hook harnesses', 'stand-ins', 'open proofs'), before, now) if b < a]
+            before = (int(m[0].group(1)), -int(m[1].group(1)), -int(m[2].group(1)), -int(m[3].group(1)) - run_since,
+                      int(lines_were.group(1)) if lines_were else 0)
+            worse = [name for name, a, b in zip(('cards through the stack', 'hook harnesses', 'stand-ins', 'open proofs', 'printed lines claimed'),
+                                                before, now) if b < a]
             if worse:
                 sys.exit(f'the scoreboard went the wrong way: {", ".join(worse)} (was {before}, now {now})')
     print(text)

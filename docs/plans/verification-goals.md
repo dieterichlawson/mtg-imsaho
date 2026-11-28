@@ -310,8 +310,16 @@ is claimed by a proof through the loop (a trigger put on the stack by
 the engine and resolved by it, an ability activated as an action, a
 static effect read back through the layers while its source is there
 and gone when it is not), or marked reminder text. Counted: lines
-claimed of lines printed. Now: spells' lines for 50 cards, and no line
-of a permanent's.
+claimed of lines printed, by `scripts/kani-claims.py` from the ledger
+`scripts/kani/claims.tsv`, which has a row for each face's frame (cost,
+type line, power and toughness) and each line of its text, and is on the
+scoreboard. Counted first on 2026-11-28: 745 lines on the 270 cards (290
+frames, 455 lines of text; 5 more are reminder text alone). 229 are
+claimed, on 158 cards: the frames of the 108 creatures with rows, 49 of
+their keyword lines (48 of which wait on the keyword's rule, layer B),
+and 72 lines of the 50 spells. None is proved, the rows being unrun. No
+frame of a spell is claimed (nothing yet refuses it for a mana less, or
+at the wrong time), no ability of a permanent, and no back face.
 
 **B. The rules the cards lean on, each proved once through the loop.**
 A creature's row says it has flying; what flying does is the engine's,

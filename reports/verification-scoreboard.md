@@ -8,6 +8,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | 1. cards with every proof written for them through the engine's cast, stack and resolution proved | 0 of 270 (and 158 with some not yet proved) | 270 |
 | 1. those proofs: proved of written | 0 of 825 (825 not yet run) | all |
 | 1. harnesses that call a card's hook directly | 604 | 0 |
+| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 229 of 745 (0 with every such proof proved) | 745, proved |
 | 2. cards whose proofs cover every case that applies | not counted yet | all |
 | 3. changes to a card's code its proofs catch | not counted yet | every one |
 | 4. engine functions a proof stands in for, unchecked | 165 | 0 |
