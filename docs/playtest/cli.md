@@ -407,7 +407,12 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   "all none", "0:0:0", ":0", "0:", one valid plus one invalid entry,
   5000-character index lists, and mixed separators. Anything not fully
   valid must be refused with an error and a reprompt, never trimmed to a
-  partial declaration or read as "none"
+  partial declaration or read as "none". A line over ~4000 characters
+  sent with `tmux send-keys -l` overruns the pty's 4096-byte input queue
+  and its Enter is lost, which looks like a swallowed submit but is the
+  test rig. Send long lines as a real paste (`tmux load-buffer` then
+  `paste-buffer -p`), which the readers take as one bracketed-paste event
+  (2026-11-28: 5000 digits pasted were refused correctly)
 - V24 hostile environment and non-TTY execution: stdin at EOF, piped
   stdin, stdout to a file or pipe, TERM=dumb and TERM unset, COLUMNS=1,
   a backgrounded process taking SIGTTIN, SIGSTOP/SIGCONT mid-prompt,
