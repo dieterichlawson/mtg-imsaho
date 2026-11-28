@@ -313,13 +313,15 @@ and gone when it is not), or marked reminder text. Counted: lines
 claimed of lines printed, by `scripts/kani-claims.py` from the ledger
 `scripts/kani/claims.tsv`, which has a row for each face's frame (cost,
 type line, power and toughness) and each line of its text, and is on the
-scoreboard. Counted first on 2026-11-28: 745 lines on the 270 cards (290
-frames, 455 lines of text; 5 more are reminder text alone). 229 are
-claimed, on 158 cards: the frames of the 108 creatures with rows, 49 of
-their keyword lines (48 of which wait on the keyword's rule, layer B),
-and 72 lines of the 50 spells. None is proved, the rows being unrun. No
-frame of a spell is claimed (nothing yet refuses it for a mana less, or
-at the wrong time), no ability of a permanent, and no back face.
+scoreboard. Counted on 2026-11-28, a frame being two lines (its cost,
+if it has one, and its type line): 998 lines on the 270 cards (253
+costs, 290 type lines, 455 lines of text; 5 more are reminder text
+alone). 387 are claimed, on 158 cards: the cost and the type line of
+each of the 108 creatures with rows, the cost of each of the 50 spells,
+49 of the creatures' keyword lines (48 of which wait on the keyword's
+rule, layer B), and 72 lines of the spells' text. None is proved, the
+rows being unrun. No spell's type line is claimed (nothing yet refuses a
+sorcery at the wrong time), no ability of a permanent, and no back face.
 
 **B. The rules the cards lean on, each proved once through the loop.**
 A creature's row says it has flying; what flying does is the engine's,
@@ -351,8 +353,13 @@ Counted: rules proved of a written list of the rules the pool uses.
    where the one of them with flash (Ambush Viper) is cast and the 107
    without are refused. (The commit that added them says six have
    flash; one does. The pool's other two creatures with flash do
-   something as they enter and have no rows yet.) To be proved; the
-   spells' are still to write.
+   something as they enter and have no rows yet.) And for the 50 spells
+   with rows: each cast for one mana less than its cost, and each of
+   the 18 with a flashback row flashed back for one less than its
+   flashback cost, on the board and with the cast of the card's own
+   first row (`through_the_stack/short.rs`, 68 rows written by
+   `scripts/kani-printed-rows.py`). To be proved; the spells' wrong
+   times are still to write.
 
 **D. Cards together.** A card alone on a board of blanks says little of
 how it meets the other 269.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""kani-printed-rows.py [--check]: write, from the Oracle's text, the two
-files of `mtg-engine/src/proofs/through_the_stack/` no hand writes.
+"""kani-printed-rows.py [--check]: write, from the Oracle's text, the
+three files of `mtg-engine/src/proofs/through_the_stack/` no hand writes.
 
 `oracle.rs` is the mana cost and the flashback cost the Oracle prints for
 each card of the pool: what a proof gives a caster to cast a card with
@@ -13,6 +13,17 @@ in their own main phase, it is on the battlefield as its printed text says
 (`enters_as_printed` in `through_the_stack.rs`); for one mana less it is
 not cast; and in the other player's turn, or in its caster's upkeep, it is
 cast if it has flash and not otherwise (`is_cast_only_at_its_time`).
+
+`short.rs` is, for each card with rows written by hand in
+`through_the_stack.rs` (the instants and sorceries), that card cast for
+one mana less than the Oracle's cost for it, and cast with flashback for
+one less than its flashback cost: the engine refuses the cast and nothing
+is done. A row here is a row there over again, the first of the card's
+that casts it and has it resolve (and the first that does so with
+flashback), under `one_mana_short!`: the same board and the same cast,
+the caster a mana short. Rows that are of a refusal already, of a spell
+that does nothing, or of a cast that names no target (which the engine
+answers with a question before it asks for the mana) are not such rows.
 
 What a row holds a card against is the Oracle's text for it
 (`data/oracle_cache.json`, from Scryfall, which `scripts/oracle_lookup.py`
@@ -42,6 +53,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CARDS = f'{ROOT}/mtg-engine/src/cards'
 OUT = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/printed.rs'
 COSTS = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/oracle.rs'
+SHORT = f'{ROOT}/mtg-engine/src/proofs/through_the_stack/short.rs'
+BY_HAND = f'{ROOT}/mtg-engine/src/proofs/through_the_stack.rs'
+# The rows by hand that are not of a card cast and resolved as its text says.
+NOT_A_CAST = re.compile(r'is_not_cast|does_nothing|in_the_game_loop|at_no_creature')
 COLORS = {'W': 'White', 'U': 'Blue', 'B': 'Black', 'R': 'Red', 'G': 'Green'}
 # The engine's keywords (`types::Keyword`), by the words a card prints.
 KEYWORDS = {'flying': 'Flying', 'first strike': 'FirstStrike', 'double strike': 'DoubleStrike', 'trample': 'Trample',
@@ -191,8 +206,37 @@ def render():
     return '\n'.join(out) + '\n'
 
 
+def short():
+    """`short.rs`: each card with rows by hand, cast a mana short."""
+    modules = sorted((module for module, _, _, _ in pool()), key=len, reverse=True)
+    first, flashed = {}, {}
+    for name, call in re.findall(r'^    ([a-z0-9_]+): ([a-z_]+\(.*\));$', open(BY_HAND).read(), re.M):
+        module = next((m for m in modules if name.startswith(m + '_')), None)
+        if module is None:
+            sys.exit(f'{name}: a row of through_the_stack.rs that is of no card of the pool')
+        if not NOT_A_CAST.search(name):
+            (flashed if 'flashed_back' in name else first).setdefault(module, (name, call))
+    rows = []
+    for module in sorted(set(first) | set(flashed)):
+        if module not in first:
+            sys.exit(f'{module}: no row of through_the_stack.rs casts it from a hand and has it resolve')
+        rows.append(f'    // {first[module][0]}\n    {module}_is_not_cast_for_one_mana_less: {first[module][1]};')
+        if module in flashed:
+            rows.append(f'    // {flashed[module][0]}\n    {module}_is_not_flashed_back_for_one_mana_less: {flashed[module][1]};')
+    return '\n'.join([
+        '//! Written by `scripts/kani-printed-rows.py` from the rows of',
+        '//! `through_the_stack.rs`; not to be edited by hand. Each card with rows',
+        '//! there, cast for one mana less than the Oracle prints for it, and cast',
+        '//! with flashback for one less than its flashback cost: the cast is',
+        '//! refused and nothing is done. Each row is the row named above it, the',
+        '//! caster a mana short (`one_mana_short!`).', '',
+        'use super::*;', '',
+        'one_mana_short! {'] + rows + ['}', '',
+        f'// {len(rows)} rows for {len(first)} cards, {len(flashed)} of them with a flashback row.']) + '\n'
+
+
 def main():
-    files = {OUT: render(), COSTS: costs()}
+    files = {OUT: render(), COSTS: costs(), SHORT: short()}
     if sys.argv[1:] == ['--check']:
         for path, text in files.items():
             if not os.path.exists(path) or open(path).read() != text:
@@ -203,7 +247,8 @@ def main():
         with open(path, 'w') as f:
             f.write(text)
     print(f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[OUT]))} rows written to {os.path.relpath(OUT, ROOT)}, '
-          f'{files[COSTS].count(" => &[")} costs to {os.path.relpath(COSTS, ROOT)}')
+          f'{files[COSTS].count(" => &[")} costs to {os.path.relpath(COSTS, ROOT)}, '
+          f'{len(re.findall(r"(?m)^    [a-z0-9_]+: ", files[SHORT]))} rows to {os.path.relpath(SHORT, ROOT)}')
 
 
 if __name__ == '__main__':

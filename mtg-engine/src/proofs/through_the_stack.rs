@@ -58,6 +58,26 @@ use crate::types::{CardType, ManaSymbol, ManaType, Step, Zone};
 /// on (117.3-117.4), the top of the stack resolved if that was the last
 /// player's pass.
 fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
+    if ONE_MANA_SHORT.load(core::sync::atomic::Ordering::Relaxed) {
+        if let Action::CastSpell { object_id, .. } = action {
+            let card = state.get_object(*object_id).expect("an object").card_id;
+            if card.0 == THE_CARD.load(core::sync::atomic::Ordering::Relaxed) {
+                // The cast the row is of, its caster a mana short: it
+                // is refused, and the game is as it was.
+                cast_is_refused_as(state, registry, action.clone());
+                // And the row ends here. What its family goes on to
+                // ask is of a cast that went through, which this one
+                // has just been shown not to; nothing after this line
+                // is part of what the row says.
+                kani::assume(false);
+            }
+        }
+    }
+    played(state, registry, action);
+}
+
+/// [`play`], of every row.
+fn played(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     if IN_THE_GAME_LOOP.load(core::sync::atomic::Ordering::Relaxed) {
         return play_in_the_game_loop(state, registry, action);
     }
@@ -66,6 +86,17 @@ fn play(state: &mut GameState, registry: &CardRegistry, action: &Action) {
     crate::engine::submit_action_on(state, action, registry);
     crate::engine::hand_on_priority(state, action, cast_prompt_player, 2, registry);
 }
+
+/// Whether the row is of its card cast for one mana less than its cost
+/// ([`one_mana_short`]): set by such a harness before it does anything
+/// else, and by no other. The row is then its family's board and its
+/// family's cast, with one mana fewer in the caster's pool than the
+/// Oracle's cost for the card ([`mana_to_cast`]), and what it asks is
+/// that the engine refuses that cast and does nothing ([`play`]).
+static ONE_MANA_SHORT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// The card a row is of: the one [`board`] was given.
+static THE_CARD: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(u32::MAX);
 
 /// Whether [`play`] hands its action to the engine's own game loop
 /// ([`play_in_the_game_loop`]): set by a harness of [`in_the_game_loop`]
@@ -110,6 +141,7 @@ fn board(card: Box<dyn CardBehavior>) -> (CardRegistry, GameState, CardId, CardI
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(crate::proofs::cards::Blank));
     let card = registry.register(card);
+    THE_CARD.store(card.0, core::sync::atomic::Ordering::Relaxed);
     (registry, a_game(), blank, card)
 }
 
@@ -165,6 +197,33 @@ fn mana_for_symbols(state: &mut GameState, player: PlayerId, symbols: &[ManaSymb
     }
 }
 
+/// The same less one mana: one of the first generic symbol's, or, of a
+/// cost with no generic mana in it, the first symbol's.
+fn mana_for_one_less(state: &mut GameState, player: PlayerId, symbols: &[ManaSymbol]) {
+    let generic = symbols.iter().position(|s| matches!(s, ManaSymbol::Generic(_)));
+    let pool = &mut state.players[usize::from(player.0)].mana_pool;
+    for (i, symbol) in symbols.iter().enumerate() {
+        match *symbol {
+            ManaSymbol::Generic(n) if generic == Some(i) => pool.add(ManaType::Colorless, n - 1),
+            ManaSymbol::Generic(n) => pool.add(ManaType::Colorless, n),
+            ManaSymbol::Colored(_) if generic.is_none() && i == 0 => {}
+            ManaSymbol::Colored(c) => pool.add(ManaType::from(c), 1),
+            _ => panic!("a cost of coloured and generic mana"),
+        }
+    }
+}
+
+/// The mana `player` is given to cast `card` for `cost`: all of it, or,
+/// in a row of the card cast a mana short ([`ONE_MANA_SHORT`]) where the
+/// card is the one the row is of, one less.
+fn mana_to_cast(state: &mut GameState, player: PlayerId, card: CardId, cost: &[ManaSymbol]) {
+    if ONE_MANA_SHORT.load(core::sync::atomic::Ordering::Relaxed) && card.0 == THE_CARD.load(core::sync::atomic::Ordering::Relaxed) {
+        mana_for_one_less(state, player, cost);
+    } else {
+        mana_for_symbols(state, player, cost);
+    }
+}
+
 /// `card` in `player`'s hand, and the mana its printed cost asks for in
 /// their pool: the cost the Oracle prints for it ([`oracle::cost`]), not
 /// the one the engine's data gives it. A cast then goes through, and
@@ -172,7 +231,7 @@ fn mana_for_symbols(state: &mut GameState, player: PlayerId, symbols: &[ManaSymb
 fn holds(state: &mut GameState, registry: &CardRegistry, card: CardId, player: PlayerId) -> ObjectId {
     let spell = state.create_card(card, player, Zone::Hand, registry);
     let name = registry.get(card).expect("registered").card_data().name;
-    mana_for_symbols(state, player, oracle::cost(&name));
+    mana_to_cast(state, player, card, oracle::cost(&name));
     std::mem::forget(name);
     spell
 }
@@ -196,7 +255,7 @@ fn a_spell(state: &mut GameState, registry: &CardRegistry, card: CardId, cast: C
         state.players[1].graveyard_order.push(spell);
     }
     let name = registry.get(card).expect("registered").card_data().name;
-    mana_for_symbols(state, caster, oracle::flashback_cost(&name));
+    mana_to_cast(state, caster, card, oracle::flashback_cost(&name));
     std::mem::forget(name);
     spell
 }
@@ -345,9 +404,9 @@ fn cast_is_refused_as(state: &mut GameState, registry: &CardRegistry, cast: Acti
     let Action::CastSpell { object_id: spell, .. } = cast else { panic!("a cast") };
     let caster = state.priority_player.expect("the caster has priority");
     let (pool, zone) = (state.players[usize::from(caster.0)].mana_pool.total(), state.get_object(spell).expect("an object").zone);
-    let before = everything(state, registry);
-    play(state, registry, &cast);
-    assert!(state.get_object(spell).expect("still an object").zone == zone && state.stack.is_empty() && state.awaiting_action.is_none());
+    let (before, depth) = (everything(state, registry), state.stack.len());
+    played(state, registry, &cast);
+    assert!(state.get_object(spell).expect("still an object").zone == zone && state.stack.len() == depth && state.awaiting_action.is_none());
     assert!(state.players[usize::from(caster.0)].mana_pool.total() == pool && state.priority_player == Some(caster));
     // And nothing else of the game is other than it was.
     assert!(everything(state, registry) == before);
@@ -583,6 +642,26 @@ macro_rules! in_the_game_loop {
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
         fn $name() {
             IN_THE_GAME_LOOP.store(true, core::sync::atomic::Ordering::Relaxed);
+            $proof($open);
+        }
+    )*};
+}
+/// The same, the card the row is of cast for one mana less than the
+/// Oracle's cost for it ([`ONE_MANA_SHORT`]): the engine refuses the cast
+/// and nothing is done. The rows are written by
+/// `scripts/kani-printed-rows.py` from the first row of each card that
+/// casts it and has it resolve (`through_the_stack/short.rs`).
+macro_rules! one_mana_short {
+    ($($name:ident: $proof:ident($open:expr);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(26)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        fn $name() {
+            ONE_MANA_SHORT.store(true, core::sync::atomic::Ordering::Relaxed);
             $proof($open);
         }
     )*};
@@ -2710,19 +2789,7 @@ fn is_not_cast_for_one_mana_less((card, printed): (Box<dyn CardBehavior>, Printe
     state.step = Step::PrecombatMain;
     state.priority_player = Some(caster);
     let spell = state.create_card(card, caster, Zone::Hand, &registry);
-    // The one mana left out: of the first generic symbol, or else the
-    // first symbol.
-    let generic = printed.cost.iter().position(|s| matches!(s, ManaSymbol::Generic(_)));
-    let pool = &mut state.players[0].mana_pool;
-    for (i, symbol) in printed.cost.iter().enumerate() {
-        match *symbol {
-            ManaSymbol::Generic(n) if generic == Some(i) => pool.add(ManaType::Colorless, n - 1),
-            ManaSymbol::Generic(n) => pool.add(ManaType::Colorless, n),
-            ManaSymbol::Colored(_) if generic.is_none() && i == 0 => {}
-            ManaSymbol::Colored(c) => pool.add(ManaType::from(c), 1),
-            _ => panic!("a cost of coloured and generic mana"),
-        }
-    }
+    mana_for_one_less(&mut state, caster, printed.cost);
 
     cast_is_refused(&mut state, &registry, spell, Vec::new());
 
@@ -2774,6 +2841,7 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
 
 mod oracle;
 mod printed;
+mod short;
 
 // The engine's own game loop playing each action, where the rows above
 // name the action to the engine themselves. Four rows to begin with, one

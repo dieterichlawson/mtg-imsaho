@@ -4,9 +4,10 @@ every card of the pool, and the proofs through the game that claim it.
 
 `scripts/kani/claims.tsv` has a row for each line of each face of each
 card: the card's module, the face's name, the line as the Oracle has it
-(`data/oracle_cache.json`), and what claims it. A face's first row is its
-frame, which is not a line of its text and is as much the card: its mana
-cost, its type line, and its power and toughness or its loyalty.
+(`data/oracle_cache.json`), and what claims it. A face's first rows are
+of its frame, which is not a line of its text and is as much the card:
+`cost` and its mana cost, if it has one, and `type` and its type line
+with its power and toughness or its loyalty.
 
 A claim is one of:
 
@@ -21,13 +22,18 @@ A claim is one of:
 - `reminder`: the line is reminder text and nothing but, which says again
   what a rule says and is no ability.
 
-The rows of a creature card that `scripts/kani-printed-rows.py` writes
-claim its frame (cast for exactly that cost, on the battlefield with
-those types and that power and toughness, not cast for less, cast at no
-other time than its own) and, with the keyword's rule, each of its
-keyword lines (it is on the battlefield with those keywords); this script
-writes those claims itself. Every other claim is written by hand, by
-whoever writes the proof, and kept when the file is written again.
+The rows `scripts/kani-printed-rows.py` writes claim what they are
+written from, and this script writes those claims itself. Of a creature
+card: its cost (cast for exactly that, and not for a mana less), its type
+line (on the battlefield with those types and that power and toughness,
+and cast at no other time than its own) and, with the keyword's rule,
+each of its keyword lines (it is on the battlefield with those keywords).
+Of a spell: its cost and its flashback line, by the row that casts it a
+mana short of each. Every other claim is written by hand, by whoever
+writes the proof, and kept when the file is written again. A spell's cost
+has only that one claim written here; that it is cast for exactly its
+cost is every other row of the card, each of which gives its caster the
+Oracle's cost and no more.
 
 A line counts as claimed when it has a claim, and as proved when every
 claim it has is of a proof whose last recorded result is SUCCESSFUL
@@ -55,7 +61,8 @@ HEAD = ('# Written by scripts/kani-claims.py from the Oracle\'s text; the claims
 ENTERS = ('_cast_by_the_first_player_enters_as_printed', '_cast_by_the_second_player_enters_as_printed')
 TIMES = ('_is_cast_in_the_other_players_turn', '_is_not_cast_in_the_other_players_turn',
          '_is_cast_in_its_casters_upkeep', '_is_not_cast_in_its_casters_upkeep')
-FRAME = ENTERS + ('_is_not_cast_for_one_mana_less',) + TIMES
+SHORT, FLASHBACK_SHORT = ('_is_not_cast_for_one_mana_less',), ('_is_not_flashed_back_for_one_mana_less',)
+WRITTEN = ENTERS + TIMES + SHORT + FLASHBACK_SHORT
 
 
 def load(name):
@@ -68,31 +75,35 @@ def load(name):
 
 
 def frame(face):
-    """A face's frame as one line: cost, type line, and its numbers."""
-    parts = [face.get('mana_cost') or 'no mana cost', face.get('type_line') or '']
+    """A face's frame: its cost, if it has one, and its type line with
+    its numbers, each as (kind, line)."""
+    if face.get('mana_cost'):
+        yield 'cost', f'cost {face["mana_cost"]}'
+    line = f'type {face.get("type_line") or ""}'
     if face.get('power') is not None:
-        parts.append(f'{face["power"]}/{face["toughness"]}')
+        line += f' {face["power"]}/{face["toughness"]}'
     if face.get('loyalty') is not None:
-        parts.append(f'loyalty {face["loyalty"]}')
-    return ' | '.join(parts)
+        line += f', loyalty {face["loyalty"]}'
+    yield 'type', line
 
 
 def printed(rows_module):
-    """(module, face name, line, keywords of the line) for every line of
-    every face of every card of the pool, a face's frame first. The
-    keywords are None for a frame, and for a back face's line: a card is
-    cast as its front face, and the rows of its casting say nothing of
-    its back."""
+    """(module, face name, line, kind, keywords of the line) for every
+    line of every face of every card of the pool, a face's frame first.
+    The kind is `cost` or `type` for a frame's line and `text` for a line
+    of the text. A back face's line has no keywords: a card is cast as
+    its front face, and the rows of its casting say nothing of its back."""
     oracle = json.load(open(f'{ROOT}/data/oracle_cache.json'))['cards']
     for module, _, name, _ in rows_module.pool():
         card = oracle.get(name)
         if card is None:
             sys.exit(f'{module}: the Oracle cache has no card named {name!r}; scripts/oracle_lookup.py fetch it')
         for face in [card] + ([card['back_face']] if card.get('back_face') else []):
-            yield module, face['name'], frame(face), None
+            for kind, line in frame(face):
+                yield module, face['name'], line, kind, []
             for line in (face.get('oracle_text') or '').split('\n'):
                 if line.strip():
-                    yield module, face['name'], line.strip(), rows_module.own_keywords(line) if face is card else []
+                    yield module, face['name'], line.strip(), 'text', rows_module.own_keywords(line) if face is card else []
 
 
 def harnesses():
@@ -127,8 +138,8 @@ def render(of=None):
     of = of if of is not None else harnesses()
     rows_module, old, rows, seen = load('kani-printed-rows'), kept(), [], set()
     fronts = {}
-    for module, face, line, keywords in printed(rows_module):
-        first = fronts.setdefault(module, face)
+    for module, face, line, kind, keywords in printed(rows_module):
+        front = fronts.setdefault(module, face) == face
         key = (module, face, line)
         if key in seen:
             sys.exit(f'{module}: {face} prints the same line twice: {line[:60]}')
@@ -139,8 +150,12 @@ def render(of=None):
         def rows_of(suffixes):
             return [module + s for s in suffixes if module + s in of.get(module, {})]
 
-        if keywords is None:
-            written = rows_of(FRAME) if face == first else []
+        if kind == 'cost':
+            written = rows_of(ENTERS + SHORT) if front else []
+        elif kind == 'type':
+            written = rows_of(ENTERS + TIMES) if front else []
+        elif line.startswith('Flashback '):
+            written = rows_of(FLASHBACK_SHORT)
         elif keywords:
             # Flash is when a card may be cast, which the rows that cast
             # it at other times than its own are the proof of; every
@@ -151,7 +166,7 @@ def render(of=None):
         else:
             written = []
         by_hand = [c for c in old.get(key, []) if c not in ('-', 'reminder') and c not in written
-                   and not c.startswith('rule:') and not c.endswith(FRAME)]
+                   and not c.startswith('rule:') and not c.endswith(WRITTEN)]
         rows.append((module, face, line, written + by_hand or ['-']))
     return HEAD + ''.join(f'{m}\t{f}\t{l}\t{" ".join(c)}\n' for m, f, l, c in rows), rows
 
