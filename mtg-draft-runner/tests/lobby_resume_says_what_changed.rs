@@ -287,3 +287,39 @@ fn a_resume_names_the_matches_it_plays_again_and_only_those() {
     }
     assert_eq!(save.resumed_matches_clause(), None, "every match is played");
 }
+
+/// A resume replaced `--seats`, `--seed`, `--set` and `--best-of` with the
+/// snapshot's and said so only in `--help` (#1049, the hosted copy of
+/// mtg-runner's note). Each flag given that the snapshot overrode is named,
+/// on the terminal and in the log, in the batch runner's words; a flag that
+/// agrees with the snapshot is not.
+#[test]
+fn a_resume_names_each_flag_the_snapshot_overrode() {
+    let files = std::env::temp_dir().join(format!("mtg-lobby-flag-resume-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&files);
+    std::fs::create_dir_all(&files).unwrap();
+    let save = files.join("table.save.json");
+    let save = save.to_str().unwrap().to_string();
+
+    let first = Server::start("flag-resume-a", "human,human", &["--quiet", "--save", &save]);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&save).unwrap_or_default()).is_err() {
+        assert!(Instant::now() < deadline, "no snapshot was written:\n{}", first.stderr());
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    drop(first);
+
+    // The harness passes `--seed 11 --best-of 1 --seats human,human`; these
+    // come later on the line and win, as they would for a person.
+    let resumed = files.join("resumed.save.json");
+    let second = Server::start("flag-resume-b", "human,human",
+        &["--quiet", "--seed", "12", "--best-of", "3", "--resume", &save, "--save", resumed.to_str().unwrap()]);
+    let stderr = second.wait_for_stderr("note: --best-of comes from the snapshot", Duration::from_secs(30));
+    assert!(stderr.contains("note: --seed comes from the snapshot (12 -> 11)"), "{stderr}");
+    assert!(stderr.contains("note: --best-of comes from the snapshot (3 -> 1)"), "{stderr}");
+    assert!(!stderr.contains("--seats comes from"), "the seats agree, so nothing is said:\n{stderr}");
+    let log = second.wait_for_log("NOTE --best-of comes from the snapshot", Duration::from_secs(30));
+    assert!(log.contains("NOTE --seed comes from the snapshot (12 -> 11)"), "and the log:\n{log}");
+    drop(second);
+    let _ = std::fs::remove_dir_all(&files);
+}

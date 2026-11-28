@@ -286,7 +286,9 @@ new game link; a finished match's old game link is still answered as
 ended (a kicked seat's as handed to the table), and the
 resume's first line names the matches still to play in that round by seat. The
 snapshot's seed, set, seats and match length win over the flags, and are
-checked as the flags would be. `--guide` and the `MTG_LLM_HISTORY`,
+checked as the flags would be; each of those flags given with another value
+is named on the terminal and in the log (`note: --seed comes from the
+snapshot (12 -> 11)`). `--guide` and the `MTG_LLM_HISTORY`,
 `MTG_CLAUDE_CODE_DRAFT_ANSWERS`, `MTG_CLAUDE_CODE_ANSWERS` and
 `MTG_LLM_PASS_UNTIL` settings are not: pass `--guide` again on the resume.
 The snapshot records the guide (its path and a digest of its contents),

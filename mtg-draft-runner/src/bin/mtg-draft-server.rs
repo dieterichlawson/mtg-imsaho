@@ -57,7 +57,8 @@ Options:
                          links, every pick, deck and finished match; a match
                          that was in progress is played again. Its seed, set,
                          seats and match length win over the flags
-                         (--ai too); --guide, the MTG_LLM_HISTORY,
+                         (--ai too), and each flag it overrides is
+                         said; --guide, the MTG_LLM_HISTORY,
                          answer-format and pass-until settings and the set
                          data are this run's, and a difference from the
                          snapshot's is said
@@ -91,6 +92,9 @@ struct Args {
     quiet: bool,
     save: Option<String>,
     resume: Option<String>,
+    /// The flags given on the command line, so a resume names only the
+    /// ones the snapshot overrode (#1049).
+    supplied: Vec<&'static str>,
 }
 
 fn parse_args() -> Args {
@@ -118,6 +122,7 @@ fn parse_args() -> Args {
         quiet: false,
         save: None,
         resume: None,
+        supplied: Vec::new(),
     };
     let mut i = 0;
     let value = |i: &mut usize, flag: &str| -> String {
@@ -129,6 +134,9 @@ fn parse_args() -> Args {
     };
     while i < argv.len() {
         let flag = argv[i].as_str();
+        if let Some(known) = SNAPSHOT_FLAGS.iter().find(|f| **f == flag) {
+            args.supplied.push(known);
+        }
         match flag {
             "--help" | "-h" => {
                 println!("{USAGE}");
@@ -182,6 +190,38 @@ fn parse_args() -> Args {
     }
     args.seats = parse_seats(&seats_spec, &default_ai).unwrap_or_else(|e| die(&format!("--seats: {e}")));
     args
+}
+
+/// The flags a snapshot's own values replace on `--resume`.
+const SNAPSHOT_FLAGS: &[&str] = &["--seats", "--ai", "--seed", "--set", "--best-of"];
+
+/// The seats as `--seats` names them.
+fn seats_spec(seats: &[SeatKind]) -> String {
+    seats.iter().map(|s| match s {
+        SeatKind::Human => "human".to_string(),
+        SeatKind::Cli => "cli".to_string(),
+        SeatKind::Ai(m) => format!("ai:{m}"),
+    }).collect::<Vec<_>>().join(",")
+}
+
+/// A note for each flag the operator gave that the snapshot overrode, in
+/// the batch runner's words ("--seed comes from the save (1 -> 2)"). The
+/// table replaced `--seats`, `--seed`, `--set` and `--best-of` with the
+/// snapshot's and said so only in `--help` (#1049). A flag that agrees
+/// with the snapshot, or one not given, is not noted.
+fn overridden_flag_notes(args: &Args, save: &TableSave) -> Vec<String> {
+    let saved_seats = save.seat_kinds().map(|s| seats_spec(&s)).unwrap_or_default();
+    let given_seats = seats_spec(&args.seats);
+    let seats_flag = if args.supplied.contains(&"--seats") { "--seats" } else { "--ai" };
+    [
+        (seats_flag, given_seats, saved_seats),
+        ("--seed", args.seed.to_string(), save.seed.to_string()),
+        ("--set", args.set.clone(), save.set.clone()),
+        ("--best-of", args.best_of.to_string(), save.best_of.to_string()),
+    ].into_iter()
+        .filter(|(flag, given, saved)| given != saved && args.supplied.contains(flag))
+        .map(|(flag, given, saved)| format!("note: {flag} comes from the snapshot ({given} -> {saved})"))
+        .collect()
 }
 
 /// The longest a pick or build timer may run: a day. A sentinel like
@@ -248,6 +288,7 @@ fn main() {
         save.check().unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
         save
     });
+    let overridden = save.as_ref().map_or_else(Vec::new, |save| overridden_flag_notes(&args, save));
     if let Some(save) = &save {
         args.seats = save.seat_kinds().unwrap_or_else(|e| die(&format!("--resume: {e}")));
         args.seed = save.seed;
@@ -321,7 +362,7 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     // taken port it went into the log of the table still running there,
     // beside the FATAL (#893, as #745 for a fresh table).
     let mut resumed_note = None;
-    let mut resumed_warnings: Vec<String> = Vec::new();
+    let mut resumed_warnings: Vec<String> = overridden;
     if let (Some(save), Some(path)) = (&save, &args.resume) {
         lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
         // Which matches are played again, only when one is (#999).
