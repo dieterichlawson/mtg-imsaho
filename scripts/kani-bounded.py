@@ -99,10 +99,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # says the same at the price of building every harness, gigabytes of goto
 # files.
 TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_resolution', 'each_damage', 'each_filter', 'each_restriction', 'each_trigger_event', 'each_push', 'each_declaration', 'each_recording', 'each_removal', 'each_enchant', 'each_expiry', 'each_block', 'each_block_recorded', 'each_order', 'each_combat', 'each_question', 'each_reply',
-          # A table a file other than its macro's own has rows of
-          # (`through_the_stack/printed.rs`): a file's own macros are found
-          # without being named here.
-          'through_the_stack'}
+          }
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set', 'reaches_its_subtypes'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
@@ -149,8 +146,26 @@ def strip(text):
 LOOP_CAPS = {}
 
 
+NOT_TABLES = {'card_proof', 'action_proof', 'damage_proof', 'effect_proof', 'for_each_form', 'equipment', 'aura'}
+
+
+def proof_macros(src):
+    """The macros of the proofs whose definition writes a harness for each
+    row given it, whichever file defines them: a module's macro is its
+    submodules' too (`through_the_stack/printed.rs`, `short.rs`), and a
+    table looked for only in the file that defines its macro had its other
+    rows dropped from every run without a word."""
+    found = set()
+    for f in glob.glob(src + '/proofs/**/*.rs', recursive=True):
+        t = strip(open(f).read())
+        found |= {m.group(1) for m in re.finditer(r'\bmacro_rules!\s*(\w+)\s*\{', t)
+                  if re.search(r'card_proof!|kani::proof', t[m.end() - 1:block(t, m.end() - 1) + 1])}
+    return found - FORMS - set(SUFFIXED) - NOT_TABLES
+
+
 def list_harnesses(src):
     out = []
+    tables = TABLES | FORMS | set(SUFFIXED) | proof_macros(src)
     for f in sorted(glob.glob(src + '/proofs/**/*.rs', recursive=True)):
         rel = os.path.relpath(f, src)[:-3].split('/')
         mod = [p for p in rel if p != 'mod']
@@ -181,14 +196,9 @@ def list_harnesses(src):
             body = t[m.end()-1:block(t, m.end()-1)+1]
             n = re.search(r'\bfn (\w+)\(form\)', body)
             if n: out += [path + '::' + n.group(1) + '::of_a_card', path + '::' + n.group(1) + '::of_a_token']
-        # Any other macro of the file whose definition writes a proof is a
-        # table too: a table missing from TABLES had its harnesses dropped
-        # from every run without a word.
-        own = {m.group(1) for m in re.finditer(r'\bmacro_rules!\s*(\w+)\s*\{', t)
-               if re.search(r'card_proof!|kani::proof', t[m.end() - 1:block(t, m.end() - 1) + 1])}
-        own -= FORMS | set(SUFFIXED) | {'card_proof', 'action_proof', 'damage_proof', 'effect_proof', 'for_each_form',
-                                        'equipment', 'aura'}
-        for name in TABLES | FORMS | set(SUFFIXED) | own:
+        # Any other macro whose definition writes a proof is a table too
+        # (`proof_macros`).
+        for name in tables:
             for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*[{(]', t):
                 body = t[m.end()-1:block(t, m.end()-1)+1]
                 for e in re.finditer(r'(?m)^\s{4}(\w+):', body):
