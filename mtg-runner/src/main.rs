@@ -1832,6 +1832,12 @@ fn builtin_deck(name: &str) -> Option<Decklist> {
     })
 }
 
+/// The most cards a deck file may hold. The runner sets no constructed
+/// minimum or maximum, and a playtester's mill deck may want a few hundred
+/// cards; nothing legitimate wants tens of thousands, and every card is an
+/// object built before turn 1 (#1101).
+const MAX_DECK_FILE_CARDS: u64 = 10_000;
+
 /// Load a deck from a text file. Format: one "COUNT CARD NAME" per line.
 /// Lines starting with # or empty lines are ignored.
 ///
@@ -1845,6 +1851,7 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
             "'{path}' is not a built-in deck name and could not be read as a deck file: {e}")));
 
     let mut entries = Vec::new();
+    let mut total: u64 = 0;
     for (line_num, line) in content.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -1858,6 +1865,17 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
         let card_name = card_name.trim();
         if registry.get_id_by_name(card_name).is_none() {
             die(&format!("{}:{}: unknown card '{}'", path, line_num + 1, card_name));
+        }
+        // Each card is built into an object before the game starts, at a
+        // few KB apiece, so an unbounded count was an OOM kill with no word
+        // (`100000000 Plains`, exit 137: #1101). Refused at the line that
+        // crosses the bound, with the bound.
+        total += u64::from(count);
+        if total > MAX_DECK_FILE_CARDS {
+            die(&format!(
+                "{}:{}: the deck reaches {total} cards here, more than the {MAX_DECK_FILE_CARDS} \
+                 a deck file may hold",
+                path, line_num + 1));
         }
         entries.push((card_name.to_string(), count));
     }
@@ -1874,7 +1892,6 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
     // and `--check-invariants` aborted at action 1 while a plain run lost
     // the game on it with no turn played (#625). Refused here, with the
     // reason, rather than found out that way.
-    let total: u64 = entries.iter().map(|(_, n)| u64::from(*n)).sum();
     let hand = mtg_engine::state::OPENING_HAND_SIZE as u64;
     if total < hand {
         die(&format!(

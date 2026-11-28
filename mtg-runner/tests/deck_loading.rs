@@ -227,3 +227,40 @@ fn unknown_builtin_name_treated_as_file() {
     assert!(stderr.contains("is not a built-in deck name and could not be read as a deck file"),
         "Should try to open as file and fail: {stderr}");
 }
+
+/// A count with no upper bound built one object per card before turn 1, and
+/// `100000000 Plains` was an OOM kill (exit 137) with nothing on stderr
+/// (#1101). The deck is refused at the line that crosses the bound, and a
+/// deck at the bound still plays.
+#[test]
+fn a_deck_file_past_the_card_bound_is_refused_at_the_line_that_crosses_it() {
+    let dir = std::env::temp_dir().join(format!("deck_bound_{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let run = |name: &str, body: &str| {
+        let path = dir.join(name);
+        fs::write(&path, body).unwrap();
+        runner()
+            .args(["--p1", "random", "--p2", "random", "--deck1", path.to_str().unwrap(),
+                   "--deck2", "rg", "--seed", "1", "-q", "--stop-after", "1"])
+            .output()
+            .expect("failed to run")
+    };
+
+    let huge = run("huge.txt", "4294967295 Plains\n");
+    let stderr = String::from_utf8_lossy(&huge.stderr);
+    assert_eq!(huge.status.code(), Some(1), "a clean refusal, not a kill: {stderr}");
+    assert!(stderr.contains("huge.txt:1:") && stderr.contains("more than the 10000"),
+        "names the line and the bound: {stderr}");
+
+    let split = run("split.txt", "# two lines\n6000 Plains\n6000 Island\n");
+    let stderr = String::from_utf8_lossy(&split.stderr);
+    assert_eq!(split.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("split.txt:3: the deck reaches 12000 cards"),
+        "the line whose count crosses the bound: {stderr}");
+
+    let at_bound = run("at_bound.txt", "5000 Plains\n5000 Island\n");
+    assert!(at_bound.status.success(), "a deck at the bound plays: {}",
+        String::from_utf8_lossy(&at_bound.stderr));
+
+    fs::remove_dir_all(&dir).ok();
+}
