@@ -336,6 +336,10 @@ def bounds(out, bound):
 def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
     symtab = goto if goto.endswith('.symtab.out') else goto[:-len('.out')] + '.symtab.out'
     out = symtab[:-len('.symtab.out')] + '.out'
+    if not os.path.exists(symtab):
+        # goto-cc links what it is given that exists and says nothing of
+        # what does not: the failure was then "main symbol not found".
+        return ('ERROR', '-', f'the build left no goto file for it: {os.path.basename(symtab)}')
     steps = [
         [f'{K}/bin/goto-cc', symtab, KANI_LIB, '-o', out],
         [f'{K}/bin/goto-cc', out, '--function', mangled, '-o', out],
@@ -692,6 +696,13 @@ def main():
     ap.add_argument('--only-not-run', action='store_true',
                     help='only the harnesses --times records as NOT_RUN; any result for each is the run\'s success')
     a = ap.parse_args()
+    # As absolute paths. cargo is run in the crate's directory and reads a
+    # relative target from there; this script reads the build's output
+    # from its own. Given `--target target/kani-snap`, the two were
+    # different directories: the build went to one, and the harness was
+    # linked from what an earlier build had left in the other, so that a
+    # probe of a change measured the code from before it (2026-11-28).
+    a.crate, a.target = os.path.abspath(a.crate), os.path.abspath(a.target)
     for f in a.list:
         a.harness += read_names(f)
     global START_UNWIND, LOOPS, MEMORY_CHECKS
