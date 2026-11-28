@@ -887,7 +887,62 @@ a_sorcery_at! { 2
     pacifism_is_not_cast_in_its_casters_upkeep: enters_attached((Box::new(crate::cards::pacifism::Pacifism), Printed { cost: &[ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)], basic: false, legendary: false, types: &[CardType::Enchantment], subtypes: &["Aura"], power: None, toughness: None, loyalty: None, keywords: &[] }, FIRST, Enchants::Creature { gets: Some((0, 0)), has: &[] }));
 }
 
-// 863 rows for 169 cards, 12 of them lands and 18 Auras. Permanent cards with no row here, and why:
+// Each Equipment with "Equip" and a cost of mana, equipped and not.
+through_the_stack! {
+    blazing_torch_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::blazing_torch::BlazingTorch), &[ManaSymbol::Generic(1)], Some((0, 0)), &[], false, Equip::ToItsControllersCreature));
+    blazing_torch_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::blazing_torch::BlazingTorch), &[ManaSymbol::Generic(1)], Some((0, 0)), &[], false, Equip::NotToTheOtherPlayersCreature));
+    blazing_torch_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::blazing_torch::BlazingTorch), &[ManaSymbol::Generic(1)], Some((0, 0)), &[], false, Equip::NotForOneManaLess));
+    blazing_torch_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::blazing_torch::BlazingTorch), &[ManaSymbol::Generic(1)], Some((0, 0)), &[], false, Equip::NotInTheOtherPlayersTurn));
+    blazing_torch_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::blazing_torch::BlazingTorch), &[ManaSymbol::Generic(1)], Some((0, 0)), &[], false, Equip::NotInItsControllersUpkeep));
+    butchers_cleaver_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::butchers_cleaver::ButchersCleaver), &[ManaSymbol::Generic(3)], Some((3, 0)), &[], true, Equip::ToItsControllersCreature));
+    butchers_cleaver_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::butchers_cleaver::ButchersCleaver), &[ManaSymbol::Generic(3)], Some((3, 0)), &[], true, Equip::NotToTheOtherPlayersCreature));
+    butchers_cleaver_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::butchers_cleaver::ButchersCleaver), &[ManaSymbol::Generic(3)], Some((3, 0)), &[], true, Equip::NotForOneManaLess));
+    butchers_cleaver_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::butchers_cleaver::ButchersCleaver), &[ManaSymbol::Generic(3)], Some((3, 0)), &[], true, Equip::NotInTheOtherPlayersTurn));
+    butchers_cleaver_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::butchers_cleaver::ButchersCleaver), &[ManaSymbol::Generic(3)], Some((3, 0)), &[], true, Equip::NotInItsControllersUpkeep));
+    cobbled_wings_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::cobbled_wings::CobbledWings), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::Flying], true, Equip::ToItsControllersCreature));
+    cobbled_wings_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::cobbled_wings::CobbledWings), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::Flying], true, Equip::NotToTheOtherPlayersCreature));
+    cobbled_wings_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::cobbled_wings::CobbledWings), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::Flying], true, Equip::NotForOneManaLess));
+    cobbled_wings_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::cobbled_wings::CobbledWings), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::Flying], true, Equip::NotInTheOtherPlayersTurn));
+    cobbled_wings_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::cobbled_wings::CobbledWings), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::Flying], true, Equip::NotInItsControllersUpkeep));
+    inquisitors_flail_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::inquisitors_flail::InquisitorsFlail), &[ManaSymbol::Generic(2)], Some((0, 0)), &[], false, Equip::ToItsControllersCreature));
+    inquisitors_flail_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::inquisitors_flail::InquisitorsFlail), &[ManaSymbol::Generic(2)], Some((0, 0)), &[], false, Equip::NotToTheOtherPlayersCreature));
+    inquisitors_flail_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::inquisitors_flail::InquisitorsFlail), &[ManaSymbol::Generic(2)], Some((0, 0)), &[], false, Equip::NotForOneManaLess));
+    inquisitors_flail_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::inquisitors_flail::InquisitorsFlail), &[ManaSymbol::Generic(2)], Some((0, 0)), &[], false, Equip::NotInTheOtherPlayersTurn));
+    inquisitors_flail_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::inquisitors_flail::InquisitorsFlail), &[ManaSymbol::Generic(2)], Some((0, 0)), &[], false, Equip::NotInItsControllersUpkeep));
+    mask_of_avacyn_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::mask_of_avacyn::MaskOfAvacyn), &[ManaSymbol::Generic(3)], Some((1, 2)), &[Keyword::Hexproof], true, Equip::ToItsControllersCreature));
+    mask_of_avacyn_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::mask_of_avacyn::MaskOfAvacyn), &[ManaSymbol::Generic(3)], Some((1, 2)), &[Keyword::Hexproof], true, Equip::NotToTheOtherPlayersCreature));
+    mask_of_avacyn_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::mask_of_avacyn::MaskOfAvacyn), &[ManaSymbol::Generic(3)], Some((1, 2)), &[Keyword::Hexproof], true, Equip::NotForOneManaLess));
+    mask_of_avacyn_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::mask_of_avacyn::MaskOfAvacyn), &[ManaSymbol::Generic(3)], Some((1, 2)), &[Keyword::Hexproof], true, Equip::NotInTheOtherPlayersTurn));
+    mask_of_avacyn_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::mask_of_avacyn::MaskOfAvacyn), &[ManaSymbol::Generic(3)], Some((1, 2)), &[Keyword::Hexproof], true, Equip::NotInItsControllersUpkeep));
+    runechanters_pike_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::runechanters_pike::RunechantersPike), &[ManaSymbol::Generic(2)], None, &[], false, Equip::ToItsControllersCreature));
+    runechanters_pike_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::runechanters_pike::RunechantersPike), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotToTheOtherPlayersCreature));
+    runechanters_pike_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::runechanters_pike::RunechantersPike), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotForOneManaLess));
+    runechanters_pike_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::runechanters_pike::RunechantersPike), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotInTheOtherPlayersTurn));
+    runechanters_pike_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::runechanters_pike::RunechantersPike), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotInItsControllersUpkeep));
+    sharpened_pitchfork_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::sharpened_pitchfork::SharpenedPitchfork), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::FirstStrike], true, Equip::ToItsControllersCreature));
+    sharpened_pitchfork_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::sharpened_pitchfork::SharpenedPitchfork), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::FirstStrike], true, Equip::NotToTheOtherPlayersCreature));
+    sharpened_pitchfork_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::sharpened_pitchfork::SharpenedPitchfork), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::FirstStrike], true, Equip::NotForOneManaLess));
+    sharpened_pitchfork_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::sharpened_pitchfork::SharpenedPitchfork), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::FirstStrike], true, Equip::NotInTheOtherPlayersTurn));
+    sharpened_pitchfork_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::sharpened_pitchfork::SharpenedPitchfork), &[ManaSymbol::Generic(1)], Some((0, 0)), &[Keyword::FirstStrike], true, Equip::NotInItsControllersUpkeep));
+    silver_inlaid_dagger_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::silver_inlaid_dagger::SilverInlaidDagger), &[ManaSymbol::Generic(2)], Some((2, 0)), &[], true, Equip::ToItsControllersCreature));
+    silver_inlaid_dagger_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::silver_inlaid_dagger::SilverInlaidDagger), &[ManaSymbol::Generic(2)], Some((2, 0)), &[], true, Equip::NotToTheOtherPlayersCreature));
+    silver_inlaid_dagger_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::silver_inlaid_dagger::SilverInlaidDagger), &[ManaSymbol::Generic(2)], Some((2, 0)), &[], true, Equip::NotForOneManaLess));
+    silver_inlaid_dagger_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::silver_inlaid_dagger::SilverInlaidDagger), &[ManaSymbol::Generic(2)], Some((2, 0)), &[], true, Equip::NotInTheOtherPlayersTurn));
+    silver_inlaid_dagger_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::silver_inlaid_dagger::SilverInlaidDagger), &[ManaSymbol::Generic(2)], Some((2, 0)), &[], true, Equip::NotInItsControllersUpkeep));
+    trepanation_blade_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::trepanation_blade::TrepanationBlade), &[ManaSymbol::Generic(2)], None, &[], false, Equip::ToItsControllersCreature));
+    trepanation_blade_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::trepanation_blade::TrepanationBlade), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotToTheOtherPlayersCreature));
+    trepanation_blade_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::trepanation_blade::TrepanationBlade), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotForOneManaLess));
+    trepanation_blade_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::trepanation_blade::TrepanationBlade), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotInTheOtherPlayersTurn));
+    trepanation_blade_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::trepanation_blade::TrepanationBlade), &[ManaSymbol::Generic(2)], None, &[], false, Equip::NotInItsControllersUpkeep));
+    wooden_stake_is_equipped_to_its_controllers_creature: equips((Box::new(crate::cards::isd::wooden_stake::WoodenStake), &[ManaSymbol::Generic(1)], Some((1, 0)), &[], false, Equip::ToItsControllersCreature));
+    wooden_stake_is_not_equipped_to_the_other_players_creature: equips((Box::new(crate::cards::isd::wooden_stake::WoodenStake), &[ManaSymbol::Generic(1)], Some((1, 0)), &[], false, Equip::NotToTheOtherPlayersCreature));
+    wooden_stake_is_not_equipped_for_one_mana_less: equips((Box::new(crate::cards::isd::wooden_stake::WoodenStake), &[ManaSymbol::Generic(1)], Some((1, 0)), &[], false, Equip::NotForOneManaLess));
+    wooden_stake_is_not_equipped_in_the_other_players_turn: equips((Box::new(crate::cards::isd::wooden_stake::WoodenStake), &[ManaSymbol::Generic(1)], Some((1, 0)), &[], false, Equip::NotInTheOtherPlayersTurn));
+    wooden_stake_is_not_equipped_in_its_controllers_upkeep: equips((Box::new(crate::cards::isd::wooden_stake::WoodenStake), &[ManaSymbol::Generic(1)], Some((1, 0)), &[], false, Equip::NotInItsControllersUpkeep));
+}
+
+// 50 rows of equipping for 10 Equipment. With none, their equip being no cost of mana: demonmail_hauberk.
+// 863 rows of being cast or played for 169 cards, 12 of them lands and 18 Auras. Permanent cards with none, and why:
 // - armored_skaab: its text has something happen as it enters
 // - boneyard_wurm: its power and toughness are */*
 // - champion_of_the_parish: its text has something happen as it enters

@@ -316,7 +316,9 @@ type line, power and toughness) and each line of its text, and is on the
 scoreboard. Counted on 2026-11-28, a frame being two lines (its cost,
 if it has one, and its type line): 998 lines on the 270 cards (253
 costs, 290 type lines, 455 lines of text; 5 more are reminder text
-alone). 571 are claimed, on 219 cards: the cost and the type line of
+alone). 587 are claimed (571 before the Equipment's equip rows, which
+added 16 lines: 10 "Equip {N}" and the 6 lines of what the equipped
+creature gets or has that are read whole), on 219 cards: the cost and the type line of
 each of the 157 permanents that are cast and have rows (108 creatures;
 31 artifacts, enchantments and planeswalkers; 18 Auras) and of each of
 the 50 spells, the type line of each of 12 lands (played, and not played

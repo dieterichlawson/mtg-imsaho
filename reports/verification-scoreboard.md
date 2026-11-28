@@ -6,15 +6,15 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | Goal | Now | Done at |
 |---|---|---|
 | 1. cards with every proof written for them through the engine's cast, stack and resolution proved | 0 of 270 (and 219 with some not yet proved) | 270 |
-| 1. those proofs: proved of written | 0 of 1344 | all |
+| 1. those proofs: proved of written | 0 of 1394 | all |
 | 1. harnesses that call a card's hook directly | 604 | 0 |
-| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 571 of 998 (0 with every such proof proved) | 998, proved |
+| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 587 of 998 (0 with every such proof proved) | 998, proved |
 | B. rules the cards lean on (the keywords, combat, the turn, summoning sickness) with every row written for them through the game proved | 0 of 17 (17 with rows, 48 rows) | 17 |
 | 2. cards whose proofs cover every case that applies | not counted yet | all |
 | 3. changes to a card's code its proofs catch | not counted yet | every one |
 | 4. engine functions a proof stands in for, unchecked | 165 | 0 |
 | 5. official rulings accounted for | not counted yet | 578 |
-| 6. proofs that do not finish | 12 (and 1392 written and not yet run) | 0 |
+| 6. proofs that do not finish | 12 (and 1442 written and not yet run) | 0 |
 | 7. permanents that can be pieces of the small boards | 129 of 199 (counted by hand, 2026-11-27) | 199 |
 
 ## Cards through the stack
@@ -38,7 +38,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | battleground_geist | 0 of 5 | 1 | 1 |
 | bitterheart_witch | 0 of 5 | 2 | 2 |
 | blasphemous_act | 0 of 7 | 2 | 0 |
-| blazing_torch | 0 of 5 | 3 | 1 |
+| blazing_torch | 0 of 10 | 3 | 1 |
 | bloodcrazed_neonate | 0 of 5 | 2 | 0 |
 | bloodgift_demon | 0 of 5 | 4 | 0 |
 | bloodline_keeper | 0 of 5 | 2 | 8 |
@@ -49,7 +49,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | brimstone_volley | 0 of 15 | 6 | 1 |
 | bump_in_the_night | 0 of 12 | 1 | 0 |
 | burning_vengeance | 0 of 5 | 3 | 0 |
-| butchers_cleaver | 0 of 5 | 2 | 2 |
+| butchers_cleaver | 0 of 10 | 2 | 2 |
 | cackling_counterpart | - | 2 | 0 |
 | caravan_vigil | - | 4 | 0 |
 | cellar_door | 0 of 5 | 5 | 0 |
@@ -60,7 +60,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | claustrophobia | - | 2 | 1 |
 | clifftop_retreat | - | 3 | 2 |
 | cloistered_youth | 0 of 5 | 6 | 1 |
-| cobbled_wings | 0 of 5 | 2 | 2 |
+| cobbled_wings | 0 of 10 | 2 | 2 |
 | coral_merfolk | 0 of 5 | 1 | 0 |
 | corpse_lunge | - | 3 | 0 |
 | counterspell | 0 of 7 | 2 | 1 |
@@ -146,7 +146,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | holy_strength | 0 of 6 | 1 | 1 |
 | hysterical_blindness | 0 of 5 | 1 | 1 |
 | infernal_plunge | 0 of 7 | 1 | 0 |
-| inquisitors_flail | 0 of 5 | 1 | 2 |
+| inquisitors_flail | 0 of 10 | 1 | 2 |
 | instigator_gang | 0 of 5 | 4 | 0 |
 | intangible_virtue | 0 of 5 | 1 | 1 |
 | into_the_maw_of_hell | 0 of 6 | 1 | 0 |
@@ -172,7 +172,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | manor_gargoyle | 0 of 5 | 1 | 2 |
 | manor_skeleton | 0 of 5 | 2 | 1 |
 | markov_patrician | 0 of 5 | 1 | 0 |
-| mask_of_avacyn | 0 of 5 | 1 | 2 |
+| mask_of_avacyn | 0 of 10 | 1 | 2 |
 | mausoleum_guard | 0 of 5 | 1 | 0 |
 | maw_of_the_mire | 0 of 8 | 1 | 0 |
 | mayor_of_avabruck | 0 of 5 | 5 | 0 |
@@ -220,7 +220,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | rolling_temblor | 0 of 10 | 1 | 0 |
 | rooftop_storm | 0 of 5 | 3 | 1 |
 | rotting_fensnake | 0 of 5 | 1 | 0 |
-| runechanters_pike | 0 of 5 | 1 | 3 |
+| runechanters_pike | 0 of 10 | 1 | 3 |
 | runic_repetition | 0 of 8 | 1 | 0 |
 | savannah_lions | 0 of 5 | 1 | 0 |
 | scourge_of_geier_reach | 0 of 5 | 2 | 1 |
@@ -229,10 +229,10 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | selhoff_occultist | 0 of 5 | 6 | 0 |
 | sensory_deprivation | 0 of 6 | 1 | 1 |
 | sever_the_bloodline | 0 of 11 | 1 | 0 |
-| sharpened_pitchfork | 0 of 5 | 2 | 2 |
+| sharpened_pitchfork | 0 of 10 | 2 | 2 |
 | shimmering_grotto | 0 of 5 | 1 | 1 |
 | silent_departure | 0 of 13 | 1 | 0 |
-| silver_inlaid_dagger | 0 of 5 | 2 | 2 |
+| silver_inlaid_dagger | 0 of 10 | 2 | 2 |
 | silverchase_fox | 0 of 5 | 1 | 1 |
 | skaab_goliath | 0 of 5 | 1 | 0 |
 | skaab_ruinator | 0 of 5 | 1 | 1 |
@@ -268,7 +268,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | travel_preparations | 0 of 12 | 3 | 0 |
 | travelers_amulet | 0 of 5 | 2 | 1 |
 | tree_of_redemption | 0 of 5 | 1 | 1 |
-| trepanation_blade | 0 of 5 | 5 | 2 |
+| trepanation_blade | 0 of 10 | 5 | 2 |
 | tribute_to_hunger | - | 2 | 0 |
 | typhoid_rats | 0 of 5 | 1 | 0 |
 | ulvenwald_mystics | 0 of 5 | 3 | 0 |
@@ -287,7 +287,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | voiceless_spirit | 0 of 5 | 1 | 0 |
 | walking_corpse | 0 of 5 | 1 | 0 |
 | witchbane_orb | - | 1 | 1 |
-| wooden_stake | 0 of 5 | 3 | 2 |
+| wooden_stake | 0 of 10 | 3 | 2 |
 | woodland_cemetery | - | 3 | 2 |
 | woodland_sleuth | - | 3 | 1 |
 | wreath_of_geists | 0 of 6 | 3 | 2 |

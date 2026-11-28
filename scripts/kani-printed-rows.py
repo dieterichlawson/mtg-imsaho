@@ -31,6 +31,14 @@ gets +A/+B", "has" a keyword, or both (`enters_attached`); cast a mana
 short, or at another time than its caster's main phase, it is refused;
 and so is it cast at what it does not enchant (`is_not_cast_to_enchant`).
 
+And for each Equipment with "Equip" and a cost of mana: its equip ability
+activated as the engine offers it, at a creature of its controller's, for
+the Oracle's equip cost, and resolved, it is attached to that creature,
+which has what the Equipment's text gives it as an Aura's rows read it;
+and the ability is not activated at the other player's creature, for a
+mana less, in the other player's turn or in its controller's upkeep
+(`equips`).
+
 `short.rs` is, for each card with rows written by hand in
 `through_the_stack.rs` (the instants and sorceries), that card cast for
 one mana less than the Oracle's cost for it, and cast with flashback for
@@ -188,7 +196,23 @@ def costs():
         '    }', '}', '']) + '\n'
 
 
-def aura_reads(card):
+def equipment_reads(card):
+    """What an Equipment's text says, as far as these rows read it: its
+    equip cost as Rust (None if its equip is not "Equip" and a cost of
+    mana), the line that is, and of the rest what `aura_reads` reads of
+    an Aura's, with whether every line of it was read (a line of what the
+    creature has "as long as" it is a Human aside: the rows' creature is
+    none)."""
+    lines = [l.strip() for l in (card.get('oracle_text') or '').split('\n') if l.strip()]
+    equip = next((l for l in lines if re.match(r'Equip ((?:\{[^}]*\})+)(?: \(|$)', l)), None)
+    cost = symbols(re.match(r'Equip ((?:\{[^}]*\})+)', equip).group(1))[0] if equip else None
+    rest = [l for l in lines if not re.match(r'Equip(?!ped)', l)]
+    human = [l for l in rest if re.match(r'As long as equipped creature is a Human\b', l)]
+    _, gets, has, whole = aura_reads({'oracle_text': '\n'.join(['Enchant creature'] + [l for l in rest if l not in human])}, 'Equipped creature')
+    return cost, equip, gets, has, whole[1:], len(whole) - 1 == len(rest) - len(human)
+
+
+def aura_reads(card, creature='Enchanted creature'):
     """What an Aura's text says, as far as these rows read it: what it
     enchants (`creature` or `player`, from its first line, or None), the
     power and toughness it gives the creature (none if no line speaks of
@@ -200,7 +224,7 @@ def aura_reads(card):
     enchants = {'Enchant creature': 'creature', 'Enchant player': 'player'}.get(lines[0] if lines else '')
     gets, has, whole = (0, 0), [], lines[:1] if enchants else []
     for line in lines[1:]:
-        bare = re.sub(r'\s*\([^)]*\)\s*$', '', line).replace('\u2212', '-')
+        bare = re.sub(r'\s*\([^)]*\)\s*$', '', line).replace('\u2212', '-').replace(creature, 'Enchanted creature')
         m = re.match(r'Enchanted creature gets ([+-]\d+)/([+-]\d+)(?: and has ([a-z ]+))?\.$', bare)
         k = re.match(r'Enchanted creature has ([a-z ]+)\.$', bare)
         if m and (m.group(3) is None or m.group(3) in KEYWORDS):
@@ -266,6 +290,7 @@ def render():
     # An Aura's rows cast a mana short and at another time are its own
     # row over again under the macros that make a cast one to be refused.
     short, at_time = [], {1: [], 2: []}
+    equips, unequipped = [], []
     for module, path, name, creature in pool():
         card = oracle.get(name)
         if card is None:
@@ -284,6 +309,18 @@ def render():
             for when, no in (('a_second_time_in_a_turn', 'ASecondThisTurn'), ('in_the_other_players_turn', 'InTheOtherPlayersTurn'), ('in_its_owners_upkeep', 'InItsOwnersUpkeep')):
                 rows.append(f'    {module}_is_not_played_{when}: is_not_played((Box::new({path}), NoLand::{no}));')
             continue
+        if '"Equipment"' in data:
+            cost, _, gets, has, _, every = equipment_reads(card)
+            if cost is None:
+                unequipped.append(module)
+            else:
+                reads = '%s, &[%s], %s' % (f'Some(({gets[0]}, {gets[1]}))' if gets else 'None', ', '.join(f'Keyword::{k}' for k in has), 'true' if every else 'false')
+                for row, how in (('is_equipped_to_its_controllers_creature', 'ToItsControllersCreature'),
+                                 ('is_not_equipped_to_the_other_players_creature', 'NotToTheOtherPlayersCreature'),
+                                 ('is_not_equipped_for_one_mana_less', 'NotForOneManaLess'),
+                                 ('is_not_equipped_in_the_other_players_turn', 'NotInTheOtherPlayersTurn'),
+                                 ('is_not_equipped_in_its_controllers_upkeep', 'NotInItsControllersUpkeep')):
+                    equips.append(f'    {module}_{row}: equips((Box::new({path}), &[{", ".join(cost)}], {reads}, Equip::{how}));')
         if '"Aura"' in data:
             auras += 1
             enchants, gets, has, _ = aura_reads(card)
@@ -316,9 +353,12 @@ def render():
            'one_mana_short! {'] + short + ['}', '',
            '// Each Aura cast in the other player\'s first main phase (1) and in its',
            '// caster\'s own upkeep (2), at what it enchants.',
-           'a_sorcery_at! { 1'] + at_time[1] + ['}', '', 'a_sorcery_at! { 2'] + at_time[2] + ['}', '']
+           'a_sorcery_at! { 1'] + at_time[1] + ['}', '', 'a_sorcery_at! { 2'] + at_time[2] + ['}', '',
+           '// Each Equipment with "Equip" and a cost of mana, equipped and not.',
+           'through_the_stack! {'] + equips + ['}', '',
+           f'// {len(equips)} rows of equipping for {len(equips) // 5} Equipment. With none, their equip being no cost of mana: {", ".join(unequipped) or "none"}.']
     count = len(rows) + len(short) + len(at_time[1]) + len(at_time[2])
-    out += [f'// {count} rows for {(count - auras * 6) // 5 + auras} cards, {lands} of them lands and {auras} Auras. Permanent cards with no row here, and why:']
+    out += [f'// {count} rows of being cast or played for {(count - auras * 6) // 5 + auras} cards, {lands} of them lands and {auras} Auras. Permanent cards with none, and why:']
     out += [f'// - {module}: {why}' for module, why in left]
     return '\n'.join(out) + '\n'
 

@@ -3067,6 +3067,118 @@ fn is_not_cast_to_enchant((card, enchants): (Box<dyn CardBehavior>, Enchants)) {
     std::mem::forget((registry, state));
 }
 
+/// The ability of `source` the engine offers the player it is asking with
+/// `creature` as its one target, if it offers exactly one such: how a
+/// seat comes by the action that equips (CR 702.6a), which names the
+/// ability by its place among the card's.
+fn the_ability_at(state: &GameState, registry: &CardRegistry, source: ObjectId, creature: ObjectId) -> Option<Action> {
+    let legal = crate::engine::legal_actions(state, registry);
+    let (mut found, mut offered) = (None, 0);
+    for action in &legal.actions {
+        if let Action::ActivateAbility { object_id, targets, .. } = action {
+            if *object_id == source && targets.len() == 1 && targets[0] == Target::Object(creature) {
+                offered += 1;
+                found = Some(action.clone());
+            }
+        }
+    }
+    std::mem::forget(legal);
+    assert!(offered <= 1);
+    found
+}
+
+/// How an Equipment's equip ability is tried.
+#[derive(Clone, Copy, PartialEq)]
+enum Equip {
+    ToItsControllersCreature,
+    NotToTheOtherPlayersCreature,
+    NotForOneManaLess,
+    NotInTheOtherPlayersTurn,
+    NotInItsControllersUpkeep,
+}
+
+/// An Equipment on the battlefield under the first player, in their main
+/// phase with the stack empty and the mana of its equip cost, as the
+/// Oracle prints it, in their pool. The engine offers them its equip
+/// ability at a creature of theirs and does not offer it at the other
+/// player's (CR 702.6a: "target creature you control").
+///
+/// Activated as offered, the ability goes on the stack with its cost
+/// paid and the pool empty, so that the engine's cost for it is the
+/// printed one; resolved, the Equipment is attached to the creature
+/// (702.6a, 301.5b), which has the power and toughness `gets` says its
+/// text gives and the keywords `has` says (and no other keyword, where
+/// every line of the text was read: `exactly`), and nothing else of the
+/// game has changed, a second creature of theirs and one of the other
+/// player's among it.
+///
+/// The same action is not played, and the whole game is as it was: named
+/// at the other player's creature; with a mana less in the pool; in the
+/// other player's turn; or in its controller's upkeep (702.6a: "Activate
+/// only as a sorcery").
+fn equips((card, cost, gets, has, exactly, how): (Box<dyn CardBehavior>, &'static [ManaSymbol], Option<(i32, i32)>, &'static [Keyword], bool, Equip)) {
+    let (registry, mut state, blank, card) = board(card);
+    let you = PlayerId(0);
+    let equipment = state.create_card(card, you, Zone::Battlefield, &registry);
+    let creature = a_permanent(&mut state, blank, Permanent::Stout, (0, 0));
+    a_permanent(&mut state, blank, Permanent::Stout, (0, 0));
+    let theirs = a_permanent(&mut state, blank, Permanent::Stout, (1, 1));
+    state.active_player = you;
+    state.step = Step::PrecombatMain;
+    state.priority_player = Some(you);
+    mana_for_symbols(&mut state, you, cost);
+    let equip = the_ability_at(&state, &registry, equipment, creature).expect("the engine offers the equip");
+    assert!(the_ability_at(&state, &registry, equipment, theirs).is_none());
+
+    if how == Equip::ToItsControllersCreature {
+        let mut expected = everything(&state, &registry);
+        play(&mut state, &registry, &equip);
+        assert!(state.stack.len() == 1 && state.players[0].mana_pool.total() == 0 && state.priority_player == Some(you));
+        all_pass(&mut state, &registry);
+        assert!(state.stack.is_empty() && state.awaiting_action.is_none());
+
+        for k in Keyword::ALL {
+            if has.contains(&k) || exactly {
+                assert!(state.has_keyword(creature, k, &registry) == has.contains(&k));
+            }
+        }
+        expected.of(equipment).attached_to = Some(creature);
+        let seen = expected.of(creature);
+        (seen.power_now, seen.toughness_now) = match gets {
+            Some((power, toughness)) => (seen.power_now.map(|p| p + power), seen.toughness_now.map(|t| t + toughness)),
+            None => (state.effective_power(creature, &registry), state.effective_toughness(creature, &registry)),
+        };
+        expected.players[0].mana = 0;
+        assert!(everything(&state, &registry) == expected);
+        std::mem::forget((registry, state, equip));
+        return;
+    }
+    let action = match how {
+        Equip::NotToTheOtherPlayersCreature => {
+            let Action::ActivateAbility { object_id, ability_index, tap_plan, sacrifice, x_value, source_card_id, .. } = equip else { panic!("an ability") };
+            Action::ActivateAbility { object_id, ability_index, targets: vec![Target::Object(theirs)], tap_plan, sacrifice, x_value, source_card_id }
+        }
+        Equip::NotForOneManaLess => {
+            state.players[0].mana_pool.empty();
+            mana_for_one_less(&mut state, you, cost);
+            equip
+        }
+        Equip::NotInTheOtherPlayersTurn => {
+            state.active_player = PlayerId(1);
+            equip
+        }
+        _ => {
+            state.step = Step::Upkeep;
+            equip
+        }
+    };
+    let before = everything(&state, &registry);
+    play(&mut state, &registry, &action);
+    assert!(state.stack.is_empty() && state.awaiting_action.is_none());
+    assert!(everything(&state, &registry) == before);
+    std::mem::forget((registry, state, action));
+}
+
 /// A land card played by the player `by` names from their hand, in their
 /// own main phase with the stack empty and their land play for the turn
 /// unspent (CR 305.1, 305.2, 116.2a): it is on the battlefield under

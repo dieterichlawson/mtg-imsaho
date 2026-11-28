@@ -93,7 +93,7 @@ blazing_torch	Blazing Torch	cost {1}	blazing_torch_cast_by_the_first_player_ente
 blazing_torch	Blazing Torch	type Artifact — Equipment	blazing_torch_cast_by_the_first_player_enters_as_printed blazing_torch_cast_by_the_second_player_enters_as_printed blazing_torch_is_not_cast_in_the_other_players_turn blazing_torch_is_not_cast_in_its_casters_upkeep
 blazing_torch	Blazing Torch	Equipped creature can't be blocked by Vampires or Zombies.	-
 blazing_torch	Blazing Torch	Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target."	-
-blazing_torch	Blazing Torch	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	-
+blazing_torch	Blazing Torch	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	blazing_torch_is_equipped_to_its_controllers_creature blazing_torch_is_not_equipped_to_the_other_players_creature blazing_torch_is_not_equipped_for_one_mana_less blazing_torch_is_not_equipped_in_the_other_players_turn blazing_torch_is_not_equipped_in_its_controllers_upkeep
 bloodcrazed_neonate	Bloodcrazed Neonate	cost {1}{R}	bloodcrazed_neonate_cast_by_the_first_player_enters_as_printed bloodcrazed_neonate_cast_by_the_second_player_enters_as_printed bloodcrazed_neonate_is_not_cast_for_one_mana_less
 bloodcrazed_neonate	Bloodcrazed Neonate	type Creature — Vampire 2/1	bloodcrazed_neonate_cast_by_the_first_player_enters_as_printed bloodcrazed_neonate_cast_by_the_second_player_enters_as_printed bloodcrazed_neonate_is_not_cast_in_the_other_players_turn bloodcrazed_neonate_is_not_cast_in_its_casters_upkeep
 bloodcrazed_neonate	Bloodcrazed Neonate	This creature attacks each combat if able.	-
@@ -138,9 +138,9 @@ burning_vengeance	Burning Vengeance	type Enchantment	burning_vengeance_cast_by_t
 burning_vengeance	Burning Vengeance	Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.	-
 butchers_cleaver	Butcher's Cleaver	cost {3}	butchers_cleaver_cast_by_the_first_player_enters_as_printed butchers_cleaver_cast_by_the_second_player_enters_as_printed butchers_cleaver_is_not_cast_for_one_mana_less
 butchers_cleaver	Butcher's Cleaver	type Artifact — Equipment	butchers_cleaver_cast_by_the_first_player_enters_as_printed butchers_cleaver_cast_by_the_second_player_enters_as_printed butchers_cleaver_is_not_cast_in_the_other_players_turn butchers_cleaver_is_not_cast_in_its_casters_upkeep
-butchers_cleaver	Butcher's Cleaver	Equipped creature gets +3/+0.	-
+butchers_cleaver	Butcher's Cleaver	Equipped creature gets +3/+0.	butchers_cleaver_is_equipped_to_its_controllers_creature
 butchers_cleaver	Butcher's Cleaver	As long as equipped creature is a Human, it has lifelink.	-
-butchers_cleaver	Butcher's Cleaver	Equip {3}	-
+butchers_cleaver	Butcher's Cleaver	Equip {3}	butchers_cleaver_is_equipped_to_its_controllers_creature butchers_cleaver_is_not_equipped_to_the_other_players_creature butchers_cleaver_is_not_equipped_for_one_mana_less butchers_cleaver_is_not_equipped_in_the_other_players_turn butchers_cleaver_is_not_equipped_in_its_controllers_upkeep
 cackling_counterpart	Cackling Counterpart	cost {1}{U}{U}	-
 cackling_counterpart	Cackling Counterpart	type Instant	-
 cackling_counterpart	Cackling Counterpart	Create a token that's a copy of target creature you control.	-
@@ -182,8 +182,8 @@ cloistered_youth	Unholy Fiend	type Creature — Horror 3/3	-
 cloistered_youth	Unholy Fiend	At the beginning of your end step, you lose 1 life.	-
 cobbled_wings	Cobbled Wings	cost {2}	cobbled_wings_cast_by_the_first_player_enters_as_printed cobbled_wings_cast_by_the_second_player_enters_as_printed cobbled_wings_is_not_cast_for_one_mana_less
 cobbled_wings	Cobbled Wings	type Artifact — Equipment	cobbled_wings_cast_by_the_first_player_enters_as_printed cobbled_wings_cast_by_the_second_player_enters_as_printed cobbled_wings_is_not_cast_in_the_other_players_turn cobbled_wings_is_not_cast_in_its_casters_upkeep
-cobbled_wings	Cobbled Wings	Equipped creature has flying.	-
-cobbled_wings	Cobbled Wings	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	-
+cobbled_wings	Cobbled Wings	Equipped creature has flying.	cobbled_wings_is_equipped_to_its_controllers_creature rule:flying
+cobbled_wings	Cobbled Wings	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	cobbled_wings_is_equipped_to_its_controllers_creature cobbled_wings_is_not_equipped_to_the_other_players_creature cobbled_wings_is_not_equipped_for_one_mana_less cobbled_wings_is_not_equipped_in_the_other_players_turn cobbled_wings_is_not_equipped_in_its_controllers_upkeep
 corpse_lunge	Corpse Lunge	cost {2}{B}	-
 corpse_lunge	Corpse Lunge	type Instant	-
 corpse_lunge	Corpse Lunge	As an additional cost to cast this spell, exile a creature card from your graveyard.	-
@@ -481,7 +481,7 @@ inquisitors_flail	Inquisitor's Flail	cost {2}	inquisitors_flail_cast_by_the_firs
 inquisitors_flail	Inquisitor's Flail	type Artifact — Equipment	inquisitors_flail_cast_by_the_first_player_enters_as_printed inquisitors_flail_cast_by_the_second_player_enters_as_printed inquisitors_flail_is_not_cast_in_the_other_players_turn inquisitors_flail_is_not_cast_in_its_casters_upkeep
 inquisitors_flail	Inquisitor's Flail	If equipped creature would deal combat damage, it deals double that damage instead.	-
 inquisitors_flail	Inquisitor's Flail	If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.	-
-inquisitors_flail	Inquisitor's Flail	Equip {2}	-
+inquisitors_flail	Inquisitor's Flail	Equip {2}	inquisitors_flail_is_equipped_to_its_controllers_creature inquisitors_flail_is_not_equipped_to_the_other_players_creature inquisitors_flail_is_not_equipped_for_one_mana_less inquisitors_flail_is_not_equipped_in_the_other_players_turn inquisitors_flail_is_not_equipped_in_its_controllers_upkeep
 instigator_gang	Instigator Gang	cost {3}{R}	instigator_gang_cast_by_the_first_player_enters_as_printed instigator_gang_cast_by_the_second_player_enters_as_printed instigator_gang_is_not_cast_for_one_mana_less
 instigator_gang	Instigator Gang	type Creature — Human Werewolf 2/3	instigator_gang_cast_by_the_first_player_enters_as_printed instigator_gang_cast_by_the_second_player_enters_as_printed instigator_gang_is_not_cast_in_the_other_players_turn instigator_gang_is_not_cast_in_its_casters_upkeep
 instigator_gang	Instigator Gang	Attacking creatures you control get +1/+0.	-
@@ -567,8 +567,8 @@ markov_patrician	Markov Patrician	type Creature — Vampire 3/1	markov_patrician
 markov_patrician	Markov Patrician	Lifelink (Damage dealt by this creature also causes you to gain that much life.)	markov_patrician_cast_by_the_first_player_enters_as_printed markov_patrician_cast_by_the_second_player_enters_as_printed rule:lifelink
 mask_of_avacyn	Mask of Avacyn	cost {2}	mask_of_avacyn_cast_by_the_first_player_enters_as_printed mask_of_avacyn_cast_by_the_second_player_enters_as_printed mask_of_avacyn_is_not_cast_for_one_mana_less
 mask_of_avacyn	Mask of Avacyn	type Artifact — Equipment	mask_of_avacyn_cast_by_the_first_player_enters_as_printed mask_of_avacyn_cast_by_the_second_player_enters_as_printed mask_of_avacyn_is_not_cast_in_the_other_players_turn mask_of_avacyn_is_not_cast_in_its_casters_upkeep
-mask_of_avacyn	Mask of Avacyn	Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)	-
-mask_of_avacyn	Mask of Avacyn	Equip {3}	-
+mask_of_avacyn	Mask of Avacyn	Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)	mask_of_avacyn_is_equipped_to_its_controllers_creature rule:hexproof
+mask_of_avacyn	Mask of Avacyn	Equip {3}	mask_of_avacyn_is_equipped_to_its_controllers_creature mask_of_avacyn_is_not_equipped_to_the_other_players_creature mask_of_avacyn_is_not_equipped_for_one_mana_less mask_of_avacyn_is_not_equipped_in_the_other_players_turn mask_of_avacyn_is_not_equipped_in_its_controllers_upkeep
 mausoleum_guard	Mausoleum Guard	cost {3}{W}	mausoleum_guard_cast_by_the_first_player_enters_as_printed mausoleum_guard_cast_by_the_second_player_enters_as_printed mausoleum_guard_is_not_cast_for_one_mana_less
 mausoleum_guard	Mausoleum Guard	type Creature — Human Scout 2/2	mausoleum_guard_cast_by_the_first_player_enters_as_printed mausoleum_guard_cast_by_the_second_player_enters_as_printed mausoleum_guard_is_not_cast_in_the_other_players_turn mausoleum_guard_is_not_cast_in_its_casters_upkeep
 mausoleum_guard	Mausoleum Guard	When this creature dies, create two 1/1 white Spirit creature tokens with flying.	-
@@ -727,7 +727,7 @@ rotting_fensnake	Rotting Fensnake	type Creature — Zombie Snake 5/1	rotting_fen
 runechanters_pike	Runechanter's Pike	cost {2}	runechanters_pike_cast_by_the_first_player_enters_as_printed runechanters_pike_cast_by_the_second_player_enters_as_printed runechanters_pike_is_not_cast_for_one_mana_less
 runechanters_pike	Runechanter's Pike	type Artifact — Equipment	runechanters_pike_cast_by_the_first_player_enters_as_printed runechanters_pike_cast_by_the_second_player_enters_as_printed runechanters_pike_is_not_cast_in_the_other_players_turn runechanters_pike_is_not_cast_in_its_casters_upkeep
 runechanters_pike	Runechanter's Pike	Equipped creature has first strike and gets +X/+0, where X is the number of instant and sorcery cards in your graveyard.	-
-runechanters_pike	Runechanter's Pike	Equip {2}	-
+runechanters_pike	Runechanter's Pike	Equip {2}	runechanters_pike_is_equipped_to_its_controllers_creature runechanters_pike_is_not_equipped_to_the_other_players_creature runechanters_pike_is_not_equipped_for_one_mana_less runechanters_pike_is_not_equipped_in_the_other_players_turn runechanters_pike_is_not_equipped_in_its_controllers_upkeep
 runic_repetition	Runic Repetition	cost {2}{U}	runic_repetition_is_not_cast_for_one_mana_less
 runic_repetition	Runic Repetition	type Sorcery	runic_repetition_is_not_cast_in_the_other_players_turn runic_repetition_is_not_cast_in_its_casters_upkeep
 runic_repetition	Runic Repetition	Return target exiled card with flashback you own to your hand.	runic_repetition_returns_your_exiled_card_with_flashback runic_repetition_cast_by_the_second_player_returns_theirs runic_repetition_is_not_cast_at_the_other_players_exiled_card runic_repetition_is_not_cast_at_an_exiled_card_without_flashback runic_repetition_is_not_cast_at_a_card_in_a_graveyard
@@ -756,9 +756,9 @@ sever_the_bloodline	Sever the Bloodline	Exile target creature and all other crea
 sever_the_bloodline	Sever the Bloodline	Flashback {5}{B}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	sever_the_bloodline_is_not_flashed_back_for_one_mana_less sever_the_bloodline_is_not_flashed_back_in_the_other_players_turn sever_the_bloodline_is_not_flashed_back_in_its_casters_upkeep sever_the_bloodline_flashed_back_exiles_both_and_is_exiled
 sharpened_pitchfork	Sharpened Pitchfork	cost {2}	sharpened_pitchfork_cast_by_the_first_player_enters_as_printed sharpened_pitchfork_cast_by_the_second_player_enters_as_printed sharpened_pitchfork_is_not_cast_for_one_mana_less
 sharpened_pitchfork	Sharpened Pitchfork	type Artifact — Equipment	sharpened_pitchfork_cast_by_the_first_player_enters_as_printed sharpened_pitchfork_cast_by_the_second_player_enters_as_printed sharpened_pitchfork_is_not_cast_in_the_other_players_turn sharpened_pitchfork_is_not_cast_in_its_casters_upkeep
-sharpened_pitchfork	Sharpened Pitchfork	Equipped creature has first strike.	-
+sharpened_pitchfork	Sharpened Pitchfork	Equipped creature has first strike.	sharpened_pitchfork_is_equipped_to_its_controllers_creature rule:first_strike
 sharpened_pitchfork	Sharpened Pitchfork	As long as equipped creature is a Human, it gets +1/+1.	-
-sharpened_pitchfork	Sharpened Pitchfork	Equip {1}	-
+sharpened_pitchfork	Sharpened Pitchfork	Equip {1}	sharpened_pitchfork_is_equipped_to_its_controllers_creature sharpened_pitchfork_is_not_equipped_to_the_other_players_creature sharpened_pitchfork_is_not_equipped_for_one_mana_less sharpened_pitchfork_is_not_equipped_in_the_other_players_turn sharpened_pitchfork_is_not_equipped_in_its_controllers_upkeep
 shimmering_grotto	Shimmering Grotto	type Land	shimmering_grotto_played_by_the_first_player_is_there_as_printed shimmering_grotto_played_by_the_second_player_is_there_as_printed shimmering_grotto_is_not_played_a_second_time_in_a_turn shimmering_grotto_is_not_played_in_the_other_players_turn shimmering_grotto_is_not_played_in_its_owners_upkeep
 shimmering_grotto	Shimmering Grotto	{T}: Add {C}.	-
 shimmering_grotto	Shimmering Grotto	{1}, {T}: Add one mana of any color.	-
@@ -768,9 +768,9 @@ silent_departure	Silent Departure	Return target creature to its owner's hand.	si
 silent_departure	Silent Departure	Flashback {4}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)	silent_departure_is_not_flashed_back_for_one_mana_less silent_departure_is_not_flashed_back_in_the_other_players_turn silent_departure_is_not_flashed_back_in_its_casters_upkeep silent_departure_flashed_back_returns_a_creature_and_is_exiled
 silver_inlaid_dagger	Silver-Inlaid Dagger	cost {1}	silver_inlaid_dagger_cast_by_the_first_player_enters_as_printed silver_inlaid_dagger_cast_by_the_second_player_enters_as_printed silver_inlaid_dagger_is_not_cast_for_one_mana_less
 silver_inlaid_dagger	Silver-Inlaid Dagger	type Artifact — Equipment	silver_inlaid_dagger_cast_by_the_first_player_enters_as_printed silver_inlaid_dagger_cast_by_the_second_player_enters_as_printed silver_inlaid_dagger_is_not_cast_in_the_other_players_turn silver_inlaid_dagger_is_not_cast_in_its_casters_upkeep
-silver_inlaid_dagger	Silver-Inlaid Dagger	Equipped creature gets +2/+0.	-
+silver_inlaid_dagger	Silver-Inlaid Dagger	Equipped creature gets +2/+0.	silver_inlaid_dagger_is_equipped_to_its_controllers_creature
 silver_inlaid_dagger	Silver-Inlaid Dagger	As long as equipped creature is a Human, it gets an additional +1/+0.	-
-silver_inlaid_dagger	Silver-Inlaid Dagger	Equip {2}	-
+silver_inlaid_dagger	Silver-Inlaid Dagger	Equip {2}	silver_inlaid_dagger_is_equipped_to_its_controllers_creature silver_inlaid_dagger_is_not_equipped_to_the_other_players_creature silver_inlaid_dagger_is_not_equipped_for_one_mana_less silver_inlaid_dagger_is_not_equipped_in_the_other_players_turn silver_inlaid_dagger_is_not_equipped_in_its_controllers_upkeep
 silverchase_fox	Silverchase Fox	cost {1}{W}	silverchase_fox_cast_by_the_first_player_enters_as_printed silverchase_fox_cast_by_the_second_player_enters_as_printed silverchase_fox_is_not_cast_for_one_mana_less
 silverchase_fox	Silverchase Fox	type Creature — Fox 2/2	silverchase_fox_cast_by_the_first_player_enters_as_printed silverchase_fox_cast_by_the_second_player_enters_as_printed silverchase_fox_is_not_cast_in_the_other_players_turn silverchase_fox_is_not_cast_in_its_casters_upkeep
 silverchase_fox	Silverchase Fox	{1}{W}, Sacrifice this creature: Exile target enchantment.	-
@@ -891,7 +891,7 @@ tree_of_redemption	Tree of Redemption	{T}: Exchange your life total with this cr
 trepanation_blade	Trepanation Blade	cost {3}	trepanation_blade_cast_by_the_first_player_enters_as_printed trepanation_blade_cast_by_the_second_player_enters_as_printed trepanation_blade_is_not_cast_for_one_mana_less
 trepanation_blade	Trepanation Blade	type Artifact — Equipment	trepanation_blade_cast_by_the_first_player_enters_as_printed trepanation_blade_cast_by_the_second_player_enters_as_printed trepanation_blade_is_not_cast_in_the_other_players_turn trepanation_blade_is_not_cast_in_its_casters_upkeep
 trepanation_blade	Trepanation Blade	Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard.	-
-trepanation_blade	Trepanation Blade	Equip {2}	-
+trepanation_blade	Trepanation Blade	Equip {2}	trepanation_blade_is_equipped_to_its_controllers_creature trepanation_blade_is_not_equipped_to_the_other_players_creature trepanation_blade_is_not_equipped_for_one_mana_less trepanation_blade_is_not_equipped_in_the_other_players_turn trepanation_blade_is_not_equipped_in_its_controllers_upkeep
 tribute_to_hunger	Tribute to Hunger	cost {2}{B}	-
 tribute_to_hunger	Tribute to Hunger	type Instant	-
 tribute_to_hunger	Tribute to Hunger	Target opponent sacrifices a creature of their choice. You gain life equal to that creature's toughness.	-
@@ -962,9 +962,9 @@ witchbane_orb	Witchbane Orb	When this artifact enters, destroy all Curses attach
 witchbane_orb	Witchbane Orb	You have hexproof. (You can't be the target of spells or abilities your opponents control, including Aura spells.)	-
 wooden_stake	Wooden Stake	cost {2}	wooden_stake_cast_by_the_first_player_enters_as_printed wooden_stake_cast_by_the_second_player_enters_as_printed wooden_stake_is_not_cast_for_one_mana_less
 wooden_stake	Wooden Stake	type Artifact — Equipment	wooden_stake_cast_by_the_first_player_enters_as_printed wooden_stake_cast_by_the_second_player_enters_as_printed wooden_stake_is_not_cast_in_the_other_players_turn wooden_stake_is_not_cast_in_its_casters_upkeep
-wooden_stake	Wooden Stake	Equipped creature gets +1/+0.	-
+wooden_stake	Wooden Stake	Equipped creature gets +1/+0.	wooden_stake_is_equipped_to_its_controllers_creature
 wooden_stake	Wooden Stake	Whenever equipped creature blocks or becomes blocked by a Vampire, destroy that creature. It can't be regenerated.	-
-wooden_stake	Wooden Stake	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	-
+wooden_stake	Wooden Stake	Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)	wooden_stake_is_equipped_to_its_controllers_creature wooden_stake_is_not_equipped_to_the_other_players_creature wooden_stake_is_not_equipped_for_one_mana_less wooden_stake_is_not_equipped_in_the_other_players_turn wooden_stake_is_not_equipped_in_its_controllers_upkeep
 woodland_cemetery	Woodland Cemetery	type Land	-
 woodland_cemetery	Woodland Cemetery	This land enters tapped unless you control a Swamp or a Forest.	-
 woodland_cemetery	Woodland Cemetery	{T}: Add {B} or {G}.	-
