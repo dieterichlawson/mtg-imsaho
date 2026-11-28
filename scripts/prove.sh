@@ -3,7 +3,7 @@
 # mtg-engine/src/proofs/.
 #
 # Usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N |
-#                          kani-shares RUN N | kani-these NAME... | exhaustive]
+#                          kani-shares RUN N | kani-these NAME... | exhaustive | guards]
 #   With no arguments, Verus and Kani. `verus` checks every contract in
 #   mtg-kernel (seconds, once vstd is built). `kani` runs every Kani proof,
 #   or only the named ones (a name may be the last part of the path, e.g.
@@ -23,6 +23,16 @@
 #   `kani-these NAME...` runs the named harnesses KANI_JOBS at a time and
 #   gives one that runs out of KANI_CAP the machine to itself: for finding
 #   out what a proof takes, so it prints results and fails on none.
+#   `guards` is what a change to the proofs or their ledgers is held to
+#   before it is pushed, in a minute or two: the files written from the
+#   Oracle are what their scripts write, every proof through the game
+#   claims a line of its card, the scoreboard is the one committed and has
+#   not gone the wrong way, and the tests that read the sources of the
+#   engine pass. Those tests read the proofs' sources too, and a suite
+#   stopped at its first failing file had not reached them when two
+#   changes to the proofs were pushed that broke them. It is not the
+#   suite: a change to the engine itself is held to `cargo test
+#   --workspace --no-fail-fast`.
 #   `exhaustive` runs the bounded
 #   exhaustive checks at a larger scope than `cargo test` gives them, in
 #   release: the autotap planner against tapping by hand on every board of
@@ -69,9 +79,9 @@ KANI_VERSION=0.68.0
 
 what="${1:-all}"
 case "$what" in
-    verus | kani | kani-pr | kani-shard | kani-new | kani-shares | kani-these | exhaustive) shift ;;
+    verus | kani | kani-pr | kani-shard | kani-new | kani-shares | kani-these | exhaustive | guards) shift ;;
     all) ;;
-    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | kani-shares RUN N | kani-these NAME... | exhaustive]" >&2; exit 2 ;;
+    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | kani-pr | kani-shard K/N | kani-new K/N | kani-shares RUN N | kani-these NAME... | exhaustive | guards]" >&2; exit 2 ;;
 esac
 
 prove_verus() {
@@ -190,5 +200,15 @@ case "$what" in
         tail -n 3 logs/kani/share-*.log
         exit $status ;;
     exhaustive) check_exhaustively ;;
+    guards)
+        python3 scripts/kani-printed-rows.py --check
+        python3 scripts/kani-claims.py --check
+        python3 scripts/verification-scoreboard.py --check reports/verification-scoreboard.md | cmp -s - reports/verification-scoreboard.md \
+            || { echo "reports/verification-scoreboard.md is not what scripts/verification-scoreboard.py prints, or went the wrong way" >&2; exit 1; }
+        # Every test of the engine that reads its sources (grep the tests
+        # for read_to_string and "src" to find one added since).
+        cargo test -p mtg-engine --test card_characteristics --test card_data_invariants --test characteristics_invariant \
+            --test continuous_effects --test engine_knows_no_cards --test replacement_effects --test spell_costs \
+            --test test_suite_guards --test trigger_source_independence ;;
     all) prove_verus; prove_kani ;;
 esac
