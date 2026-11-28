@@ -22,6 +22,15 @@ type line says, and its owner's land play for the turn is spent
 (`is_played_as_printed`); and it is not played a second time in a turn,
 in the other player's turn, or in its owner's upkeep (`is_not_played`).
 
+And for each Aura whose text has nothing happen as it enters: cast by
+each player at a creature, or at a player, of the other's, as its first
+line says it enchants, it is on the battlefield as printed and attached
+to what it was cast at, the creature with the power and toughness and the
+keywords the Aura's text gives it where that text is "Enchanted creature
+gets +A/+B", "has" a keyword, or both (`enters_attached`); cast a mana
+short, or at another time than its caster's main phase, it is refused;
+and so is it cast at what it does not enchant (`is_not_cast_to_enchant`).
+
 `short.rs` is, for each card with rows written by hand in
 `through_the_stack.rs` (the instants and sorceries), that card cast for
 one mana less than the Oracle's cost for it, and cast with flashback for
@@ -62,9 +71,9 @@ A card is left out, and said so at the foot of the file, when:
 - its cost has a symbol the proofs' mana does not know (X, hybrid), or it
   has none;
 - its power or toughness is not a number;
-- it is an Aura, which is cast at what it will enchant: its rows are to be
-  written with that. (An instant or a sorcery is no permanent, and is not
-  a card these rows are of.)
+- it is an Aura whose first line is not "Enchant creature" or "Enchant
+  player". (An instant or a sorcery is no permanent, and is not a card
+  these rows are of.)
 
 With --check, exits 1 if the file is not what this would write: the rows
 are the Oracle's, and are not edited by hand.
@@ -179,6 +188,39 @@ def costs():
         '    }', '}', '']) + '\n'
 
 
+def aura_reads(card):
+    """What an Aura's text says, as far as these rows read it: what it
+    enchants (`creature` or `player`, from its first line, or None), the
+    power and toughness it gives the creature (none if no line speaks of
+    any, and None if a line gives some that is not read outright: it
+    depends on something), the engine's keywords it gives it, and the
+    lines read whole: the first, and each that is "Enchanted creature
+    gets +A/+B", "has" a keyword, or both, and no more."""
+    lines = [l.strip() for l in (card.get('oracle_text') or '').split('\n') if l.strip()]
+    enchants = {'Enchant creature': 'creature', 'Enchant player': 'player'}.get(lines[0] if lines else '')
+    gets, has, whole = (0, 0), [], lines[:1] if enchants else []
+    for line in lines[1:]:
+        bare = re.sub(r'\s*\([^)]*\)\s*$', '', line).replace('\u2212', '-')
+        m = re.match(r'Enchanted creature gets ([+-]\d+)/([+-]\d+)(?: and has ([a-z ]+))?\.$', bare)
+        k = re.match(r'Enchanted creature has ([a-z ]+)\.$', bare)
+        if m and (m.group(3) is None or m.group(3) in KEYWORDS):
+            gets = (int(m.group(1)), int(m.group(2)))
+            has += [KEYWORDS[m.group(3)]] if m.group(3) else []
+            whole.append(line)
+        elif k and k.group(1) in KEYWORDS:
+            has.append(KEYWORDS[k.group(1)])
+            whole.append(line)
+        else:
+            # A line with more in it than these rows read: the power and
+            # toughness it gives outright are still what the creature has.
+            m = re.match(r'Enchanted creature gets ([+-]\d+)/([+-]\d+) and ', bare)
+            if m:
+                gets = (int(m.group(1)), int(m.group(2)))
+            elif re.search(r'\bgets?\b', bare):
+                gets = None
+    return enchants, gets, has, whole
+
+
 def printed(card):
     """`card`'s row data as Rust, or why it has no row."""
     front = (card.get('type_line') or '').split('//')[0]
@@ -186,8 +228,8 @@ def printed(card):
     creature, land = 'Creature' in types.split(), 'Land' in types.split()
     if not {'Creature', 'Artifact', 'Enchantment', 'Planeswalker', 'Land'} & set(types.split()):
         return None, None
-    if 'Aura' in subtypes.split():
-        return None, 'it is an Aura, cast at what it will enchant'
+    if 'Aura' in subtypes.split() and aura_reads(card)[0] is None:
+        return None, 'it is an Aura, and its first line is not "Enchant creature" or "Enchant player"'
     text = card.get('oracle_text') or ''
     if re.search(r'\benters\b', text):
         return None, 'its text has something happen as it enters'
@@ -220,7 +262,10 @@ def printed(card):
 
 def render():
     oracle = json.load(open(f'{ROOT}/data/oracle_cache.json'))['cards']
-    rows, left, lands = [], [], 0
+    rows, left, lands, auras = [], [], 0, 0
+    # An Aura's rows cast a mana short and at another time are its own
+    # row over again under the macros that make a cast one to be refused.
+    short, at_time = [], {1: [], 2: []}
     for module, path, name, creature in pool():
         card = oracle.get(name)
         if card is None:
@@ -239,6 +284,19 @@ def render():
             for when, no in (('a_second_time_in_a_turn', 'ASecondThisTurn'), ('in_the_other_players_turn', 'InTheOtherPlayersTurn'), ('in_its_owners_upkeep', 'InItsOwnersUpkeep')):
                 rows.append(f'    {module}_is_not_played_{when}: is_not_played((Box::new({path}), NoLand::{no}));')
             continue
+        if '"Aura"' in data:
+            auras += 1
+            enchants, gets, has, _ = aura_reads(card)
+            what = 'Enchants::Player' if enchants == 'player' else 'Enchants::Creature { gets: %s, has: &[%s] }' % (
+                f'Some(({gets[0]}, {gets[1]}))' if gets else 'None', ', '.join(f'Keyword::{k}' for k in has))
+            call = f'enters_attached((Box::new({path}), {data}, FIRST, {what}))'
+            rows.append(f'    {module}_cast_by_the_first_player_enters_attached_as_printed: {call};')
+            rows.append(f'    {module}_cast_by_the_second_player_enters_attached_as_printed: {call.replace(", FIRST, ", ", SECOND, ")};')
+            rows.append(f'    {module}_is_not_cast_at_what_it_does_not_enchant: is_not_cast_to_enchant((Box::new({path}), {what}));')
+            short.append(f'    {module}_is_not_cast_for_one_mana_less: {call};')
+            at_time[1].append(f'    {module}_is_not_cast_in_the_other_players_turn: {call};')
+            at_time[2].append(f'    {module}_is_not_cast_in_its_casters_upkeep: {call};')
+            continue
         for who, cast in (('first', 'FIRST'), ('second', 'SECOND')):
             rows.append(f'    {module}_cast_by_the_{who}_player_enters_as_printed: enters_as_printed((Box::new({path}), {data}, {cast}));')
         rows.append(f'    {module}_is_not_cast_for_one_mana_less: is_not_cast_for_one_mana_less((Box::new({path}), {data}));')
@@ -249,11 +307,18 @@ def render():
            '//! (`data/oracle_cache.json`); not to be edited by hand. Each permanent',
            '//! card of the pool that is cast with no target and whose text has',
            '//! nothing happen as it enters, cast by each player for its printed',
-           '//! cost, is on the battlefield as printed (`enters_as_printed`); and',
-           '//! each such land, played (`is_played_as_printed`).', '',
+           '//! cost, is on the battlefield as printed (`enters_as_printed`); each',
+           '//! such land, played (`is_played_as_printed`); and each such Aura, cast',
+           '//! at what it enchants (`enters_attached`).', '',
            'use super::*;', 'use crate::types::Color;', '',
            'through_the_stack! {'] + rows + ['}', '',
-           f'// {len(rows)} rows for {len(rows) // 5} cards, {lands} of them lands. Permanent cards with no row here, and why:']
+           '// Each Aura cast for one mana less than its cost, at what it enchants.',
+           'one_mana_short! {'] + short + ['}', '',
+           '// Each Aura cast in the other player\'s first main phase (1) and in its',
+           '// caster\'s own upkeep (2), at what it enchants.',
+           'a_sorcery_at! { 1'] + at_time[1] + ['}', '', 'a_sorcery_at! { 2'] + at_time[2] + ['}', '']
+    count = len(rows) + len(short) + len(at_time[1]) + len(at_time[2])
+    out += [f'// {count} rows for {(count - auras * 6) // 5 + auras} cards, {lands} of them lands and {auras} Auras. Permanent cards with no row here, and why:']
     out += [f'// - {module}: {why}' for module, why in left]
     return '\n'.join(out) + '\n'
 

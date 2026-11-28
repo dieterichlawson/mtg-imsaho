@@ -31,6 +31,10 @@ and cast at no other time than its own) and, with the keyword's rule,
 each of its keyword lines (it is on the battlefield with those keywords).
 Of a land: its type line (played, it is on the battlefield with those
 types, and it is played once a turn, in its owner's own main phase).
+Of an Aura: its cost and type line as a creature's; its first line (cast
+at what that says it enchants it is attached to it, and it is not cast
+at something else); and each line that is "Enchanted creature gets
++A/+B", "has" a keyword, or both and no more (the creature has them).
 Of a spell: its cost and its flashback line, by the row that casts it a
 mana short of each; and its type line and again its flashback line, by
 the rows that cast it at another time than its caster's own main phase,
@@ -68,6 +72,9 @@ ENTERS = ('_cast_by_the_first_player_enters_as_printed', '_cast_by_the_second_pl
 TIMES = ('_is_cast_in_the_other_players_turn', '_is_not_cast_in_the_other_players_turn',
          '_is_cast_in_its_casters_upkeep', '_is_not_cast_in_its_casters_upkeep')
 SHORT = ('_is_not_cast_for_one_mana_less',)
+# And of an Aura: cast at what it enchants, and not at what it does not.
+ATTACHED = ('_cast_by_the_first_player_enters_attached_as_printed', '_cast_by_the_second_player_enters_attached_as_printed')
+NOT_ENCHANTED = ('_is_not_cast_at_what_it_does_not_enchant',)
 # And of a land: played as printed, and not played when it may not be.
 LAND = ('_played_by_the_first_player_is_there_as_printed', '_played_by_the_second_player_is_there_as_printed',
         '_is_not_played_a_second_time_in_a_turn', '_is_not_played_in_the_other_players_turn', '_is_not_played_in_its_owners_upkeep')
@@ -75,7 +82,7 @@ LAND = ('_played_by_the_first_player_is_there_as_printed', '_played_by_the_secon
 FLASHED_BACK = ('_is_not_flashed_back_for_one_mana_less',
                 '_is_flashed_back_in_the_other_players_turn', '_is_not_flashed_back_in_the_other_players_turn',
                 '_is_flashed_back_in_its_casters_upkeep', '_is_not_flashed_back_in_its_casters_upkeep')
-WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK + LAND
+WRITTEN = ENTERS + TIMES + SHORT + FLASHED_BACK + LAND + ATTACHED + NOT_ENCHANTED
 # The rules the rows of proofs::through_the_stack::rules are of, each the
 # beginning of its rows' names: the keywords, and what is no keyword's.
 RULES = ('combat', 'summoning_sickness', 'flying', 'reach', 'intimidate', 'first_strike', 'double_strike', 'deathtouch',
@@ -117,11 +124,16 @@ def printed(rows_module):
         if card is None:
             sys.exit(f'{module}: the Oracle cache has no card named {name!r}; scripts/oracle_lookup.py fetch it')
         for face in [card] + ([card['back_face']] if card.get('back_face') else []):
+            aura = rows_module.aura_reads(face) if face is card and 'Aura' in (face.get('type_line') or '') else (None, None, [], [])
             for kind, line in frame(face):
                 yield module, face['name'], line, kind, []
-            for line in (face.get('oracle_text') or '').split('\n'):
-                if line.strip():
-                    yield module, face['name'], line.strip(), 'text', rows_module.own_keywords(line) if face is card else []
+            for n, line in enumerate(l.strip() for l in (face.get('oracle_text') or '').split('\n') if l.strip()):
+                if line in aura[3]:
+                    # A line of an Aura its rows read whole: what it
+                    # enchants, or what it gives the creature.
+                    yield module, face['name'], line, 'enchant' if n == 0 else 'aura', aura[2] if n else []
+                else:
+                    yield module, face['name'], line, 'text', rows_module.own_keywords(line) if face is card else []
 
 
 def harnesses():
@@ -183,9 +195,17 @@ def render(of=None):
             return [module + s for s in suffixes if module + s in of.get(module, {})]
 
         if kind == 'cost':
-            written = rows_of(ENTERS + SHORT) if front else []
+            written = rows_of(ENTERS + ATTACHED + SHORT) if front else []
         elif kind == 'type':
-            written = rows_of(ENTERS + TIMES + LAND) if front else []
+            written = rows_of(ENTERS + ATTACHED + TIMES + LAND) if front else []
+        elif kind == 'enchant':
+            written = rows_of(ATTACHED + NOT_ENCHANTED)
+        elif kind == 'aura':
+            # The creature has what the line gives it, a keyword among
+            # it; what the keyword does is its rule's.
+            written = rows_of(ATTACHED)
+            if written:
+                written += [f'rule:{re.sub(r"(?<!^)(?=[A-Z])", "_", k).lower()}' for k in keywords]
         elif line.startswith('Flashback '):
             written = rows_of(FLASHED_BACK)
         elif keywords:

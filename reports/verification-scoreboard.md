@@ -5,16 +5,16 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 
 | Goal | Now | Done at |
 |---|---|---|
-| 1. cards with every proof written for them through the engine's cast, stack and resolution proved | 0 of 270 (and 201 with some not yet proved) | 270 |
-| 1. those proofs: proved of written | 0 of 1236 | all |
+| 1. cards with every proof written for them through the engine's cast, stack and resolution proved | 0 of 270 (and 219 with some not yet proved) | 270 |
+| 1. those proofs: proved of written | 0 of 1344 | all |
 | 1. harnesses that call a card's hook directly | 604 | 0 |
-| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 511 of 998 (0 with every such proof proved) | 998, proved |
+| A. lines the cards print (each face's frame and each line of its text) that a proof through the game claims | 571 of 998 (0 with every such proof proved) | 998, proved |
 | B. rules the cards lean on (the keywords, combat, summoning sickness) with every row written for them through the game proved | 0 of 16 (16 with rows, 44 rows) | 16 |
 | 2. cards whose proofs cover every case that applies | not counted yet | all |
 | 3. changes to a card's code its proofs catch | not counted yet | every one |
 | 4. engine functions a proof stands in for, unchecked | 165 | 0 |
 | 5. official rulings accounted for | not counted yet | 578 |
-| 6. proofs that do not finish | 12 (and 1280 written and not yet run) | 0 |
+| 6. proofs that do not finish | 12 (and 1388 written and not yet run) | 0 |
 | 7. permanents that can be pieces of the small boards | 129 of 199 (counted by hand, 2026-11-27) | 199 |
 
 ## Cards through the stack
@@ -42,7 +42,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | bloodcrazed_neonate | 0 of 5 | 2 | 0 |
 | bloodgift_demon | 0 of 5 | 4 | 0 |
 | bloodline_keeper | 0 of 5 | 2 | 8 |
-| bonds_of_faith | - | 2 | 1 |
+| bonds_of_faith | 0 of 6 | 2 | 1 |
 | boneyard_wurm | - | 2 | 1 |
 | brain_weevil | 0 of 5 | 4 | 1 |
 | bramblecrush | 0 of 12 | 4 | 1 |
@@ -67,16 +67,16 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | creeping_renaissance | - | 2 | 1 |
 | creepy_doll | 0 of 5 | 1 | 0 |
 | crossway_vampire | - | 1 | 1 |
-| curiosity | - | 6 | 1 |
-| curse_of_deaths_hold | - | 1 | 0 |
-| curse_of_oblivion | - | 6 | 0 |
-| curse_of_stalked_prey | - | 3 | 0 |
-| curse_of_the_bloody_tome | - | 5 | 0 |
-| curse_of_the_nightly_hunt | - | 1 | 0 |
-| curse_of_the_pierced_heart | - | 5 | 0 |
+| curiosity | 0 of 6 | 6 | 1 |
+| curse_of_deaths_hold | 0 of 6 | 1 | 0 |
+| curse_of_oblivion | 0 of 6 | 6 | 0 |
+| curse_of_stalked_prey | 0 of 6 | 3 | 0 |
+| curse_of_the_bloody_tome | 0 of 6 | 5 | 0 |
+| curse_of_the_nightly_hunt | 0 of 6 | 1 | 0 |
+| curse_of_the_pierced_heart | 0 of 6 | 5 | 0 |
 | darkthicket_wolf | 0 of 5 | 1 | 2 |
 | daybreak_ranger | 0 of 5 | 4 | 3 |
-| dead_weight | - | 1 | 1 |
+| dead_weight | 0 of 6 | 1 | 1 |
 | dearly_departed | - | 3 | 1 |
 | delver_of_secrets | 0 of 5 | 5 | 0 |
 | demonmail_hauberk | 0 of 5 | 1 | 2 |
@@ -108,7 +108,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | fortress_crab | 0 of 5 | 1 | 0 |
 | frightful_delusion | - | 3 | 2 |
 | full_moons_rise | 0 of 5 | 1 | 2 |
-| furor_of_the_bitten | - | 1 | 1 |
+| furor_of_the_bitten | 0 of 6 | 1 | 1 |
 | gallows_warden | 0 of 5 | 1 | 1 |
 | galvanic_juggernaut | 0 of 5 | 2 | 0 |
 | garruk_relentless | 0 of 5 | 8 | 2 |
@@ -119,7 +119,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | geistcatchers_rig | - | 1 | 1 |
 | geistflame | 0 of 18 | 3 | 1 |
 | ghost_quarter | 0 of 5 | 2 | 2 |
-| ghostly_possession | - | 1 | 1 |
+| ghostly_possession | 0 of 6 | 1 | 1 |
 | ghoulcallers_bell | 0 of 5 | 3 | 1 |
 | ghoulcallers_chant | - | 2 | 0 |
 | ghoulraiser | - | 2 | 1 |
@@ -134,7 +134,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | grimoire_of_the_dead | 0 of 5 | 3 | 6 |
 | grizzled_outcasts | 0 of 5 | 2 | 0 |
 | grizzly_bears | 0 of 5 | 1 | 0 |
-| gruesome_deformity | - | 1 | 1 |
+| gruesome_deformity | 0 of 6 | 1 | 1 |
 | gutter_grime | 0 of 5 | 2 | 0 |
 | hamlet_captain | 0 of 5 | 4 | 18 |
 | hanweir_watchkeep | 0 of 5 | 4 | 0 |
@@ -143,7 +143,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | heretics_punishment | 0 of 5 | 1 | 1 |
 | hinterland_harbor | - | 3 | 2 |
 | hollowhenge_scavenger | - | 2 | 1 |
-| holy_strength | - | 1 | 1 |
+| holy_strength | 0 of 6 | 1 | 1 |
 | hysterical_blindness | 0 of 5 | 1 | 1 |
 | infernal_plunge | 0 of 7 | 1 | 0 |
 | inquisitors_flail | 0 of 5 | 1 | 2 |
@@ -201,7 +201,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | olivia_voldaren | 0 of 5 | 3 | 1 |
 | one_eyed_scarecrow | 0 of 5 | 0 | 1 |
 | orchard_spirit | 0 of 5 | 1 | 1 |
-| pacifism | - | 1 | 1 |
+| pacifism | 0 of 6 | 1 | 1 |
 | parallel_lives | 0 of 5 | 2 | 1 |
 | paraselene | 0 of 6 | 2 | 0 |
 | past_in_flames | - | 1 | 16 |
@@ -227,7 +227,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | screeching_bat | 0 of 5 | 6 | 1 |
 | selfless_cathar | 0 of 5 | 1 | 2 |
 | selhoff_occultist | 0 of 5 | 6 | 0 |
-| sensory_deprivation | - | 1 | 1 |
+| sensory_deprivation | 0 of 6 | 1 | 1 |
 | sever_the_bloodline | 0 of 11 | 1 | 0 |
 | sharpened_pitchfork | 0 of 5 | 2 | 2 |
 | shimmering_grotto | 0 of 5 | 1 | 1 |
@@ -236,7 +236,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | silverchase_fox | 0 of 5 | 1 | 1 |
 | skaab_goliath | 0 of 5 | 1 | 0 |
 | skaab_ruinator | 0 of 5 | 1 | 1 |
-| skeletal_grimace | - | 2 | 1 |
+| skeletal_grimace | 0 of 6 | 2 | 1 |
 | skirsdag_cultist | 0 of 5 | 3 | 1 |
 | skirsdag_high_priest | 0 of 5 | 1 | 2 |
 | slayer_of_the_wicked | - | 1 | 1 |
@@ -245,7 +245,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | sol_ring | 0 of 5 | 1 | 1 |
 | somberwald_spider | - | 2 | 1 |
 | spare_from_evil | 0 of 5 | 1 | 1 |
-| spectral_flight | - | 1 | 1 |
+| spectral_flight | 0 of 6 | 1 | 1 |
 | spectral_rider | 0 of 5 | 1 | 0 |
 | spider_spawning | 0 of 11 | 3 | 0 |
 | spidery_grasp | 0 of 8 | 1 | 0 |
@@ -290,7 +290,7 @@ Counted by `scripts/verification-scoreboard.py`; the goals are in
 | wooden_stake | 0 of 5 | 3 | 2 |
 | woodland_cemetery | - | 3 | 2 |
 | woodland_sleuth | - | 3 | 1 |
-| wreath_of_geists | - | 3 | 2 |
+| wreath_of_geists | 0 of 6 | 3 | 2 |
 
 ## Engine functions stood in for
 

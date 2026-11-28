@@ -2964,6 +2964,86 @@ fn is_cast_only_at_its_time((card, printed, at): (Box<dyn CardBehavior>, Printed
     std::mem::forget((registry, state));
 }
 
+/// What an Aura enchants, from the first line of its text, and what its
+/// text gives a creature it enchants as far as its rows read it
+/// (`scripts/kani-printed-rows.py`).
+#[derive(Clone, Copy)]
+enum Enchants {
+    /// "Enchant creature". `gets` is the power and toughness "Enchanted
+    /// creature gets +A/+B" gives, where the text says so outright, and
+    /// `has` the keywords "Enchanted creature has ..." gives.
+    Creature { gets: Option<(i32, i32)>, has: &'static [Keyword] },
+    /// "Enchant player".
+    Player,
+}
+
+/// An Aura card cast by `cast` for the Oracle's cost at what its first
+/// line says it enchants, the other player or a 2/6 creature of theirs,
+/// and resolved (CR 303.4a, 303.4f): the cast is accepted, and the Aura
+/// is on the battlefield under its caster as its type line prints,
+/// attached to what it was cast at. A creature it enchants has the power
+/// and toughness its text gives it and each keyword its text gives it
+/// and no other, as the engine's layers report them (613.4c, 613.1f).
+/// Nothing else of the game has changed, a second creature beside the
+/// first among it. Where the text gives the creature no power and
+/// toughness outright (it depends on something, or the row does not
+/// read the line), what the engine has for them is left to the line's
+/// own rows.
+fn enters_attached((card, printed, cast, enchants): (Box<dyn CardBehavior>, Printed, Cast, Enchants)) {
+    let (registry, mut state, blank, card) = board(card);
+    let (you, other) = (cast.by, 1 - cast.by);
+    let creature = match enchants {
+        Enchants::Creature { .. } => {
+            let creature = a_permanent(&mut state, blank, Permanent::Stout, (other, other));
+            a_permanent(&mut state, blank, Permanent::Stout, (other, other));
+            Some(creature)
+        }
+        Enchants::Player => None,
+    };
+    let aura = a_spell(&mut state, &registry, card, cast);
+    let mut expected = everything(&state, &registry);
+
+    let target = creature.map_or(Target::Player(PlayerId(other)), Target::Object);
+    cast_and_resolve(&mut state, &registry, aura, vec![target]);
+
+    is_there_as_printed(&state, &registry, aura, printed, PlayerId(you));
+    *expected.of(aura) = printed.on_the_battlefield(*expected.of(aura));
+    match (enchants, creature) {
+        (Enchants::Creature { gets, has }, Some(creature)) => {
+            expected.of(aura).attached_to = Some(creature);
+            for k in Keyword::ALL {
+                assert!(state.has_keyword(creature, k, &registry) == has.contains(&k));
+            }
+            let seen = expected.of(creature);
+            (seen.power_now, seen.toughness_now) = match gets {
+                Some((power, toughness)) => (seen.power_now.map(|p| p + power), seen.toughness_now.map(|t| t + toughness)),
+                None => (state.effective_power(creature, &registry), state.effective_toughness(creature, &registry)),
+            };
+        }
+        _ => expected.of(aura).attached_to_player = Some(PlayerId(other)),
+    }
+    expected.players[usize::from(you)].mana = 0;
+    assert!(everything(&state, &registry) == expected);
+    std::mem::forget((registry, state));
+}
+
+/// An Aura cast at what its first line does not let it enchant (CR
+/// 303.4a, 702.5a): one that enchants a creature at an artifact that is
+/// no creature, one that enchants a player at a creature. The engine
+/// refuses the cast and nothing is done.
+fn is_not_cast_to_enchant((card, enchants): (Box<dyn CardBehavior>, Enchants)) {
+    let (registry, mut state, blank, card) = board(card);
+    let wrong = match enchants {
+        Enchants::Creature { .. } => a_permanent(&mut state, blank, Permanent::Artifact, (1, 1)),
+        Enchants::Player => a_permanent(&mut state, blank, Permanent::Creature, (1, 1)),
+    };
+    let aura = a_spell(&mut state, &registry, card, FIRST);
+
+    cast_is_refused(&mut state, &registry, aura, vec![Target::Object(wrong)]);
+
+    std::mem::forget((registry, state));
+}
+
 /// A land card played by the player `by` names from their hand, in their
 /// own main phase with the stack empty and their land play for the turn
 /// unspent (CR 305.1, 305.2, 116.2a): it is on the battlefield under

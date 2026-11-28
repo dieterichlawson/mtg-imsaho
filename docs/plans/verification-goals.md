@@ -316,16 +316,20 @@ type line, power and toughness) and each line of its text, and is on the
 scoreboard. Counted on 2026-11-28, a frame being two lines (its cost,
 if it has one, and its type line): 998 lines on the 270 cards (253
 costs, 290 type lines, 455 lines of text; 5 more are reminder text
-alone). 511 are claimed, on 201 cards: the cost and the type line of
-each of the 139 permanents with rows (108 creatures; 31 artifacts,
-enchantments and planeswalkers) and of each of the 50 spells, the type
-line of each of 12 lands (played, and not played when it may not be),
-49 of the creatures' keyword lines (48 of which wait on the keyword's
-rule, layer B), and 72 lines of the spells' text. None is proved, the
-rows being unrun. No ability of a permanent is claimed, and no back
-face. Still with no row: 50 permanents (19 Auras, which are cast at what
-they enchant; 28 with something happening as they enter, 5 of them
-lands; 3 creatures of power */*) and 19 instants and sorceries.
+alone). 571 are claimed, on 219 cards: the cost and the type line of
+each of the 157 permanents that are cast and have rows (108 creatures;
+31 artifacts, enchantments and planeswalkers; 18 Auras) and of each of
+the 50 spells, the type line of each of 12 lands (played, and not played
+when it may not be), and 145 lines of text: 49 of the creatures' keyword
+lines (48 of which wait on the keyword's rule, layer B), 72 lines of the
+spells, each Aura's "Enchant creature" or "Enchant player" (cast at
+that it is attached to it, and it is not cast at something else), and
+the 6 lines of Auras that are "Enchanted creature gets +A/+B", "has" a
+keyword, or both and no more. None is proved, the rows being unrun. No
+other ability of a permanent is claimed, and no back face. Still with no
+row: 32 permanents (29 with something happening as they enter, 5 of them
+lands and one an Aura; 3 creatures of power */*) and 19 instants and
+sorceries.
 
 **B. The rules the cards lean on, each proved once through the loop.**
 A creature's row says it has flying; what flying does is the engine's,
